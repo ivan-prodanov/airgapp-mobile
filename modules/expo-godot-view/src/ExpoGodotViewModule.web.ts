@@ -1,6 +1,11 @@
 import { registerWebModule, NativeModule } from 'expo';
 
-// ExpoGodotViewModule is not available on the web platform.
-class ExpoGodotViewModule extends NativeModule<{}> {}
+import type { ExpoGodotViewModuleEvents } from './ExpoGodotView.types';
+
+class ExpoGodotViewModule extends NativeModule<ExpoGodotViewModuleEvents> {
+  sendMessageToGodot(_message: string): void {
+    // No Godot engine on web. No-op stub.
+  }
+}
 
 export default registerWebModule(ExpoGodotViewModule, 'ExpoGodotViewModule');
