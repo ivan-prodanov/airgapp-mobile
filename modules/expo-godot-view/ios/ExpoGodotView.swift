@@ -55,18 +55,30 @@ final class ExpoGodotView: ExpoView {
 
   // MARK: - Device (real Godot)
 
+  private var godotHost: GodotHost?
+  private var didBoot = false
+
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
     clipsToBounds = true
     backgroundColor = .black
-    // TODO(phase2-device): attach the Godot 3.2 render surface and register the
-    // `IOSGodotInterface` engine singleton that forwards GDScript calls to `GodotBridge.shared`.
-    // Requires vendoring libgodot.iphone.*.fat.a + the .pck and the podspec linker flags.
-    // See GODOT_INTEGRATION.md.
+  }
+
+  // Boot once we have a real (non-zero) size so the engine gets valid dimensions.
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    guard !didBoot, window != nil, bounds.width > 0, bounds.height > 0 else { return }
+    didBoot = true
+
+    guard let pck = Bundle.main.path(forResource: "airgapp", ofType: "pck") else {
+      NSLog("[ExpoGodotView] airgapp.pck not found in app bundle")
+      return
+    }
+    godotHost = GodotHost(parentView: self, pckPath: pck)
   }
 
   private func didSetSceneName() {
-    // TODO(phase2-device): switch the active Godot scene (enqueue a message / call the plugin).
+    // TODO(phase2-device): switch the active Godot scene once the IOSGodotInterface bridge lands.
   }
 
   #endif
