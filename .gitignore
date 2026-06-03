@@ -49,6 +49,11 @@ assets/godot/*.xcframework
 assets/godot/*.aar
 *.gdc
 
+# Vendored Godot 3.2 engine for expo-godot-view (~600 MB of binaries; out of git history).
+# Restore per modules/expo-godot-view/ios/VENDORING.md.
+modules/expo-godot-view/ios/engine/*.a
+modules/expo-godot-view/ios/*.pck
+
 # Local-only build artifacts
 *.log
 
