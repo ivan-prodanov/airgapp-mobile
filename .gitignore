@@ -41,3 +41,14 @@ example
 # generated native folders
 /ios
 /android
+
+# Godot artifacts — produced by export pipeline from /Users/ivan/Work/rpi-filter/tesla-godot/
+assets/godot/*.pck
+assets/godot/*.a
+assets/godot/*.xcframework
+assets/godot/*.aar
+*.gdc
+
+# Local-only build artifacts
+*.log
+

@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["ExpoGodotViewModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.godotview.ExpoGodotViewModule"]
+  }
+}
