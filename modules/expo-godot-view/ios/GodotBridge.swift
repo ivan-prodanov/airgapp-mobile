@@ -16,10 +16,10 @@ import Foundation
 /// Messages are opaque JSON envelope strings `{ "type": ..., "data": ... }`. This layer never
 /// parses them — it only ferries strings, matching the web `GodotRendererBridge` queue.
 ///
-/// `@objcMembers` so the future Objective-C++ plugin can call these directly.
-@objcMembers
-final class GodotBridge: NSObject {
-  static let shared = GodotBridge()
+/// `@objc public` (not `@objcMembers` — the closure property below isn't ObjC-representable) so the
+/// Objective-C++ `IOSGodotInterface` plugin can call these via the generated `ExpoGodotView-Swift.h`.
+@objc public final class GodotBridge: NSObject {
+  @objc public static let shared = GodotBridge()
   private override init() { super.init() }
 
   /// Set by `ExpoGodotViewModule` to forward Godot → host messages to JS as `onGodotMessage`.
@@ -30,7 +30,7 @@ final class GodotBridge: NSObject {
 
   // MARK: host → Godot (called from JS via `sendMessageToGodot`)
 
-  func addMessage(_ json: String) {
+  @objc public func addMessage(_ json: String) {
     #if targetEnvironment(simulator)
     // No engine on the simulator (the 2020 libgodot fat lib has no arm64-sim slice).
     // No-op so RN/UI work still builds & runs. See GODOT_INTEGRATION.md.
@@ -44,12 +44,12 @@ final class GodotBridge: NSObject {
 
   // MARK: called by the IOSGodotInterface plugin on the engine thread (device only)
 
-  func pendingMessagesCount() -> Int {
+  @objc public func pendingMessagesCount() -> Int {
     lock.lock(); defer { lock.unlock() }
     return outbound.count
   }
 
-  func getMessage() -> String? {
+  @objc public func getMessage() -> String? {
     lock.lock(); defer { lock.unlock() }
     return outbound.isEmpty ? nil : outbound.removeFirst()
   }
@@ -58,7 +58,7 @@ final class GodotBridge: NSObject {
 
   /// Forward a JSON envelope from the engine to the host. Called by the plugin on device, and
   /// by the simulator stub view to synthesize a `GODOT_READY` for UI development.
-  func sendMessage(_ json: String) {
+  @objc public func sendMessage(_ json: String) {
     onMessageToHost?(json)
   }
 }

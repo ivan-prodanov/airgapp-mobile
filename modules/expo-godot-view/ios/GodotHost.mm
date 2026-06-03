@@ -18,6 +18,7 @@
 
 // ───────────────────────────────── Device: real Godot 3.2 ────────────────────────────────────
 #import "gl_view.h"
+#import "IOSGodotInterface.h"
 
 #include "core/os/os.h"
 #include "core/ustring.h"
@@ -96,6 +97,9 @@ void iphone_finish();
     } break;
     case 1: {
       Main::setup2();
+      // Register the IOSGodotInterface engine singleton before Main::start() instantiates the
+      // scene (MobileComm._ready binds to it).
+      register_ios_godot_interface();
       _frameCount++;
     } break;
     case 2: {

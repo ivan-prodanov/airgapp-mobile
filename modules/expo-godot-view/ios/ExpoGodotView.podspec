@@ -34,7 +34,10 @@ Pod::Spec.new do |s|
     # Compile GodotHost.mm/IOSGodotInterface.mm against the Godot 3.2 source headers (matches the
     # prebuilt .a). platform/iphone is needed for platform_config.h / os_iphone.h / gl_view.h.
     'HEADER_SEARCH_PATHS' => "\"#{godot_src}\" \"#{godot_src}/platform/iphone\" \"$(PODS_TARGET_SRCROOT)/godot_gen\"",
-    'GCC_PREPROCESSOR_DEFINITIONS' => 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 $(inherited)',
+    # DEBUG_METHODS_ENABLED MUST match the prebuilt debug template: it selects the bind_methodfi
+    # overload (MethodDefinition vs const char*) that ClassDB::bind_method generates. Without it the
+    # app link fails with an undefined bind_methodfi(const char*).
+    'GCC_PREPROCESSOR_DEFINITIONS' => 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 DEBUG_METHODS_ENABLED=1 $(inherited)',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'gnu++14',
     'CLANG_WARN_DOCUMENTATION_COMMENTS' => 'NO',
   }
