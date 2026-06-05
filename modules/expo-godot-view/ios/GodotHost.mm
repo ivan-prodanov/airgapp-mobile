@@ -20,6 +20,8 @@
 #import "gl_view.h"
 #import "IOSGodotInterface.h"
 
+#include "core/os/input.h"
+#include "core/os/input_event.h"
 #include "core/os/os.h"
 #include "core/ustring.h"
 #include "main/main.h"
@@ -30,7 +32,7 @@
 int iphone_main(int width, int height, int argc, char **argv, String data_dir);
 void iphone_finish();
 
-@interface GodotHost () <GLViewDelegate> {
+@interface GodotHost () <GLViewDelegate, UIGestureRecognizerDelegate> {
   GLView *_glView;
   int _frameCount;
   bool _started;
@@ -77,9 +79,68 @@ void iphone_finish();
   [parentView addSubview:glView];
   [glView startAnimation];
   _glView = glView;
+
+  // RN's touch system starves Godot's own GLView gesture recognizer (touches never reach the
+  // engine), so attach our own pan recognizer that coexists with RN's and feeds drags into
+  // Godot's Input as screen touch/drag events.
+  UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+  pan.delegate = self;
+  pan.maximumNumberOfTouches = 1;
+  [glView addGestureRecognizer:pan];
+
   NSLog(@"[GodotHost] GLView attached, animation started");
 
   return self;
+}
+
+// One-finger drag → Godot InputEventScreenTouch/Drag (the dev injector's free-orbit listens for
+// these). Coords are in framebuffer pixels (points × contentScaleFactor).
+- (void)handlePan:(UIPanGestureRecognizer *)pan {
+  if (!_started) {
+    return;
+  }
+  CGFloat scale = _glView.contentScaleFactor;
+  CGPoint loc = [pan locationInView:_glView];
+  Vector2 pos(loc.x * scale, loc.y * scale);
+
+  switch (pan.state) {
+    case UIGestureRecognizerStateBegan: {
+      [pan setTranslation:CGPointZero inView:_glView];
+      Ref<InputEventScreenTouch> st;
+      st.instance();
+      st->set_index(0);
+      st->set_position(pos);
+      st->set_pressed(true);
+      Input::get_singleton()->parse_input_event(st);
+    } break;
+    case UIGestureRecognizerStateChanged: {
+      CGPoint t = [pan translationInView:_glView];
+      [pan setTranslation:CGPointZero inView:_glView];
+      Ref<InputEventScreenDrag> sd;
+      sd.instance();
+      sd->set_index(0);
+      sd->set_position(pos);
+      sd->set_relative(Vector2(t.x * scale, t.y * scale));
+      Input::get_singleton()->parse_input_event(sd);
+    } break;
+    case UIGestureRecognizerStateEnded:
+    case UIGestureRecognizerStateCancelled:
+    case UIGestureRecognizerStateFailed: {
+      Ref<InputEventScreenTouch> st;
+      st.instance();
+      st->set_index(0);
+      st->set_position(pos);
+      st->set_pressed(false);
+      Input::get_singleton()->parse_input_event(st);
+    } break;
+    default:
+      break;
+  }
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+  return YES;
 }
 
 // GLViewDelegate — called each frame with the GLView's framebuffer bound + context current.
