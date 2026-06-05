@@ -41,9 +41,11 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     label: 'Top',
     animationId: 'shell-camera-top-down',
     moveCamera: {
+      // Tighter top-down: the car needn't fit fully in frame. Lower fov zooms in while keeping the
+      // flat (low-distortion) look. Tune cam_fov to taste (40 = full car, lower = tighter).
       rotation: [0, 0, 0],
       offset: [0, 10, 0],
-      cam_fov: 40,
+      cam_fov: 28,
     },
     environment: {
       // Matches dev injector _send_top_down_view env.
