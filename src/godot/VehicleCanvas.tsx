@@ -10,15 +10,15 @@ import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
 // Per-view framing of the car within the main view (layout points; Godot scales by pixel_ratio).
-//  - heightFrac < 1 shrinks the car (Godot scales the 3D root by frame_height / screen_height), used
-//    to fit the whole top-down climate car above the controls with a margin.
+//  - heightFrac < 1 shrinks the car (Godot scales the 3D root by frame_height / screen_height).
 //  - topMarginPt < 0 raises the car (hero angled views sit up off the bottom panel).
-// Values matched against renders of the dev harness at the phone aspect.
+// CLIMATE 0.93 = whole top-down car centred high (matched to the reference); it pairs with the short
+// climate controls panel so the full car sits above them, like the real app.
 const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; topMarginPt: number }> = {
   PARKED: { heightFrac: 1, topMarginPt: -64 },
   CHARGING: { heightFrac: 1, topMarginPt: -64 },
   CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
-  CLIMATE: { heightFrac: 0.78, topMarginPt: 0 },
+  CLIMATE: { heightFrac: 0.93, topMarginPt: 0 },
   TOP_DOWN: { heightFrac: 1, topMarginPt: 0 },
 };
 
@@ -73,8 +73,8 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
     }
   };
 
-  // Re-send the frame when the view changes so the per-mode lift (centered vs. raised) follows it,
-  // animating in step with the camera move.
+  // Re-send the frame when the view changes so the per-view framing follows it, animating in step
+  // with the camera move.
   useEffect(() => {
     if (booted.current && layout.current) {
       bridge.updateFrame(buildFrame(layout.current.width, layout.current.height, state.cameraMode, true));

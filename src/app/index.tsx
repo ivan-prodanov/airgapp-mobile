@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
+import { ClimateScreen } from '@/screens/ClimateScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { useVehicleState } from '@/state/useVehicleState';
 
@@ -10,14 +11,27 @@ import { useVehicleState } from '@/state/useVehicleState';
 // sendMessageToGodot. Real Godot rendering arrives with the device engine embed.
 export default function Index() {
   const [state, actions] = useVehicleState();
+  const isClimate = state.cameraMode === 'CLIMATE';
 
   return (
     <View style={styles.root}>
       <VehicleCanvas state={state} actions={actions}>
-        <SafeAreaView edges={['bottom']} style={styles.controls}>
-          <HomeScreen state={state} actions={actions} />
-        </SafeAreaView>
+        {isClimate ? (
+          <ClimateScreen state={state} actions={actions} />
+        ) : (
+          <SafeAreaView edges={['bottom']} style={styles.controls}>
+            <HomeScreen state={state} actions={actions} />
+          </SafeAreaView>
+        )}
       </VehicleCanvas>
+
+      {isClimate ? (
+        <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
+          <Pressable style={styles.backButton} onPress={() => actions.setCameraMode('PARKED')}>
+            <Text style={styles.backChevron}>‹</Text>
+          </Pressable>
+        </SafeAreaView>
+      ) : null}
     </View>
   );
 }
@@ -32,5 +46,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    paddingHorizontal: 12,
+    paddingTop: 4,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(40,40,40,0.7)',
+  },
+  backChevron: {
+    fontSize: 28,
+    lineHeight: 30,
+    color: 'white',
+    marginLeft: -2,
   },
 });
