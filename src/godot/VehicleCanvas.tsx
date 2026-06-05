@@ -9,8 +9,26 @@ import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
-// Lifts the car up off the bottom controls panel (frame top_margin, in layout points).
+// Hero (angled) views lift up off the bottom controls panel; straight-down views (climate/top-down)
+// fill the height and stay centered like the dev harness. In layout points; Godot scales by pixel_ratio.
 const CAR_TOP_LIFT_PT = -64;
+const CENTERED_MODES = new Set<VehicleViewState['cameraMode']>(['CLIMATE', 'TOP_DOWN']);
+
+function buildFrame(
+  width: number,
+  height: number,
+  mode: VehicleViewState['cameraMode'],
+  animated: boolean,
+): FrameData {
+  return {
+    top_margin: CENTERED_MODES.has(mode) ? 0 : CAR_TOP_LIFT_PT,
+    left_margin: 0,
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+    animated,
+    scroll_fraction: 1,
+  };
+}
 
 interface VehicleCanvasProps {
   state: VehicleViewState;
@@ -26,6 +44,7 @@ interface VehicleCanvasProps {
 export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const booted = useRef(false);
+  const layout = useRef<{ width: number; height: number } | null>(null);
 
   // RN swap: web subscribed to the renderer iframe via attachFrame(); here we subscribe to the
   // native module's onGodotMessage stream.
@@ -34,16 +53,8 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
   // RN swap: web measured the host div with a ResizeObserver; onLayout gives us the frame size.
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
-    const frame: FrameData = {
-      // Small upward lift (points; Godot scales by pixel_ratio) so the hero car clears the bottom
-      // controls panel. Negative = up. Tune CAR_TOP_LIFT_PT to taste.
-      top_margin: CAR_TOP_LIFT_PT,
-      left_margin: 0,
-      width: Math.max(1, Math.round(width)),
-      height: Math.max(1, Math.round(height)),
-      animated: false,
-      scroll_fraction: 1,
-    };
+    layout.current = { width, height };
+    const frame = buildFrame(width, height, state.cameraMode, false);
 
     if (!booted.current) {
       bridge.boot(state, frame);
@@ -52,6 +63,14 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
       bridge.updateFrame(frame);
     }
   };
+
+  // Re-send the frame when the view changes so the per-mode lift (centered vs. raised) follows it,
+  // animating in step with the camera move.
+  useEffect(() => {
+    if (booted.current && layout.current) {
+      bridge.updateFrame(buildFrame(layout.current.width, layout.current.height, state.cameraMode, true));
+    }
+  }, [bridge, state.cameraMode]);
 
   useEffect(() => {
     if (booted.current) {
