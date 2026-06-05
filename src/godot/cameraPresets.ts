@@ -65,8 +65,11 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     label: 'Climate',
     animationId: 'shell-camera-climate',
     moveCamera: {
+      // Climate is an INTERIOR view: the cabin fills the screen and the hood/frunk is off the top.
+      // offset.y 4.5 fills the width; offset.z 1.4 shifts the straight-down view toward the rear so
+      // the frunk goes off-screen and the cabin + rear sit above the controls.
       rotation: [0, 0, 0],
-      offset: [0, 4.5, 0.6],
+      offset: [0, 4.5, 1.4],
       cam_fov: 40,
       keep_aspect: 'WIDTH',
     },
