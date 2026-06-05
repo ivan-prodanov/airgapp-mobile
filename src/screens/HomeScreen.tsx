@@ -1,13 +1,5 @@
-import { useRef, useState } from 'react';
-import {
-  Animated,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import type { ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
@@ -19,88 +11,11 @@ interface ScreenProps {
   actions: VehicleActions;
 }
 
-// Tesla-app home. Header + status over the parked car. The lower content is one scroll-driven sheet:
-// swipe up raises the menus over the car (which fades via a scrim); pull down triggers refresh.
+// Tesla-app home. Header + status over the parked car (dimmed when asleep), a quick-action icon row,
+// a media bar (when awake + playing), and the navigation list. Car renders behind via VehicleCanvas.
 export function HomeScreen({ state, actions }: ScreenProps) {
-  const { height } = useWindowDimensions();
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const [refreshing, setRefreshing] = useState(false);
-
-  // The car occupies this band below the header; the sheet starts after it.
-  const carBand = height * 0.49;
-  const scrimOpacity = scrollY.interpolate({
-    inputRange: [0, carBand * 0.6],
-    outputRange: [0, 0.92],
-    extrapolate: 'clamp',
-  });
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-      actions.patch({ awake: true });
-    }, 1400);
-  };
-
   return (
     <View style={styles.root} pointerEvents="box-none">
-      {/* fades the car as the sheet rises over it */}
-      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
-
-      <Animated.ScrollView
-        style={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="rgba(255,255,255,0.6)" />}
-      >
-        <View style={{ height: carBand }} pointerEvents="none" />
-
-        <View style={styles.sheet}>
-          <View style={styles.iconRow}>
-            <QuickIcon
-              symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
-              active={!state.locked}
-              onPress={() => actions.toggle('locked')}
-            />
-            <QuickIcon symbol="fanblades.fill" active={state.climateOn} onPress={() => actions.setCameraMode('CLIMATE')} />
-            <QuickIcon symbol="bolt.fill" active={state.charging} onPress={() => actions.setCameraMode('CHARGING')} />
-            <QuickIcon symbol="car.side.front.open.fill" active={state.frunkOpen} onPress={() => actions.toggle('frunkOpen')} />
-            <QuickIcon symbol="wind" active={false} onPress={() => {}} />
-          </View>
-
-          {state.awake && state.mediaPlaying ? (
-            <View style={styles.mediaBar}>
-              <View style={styles.mediaGroup}>
-                <SymbolView name="backward.end.fill" tintColor="white" size={22} />
-                <SymbolView name="play.fill" tintColor="white" size={26} />
-                <SymbolView name="forward.end.fill" tintColor="white" size={22} />
-              </View>
-              <View style={styles.mediaDivider} />
-              <View style={styles.mediaGroup}>
-                <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={20} />
-                <SymbolView name="speaker.wave.2.fill" tintColor="white" size={22} />
-                <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={20} />
-              </View>
-            </View>
-          ) : null}
-
-          <NavRow symbol="car.fill" title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
-          <NavRow
-            symbol="fanblades.fill"
-            title="Climate"
-            subtitle={state.climateOn ? 'Active · Interior 21°C' : undefined}
-            onPress={() => actions.setCameraMode('CLIMATE')}
-          />
-          <NavRow symbol="location.fill" title="Location" subtitle="Nearby" onPress={() => {}} />
-          <NavRow symbol="steeringwheel" title="Summon" onPress={() => {}} />
-          <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
-          <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
-          <NavRow symbol="lock.shield.fill" title="Security & Drivers" onPress={() => {}} />
-        </View>
-      </Animated.ScrollView>
-
-      {/* fixed header on top of everything */}
       <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
         <View style={styles.header}>
           <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
@@ -120,6 +35,57 @@ export function HomeScreen({ state, actions }: ScreenProps) {
           <Text style={styles.statusText}>{state.awake ? 'Parked' : 'Last seen 3 days ago'}</Text>
         </View>
       </SafeAreaView>
+
+      {/* car gap — the 3D car shows through here */}
+      <View style={styles.carGap} pointerEvents="none" />
+
+      {/* One sheet: the favorite-actions bar, media bar, and menus scroll together. */}
+      <ScrollView
+        style={styles.sheet}
+        contentContainerStyle={styles.sheetContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.iconRow}>
+          <QuickIcon
+            symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
+            active={!state.locked}
+            onPress={() => actions.toggle('locked')}
+          />
+          <QuickIcon symbol="fanblades.fill" active={state.climateOn} onPress={() => actions.setCameraMode('CLIMATE')} />
+          <QuickIcon symbol="bolt.fill" active={state.charging} onPress={() => actions.setCameraMode('CHARGING')} />
+          <QuickIcon symbol="car.side.front.open.fill" active={state.frunkOpen} onPress={() => actions.toggle('frunkOpen')} />
+          <QuickIcon symbol="wind" active={false} onPress={() => {}} />
+        </View>
+
+        {state.awake && state.mediaPlaying ? (
+          <View style={styles.mediaBar}>
+            <View style={styles.mediaGroup}>
+              <SymbolView name="backward.end.fill" tintColor="white" size={22} />
+              <SymbolView name="play.fill" tintColor="white" size={26} />
+              <SymbolView name="forward.end.fill" tintColor="white" size={22} />
+            </View>
+            <View style={styles.mediaDivider} />
+            <View style={styles.mediaGroup}>
+              <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={20} />
+              <SymbolView name="speaker.wave.2.fill" tintColor="white" size={22} />
+              <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={20} />
+            </View>
+          </View>
+        ) : null}
+
+        <NavRow symbol="car.fill" title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
+        <NavRow
+          symbol="fanblades.fill"
+          title="Climate"
+          subtitle={state.climateOn ? 'Active · Interior 21°C' : undefined}
+          onPress={() => actions.setCameraMode('CLIMATE')}
+        />
+        <NavRow symbol="location.fill" title="Location" subtitle="Nearby" onPress={() => {}} />
+        <NavRow symbol="steeringwheel" title="Summon" onPress={() => {}} />
+        <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
+        <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
+        <NavRow symbol="lock.shield.fill" title="Security & Drivers" onPress={() => {}} />
+      </ScrollView>
     </View>
   );
 }
@@ -142,7 +108,7 @@ function NavRow({
   title: string;
   subtitle?: string;
   onPress: () => void;
-}) {
+}): ReactNode {
   return (
     <Pressable style={styles.navRow} onPress={onPress}>
       <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
@@ -162,23 +128,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#000',
-  },
-  scroll: {
-    flex: 1,
-  },
-  sheet: {
-    minHeight: '100%',
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-    backgroundColor: '#0a0a0c',
   },
   top: {
     paddingHorizontal: 20,
@@ -232,6 +181,17 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 15,
     color: 'rgba(255,255,255,0.45)',
+  },
+  carGap: {
+    flex: 1,
+  },
+  sheet: {
+    maxHeight: '58%',
+    flexGrow: 0,
+  },
+  sheetContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   iconRow: {
     flexDirection: 'row',
