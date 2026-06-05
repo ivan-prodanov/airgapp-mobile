@@ -16,7 +16,7 @@ import type { VehicleViewState } from '../types/vehicleTypes';
 // climate controls panel so the full car sits above them, like the real app.
 const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; topMarginPt: number }> = {
   // PARKED = home screen: car sits in the upper band (header above, controls sheet below).
-  PARKED: { heightFrac: 0.73, topMarginPt: -52 },
+  PARKED: { heightFrac: 0.76, topMarginPt: -66 },
   CHARGING: { heightFrac: 1, topMarginPt: -64 },
   CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
   CLIMATE: { heightFrac: 1, topMarginPt: 0 },
