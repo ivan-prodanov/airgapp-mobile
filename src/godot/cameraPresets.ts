@@ -45,11 +45,12 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     label: 'Top',
     animationId: 'shell-camera-top-down',
     moveCamera: {
-      // Tighter top-down: the car needn't fit fully in frame. Lower fov zooms in while keeping the
-      // flat (low-distortion) look. Tune cam_fov to taste (40 = full car, lower = tighter).
+      // Controls screen: whole car centred, top-down. Telephoto (far + narrow fov) keeps it nearly
+      // orthographic (true proportions, no perspective stretch). offset.y 10 / fov 18 fills ~the
+      // reference width with the full car frunk-to-trunk.
       rotation: [0, 0, 0],
       offset: [0, 10, 0],
-      cam_fov: 28,
+      cam_fov: 18,
       keep_aspect: 'WIDTH',
     },
     environment: {
