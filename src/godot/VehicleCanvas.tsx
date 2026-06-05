@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { type LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef } from 'react';
+import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 
 import { ExpoGodotView } from '../../modules/expo-godot-view';
 import { BridgeContext } from './bridgeContext';
 import { GodotRendererBridge } from './GodotRendererBridge';
 import type { VehicleActions } from '../state/useVehicleState';
-import type { FrameData, RendererDiagnostics } from '../types/rendererMessages';
+import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
 // Lifts the car up off the bottom controls panel (frame top_margin, in layout points).
@@ -26,12 +26,10 @@ interface VehicleCanvasProps {
 export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const booted = useRef(false);
-  const [diagnostics, setDiagnostics] = useState<RendererDiagnostics>(bridge.getDiagnostics());
 
   // RN swap: web subscribed to the renderer iframe via attachFrame(); here we subscribe to the
   // native module's onGodotMessage stream.
   useEffect(() => bridge.attach(), [bridge]);
-  useEffect(() => bridge.onDiagnostics(setDiagnostics), [bridge]);
 
   // RN swap: web measured the host div with a ResizeObserver; onLayout gives us the frame size.
   const onLayout = (event: LayoutChangeEvent) => {
@@ -66,10 +64,6 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
       <View style={styles.root} onLayout={onLayout}>
         <ExpoGodotView sceneName="mobile" style={StyleSheet.absoluteFill} />
         <View style={styles.overlay} pointerEvents="box-none">
-          <Text style={styles.diagnostics}>
-            {diagnostics.ready ? 'Renderer ready' : 'Waiting for renderer'}
-            {diagnostics.lastMessageType ? ` · ${diagnostics.lastMessageType}` : ''}
-          </Text>
           {children}
         </View>
       </View>
@@ -88,11 +82,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    justifyContent: 'space-between',
-  },
-  diagnostics: {
-    padding: 12,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
+    justifyContent: 'flex-end',
   },
 });
