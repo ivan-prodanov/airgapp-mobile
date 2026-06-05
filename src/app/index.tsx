@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SymbolView } from 'expo-symbols';
 
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
 import { ClimateScreen } from '@/screens/ClimateScreen';
@@ -28,7 +29,7 @@ export default function Index() {
       {isClimate ? (
         <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
           <Pressable style={styles.backButton} onPress={() => actions.setCameraMode('PARKED')}>
-            <Text style={styles.backChevron}>‹</Text>
+            <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
           </Pressable>
         </SafeAreaView>
       ) : null}
@@ -57,15 +58,9 @@ const styles = StyleSheet.create({
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(40,40,40,0.7)',
-  },
-  backChevron: {
-    fontSize: 28,
-    lineHeight: 30,
-    color: 'white',
-    marginLeft: -2,
+    backgroundColor: 'rgba(50,50,50,0.6)',
   },
 });
