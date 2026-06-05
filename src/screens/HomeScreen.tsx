@@ -180,7 +180,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#000',
+    // Match the Godot scene's background grey so the swipe fades the car INTO the same grey
+    // instead of driving everything to pure black.
+    backgroundColor: '#161718',
   },
   scroll: {
     flex: 1,
