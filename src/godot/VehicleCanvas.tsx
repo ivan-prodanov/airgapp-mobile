@@ -15,7 +15,8 @@ import type { VehicleViewState } from '../types/vehicleTypes';
 // CLIMATE 0.93 = whole top-down car centred high (matched to the reference); it pairs with the short
 // climate controls panel so the full car sits above them, like the real app.
 const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; topMarginPt: number }> = {
-  PARKED: { heightFrac: 1, topMarginPt: -64 },
+  // PARKED = home screen: car sits in the upper band (header above, controls list below).
+  PARKED: { heightFrac: 0.69, topMarginPt: -100 },
   CHARGING: { heightFrac: 1, topMarginPt: -64 },
   CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
   CLIMATE: { heightFrac: 1, topMarginPt: 0 },
@@ -91,6 +92,10 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
     <BridgeContext.Provider value={bridge}>
       <View style={styles.root} onLayout={onLayout}>
         <ExpoGodotView sceneName="mobile" style={StyleSheet.absoluteFill} />
+        {/* Asleep: dim the 3D car (applies to every screen). UI panels render on top, undimmed. */}
+        {!state.awake ? (
+          <View style={styles.asleepDim} pointerEvents="none" />
+        ) : null}
         <View style={styles.overlay} pointerEvents="box-none">
           {children}
         </View>
@@ -111,5 +116,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     justifyContent: 'flex-end',
+  },
+  asleepDim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
 });

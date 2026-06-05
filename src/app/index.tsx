@@ -21,11 +21,7 @@ export default function Index() {
   } else if (mode === 'controls') {
     panel = <ControlsScreen state={state} actions={actions} />;
   } else {
-    panel = (
-      <SafeAreaView edges={['bottom']} style={styles.homePanel}>
-        <HomeScreen state={state} actions={actions} />
-      </SafeAreaView>
-    );
+    panel = <HomeScreen state={state} actions={actions} />;
   }
 
   return (

@@ -31,6 +31,9 @@ export interface VehicleViewState {
   charging: boolean;
   locked: boolean;
   sentryEnabled: boolean;
+  // Whether the car is awake (online) vs. asleep. Asleep dims the 3D car on every screen and shows
+  // "Last seen ..." instead of "Parked". Stubbed for now; real wake state arrives via BLE.
+  awake: boolean;
   vehicleConnected: boolean;
   tirePressureVisible: boolean;
   mediaPlaying: boolean;
@@ -61,6 +64,7 @@ export const initialVehicleState: VehicleViewState = {
   charging: false,
   locked: true,
   sentryEnabled: false,
+  awake: true,
   vehicleConnected: true,
   tirePressureVisible: false,
   mediaPlaying: false,
