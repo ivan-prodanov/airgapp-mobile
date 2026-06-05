@@ -227,36 +227,61 @@ _MVC_FRAME_PATCH = (
     '\t\t\twidth *= _acm.pixel_ratio\n'
     '\t\t\theight *= _acm.pixel_ratio\n'
 )
+_MVC_ORBIT_MARKER = "# === iOS free orbit"
 _MVC_ORBIT = (
     '\n'
-    '# --- iOS free orbit: drag on the main view to rotate the camera (injected by fix_godot_project.py) ---\n'
-    '# Ports the LocalDevMessageInjector free-orbit. GodotHost.mm\'s UIPanGestureRecognizer feeds\n'
-    '# InputEventScreenTouch/Drag into Input; this consumes them (root-viewport node) and rotates the\n'
-    '# CameraPivot inside the sub-Viewport.\n'
+    '# === iOS free orbit: drag to rotate + release inertia (injected by fix_godot_project.py) ===\n'
+    '# Ports LocalDevMessageInjector free-orbit (drag spin + inertial coast). GodotHost.mm\'s\n'
+    '# UIPanGestureRecognizer feeds InputEventScreenTouch/Drag into Input; this root-viewport node\n'
+    '# consumes them and spins the CameraPivot, which lives in the sub-Viewport (out of input\'s reach).\n'
     'const _ORBIT_YAW_SENS = 0.16\n'
     'const _ORBIT_PITCH_SENS = 0.06\n'
     'const _ORBIT_MIN_PITCH = 1.0\n'
     'const _ORBIT_MAX_PITCH = 79.0\n'
+    'const _ORBIT_INERTIA_DAMPING = 5.0\n'
+    'const _ORBIT_MIN_INERTIA = 0.5\n'
     'var _orbit_dragging = false\n'
+    'var _orbit_velocity = Vector2.ZERO\n'
+    '\n'
+    'func _orbit_pivot():\n'
+    '\treturn get_node_or_null("Viewport/CameraManager/CameraPivot")\n'
+    '\n'
+    'func _orbit_apply(pivot, rotation_delta):\n'
+    '\tvar r = pivot.rotation_degrees\n'
+    '\tr.y += rotation_delta.x\n'
+    '\tr.x = clamp(r.x + rotation_delta.y, _ORBIT_MIN_PITCH, _ORBIT_MAX_PITCH)\n'
+    '\tr.z = 0\n'
+    '\tpivot.rotation_degrees = r\n'
     '\n'
     'func _input(event):\n'
     '\tif Engine.editor_hint:\n'
     '\t\treturn\n'
-    '\tvar _pivot = get_node_or_null("Viewport/CameraManager/CameraPivot")\n'
-    '\tif _pivot == null:\n'
+    '\tvar pivot = _orbit_pivot()\n'
+    '\tif pivot == null:\n'
     '\t\treturn\n'
     '\tif event is InputEventScreenTouch:\n'
     '\t\t_orbit_dragging = event.pressed\n'
     '\t\tif event.pressed:\n'
-    '\t\t\tvar _ct = get_node_or_null("Viewport/CameraManager/Tween")\n'
-    '\t\t\tif _ct != null and _ct.is_active():\n'
-    '\t\t\t\t_ct.remove_all()\n'
+    '\t\t\t_orbit_velocity = Vector2.ZERO\n'
+    '\t\t\tvar ct = get_node_or_null("Viewport/CameraManager/Tween")\n'
+    '\t\t\tif ct != null and ct.is_active():\n'
+    '\t\t\t\tct.remove_all()\n'
     '\telif event is InputEventScreenDrag and _orbit_dragging:\n'
-    '\t\tvar _rot = _pivot.rotation_degrees\n'
-    '\t\t_rot.y += -event.relative.x * _ORBIT_YAW_SENS\n'
-    '\t\t_rot.x = clamp(_rot.x + -event.relative.y * _ORBIT_PITCH_SENS, _ORBIT_MIN_PITCH, _ORBIT_MAX_PITCH)\n'
-    '\t\t_rot.z = 0\n'
-    '\t\t_pivot.rotation_degrees = _rot\n'
+    '\t\tvar rotation_delta = Vector2(-event.relative.x * _ORBIT_YAW_SENS, -event.relative.y * _ORBIT_PITCH_SENS)\n'
+    '\t\t_orbit_apply(pivot, rotation_delta)\n'
+    '\t\t_orbit_velocity = rotation_delta / max(get_physics_process_delta_time(), 0.008)\n'
+    '\n'
+    'func _physics_process(delta):\n'
+    '\tif Engine.editor_hint or _orbit_dragging:\n'
+    '\t\treturn\n'
+    '\tif _orbit_velocity.length() < _ORBIT_MIN_INERTIA:\n'
+    '\t\t_orbit_velocity = Vector2.ZERO\n'
+    '\t\treturn\n'
+    '\tvar pivot = _orbit_pivot()\n'
+    '\tif pivot == null:\n'
+    '\t\treturn\n'
+    '\t_orbit_apply(pivot, _orbit_velocity * delta)\n'
+    '\t_orbit_velocity = _orbit_velocity.linear_interpolate(Vector2.ZERO, min(1.0, _ORBIT_INERTIA_DAMPING * delta))\n'
 )
 
 
@@ -265,7 +290,8 @@ def patch_mainviewcontainer(project: str):
     if not os.path.exists(f):
         print("  [MainViewContainer] not found — skipped")
         return
-    txt = open(f).read()
+    original = open(f).read()
+    txt = original
     did = []
     if "_acm.pixel_ratio" not in txt:
         if _MVC_FRAME_ANCHOR in txt:
@@ -273,14 +299,21 @@ def patch_mainviewcontainer(project: str):
             did.append("frame-fit")
         else:
             print("  [MainViewContainer] frame anchor not found — frame-fit SKIPPED (check manually)")
-    if "_orbit_dragging" not in txt:
-        txt = txt.rstrip("\n") + "\n" + _MVC_ORBIT
-        did.append("free-orbit")
-    if did:
+    # Orbit is always appended last, so strip any prior block (old "# --- " or current "# === "
+    # marker) to EOF and re-append the current one. Keeps it idempotent AND upgrades older blocks.
+    for marker in ("# --- iOS free orbit", _MVC_ORBIT_MARKER):
+        if marker in txt:
+            txt = txt[: txt.index(marker)].rstrip("\n") + "\n"
+    desired = txt.rstrip("\n") + "\n" + _MVC_ORBIT
+    if desired != txt:
+        txt = desired
+        if "free-orbit" not in did:
+            did.append("free-orbit")
+    if txt != original:
         open(f, "w").write(txt)
         print("  [MainViewContainer] patched — " + " + ".join(did))
     else:
-        print("  [MainViewContainer] already has frame-fit + free-orbit — skipped")
+        print("  [MainViewContainer] already has frame-fit + free-orbit (inertia) — skipped")
 
 
 def patch_injector(project: str):
