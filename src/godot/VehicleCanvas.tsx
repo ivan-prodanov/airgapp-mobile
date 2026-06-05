@@ -9,6 +9,9 @@ import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData, RendererDiagnostics } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
+// Lifts the car up off the bottom controls panel (frame top_margin, in layout points).
+const CAR_TOP_LIFT_PT = -64;
+
 interface VehicleCanvasProps {
   state: VehicleViewState;
   // `actions` is kept on the contract for parity with web-shell; it feeds the marker overlay,
@@ -34,7 +37,9 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     const frame: FrameData = {
-      top_margin: 0,
+      // Small upward lift (points; Godot scales by pixel_ratio) so the hero car clears the bottom
+      // controls panel. Negative = up. Tune CAR_TOP_LIFT_PT to taste.
+      top_margin: CAR_TOP_LIFT_PT,
       left_margin: 0,
       width: Math.max(1, Math.round(width)),
       height: Math.max(1, Math.round(height)),

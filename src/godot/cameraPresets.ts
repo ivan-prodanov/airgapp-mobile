@@ -23,9 +23,11 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     label: 'Home',
     animationId: 'shell-camera-parked',
     moveCamera: {
+      // Matches the dev injector's parked framing (LocalDevMessageInjector._send_parked_view) so the
+      // car reads as a hero shot, not a small zoomed-out figure. fov 62 / offset.y 8.65 was too far.
       rotation: [68.6, -138, 0],
-      offset: [-0.28, 8.65, 0],
-      cam_fov: 62,
+      offset: [-0.06, 6.7, 0],
+      cam_fov: 40,
     },
     environment: {
       rotation: [0, -11, 83],
