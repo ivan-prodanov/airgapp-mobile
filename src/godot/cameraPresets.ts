@@ -68,7 +68,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [0, 0, 0],
       offset: [0, 6, 0.6],
       cam_fov: 40,
-      keep_aspect: 'HEIGHT',
+      keep_aspect: 'WIDTH',
     },
     environment: {
       // Matches dev injector _send_climate_view env.

@@ -9,10 +9,16 @@ import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
-// Hero (angled) views lift up off the bottom controls panel; straight-down views (climate/top-down)
-// fill the height and stay centered like the dev harness. In layout points; Godot scales by pixel_ratio.
-const CAR_TOP_LIFT_PT = -64;
-const CENTERED_MODES = new Set<VehicleViewState['cameraMode']>(['CLIMATE', 'TOP_DOWN']);
+// Per-view upward lift of the car within the frame (layout points; Godot scales by pixel_ratio).
+// Negative = up. Matches the dev-harness framing: hero angled views raised off the controls panel,
+// climate raises the whole top-down car above the climate controls, top-down stays centered.
+const CAR_TOP_LIFT_PT: Record<VehicleViewState['cameraMode'], number> = {
+  PARKED: -64,
+  CHARGING: -64,
+  CLOSURE_OPEN: -64,
+  CLIMATE: -88,
+  TOP_DOWN: 0,
+};
 
 function buildFrame(
   width: number,
@@ -21,7 +27,7 @@ function buildFrame(
   animated: boolean,
 ): FrameData {
   return {
-    top_margin: CENTERED_MODES.has(mode) ? 0 : CAR_TOP_LIFT_PT,
+    top_margin: CAR_TOP_LIFT_PT[mode],
     left_margin: 0,
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(height)),
