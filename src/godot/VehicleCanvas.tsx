@@ -9,15 +9,17 @@ import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
-// Per-view upward lift of the car within the frame (layout points; Godot scales by pixel_ratio).
-// Negative = up. Matches the dev-harness framing: hero angled views raised off the controls panel,
-// climate raises the whole top-down car above the climate controls, top-down stays centered.
-const CAR_TOP_LIFT_PT: Record<VehicleViewState['cameraMode'], number> = {
-  PARKED: -64,
-  CHARGING: -64,
-  CLOSURE_OPEN: -64,
-  CLIMATE: -88,
-  TOP_DOWN: 0,
+// Per-view framing of the car within the main view (layout points; Godot scales by pixel_ratio).
+//  - heightFrac < 1 shrinks the car (Godot scales the 3D root by frame_height / screen_height), used
+//    to fit the whole top-down climate car above the controls with a margin.
+//  - topMarginPt < 0 raises the car (hero angled views sit up off the bottom panel).
+// Values matched against renders of the dev harness at the phone aspect.
+const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; topMarginPt: number }> = {
+  PARKED: { heightFrac: 1, topMarginPt: -64 },
+  CHARGING: { heightFrac: 1, topMarginPt: -64 },
+  CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
+  CLIMATE: { heightFrac: 0.93, topMarginPt: 0 },
+  TOP_DOWN: { heightFrac: 1, topMarginPt: 0 },
 };
 
 function buildFrame(
@@ -26,11 +28,12 @@ function buildFrame(
   mode: VehicleViewState['cameraMode'],
   animated: boolean,
 ): FrameData {
+  const cfg = VIEW_FRAME[mode];
   return {
-    top_margin: CAR_TOP_LIFT_PT[mode],
+    top_margin: cfg.topMarginPt,
     left_margin: 0,
     width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height)),
+    height: Math.max(1, Math.round(height * cfg.heightFrac)),
     animated,
     scroll_fraction: 1,
   };
