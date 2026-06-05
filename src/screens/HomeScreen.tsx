@@ -39,7 +39,12 @@ export function HomeScreen({ state, actions }: ScreenProps) {
       {/* car gap — the 3D car shows through here */}
       <View style={styles.carGap} pointerEvents="none" />
 
-      <View style={styles.bottom} pointerEvents="box-none">
+      {/* One sheet: the favorite-actions bar, media bar, and menus scroll together. */}
+      <ScrollView
+        style={styles.sheet}
+        contentContainerStyle={styles.sheetContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.iconRow}>
           <QuickIcon
             symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
@@ -68,21 +73,19 @@ export function HomeScreen({ state, actions }: ScreenProps) {
           </View>
         ) : null}
 
-        <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          <NavRow symbol="car.fill" title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
-          <NavRow
-            symbol="fanblades.fill"
-            title="Climate"
-            subtitle={state.climateOn ? 'Active · Interior 21°C' : undefined}
-            onPress={() => actions.setCameraMode('CLIMATE')}
-          />
-          <NavRow symbol="location.fill" title="Location" subtitle="Nearby" onPress={() => {}} />
-          <NavRow symbol="steeringwheel" title="Summon" onPress={() => {}} />
-          <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
-          <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
-          <NavRow symbol="lock.shield.fill" title="Security & Drivers" onPress={() => {}} />
-        </ScrollView>
-      </View>
+        <NavRow symbol="car.fill" title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
+        <NavRow
+          symbol="fanblades.fill"
+          title="Climate"
+          subtitle={state.climateOn ? 'Active · Interior 21°C' : undefined}
+          onPress={() => actions.setCameraMode('CLIMATE')}
+        />
+        <NavRow symbol="location.fill" title="Location" subtitle="Nearby" onPress={() => {}} />
+        <NavRow symbol="steeringwheel" title="Summon" onPress={() => {}} />
+        <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
+        <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
+        <NavRow symbol="lock.shield.fill" title="Security & Drivers" onPress={() => {}} />
+      </ScrollView>
     </View>
   );
 }
@@ -182,8 +185,13 @@ const styles = StyleSheet.create({
   carGap: {
     flex: 1,
   },
-  bottom: {
+  sheet: {
+    maxHeight: '58%',
+    flexGrow: 0,
+  },
+  sheetContent: {
     paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   iconRow: {
     flexDirection: 'row',
@@ -213,12 +221,6 @@ const styles = StyleSheet.create({
     width: StyleSheet.hairlineWidth,
     height: 28,
     backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  list: {
-    maxHeight: '52%',
-  },
-  listContent: {
-    paddingBottom: 12,
   },
   navRow: {
     flexDirection: 'row',
