@@ -46,9 +46,10 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       cam_fov: 40,
     },
     environment: {
-      rotation: [0, -3, 87],
-      env_energy: 4.5,
-      amb_energy: 4,
+      // Matches dev injector _send_top_down_view env.
+      rotation: [-10, -10, 0],
+      env_energy: 6,
+      amb_energy: 2.5,
     },
     fadeRoof: false,
   },
@@ -62,7 +63,8 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       cam_fov: 40,
     },
     environment: {
-      rotation: [0, 40, 0],
+      // Matches dev injector _send_climate_view env.
+      rotation: [0, -7, 83],
       env_energy: 4,
       amb_energy: 4,
     },

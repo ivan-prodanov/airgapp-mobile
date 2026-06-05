@@ -58,6 +58,11 @@ export function HomeScreen({ state, actions }: ScreenProps) {
           </ShellButton>
         </Cell>
         <Cell>
+          <ShellButton active={state.cameraMode === 'TOP_DOWN'} onPress={() => actions.setCameraMode('TOP_DOWN')}>
+            Top view
+          </ShellButton>
+        </Cell>
+        <Cell>
           <ShellButton active={state.mediaPlaying} onPress={() => actions.toggle('mediaPlaying')}>
             Media playback
           </ShellButton>
