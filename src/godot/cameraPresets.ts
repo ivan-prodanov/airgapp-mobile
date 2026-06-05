@@ -69,7 +69,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       // offset.y 4.5 fills the width; offset.z 1.4 shifts the straight-down view toward the rear so
       // the frunk goes off-screen and the cabin + rear sit above the controls.
       rotation: [0, 0, 0],
-      offset: [0, 4.0, 1.3],
+      offset: [0, 4.4, 1.4],
       cam_fov: 40,
       keep_aspect: 'WIDTH',
     },
