@@ -66,7 +66,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     animationId: 'shell-camera-climate',
     moveCamera: {
       rotation: [0, 0, 0],
-      offset: [0, 6, 0.6],
+      offset: [0, 4.5, 0.6],
       cam_fov: 40,
       keep_aspect: 'WIDTH',
     },

@@ -18,7 +18,7 @@ const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; t
   PARKED: { heightFrac: 1, topMarginPt: -64 },
   CHARGING: { heightFrac: 1, topMarginPt: -64 },
   CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
-  CLIMATE: { heightFrac: 0.93, topMarginPt: 0 },
+  CLIMATE: { heightFrac: 1, topMarginPt: 0 },
   TOP_DOWN: { heightFrac: 1, topMarginPt: 0 },
 };
 
