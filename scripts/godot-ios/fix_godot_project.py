@@ -211,6 +211,78 @@ def patch_cameramanager(project: str):
     print("  [CameraManager] patched — portrait fit added")
 
 
+# MainViewContainer hosts both the frame-fit fix and free orbit, because (per mobile.tscn) it is the
+# only node in the *root* viewport that sits on the car: CameraManager lives inside a sub-Viewport, so
+# its _input never sees events injected via Input::parse_input_event. MainViewContainer's _input does.
+_MVC_FRAME_ANCHOR = '\tvar height = data.get("height", screen_height)\n'
+_MVC_FRAME_PATCH = (
+    '\t# iOS fit: RN reports the main-view frame in points; the Godot viewport is in device pixels,\n'
+    '\t# so scale by pixel_ratio or the car renders tiny in the corner. No-op when pixel_ratio==1\n'
+    '\t# (the local dev harness) or off-iOS.\n'
+    '\tif OS.get_name() == "iOS":\n'
+    '\t\tvar _acm = get_node_or_null("/root/Mobile/AppConfigManager")\n'
+    '\t\tif _acm != null and _acm.pixel_ratio > 0:\n'
+    '\t\t\ttop_margin *= _acm.pixel_ratio\n'
+    '\t\t\tleft_margin *= _acm.pixel_ratio\n'
+    '\t\t\twidth *= _acm.pixel_ratio\n'
+    '\t\t\theight *= _acm.pixel_ratio\n'
+)
+_MVC_ORBIT = (
+    '\n'
+    '# --- iOS free orbit: drag on the main view to rotate the camera (injected by fix_godot_project.py) ---\n'
+    '# Ports the LocalDevMessageInjector free-orbit. GodotHost.mm\'s UIPanGestureRecognizer feeds\n'
+    '# InputEventScreenTouch/Drag into Input; this consumes them (root-viewport node) and rotates the\n'
+    '# CameraPivot inside the sub-Viewport.\n'
+    'const _ORBIT_YAW_SENS = 0.16\n'
+    'const _ORBIT_PITCH_SENS = 0.06\n'
+    'const _ORBIT_MIN_PITCH = 1.0\n'
+    'const _ORBIT_MAX_PITCH = 79.0\n'
+    'var _orbit_dragging = false\n'
+    '\n'
+    'func _input(event):\n'
+    '\tif Engine.editor_hint:\n'
+    '\t\treturn\n'
+    '\tvar _pivot = get_node_or_null("Viewport/CameraManager/CameraPivot")\n'
+    '\tif _pivot == null:\n'
+    '\t\treturn\n'
+    '\tif event is InputEventScreenTouch:\n'
+    '\t\t_orbit_dragging = event.pressed\n'
+    '\t\tif event.pressed:\n'
+    '\t\t\tvar _ct = get_node_or_null("Viewport/CameraManager/Tween")\n'
+    '\t\t\tif _ct != null and _ct.is_active():\n'
+    '\t\t\t\t_ct.remove_all()\n'
+    '\telif event is InputEventScreenDrag and _orbit_dragging:\n'
+    '\t\tvar _rot = _pivot.rotation_degrees\n'
+    '\t\t_rot.y += -event.relative.x * _ORBIT_YAW_SENS\n'
+    '\t\t_rot.x = clamp(_rot.x + -event.relative.y * _ORBIT_PITCH_SENS, _ORBIT_MIN_PITCH, _ORBIT_MAX_PITCH)\n'
+    '\t\t_rot.z = 0\n'
+    '\t\t_pivot.rotation_degrees = _rot\n'
+)
+
+
+def patch_mainviewcontainer(project: str):
+    f = os.path.join(project, "mobile", "scripts", "MainViewContainer.gd")
+    if not os.path.exists(f):
+        print("  [MainViewContainer] not found — skipped")
+        return
+    txt = open(f).read()
+    did = []
+    if "_acm.pixel_ratio" not in txt:
+        if _MVC_FRAME_ANCHOR in txt:
+            txt = txt.replace(_MVC_FRAME_ANCHOR, _MVC_FRAME_ANCHOR + _MVC_FRAME_PATCH, 1)
+            did.append("frame-fit")
+        else:
+            print("  [MainViewContainer] frame anchor not found — frame-fit SKIPPED (check manually)")
+    if "_orbit_dragging" not in txt:
+        txt = txt.rstrip("\n") + "\n" + _MVC_ORBIT
+        did.append("free-orbit")
+    if did:
+        open(f, "w").write(txt)
+        print("  [MainViewContainer] patched — " + " + ".join(did))
+    else:
+        print("  [MainViewContainer] already has frame-fit + free-orbit — skipped")
+
+
 def patch_injector(project: str):
     f = os.path.join(project, "mobile", "scripts", "LocalDevMessageInjector.gd")
     if not os.path.exists(f):
@@ -238,6 +310,7 @@ def main():
     ensure_lossless_textures(project)
     patch_mobilecomm(project)
     patch_cameramanager(project)
+    patch_mainviewcontainer(project)
     patch_injector(project)
     print("Done — ready to export the iOS .pck.")
 
