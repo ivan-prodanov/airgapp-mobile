@@ -50,7 +50,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       // reference width with the full car frunk-to-trunk.
       rotation: [0, 0, 0],
       offset: [0, 10, 0],
-      cam_fov: 18,
+      cam_fov: 20,
       keep_aspect: 'WIDTH',
     },
     environment: {
