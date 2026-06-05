@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
@@ -11,52 +11,40 @@ interface ScreenProps {
   actions: VehicleActions;
 }
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
-// Tesla-app home. Header + status over the parked car. The lower content is a sheet at rest just
-// below the car; swipe it up and it slides over the car (which fades via a scrim). Swipe down to rest.
+// Tesla-app home. Header + status over the parked car (dimmed when asleep), a quick-action icon row,
+// a media bar (when awake + playing), and the navigation list. Car renders behind via VehicleCanvas.
 export function HomeScreen({ state, actions }: ScreenProps) {
-  const { height } = useWindowDimensions();
-  const REST = height * 0.28; // how far the sheet sits below its expanded (over-the-car) position
-  const translateY = useRef(new Animated.Value(REST)).current;
-  const startY = useRef(REST);
-
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderGrant: () => {
-        translateY.stopAnimation((v) => {
-          startY.current = v;
-        });
-      },
-      onPanResponderMove: (_e, g) => {
-        translateY.setValue(clamp(startY.current + g.dy, 0, REST));
-      },
-      onPanResponderRelease: (_e, g) => {
-        const current = clamp(startY.current + g.dy, 0, REST);
-        const dest = g.vy < -0.4 || current < REST / 2 ? 0 : REST;
-        Animated.spring(translateY, { toValue: dest, useNativeDriver: false, bounciness: 2, speed: 14 }).start();
-      },
-    }),
-  ).current;
-
-  const scrimOpacity = translateY.interpolate({
-    inputRange: [0, REST],
-    outputRange: [0.92, 0],
-    extrapolate: 'clamp',
-  });
-
   return (
     <View style={styles.root} pointerEvents="box-none">
-      {/* fades the car as the sheet rises over it */}
-      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
+      <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
+        <View style={styles.header}>
+          <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
+            <Text style={styles.name}>Red Velvet</Text>
+            <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
+          </Pressable>
+          <View style={styles.headerIcons}>
+            <SymbolView name="ellipsis.message" tintColor="white" size={22} />
+            <SymbolView name="line.3.horizontal" tintColor="white" size={24} />
+          </View>
+        </View>
+        <View style={styles.status}>
+          <View style={styles.battery}>
+            <View style={styles.batteryFill} />
+          </View>
+          <Text style={styles.statusPct}>48%</Text>
+          <Text style={styles.statusText}>{state.awake ? 'Parked' : 'Last seen 3 days ago'}</Text>
+        </View>
+      </SafeAreaView>
 
-      <Animated.View
-        style={[styles.sheet, { height: height * 0.86, transform: [{ translateY }] }]}
-        {...pan.panHandlers}
+      {/* car gap — the 3D car shows through here */}
+      <View style={styles.carGap} pointerEvents="none" />
+
+      {/* One sheet: the favorite-actions bar, media bar, and menus scroll together. */}
+      <ScrollView
+        style={styles.sheet}
+        contentContainerStyle={styles.sheetContent}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.handle} />
-
         <View style={styles.iconRow}>
           <QuickIcon
             symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
@@ -97,28 +85,7 @@ export function HomeScreen({ state, actions }: ScreenProps) {
         <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
         <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
         <NavRow symbol="lock.shield.fill" title="Security & Drivers" onPress={() => {}} />
-      </Animated.View>
-
-      {/* fixed header on top */}
-      <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
-        <View style={styles.header}>
-          <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
-            <Text style={styles.name}>Red Velvet</Text>
-            <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
-          </Pressable>
-          <View style={styles.headerIcons}>
-            <SymbolView name="ellipsis.message" tintColor="white" size={22} />
-            <SymbolView name="line.3.horizontal" tintColor="white" size={24} />
-          </View>
-        </View>
-        <View style={styles.status}>
-          <View style={styles.battery}>
-            <View style={styles.batteryFill} />
-          </View>
-          <Text style={styles.statusPct}>48%</Text>
-          <Text style={styles.statusText}>{state.awake ? 'Parked' : 'Last seen 3 days ago'}</Text>
-        </View>
-      </SafeAreaView>
+      </ScrollView>
     </View>
   );
 }
@@ -141,7 +108,7 @@ function NavRow({
   title: string;
   subtitle?: string;
   onPress: () => void;
-}) {
+}): ReactNode {
   return (
     <Pressable style={styles.navRow} onPress={onPress}>
       <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
@@ -161,31 +128,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  scrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#000',
-  },
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    backgroundColor: '#0a0a0c',
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    marginTop: 8,
-    marginBottom: 2,
   },
   top: {
     paddingHorizontal: 20,
@@ -239,6 +181,17 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 15,
     color: 'rgba(255,255,255,0.45)',
+  },
+  carGap: {
+    flex: 1,
+  },
+  sheet: {
+    maxHeight: '58%',
+    flexGrow: 0,
+  },
+  sheetContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   iconRow: {
     flexDirection: 'row',
