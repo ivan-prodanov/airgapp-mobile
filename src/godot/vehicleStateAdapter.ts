@@ -81,6 +81,7 @@ export function createMoveCameraMessages(mode: CameraMode, animated: boolean): G
         rotation: preset.moveCamera.rotation,
         offset: preset.moveCamera.offset,
         cam_fov: preset.moveCamera.cam_fov,
+        keep_aspect: preset.moveCamera.keep_aspect,
         animated,
         duration: 0.75,
         animation_id: preset.animationId,

@@ -184,31 +184,57 @@ def patch_mobilecomm(project: str):
     print("  [MobileComm] patched — iOS binds IOSGodotInterface")
 
 
+_CAM_READY_FIT = (
+    "\t# iOS portrait fit default: keep horizontal FOV so the wide car fills the screen width\n"
+    "\t# (Godot's vertical FOV over-zooms on tall aspects). on_move_camera overrides per view.\n"
+    "\tif camera and get_viewport().size.x < get_viewport().size.y:\n"
+    "\t\tcamera.keep_aspect = Camera.KEEP_WIDTH\n"
+)
+_CAM_KEEPASPECT_ANCHOR = '\tvar animation_id = data.get("animation_id")\n'
+_CAM_KEEPASPECT = (
+    '\t# Per-view aspect (sent by RN per cameraPreset): straight-down views (top/climate) keep the\n'
+    '\t# vertical FOV so the car length fills the tall screen and the hood is cropped; angled views\n'
+    '\t# (parked/charge) keep width so the wide car fits. Default (no field) leaves the _ready fit.\n'
+    '\tvar _keep_aspect = data.get("keep_aspect", null)\n'
+    '\tif _keep_aspect == "WIDTH":\n'
+    '\t\tcamera.keep_aspect = Camera.KEEP_WIDTH\n'
+    '\telif _keep_aspect == "HEIGHT":\n'
+    '\t\tcamera.keep_aspect = Camera.KEEP_HEIGHT\n'
+)
+
+
 def patch_cameramanager(project: str):
     f = os.path.join(project, "mobile", "scripts", "CameraManager.gd")
     if not os.path.exists(f):
         print("  [CameraManager] not found — skipped")
         return
-    txt = open(f).read()
-    if "Camera.KEEP_WIDTH" in txt:
-        print("  [CameraManager] already has portrait fit — skipped")
-        return
-    start = re.search(r"^func _ready\(\):", txt, re.M)
-    if not start:
-        print("  [CameraManager] _ready() not found — SKIPPED")
-        return
-    s = start.start()
-    nxt = re.search(r"^func ", txt[s + 1:], re.M)
-    e = (s + 1 + nxt.start()) if nxt else len(txt)
-    fit = (
-        "\t# iOS portrait fit: keep horizontal FOV so the wide car fills the screen width\n"
-        "\t# (Godot's default vertical FOV over-zooms on tall aspects).\n"
-        "\tif camera and get_viewport().size.x < get_viewport().size.y:\n"
-        "\t\tcamera.keep_aspect = Camera.KEEP_WIDTH\n"
-    )
-    body = txt[s:e].rstrip("\n")
-    open(f, "w").write(txt[:s] + body + "\n" + fit + "\n" + txt[e:])
-    print("  [CameraManager] patched — portrait fit added")
+    original = open(f).read()
+    txt = original
+    did = []
+    # Part A: _ready portrait-fit default (skip if already present).
+    if "Camera.KEEP_WIDTH" not in txt:
+        start = re.search(r"^func _ready\(\):", txt, re.M)
+        if start:
+            s = start.start()
+            nxt = re.search(r"^func ", txt[s + 1:], re.M)
+            e = (s + 1 + nxt.start()) if nxt else len(txt)
+            body = txt[s:e].rstrip("\n")
+            txt = txt[:s] + body + "\n" + _CAM_READY_FIT + "\n" + txt[e:]
+            did.append("portrait-fit")
+        else:
+            print("  [CameraManager] _ready() not found — portrait-fit SKIPPED")
+    # Part B: on_move_camera per-view keep_aspect override.
+    if 'data.get("keep_aspect"' not in txt:
+        if _CAM_KEEPASPECT_ANCHOR in txt:
+            txt = txt.replace(_CAM_KEEPASPECT_ANCHOR, _CAM_KEEPASPECT_ANCHOR + _CAM_KEEPASPECT, 1)
+            did.append("per-view-aspect")
+        else:
+            print("  [CameraManager] keep_aspect anchor not found — per-view SKIPPED (check manually)")
+    if txt != original:
+        open(f, "w").write(txt)
+        print("  [CameraManager] patched — " + " + ".join(did))
+    else:
+        print("  [CameraManager] already has portrait-fit + per-view aspect — skipped")
 
 
 # MainViewContainer hosts both the frame-fit fix and free orbit, because (per mobile.tscn) it is the

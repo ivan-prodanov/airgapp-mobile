@@ -8,6 +8,9 @@ export interface CameraPreset {
     rotation: [number, number, number];
     offset: [number, number, number];
     cam_fov: number;
+    // Which axis the camera preserves on the tall phone screen. 'WIDTH' for angled hero/charge views
+    // (wide car fits width); 'HEIGHT' for straight-down views (car length fills height, hood cropped).
+    keep_aspect: 'WIDTH' | 'HEIGHT';
   };
   environment: {
     rotation: [number, number, number];
@@ -28,6 +31,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [68.6, -138, 0],
       offset: [-0.06, 6.7, 0],
       cam_fov: 40,
+      keep_aspect: 'WIDTH',
     },
     environment: {
       rotation: [0, -11, 83],
@@ -46,6 +50,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [0, 0, 0],
       offset: [0, 10, 0],
       cam_fov: 28,
+      keep_aspect: 'WIDTH',
     },
     environment: {
       // Matches dev injector _send_top_down_view env.
@@ -63,6 +68,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [0, 0, 0],
       offset: [0, 6, 0.6],
       cam_fov: 40,
+      keep_aspect: 'HEIGHT',
     },
     environment: {
       // Matches dev injector _send_climate_view env.
@@ -80,6 +86,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [74, -38, 0],
       offset: [0, 6.55, 0],
       cam_fov: 40,
+      keep_aspect: 'WIDTH',
     },
     environment: {
       rotation: [-20, 53, 30],
@@ -96,6 +103,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [62.654, -139.64, 0],
       offset: [-0.086, 4.7, 0],
       cam_fov: 58,
+      keep_aspect: 'WIDTH',
     },
     environment: {
       rotation: [0, 45, 0],
