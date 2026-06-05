@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef } from 'react';
+import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
@@ -11,11 +11,47 @@ interface ScreenProps {
   actions: VehicleActions;
 }
 
-// Tesla-app home. Header + status over the parked car (dimmed when asleep), a quick-action icon row,
-// a media bar (when awake + playing), and the navigation list. Car renders behind via VehicleCanvas.
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+// Tesla-app home. Header + status over the parked car. The menu (favorite-actions bar + rows) sits at
+// rest just below the car and is TRANSPARENT (no panel). Swipe it up and it slides over the car while
+// a pure-black scrim fades the car out, so the menu ends up on plain black — no seam, layout unchanged.
 export function HomeScreen({ state, actions }: ScreenProps) {
+  const { height } = useWindowDimensions();
+  const EXPAND = height * 0.28; // how far the menu can slide up over the car
+  const translateY = useRef(new Animated.Value(0)).current; // 0 = rest, -EXPAND = raised over the car
+  const startY = useRef(0);
+
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderGrant: () => {
+        translateY.stopAnimation((v) => {
+          startY.current = v;
+        });
+      },
+      onPanResponderMove: (_e, g) => {
+        translateY.setValue(clamp(startY.current + g.dy, -EXPAND, 0));
+      },
+      onPanResponderRelease: (_e, g) => {
+        const current = clamp(startY.current + g.dy, -EXPAND, 0);
+        const dest = g.vy < -0.4 || current < -EXPAND / 2 ? -EXPAND : 0;
+        Animated.spring(translateY, { toValue: dest, useNativeDriver: false, bounciness: 2, speed: 14 }).start();
+      },
+    }),
+  ).current;
+
+  const scrimOpacity = translateY.interpolate({
+    inputRange: [-EXPAND, 0],
+    outputRange: [0.92, 0],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={styles.root} pointerEvents="box-none">
+      {/* pure black, fades the car in as the menu rises over it */}
+      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
+
       <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
         <View style={styles.header}>
           <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
@@ -36,15 +72,10 @@ export function HomeScreen({ state, actions }: ScreenProps) {
         </View>
       </SafeAreaView>
 
-      {/* car gap — the 3D car shows through here */}
       <View style={styles.carGap} pointerEvents="none" />
 
-      {/* One sheet: the favorite-actions bar, media bar, and menus scroll together. */}
-      <ScrollView
-        style={styles.sheet}
-        contentContainerStyle={styles.sheetContent}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* transparent menu; slides up on swipe, no background */}
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]} {...pan.panHandlers}>
         <View style={styles.iconRow}>
           <QuickIcon
             symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
@@ -85,7 +116,7 @@ export function HomeScreen({ state, actions }: ScreenProps) {
         <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
         <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
         <NavRow symbol="lock.shield.fill" title="Security & Drivers" onPress={() => {}} />
-      </ScrollView>
+      </Animated.View>
     </View>
   );
 }
@@ -108,7 +139,7 @@ function NavRow({
   title: string;
   subtitle?: string;
   onPress: () => void;
-}): ReactNode {
+}) {
   return (
     <Pressable style={styles.navRow} onPress={onPress}>
       <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
@@ -128,6 +159,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
   },
   top: {
     paddingHorizontal: 20,
@@ -186,10 +225,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheet: {
-    maxHeight: '58%',
-    flexGrow: 0,
-  },
-  sheetContent: {
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
