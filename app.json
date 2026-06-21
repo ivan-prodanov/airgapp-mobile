@@ -8,7 +8,6 @@
     "scheme": "airgapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "bundleIdentifier": "local.airgapp.mobile"
     },
     "android": {
