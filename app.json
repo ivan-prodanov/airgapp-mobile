@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "tesla-mobile",
-    "slug": "tesla-mobile",
+    "name": "airgapp",
+    "slug": "airgapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "teslamobile",
+    "scheme": "airgapp",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.anonymous.tesla-mobile"
+      "bundleIdentifier": "local.airgapp.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,6 +33,14 @@
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
           }
         }
       ]
