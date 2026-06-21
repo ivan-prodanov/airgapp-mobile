@@ -17,7 +17,7 @@
 # Prereqs:
 #   - Godot 3.2.stable at /Applications/Godot.app, iOS export templates installed.
 #   - A standalone Release build already exists (build once with:
-#       xcodebuild -workspace ios/teslamobile.xcworkspace -scheme teslamobile -configuration Release \
+#       xcodebuild -workspace ios/airgapp.xcworkspace -scheme airgapp -configuration Release \
 #         -sdk iphoneos -destination 'generic/platform=iOS' -allowProvisioningUpdates \
 #         DEVELOPMENT_TEAM=859B8N529C CODE_SIGN_STYLE=Automatic build
 #     Rebuild only when NATIVE (.mm/.swift) code changes; pck-only changes use this script.
@@ -32,9 +32,11 @@ APP_REPO="/Users/ivan/Work/airgapp/mobile"
 GODOT="/Applications/Godot.app/Contents/MacOS/Godot"
 PRESET="iOS"
 MODULE_PCK="$APP_REPO/modules/expo-godot-view/ios/airgapp.pck"
-APP="/Users/ivan/Library/Developer/Xcode/DerivedData/teslamobile-dihipsoggmafrhgojssgbzkhwcmg/Build/Products/Release-iphoneos/teslamobile.app"
+# Glob the standalone Release build rather than hardcoding the DerivedData hash (survives clean
+# rebuilds). Pick the newest match if more than one airgapp-* DerivedData dir has a Release app.
+APP="$(ls -dt "$HOME"/Library/Developer/Xcode/DerivedData/airgapp-*/Build/Products/Release-iphoneos/airgapp.app 2>/dev/null | head -1)"
 DEVICE="F3867E6E-E95F-5B2A-9C4E-06D1D72475A1"   # CoreDevice id (devicectl)
-BUNDLE_ID="com.anonymous.tesla-mobile"
+BUNDLE_ID="local.airgapp.mobile"
 
 [ -f "$PROJECT/project.godot" ] || { echo "ERROR: not a Godot project: $PROJECT" >&2; exit 1; }
 [ -x "$GODOT" ] || { echo "ERROR: Godot not found at $GODOT" >&2; exit 1; }
