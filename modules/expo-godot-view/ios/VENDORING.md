@@ -35,7 +35,7 @@ cp /Users/ivan/Downloads/temp_fake_viz2/airgapp.pck airgapp.pck
 ## Matching engine source (for headers)
 
 Embed code that calls `iphone_main`/`Main::setup`/`OSIPhone`/`GLView` compiles against Godot 3.2
-headers cloned at `/Users/ivan/Work/rpi-filter/godot-3.2-src` (tag `3.2-stable`, matches the
+headers cloned at `/Users/ivan/Work/airgapp/godot-src` (tag `3.2-stable`, matches the
 prebuilt `.a` ABI). Reclone: `git clone --depth 1 --branch 3.2-stable https://github.com/godotengine/godot.git`.
 
 ### Generated headers (REQUIRED — the source clone alone won't compile)
@@ -44,7 +44,7 @@ Godot's headers `#include` build-generated files that a plain clone lacks. After
 them into the clone (one-time):
 
 ```sh
-cd /Users/ivan/Work/rpi-filter/godot-3.2-src
+cd /Users/ivan/Work/airgapp/godot-src
 python3 -c "import sys; sys.path.insert(0,'core'); import make_binders; \
   make_binders.run(['core/method_bind.gen.inc','core/method_bind_ext.gen.inc','core/method_bind_free_func.gen.inc'], None, None)"
 cat > core/version_generated.gen.h <<'V'

@@ -1,7 +1,16 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef, useState, type ReactNode } from 'react';
+import {
+  Animated,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
 
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
@@ -11,49 +20,220 @@ interface Props {
   actions: VehicleActions;
 }
 
-const MIN_TEMP = 15;
-const MAX_TEMP = 28;
+// Temperature dial domain (matches the real app): LO, 15.5, 16.0 … 27.5, HI in 0.5° steps.
+// 15.0 is the LO sentinel, 28.0 is HI; everything in between shows the number.
+const LO_TEMP = 15;
+const HI_TEMP = 28;
+const clampTemp = (v: number) => Math.min(HI_TEMP, Math.max(LO_TEMP, Math.round(v * 2) / 2));
+const formatTemp = (v: number) => (v <= LO_TEMP ? 'LO' : v >= HI_TEMP ? 'HI' : `${v.toFixed(1)}°`);
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-// Climate controls sheet — RN build of the Tesla climate screen (Pic 2). Kept short so the whole
-// top-down car sits above it. Visible rows match the reference; more rows to come with full refs.
+const tap = () => Haptics.selectionAsync().catch(() => {});
+const bump = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
+type OverheatMode = 'off' | 'noac' | 'on';
+type ActivationTemp = '30' | '35' | '40';
+
+// Climate controls — RN build of the Tesla climate sheet. The bar is a bottom-anchored panel that you
+// drag up/down BY THE PANEL ITSELF (like the real app — swiping above it, on the car, does nothing).
+// Collapsed it shows the temp row; dragging up reveals Defrost / Bioweapon / Camp / Pet / Cabin Overheat.
 export function ClimateScreen({ state, actions }: Props) {
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  // Collapsed peek = how much of the panel shows at rest (handle + temp row + Defrost), placing the
+  // grab handle at ~0.75 of the screen like the official app.
+  const PEEK = height * 0.25;
+
+  // Bottom-anchored panel translated down by `translateY`; snaps between collapsed and expanded.
+  const translateY = useRef(new Animated.Value(height)).current;
+  const snap = useRef({ collapsed: height, expanded: 0 });
+  const restingY = useRef(height);
+  const measured = useRef(false);
+
+  const onSheetLayout = (e: { nativeEvent: { layout: { height: number } } }) => {
+    const h = e.nativeEvent.layout.height;
+    const collapsed = Math.max(0, h - PEEK);
+    snap.current = { collapsed, expanded: 0 };
+    if (!measured.current) {
+      measured.current = true;
+      translateY.setValue(collapsed);
+      restingY.current = collapsed;
+    }
+  };
+
+  const pan = useRef(
+    PanResponder.create({
+      // Only claim clear vertical drags (taps fall through to the buttons; the car above is untouched).
+      onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_e, g) => {
+        const { expanded, collapsed } = snap.current;
+        translateY.setValue(clamp(restingY.current + g.dy, expanded, collapsed));
+      },
+      onPanResponderRelease: (_e, g) => {
+        const { expanded, collapsed } = snap.current;
+        const projected = restingY.current + g.dy + g.vy * 120;
+        const target = projected < (expanded + collapsed) / 2 ? expanded : collapsed;
+        restingY.current = target;
+        Animated.spring(translateY, { toValue: target, useNativeDriver: true, bounciness: 1, speed: 16 }).start();
+      },
+    }),
+  ).current;
+
   const [temp, setTemp] = useState(19.5);
-  const adjust = (delta: number) =>
-    setTemp((current) => Math.min(MAX_TEMP, Math.max(MIN_TEMP, Math.round((current + delta) * 2) / 2)));
+  const [overheat, setOverheat] = useState<OverheatMode>('on');
+  const [activation, setActivation] = useState<ActivationTemp>('40');
+  const [bioweapon, setBioweapon] = useState(false);
+  const [camp, setCamp] = useState(false);
+  const [pet, setPet] = useState(false);
+
+  const vented =
+    state.leftFrontWindowOpen ||
+    state.rightFrontWindowOpen ||
+    state.leftRearWindowOpen ||
+    state.rightRearWindowOpen;
+
+  const adjustTemp = (delta: number) => {
+    tap();
+    setTemp((current) => clampTemp(current + delta));
+  };
+
+  // "Vent" lowers all windows a little; "Close" raises them. Drives the four window flags the Godot
+  // car already animates (window_animation_state in the state adapter).
+  const toggleVent = () => {
+    bump();
+    const open = !vented;
+    actions.patch({
+      leftFrontWindowOpen: open,
+      rightFrontWindowOpen: open,
+      leftRearWindowOpen: open,
+      rightRearWindowOpen: open,
+    });
+  };
+
+  // Defrost Car: (1) turn climate ON, (2) set temp to HI, (3) run front + rear defrost (harness G + H).
+  const toggleDefrost = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const on = !state.frontDefrostOn;
+    if (on) {
+      actions.patch({ climateOn: true, frontDefrostOn: true, rearDefrostOn: true });
+      setTemp(HI_TEMP);
+    } else {
+      actions.patch({ frontDefrostOn: false, rearDefrostOn: false });
+    }
+  };
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.panel}>
-      <View style={styles.handle} />
+    // box-none: touches above the panel fall through to the orbit guard (VehicleCanvas) — nothing
+    // happens on the car. The panel below captures its own drags/taps.
+    <View style={styles.root} pointerEvents="box-none">
+      <Animated.View
+        onLayout={onSheetLayout}
+        style={[styles.sheet, { paddingBottom: insets.bottom + 20, transform: [{ translateY }] }]}
+        {...pan.panHandlers}
+      >
+        <View style={styles.handle} />
 
-      <View style={styles.tempRow}>
-        <Quick
-          symbol="power"
-          label={state.climateOn ? 'On' : 'Off'}
-          active={state.climateOn}
-          onPress={() => actions.toggle('climateOn')}
-        />
+        <View style={styles.tempRow}>
+          <Quick
+            symbol="power"
+            label={state.climateOn ? 'On' : 'Off'}
+            active={state.climateOn}
+            onPress={() => {
+              tap();
+              actions.toggle('climateOn');
+            }}
+          />
 
-        <View style={styles.tempControl}>
-          <Pressable hitSlop={16} onPress={() => adjust(-0.5)}>
-            <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.55)" size={22} />
-          </Pressable>
-          <Text style={styles.temp}>{temp.toFixed(1)}°</Text>
-          <Pressable hitSlop={16} onPress={() => adjust(0.5)}>
-            <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.55)" size={22} />
-          </Pressable>
+          <View style={styles.tempControl}>
+            <Pressable hitSlop={16} onPress={() => adjustTemp(-0.5)}>
+              <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
+            </Pressable>
+            <Text style={styles.temp}>{formatTemp(temp)}</Text>
+            <Pressable hitSlop={16} onPress={() => adjustTemp(0.5)}>
+              <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
+            </Pressable>
+          </View>
+
+          <Quick
+            symbol="car.window.left"
+            label={vented ? 'Close' : 'Vent'}
+            active={vented}
+            onPress={toggleVent}
+          />
         </View>
 
-        <Quick symbol="fanblades" label="Vent" active={false} onPress={() => {}} />
-      </View>
+        <Row
+          symbol="windshield.front.and.heat.waves"
+          label="Defrost Car"
+          active={state.frontDefrostOn}
+          onPress={toggleDefrost}
+        />
+        <Row
+          symbol="microbe"
+          label="Bioweapon Defense Mode"
+          active={bioweapon}
+          onPress={() => {
+            tap();
+            setBioweapon((v) => !v);
+          }}
+        />
 
-      <Row
-        symbol="windshield.front.and.heat.waves"
-        label="Defrost Car"
-        active={state.frontDefrostOn}
-        onPress={() => actions.toggle('frontDefrostOn')}
-      />
-      <Row symbol="microbe" label="Bioweapon Defense Mode" active={false} onPress={() => {}} />
-    </SafeAreaView>
+        <View style={styles.group}>
+          <GroupRow
+            symbol="tent"
+            label="Camp Mode"
+            active={camp}
+            divider
+            onPress={() => {
+              tap();
+              setCamp((v) => !v);
+            }}
+          />
+          <GroupRow
+            symbol="pawprint.fill"
+            label="Pet Mode"
+            active={pet}
+            onPress={() => {
+              tap();
+              setPet((v) => !v);
+            }}
+          />
+        </View>
+
+        <View style={styles.separator} />
+
+        <Section label="Cabin Overheat Protection">
+          <Segmented
+            options={[
+              { key: 'off', label: 'Off' },
+              { key: 'noac', label: 'No A/C' },
+              { key: 'on', label: 'On' },
+            ]}
+            value={overheat}
+            onChange={(k) => {
+              tap();
+              setOverheat(k as OverheatMode);
+            }}
+          />
+        </Section>
+
+        <Section label="Approximate activation temperature" muted>
+          <Segmented
+            options={[
+              { key: '30', label: '30°C' },
+              { key: '35', label: '35°C' },
+              { key: '40', label: '40°C' },
+            ]}
+            value={activation}
+            onChange={(k) => {
+              tap();
+              setActivation(k as ActivationTemp);
+            }}
+          />
+        </Section>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -70,7 +250,7 @@ function Quick({
 }) {
   return (
     <Pressable style={styles.quick} onPress={onPress}>
-      <SymbolView name={symbol} tintColor={active ? '#4ea1ff' : 'rgba(255,255,255,0.9)'} size={26} />
+      <SymbolView name={symbol} tintColor={active ? '#4ea1ff' : 'rgba(255,255,255,0.92)'} size={29} />
       <Text style={[styles.quickLabel, active && styles.quickLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -95,28 +275,110 @@ function Row({
   );
 }
 
+function GroupRow({
+  symbol,
+  label,
+  active,
+  divider,
+  onPress,
+}: {
+  symbol: SFSymbol;
+  label: string;
+  active: boolean;
+  divider?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.groupRow, divider && styles.groupRowDivider, active && styles.rowActive]}
+      onPress={onPress}
+    >
+      <SymbolView name={symbol} tintColor={active ? 'black' : 'rgba(255,255,255,0.9)'} size={24} />
+      <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Section({ label, muted, children }: { label: string; muted?: boolean; children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={[styles.sectionLabel, muted && styles.sectionLabelMuted]}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function Segmented({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: string; label: string }[];
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <View style={styles.segmented}>
+      {options.map((opt) => {
+        const selected = opt.key === value;
+        return (
+          <Pressable
+            key={opt.key}
+            style={[styles.segment, selected && styles.segmentSelected]}
+            onPress={() => onChange(opt.key)}
+          >
+            <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{opt.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  panel: {
+  root: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 10,
     gap: 12,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    // Slightly elevated tone vs the scene + a soft top shadow and hairline so the bar reads as a
+    // sheet sitting above the page (matches the official app's separation between car and controls).
+    backgroundColor: '#1C1C1E',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.09)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
   },
   handle: {
     alignSelf: 'center',
-    width: 36,
+    width: 38,
     height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginBottom: 4,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+    marginBottom: 6,
   },
   tempRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
+    paddingTop: 14,
+    paddingBottom: 24,
+    marginBottom: 4,
   },
   quick: {
     alignItems: 'center',
@@ -133,14 +395,15 @@ const styles = StyleSheet.create({
   tempControl: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
+    gap: 24,
   },
   temp: {
-    fontSize: 44,
+    fontSize: 47,
     fontWeight: '300',
     color: 'white',
-    minWidth: 120,
+    minWidth: 128,
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   row: {
     flexDirection: 'row',
@@ -160,6 +423,67 @@ const styles = StyleSheet.create({
   },
   rowTextActive: {
     color: 'black',
+    fontWeight: '600',
+  },
+  group: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  groupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+  },
+  groupRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginVertical: 4,
+    marginHorizontal: 4,
+  },
+  section: {
+    gap: 10,
+  },
+  sectionLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: 'white',
+    marginLeft: 4,
+  },
+  sectionLabelMuted: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: 'rgba(255,255,255,0.45)',
+  },
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 11,
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  segmentSelected: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  segmentText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.55)',
+  },
+  segmentTextSelected: {
+    color: 'white',
     fontWeight: '600',
   },
 });

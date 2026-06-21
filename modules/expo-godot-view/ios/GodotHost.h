@@ -14,6 +14,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)pause;
 - (void)resume;
 
+/// Toggle the free-orbit pan recognizer (attached to the PARENT view, not the GLView, so it
+/// works while GLView's own touch handling stays disabled). When `enabled` is YES, drag
+/// gestures over the Godot area are converted to InputEventScreenTouch/Drag and parsed into
+/// Godot's Input system; the injected GDScript in MainViewContainer.gd consumes them and
+/// orbits the camera pivot. When NO (default), no touches reach Godot at all.
+- (void)setOrbitEnabled:(BOOL)enabled;
+
 @end
 
 NS_ASSUME_NONNULL_END

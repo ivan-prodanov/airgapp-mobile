@@ -10,6 +10,7 @@ export type ReactToGodotType =
   | 'SET_ENV_PARAMS'
   | 'MOVE_CAMERA'
   | 'FADE_ROOF'
+  | 'SHOW_FX_ABOVE'
   | 'GET_VEHICLE_MARKERS';
 
 export type GodotToReactType =

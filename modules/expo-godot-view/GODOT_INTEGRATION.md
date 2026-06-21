@@ -32,13 +32,14 @@ install fails "Failed to find matching arch".)
 
 ## Remaining device work (the `#else` branch in ExpoGodotView.swift)
 
-Embed Godot 3.2 **as a library** and register the `IOSGodotInterface` engine singleton. From the
-spike (`/Users/ivan/Work/rpi-filter/tesla-godot-spike/SPIKE_LOG.md`):
+Embed Godot 3.2 **as a library** and register the `IOSGodotInterface` engine singleton.
+(Spike workspace + log were deleted during the airgapp rebrand 2026-06-21; full record lives in
+the project's memory notes — search "SPIKE STATUS: COMPLETE" or "iOS deployment runbook".)
 
 1. **Vendor the engine + assets** into the module:
    - `libgodot.iphone.*.fat.a` (from the 3.2.stable export templates; `lipo -info` → `x86_64 arm64`).
    - The packaged `.pck` exported with custom feature `mobile` (selects `mobile.tscn`). Export from
-     the **Mac** copy of the project (`/Users/ivan/Work/rpi-filter/tesla-godot/` — has all assets;
+     the **Mac** copy of the project (`/Users/ivan/Work/airgapp/godot/` — has all assets;
      the Windows copy is missing Palladium wheel textures → broken car).
 2. **podspec linker / signing workarounds** (bake into the pod, not one-off project edits):
    - `OTHER_LDFLAGS = -weak_framework StoreKit` — satisfies Godot's baked-in IAP module's runtime

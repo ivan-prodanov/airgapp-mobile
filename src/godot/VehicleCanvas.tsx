@@ -91,7 +91,17 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
   return (
     <BridgeContext.Provider value={bridge}>
       <View style={styles.root} onLayout={onLayout}>
-        <ExpoGodotView sceneName="mobile" style={StyleSheet.absoluteFill} />
+        {/* Orbit DISABLED everywhere (2026-06-21). Tested orbit-on-Controls-only; it still crashed
+            within seconds of any rotation drag. The rapid camera mutation feeds the same GL
+            state corruption that gl_view.mm::touchesBegan triggers — different entry, same bug.
+            Whole feature reverts to "no touches reach Godot" until Phase 8 (Godot source rebuild
+            with iOS 26 GLES2 fixes). Infrastructure (orbitEnabled prop, setOrbitEnabled, recognizer
+            code) stays in place so the feature flips back on with one line change when ready. */}
+        <ExpoGodotView
+          sceneName="mobile"
+          orbitEnabled={false}
+          style={StyleSheet.absoluteFill}
+        />
         {/* Asleep: dim the 3D car (applies to every screen). UI panels render on top, undimmed. */}
         {!state.awake ? (
           <View style={styles.asleepDim} pointerEvents="none" />

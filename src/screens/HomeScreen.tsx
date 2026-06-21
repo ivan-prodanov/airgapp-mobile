@@ -8,8 +8,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
 
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
@@ -25,6 +26,7 @@ interface ScreenProps {
 // TRANSPARENT (no panel) so it lands on seamless black. Pull down: refresh.
 export function HomeScreen({ state, actions }: ScreenProps) {
   const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
@@ -38,6 +40,8 @@ export function HomeScreen({ state, actions }: ScreenProps) {
   });
 
   const onRefresh = () => {
+    // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setRefreshing(true);
     setTimeout(() => {
       setRefreshing(false);
@@ -58,7 +62,15 @@ export function HomeScreen({ state, actions }: ScreenProps) {
         snapToEnd={false}
         decelerationRate="fast"
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="rgba(255,255,255,0.6)" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="rgba(255,255,255,0.6)"
+            // Drop the spinner below the Face ID notch so it lands next to the "Red Velvet" header.
+            progressViewOffset={insets.top + 10}
+          />
+        }
       >
         {/* car shows through here */}
         <View style={{ height: carBand }} pointerEvents="none" />

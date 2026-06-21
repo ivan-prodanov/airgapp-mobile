@@ -15,6 +15,13 @@ final class ExpoGodotView: ExpoView {
     didSet { didSetSceneName() }
   }
 
+  /// Toggle free-orbit on this view. When true, drags over the bare Godot area orbit the camera
+  /// (recognizer attached to this view, fed manually into Godot Input — bypasses GLView's native
+  /// touchesBegan crash path). Default false; RN passes true only on the Controls screen.
+  var orbitEnabled: Bool = false {
+    didSet { didSetOrbitEnabled() }
+  }
+
   #if targetEnvironment(simulator)
 
   // MARK: - Simulator stub
@@ -38,8 +45,12 @@ final class ExpoGodotView: ExpoView {
     refreshLabel()
   }
 
+  private func didSetOrbitEnabled() {
+    refreshLabel()
+  }
+
   private func refreshLabel() {
-    label.text = "Godot view — simulator stub\nscene: \(sceneName ?? "—")"
+    label.text = "Godot view — simulator stub\nscene: \(sceneName ?? "—")\norbit: \(orbitEnabled ? "on" : "off")"
   }
 
   override func didMoveToWindow() {
@@ -75,10 +86,17 @@ final class ExpoGodotView: ExpoView {
       return
     }
     godotHost = GodotHost(parentView: self, pckPath: pck)
+    // Apply the current orbit state — covers the case where RN set `orbitEnabled` before this
+    // view had a non-zero size and GodotHost existed.
+    godotHost?.setOrbitEnabled(orbitEnabled)
   }
 
   private func didSetSceneName() {
     // TODO(phase2-device): switch the active Godot scene once the IOSGodotInterface bridge lands.
+  }
+
+  private func didSetOrbitEnabled() {
+    godotHost?.setOrbitEnabled(orbitEnabled)
   }
 
   #endif

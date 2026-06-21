@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef } from 'react';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
@@ -6,14 +7,31 @@ import { VehicleCanvas } from '@/godot/VehicleCanvas';
 import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
-import { useVehicleState } from '@/state/useVehicleState';
+import { useVehicle } from '@/state/VehicleProvider';
 
 // Tesla home + sub-screens (climate / controls) over the embedded Godot car. Each view swaps the
 // bottom panel and camera; the back chevron returns to Home (parked).
 export default function Index() {
-  const [state, actions] = useVehicleState();
+  const [state, actions] = useVehicle();
   const mode =
     state.cameraMode === 'CLIMATE' ? 'climate' : state.cameraMode === 'TOP_DOWN' ? 'controls' : 'home';
+
+  // iOS-style left-edge swipe-back: a rightward swipe from the left edge returns to Home (parked),
+  // available on climate & controls (like the system back gesture). A narrow strip catches the start.
+  const goBack = useRef(() => actions.setCameraMode('PARKED'));
+  goBack.current = () => actions.setCameraMode('PARKED');
+  const edgeBack = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => g.dx > 12 && g.dx > Math.abs(g.dy) * 1.6,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx > 70 || g.vx > 0.4) {
+          // Defer one frame: navigating flips `mode` to 'home', which unmounts THIS strip — doing it
+          // synchronously during its own release crashes RN's touch handler (active responder freed).
+          requestAnimationFrame(() => goBack.current());
+        }
+      },
+    }),
+  ).current;
 
   let panel;
   if (mode === 'climate') {
@@ -29,6 +47,10 @@ export default function Index() {
       <VehicleCanvas state={state} actions={actions}>
         {panel}
       </VehicleCanvas>
+
+      {mode !== 'home' ? (
+        <View style={styles.edgeBack} {...edgeBack.panHandlers} />
+      ) : null}
 
       {mode !== 'home' ? (
         <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
@@ -54,6 +76,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+  },
+  edgeBack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 26,
   },
   topBar: {
     position: 'absolute',

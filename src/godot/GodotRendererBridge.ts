@@ -6,6 +6,7 @@ import {
   createGetMarkersMessage,
   createGodotConfigMessage,
   createMoveCameraMessages,
+  createShowFxAboveMessage,
   createShowProductMessage,
   createThemeMessage,
   createUpdateProductMessage,
@@ -105,6 +106,10 @@ export class GodotRendererBridge {
     for (const message of messages) {
       this.send(message);
     }
+
+    // Straight-down views (climate interior + top-down) need the climate FX quads on their
+    // depth-test-disabled shader, or they z-fight the floor and flicker (badly on iOS). Match the view.
+    this.send(createShowFxAboveMessage(mode === 'CLIMATE' || mode === 'TOP_DOWN'));
 
     if (mode === 'CLIMATE') {
       this.send(createFadeRoofMessage(true, animated));

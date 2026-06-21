@@ -3,7 +3,14 @@
 #if !TARGET_OS_SIMULATOR
 
 #import <Foundation/Foundation.h>
-#import "ExpoGodotView-Swift.h" // GodotBridge (Swift)
+// With use_frameworks! (static), the Swift bridging header is exposed under the framework umbrella.
+// Without it, it would be a project-local "ExpoGodotView-Swift.h" — we keep both paths to stay
+// resilient to Podfile config changes.
+#if __has_include(<ExpoGodotView/ExpoGodotView-Swift.h>)
+#import <ExpoGodotView/ExpoGodotView-Swift.h> // GodotBridge (Swift, framework form)
+#else
+#import "ExpoGodotView-Swift.h"               // GodotBridge (Swift, project form)
+#endif
 
 #include "core/class_db.h"
 #include "core/engine.h"

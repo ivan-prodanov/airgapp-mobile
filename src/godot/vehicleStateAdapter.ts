@@ -102,6 +102,19 @@ export function createFadeRoofMessage(fade: boolean, animated: boolean): GodotMe
   };
 }
 
+// Straight-down views (climate/top) must switch the climate FX quads (airflow + defrost) to their
+// depth-test-disabled "above" shader; otherwise the flat quads z-fight the interior floor and flicker
+// (very visible on iOS's lower-precision depth buffer). VehicleManager.on_show_fx_above reads `show`.
+export function createShowFxAboveMessage(show: boolean): GodotMessage<'SHOW_FX_ABOVE'> {
+  return {
+    type: 'SHOW_FX_ABOVE',
+    data: {
+      vehicle_id: VEHICLE_ID,
+      show,
+    },
+  };
+}
+
 export function createGetMarkersMessage(): GodotMessage<'GET_VEHICLE_MARKERS'> {
   return {
     type: 'GET_VEHICLE_MARKERS',

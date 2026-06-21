@@ -2,7 +2,7 @@
 #
 # One command to ship a fresh Godot export to the iPhone.
 #
-#   deploy-ios.sh [godot-project-dir]   (defaults to the canonical /Users/ivan/Work/rpi-filter/tesla-godot)
+#   deploy-ios.sh [godot-project-dir]   (defaults to the canonical /Users/ivan/Work/airgapp/godot)
 #
 # fix_godot_project.py converts the project's VRAM/s3tc texture imports to LOSSLESS in place (iOS has
 # no PVRTC variants because the Mac importer segfaults — that's the white-car bug). This mutates the
@@ -25,9 +25,9 @@
 set -uo pipefail
 
 # Default to the canonical project; pass a path to deploy a fresh Codex export from elsewhere.
-PROJECT="${1:-/Users/ivan/Work/rpi-filter/tesla-godot}"
+PROJECT="${1:-/Users/ivan/Work/airgapp/godot}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APP_REPO="/Users/ivan/Work/rpi-filter/tesla-mobile"
+APP_REPO="/Users/ivan/Work/airgapp/mobile"
 
 GODOT="/Applications/Godot.app/Contents/MacOS/Godot"
 PRESET="iOS"

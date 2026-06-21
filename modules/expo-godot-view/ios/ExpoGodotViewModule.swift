@@ -27,6 +27,11 @@ public class ExpoGodotViewModule: Module {
       Prop("sceneName") { (view: ExpoGodotView, name: String?) in
         view.sceneName = name
       }
+      // True only when the host wants drag-to-orbit on this view (currently the Controls screen).
+      // Off elsewhere so GLView's touchesBegan stays blocked (root-cause workaround).
+      Prop("orbitEnabled") { (view: ExpoGodotView, enabled: Bool?) in
+        view.orbitEnabled = enabled ?? false
+      }
     }
   }
 }

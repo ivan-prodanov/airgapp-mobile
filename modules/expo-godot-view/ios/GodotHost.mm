@@ -12,6 +12,7 @@
 }
 - (void)pause {}
 - (void)resume {}
+- (void)setOrbitEnabled:(BOOL)enabled {}
 @end
 
 #else
@@ -34,6 +35,8 @@ void iphone_finish();
 
 @interface GodotHost () <GLViewDelegate, UIGestureRecognizerDelegate> {
   GLView *_glView;
+  __weak UIView *_parentView;        // weak — RN owns the lifetime of ExpoGodotView
+  UIPanGestureRecognizer *_orbitPan; // dynamic: created when orbit is enabled, removed when disabled
   int _frameCount;
   bool _started;
 }
@@ -47,6 +50,8 @@ void iphone_finish();
   }
   _frameCount = 0;
   _started = false;
+  _parentView = parentView;
+  _orbitPan = nil;
 
   CGFloat scale = parentView.window ? parentView.window.screen.scale : UIScreen.mainScreen.scale;
   int w = (int)(parentView.bounds.size.width * scale);
@@ -76,18 +81,32 @@ void iphone_finish();
   glView.useCADisplayLink = YES;
   glView.animationInterval = 1.0 / 60.0;
   glView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+  // Block ALL iOS touch events from reaching the GLView.
+  //
+  // ROOT CAUSE (2026-06-21): Godot 3.2's gl_view.mm has touchesBegan/Moved/Ended methods baked
+  // into the prebuilt iOS engine binary. They convert UITouch → InputEventScreenTouch/Drag and
+  // call Input::parse_input_event. On iOS 26 / A19 Pro Metal-backed GLES2, this internal Godot
+  // C++ touch processing exercises GL state paths that trip the GL_INVALID_ENUM accumulation
+  // FAST enough to hit SIGTRAP/SIGABRT within seconds of any touch on the GLView.
+  //
+  // VERIFIED 2026-06-21: stripping the GDScript `_input(event)` handler from MainViewContainer.gd
+  // (so no GDScript consumes touches) did NOT fix the crash — proves the bug is in Godot's C++
+  // touch handling, not the GDScript dispatch above it. Only solid fix achievable without
+  // rebuilding Godot 3.2 from source: block touches at the iOS UIView level so neither
+  // touchesBegan nor any pan recognizer ever fires on the GLView.
+  //
+  // Tradeoff: no future car-tap/swipe interactions via Godot until we either (a) rebuild Godot
+  // from source with iOS 26 GLES2 fixes (Phase 8), or (b) build a proper render-on-Metal path.
+  // Expose this as a prop when those land.
+  glView.userInteractionEnabled = NO;
   [parentView addSubview:glView];
   [glView startAnimation];
   _glView = glView;
 
-  // RN's touch system starves Godot's own GLView gesture recognizer (touches never reach the
-  // engine), so attach our own pan recognizer that coexists with RN's and feeds drags into
-  // Godot's Input as screen touch/drag events.
-  UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-  pan.delegate = self;
-  pan.maximumNumberOfTouches = 1;
-  [glView addGestureRecognizer:pan];
-
+  // Orbit pan recognizer is created on demand via setOrbitEnabled: (called from RN through the
+  // `orbitEnabled` prop). When attached, it lives on PARENTVIEW (not glView) so it can fire even
+  // with glView.userInteractionEnabled=NO. RN sibling UI above the parent absorbs touches it owns
+  // (bottom sheets, buttons); only touches landing on the bare Godot area reach our recognizer.
   NSLog(@"[GodotHost] GLView attached, animation started");
 
   return self;
@@ -143,6 +162,24 @@ void iphone_finish();
   return YES;
 }
 
+// Reject touches that start near the left/right screen edges. iOS owns those for the
+// system swipe-back / swipe-forward gestures (the back-nav on iOS 7+). If our orbit pan
+// also claims them, we get a partial drag → cancelled → `_orbit_velocity` is set →
+// inertia runs in `_physics_process` while the back-navigation triggers MOVE_CAMERA to
+// the PARKED preset → both code paths mutate `pivot.rotation_degrees` simultaneously and
+// the engine traps. Letting iOS own the edge cleanly avoids the whole conflict.
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+       shouldReceiveTouch:(UITouch *)touch {
+  UIView *v = gestureRecognizer.view;
+  if (v == nil) return YES;
+  CGPoint loc = [touch locationInView:v];
+  static const CGFloat kEdgeReserve = 32.0; // matches iOS's UIScreenEdgePanGestureRecognizer hit zone
+  if (loc.x < kEdgeReserve || loc.x > v.bounds.size.width - kEdgeReserve) {
+    return NO;
+  }
+  return YES;
+}
+
 // GLViewDelegate — called each frame with the GLView's framebuffer bound + context current.
 // Replicates platform/iphone/app_delegate.mm's drawView: state machine.
 - (void)drawView:(GLView *)view {
@@ -184,6 +221,24 @@ void iphone_finish();
 - (void)resume {
   if (_started) {
     [_glView startAnimation];
+  }
+}
+
+- (void)setOrbitEnabled:(BOOL)enabled {
+  if (enabled) {
+    if (_orbitPan != nil) return;
+    UIView *parent = _parentView;
+    if (parent == nil) return;
+    _orbitPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+    _orbitPan.delegate = self;
+    _orbitPan.maximumNumberOfTouches = 1;
+    [parent addGestureRecognizer:_orbitPan];
+    NSLog(@"[GodotHost] orbit recognizer attached");
+  } else {
+    if (_orbitPan == nil) return;
+    [_orbitPan.view removeGestureRecognizer:_orbitPan];
+    _orbitPan = nil;
+    NSLog(@"[GodotHost] orbit recognizer removed");
   }
 }
 

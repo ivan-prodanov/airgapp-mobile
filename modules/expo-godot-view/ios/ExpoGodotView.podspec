@@ -1,7 +1,7 @@
 require 'json'
 
-godot_src = '/Users/ivan/Work/rpi-filter/godot-3.2-src'
-engine_dir = '/Users/ivan/Work/rpi-filter/tesla-mobile/modules/expo-godot-view/ios/engine'
+godot_src = '/Users/ivan/Work/airgapp/godot-src'
+engine_dir = '/Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/ios/engine'
 
 Pod::Spec.new do |s|
   s.name           = 'ExpoGodotView'
