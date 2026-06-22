@@ -2,9 +2,13 @@ import { PixelRatio } from 'react-native';
 
 import { cameraPresets } from './cameraPresets';
 import type { FrameData, GodotMessage } from '../types/rendererMessages';
-import { modelYProductConfig, type CameraMode, type ThemeMode, type VehicleConfig, type VehicleViewState } from '../types/vehicleTypes';
+import { modelYProductConfig, vehicleConfigs, type CameraMode, type CarModel, type LightingMode, type ThemeMode, type VehicleViewState } from '../types/vehicleTypes';
 
 export const VEHICLE_ID = modelYProductConfig.id;
+
+export function vehicleIdForModel(model: CarModel): string {
+  return vehicleConfigs[model].id;
+}
 
 export function createAppConfigMessage(): GodotMessage<'APP_CONFIG'> {
   return {
@@ -42,11 +46,11 @@ export function createFrameMessage(frame: FrameData): GodotMessage<'UPDATE_MAIN_
   };
 }
 
-export function createShowProductMessage(state: VehicleViewState, config: VehicleConfig = modelYProductConfig): GodotMessage<'SHOW_PRODUCT'> {
+export function createShowProductMessage(state: VehicleViewState): GodotMessage<'SHOW_PRODUCT'> {
   return {
     type: 'SHOW_PRODUCT',
     data: {
-      ...config,
+      ...vehicleConfigs[state.carModel],
       ...createGodotStatePayload(state),
     },
   };
@@ -56,21 +60,25 @@ export function createUpdateProductMessage(state: VehicleViewState): GodotMessag
   return {
     type: 'UPDATE_PRODUCT',
     data: {
-      ...modelYProductConfig,
+      ...vehicleConfigs[state.carModel],
       ...createGodotStatePayload(state),
     },
   };
 }
 
-export function createMoveCameraMessages(mode: CameraMode, animated: boolean): GodotMessage[] {
+export function createMoveCameraMessages(mode: CameraMode, animated: boolean, lightingMode: LightingMode = 'mobile'): GodotMessage[] {
   const preset = cameraPresets[mode];
+  // 'ambient_fill' floors the env/ambient energies for a flatter, brighter scene (harness lighting
+  // cycle). 'mobile' uses the per-view preset values unchanged.
+  const envEnergy = lightingMode === 'ambient_fill' ? Math.max(preset.environment.env_energy, 4.5) : preset.environment.env_energy;
+  const ambEnergy = lightingMode === 'ambient_fill' ? Math.max(preset.environment.amb_energy, 7.0) : preset.environment.amb_energy;
   return [
     {
       type: 'SET_ENV_PARAMS',
       data: {
         rotation: preset.environment.rotation,
-        env_energy: preset.environment.env_energy,
-        amb_energy: preset.environment.amb_energy,
+        env_energy: envEnergy,
+        amb_energy: ambEnergy,
         animated,
         duration: 0.75,
       },
@@ -90,11 +98,11 @@ export function createMoveCameraMessages(mode: CameraMode, animated: boolean): G
   ];
 }
 
-export function createFadeRoofMessage(fade: boolean, animated: boolean): GodotMessage<'FADE_ROOF'> {
+export function createFadeRoofMessage(fade: boolean, animated: boolean, vehicleId: string = VEHICLE_ID): GodotMessage<'FADE_ROOF'> {
   return {
     type: 'FADE_ROOF',
     data: {
-      vehicle_id: VEHICLE_ID,
+      vehicle_id: vehicleId,
       fade,
       animated,
       duration: 0.75,
@@ -105,21 +113,34 @@ export function createFadeRoofMessage(fade: boolean, animated: boolean): GodotMe
 // Straight-down views (climate/top) must switch the climate FX quads (airflow + defrost) to their
 // depth-test-disabled "above" shader; otherwise the flat quads z-fight the interior floor and flicker
 // (very visible on iOS's lower-precision depth buffer). VehicleManager.on_show_fx_above reads `show`.
-export function createShowFxAboveMessage(show: boolean): GodotMessage<'SHOW_FX_ABOVE'> {
+export function createShowFxAboveMessage(show: boolean, vehicleId: string = VEHICLE_ID): GodotMessage<'SHOW_FX_ABOVE'> {
   return {
     type: 'SHOW_FX_ABOVE',
     data: {
-      vehicle_id: VEHICLE_ID,
+      vehicle_id: vehicleId,
       show,
     },
   };
 }
 
-export function createGetMarkersMessage(): GodotMessage<'GET_VEHICLE_MARKERS'> {
+// Persistent manual lights — handled by VehicleManager.on_set_vehicle_lights (added via
+// fix_godot_project.py). Carries the active vehicle id (vehicle_for_data rejects a mismatch).
+export function createVehicleLightsMessage(state: VehicleViewState, vehicleId: string): GodotMessage<'SET_VEHICLE_LIGHTS'> {
+  return {
+    type: 'SET_VEHICLE_LIGHTS',
+    data: {
+      vehicle_id: vehicleId,
+      headlights: state.headlightsOn,
+      brake_lights: state.brakeLightsOn,
+    },
+  };
+}
+
+export function createGetMarkersMessage(vehicleId: string = VEHICLE_ID): GodotMessage<'GET_VEHICLE_MARKERS'> {
   return {
     type: 'GET_VEHICLE_MARKERS',
     data: {
-      vehicle_id: VEHICLE_ID,
+      vehicle_id: vehicleId,
     },
   };
 }
@@ -128,6 +149,14 @@ export function hasVehicleVisualStateChanged(previous: VehicleViewState, next: V
   const ignoredKeys = new Set<keyof VehicleViewState>([
     'cameraMode',
     'theme',
+    // carModel switches the whole product, so the bridge re-issues SHOW_PRODUCT for it directly
+    // rather than an UPDATE_PRODUCT (which can't change the rendered model).
+    'carModel',
+    // lights + lighting are driven by their own messages (SET_VEHICLE_LIGHTS / SET_ENV_PARAMS),
+    // not the product payload.
+    'headlightsOn',
+    'brakeLightsOn',
+    'lightingMode',
     'seatClimateModes',
     'steeringWheelClimateMode',
     'vehicleConnected',
@@ -169,8 +198,10 @@ function createGodotStatePayload(state: VehicleViewState) {
       tn: 0,
     },
     drive_state: {
-      speed: 0,
-      shift_state: 'P',
+      // Drive mode spins the wheels: VehicleManager reads drive_state.speed for the spin rate and
+      // treats any non-P shift_state as "driving". 18 matches the harness' _toggle_drive_mode.
+      speed: state.driving ? 18 : 0,
+      shift_state: state.driving ? 'D' : 'P',
     },
     climate_state: {
       is_climate_on: state.climateOn,

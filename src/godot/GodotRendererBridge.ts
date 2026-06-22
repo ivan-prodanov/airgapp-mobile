@@ -10,7 +10,9 @@ import {
   createShowProductMessage,
   createThemeMessage,
   createUpdateProductMessage,
+  createVehicleLightsMessage,
   hasVehicleVisualStateChanged,
+  vehicleIdForModel,
 } from './vehicleStateAdapter';
 import type { FrameData, GodotMessage, RendererDiagnostics, VehicleMarkersMessage } from '../types/rendererMessages';
 import type { VehicleMarkers } from '../types/markerTypes';
@@ -56,6 +58,7 @@ export class GodotRendererBridge {
     this.send(createShowProductMessage(state));
     this.moveCamera(state.cameraMode, false);
     this.requestMarkers();
+    this.send(createVehicleLightsMessage(state, this.currentVehicleId()));
   }
 
   updateFrame(frame: FrameData): void {
@@ -71,6 +74,7 @@ export class GodotRendererBridge {
     if (!previous) {
       this.send(createShowProductMessage(next));
       this.moveCamera(next.cameraMode, false);
+      this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
       return;
     }
 
@@ -78,13 +82,34 @@ export class GodotRendererBridge {
       this.send(createThemeMessage(next.theme));
     }
 
+    // Switching the rendered model can't be done with UPDATE_PRODUCT — re-issue SHOW_PRODUCT (which
+    // carries the full current state), re-frame the camera for the new car, refresh markers, and
+    // re-apply the lights (the freshly-instanced vehicle defaults them off).
+    if (previous.carModel !== next.carModel) {
+      this.send(createShowProductMessage(next));
+      this.moveCamera(next.cameraMode, false);
+      this.requestMarkers();
+      this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
+      return;
+    }
+
     if (hasVehicleVisualStateChanged(previous, next)) {
       this.send(createUpdateProductMessage(next));
     }
 
-    if (previous.cameraMode !== next.cameraMode) {
+    if (previous.headlightsOn !== next.headlightsOn || previous.brakeLightsOn !== next.brakeLightsOn) {
+      this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
+    }
+
+    // Camera move re-sends SET_ENV_PARAMS, so a lighting-mode change rides the same path (re-pushes
+    // the adjusted energies for the current view).
+    if (previous.cameraMode !== next.cameraMode || previous.lightingMode !== next.lightingMode) {
       this.moveCamera(next.cameraMode, true);
     }
+  }
+
+  private currentVehicleId(): string {
+    return vehicleIdForModel(this.lastState?.carModel ?? 'modelY');
   }
 
   moveCamera(mode: CameraMode, animated = true): void {
@@ -92,10 +117,10 @@ export class GodotRendererBridge {
     this.lastCameraMode = mode;
 
     if (previousMode === 'CLIMATE' && mode !== 'CLIMATE') {
-      this.send(createFadeRoofMessage(false, animated));
+      this.send(createFadeRoofMessage(false, animated, this.currentVehicleId()));
     }
 
-    const messages = createMoveCameraMessages(mode, animated);
+    const messages = createMoveCameraMessages(mode, animated, this.lastState?.lightingMode ?? 'mobile');
     const moveMessage = messages.find((message) => message.type === 'MOVE_CAMERA');
     const animationId = readAnimationId(moveMessage);
     this.pendingCameraAnimationId = animated ? animationId : null;
@@ -109,10 +134,10 @@ export class GodotRendererBridge {
 
     // Straight-down views (climate interior + top-down) need the climate FX quads on their
     // depth-test-disabled shader, or they z-fight the floor and flicker (badly on iOS). Match the view.
-    this.send(createShowFxAboveMessage(mode === 'CLIMATE' || mode === 'TOP_DOWN'));
+    this.send(createShowFxAboveMessage(mode === 'CLIMATE' || mode === 'TOP_DOWN', this.currentVehicleId()));
 
     if (mode === 'CLIMATE') {
-      this.send(createFadeRoofMessage(true, animated));
+      this.send(createFadeRoofMessage(true, animated, this.currentVehicleId()));
     }
 
     if (!animated) {
@@ -121,7 +146,7 @@ export class GodotRendererBridge {
   }
 
   requestMarkers(): void {
-    this.send(createGetMarkersMessage());
+    this.send(createGetMarkersMessage(this.currentVehicleId()));
   }
 
   private scheduleMarkerRefresh(delayMs = 0): void {

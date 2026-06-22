@@ -11,6 +11,7 @@ export type ReactToGodotType =
   | 'MOVE_CAMERA'
   | 'FADE_ROOF'
   | 'SHOW_FX_ABOVE'
+  | 'SET_VEHICLE_LIGHTS'
   | 'GET_VEHICLE_MARKERS';
 
 export type GodotToReactType =

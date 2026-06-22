@@ -457,6 +457,67 @@ def patch_airflow_csg(project: str):
         print("  [airflow csg] already MeshInstance — skipped")
 
 
+# ── lights message (headlights / brake lights) ───────────────────────────────────────────────────
+# The dev harness drove headlights/brake-lights by calling vehicle.set_headlights_on/_brake_lights_on
+# directly (no product-state path). To drive them from RN we add a dedicated SET_VEHICLE_LIGHTS message
+# type + a VehicleManager listener. Done here (not edited into the project) so it survives a fresh gdre
+# extract. Requires a .pck re-export (recompiles the .gd) to take effect.
+_REACTMSG_ENUM_ANCHOR = "enum {\n"
+_REACTMSG_DICT_ANCHOR = "const Type = {\n"
+
+
+def patch_reactmsg_lights(project: str):
+    f = os.path.join(project, "mobile", "scripts", "ReactMsg.gd")
+    if not os.path.exists(f):
+        print("  [ReactMsg] not found — skipped")
+        return
+    txt = open(f).read()
+    if "SET_VEHICLE_LIGHTS" in txt:
+        print("  [ReactMsg] already has SET_VEHICLE_LIGHTS — skipped")
+        return
+    if _REACTMSG_ENUM_ANCHOR not in txt or _REACTMSG_DICT_ANCHOR not in txt:
+        print("  [ReactMsg] enum/Type anchors not found — SKIPPED (check manually)")
+        return
+    txt = txt.replace(_REACTMSG_ENUM_ANCHOR, _REACTMSG_ENUM_ANCHOR + "\tSET_VEHICLE_LIGHTS, \n", 1)
+    txt = txt.replace(_REACTMSG_DICT_ANCHOR, _REACTMSG_DICT_ANCHOR + '\t"SET_VEHICLE_LIGHTS": SET_VEHICLE_LIGHTS, \n', 1)
+    open(f, "w").write(txt)
+    print("  [ReactMsg] patched — added SET_VEHICLE_LIGHTS")
+
+
+_VM_LISTENER_ANCHOR = '\tmobile_comm.register_listener(ReactMsg.GET_VEHICLE_MARKERS, funcref(self, "on_get_vehicle_markers"))\n'
+_VM_LISTENER_ADD = '\tmobile_comm.register_listener(ReactMsg.SET_VEHICLE_LIGHTS, funcref(self, "on_set_vehicle_lights"))\n'
+_VM_HANDLER = (
+    'func on_set_vehicle_lights(data: Dictionary):\n'
+    '\t# Persistent manual headlights / brake-lights toggle from RN (Explore demo panel). Mirrors the\n'
+    '\t# dev harness manual override; there is no product-state path for these, hence a dedicated msg.\n'
+    '\tvar vehicle: Vehicle = vehicle_for_data(data)\n'
+    '\tif vehicle == null:\n'
+    '\t\treturn\n'
+    '\tif data.has("headlights") and vehicle.has_method("set_headlights_on"):\n'
+    '\t\tvehicle.set_headlights_on(data.get("headlights"))\n'
+    '\tif data.has("brake_lights") and vehicle.has_method("set_brake_lights_on"):\n'
+    '\t\tvehicle.set_brake_lights_on(data.get("brake_lights"))\n'
+)
+
+
+def patch_vehiclemanager_lights(project: str):
+    f = os.path.join(project, "mobile", "scripts", "VehicleManager.gd")
+    if not os.path.exists(f):
+        print("  [VehicleManager] not found — skipped")
+        return
+    txt = open(f).read()
+    if "on_set_vehicle_lights" in txt:
+        print("  [VehicleManager] already has lights handler — skipped")
+        return
+    if _VM_LISTENER_ANCHOR not in txt:
+        print("  [VehicleManager] listener anchor not found — SKIPPED (check manually)")
+        return
+    txt = txt.replace(_VM_LISTENER_ANCHOR, _VM_LISTENER_ANCHOR + _VM_LISTENER_ADD, 1)
+    txt = txt.rstrip("\n") + "\n\n\n" + _VM_HANDLER
+    open(f, "w").write(txt)
+    print("  [VehicleManager] patched — SET_VEHICLE_LIGHTS handler")
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: fix_godot_project.py <godot-project-dir>")
@@ -473,6 +534,8 @@ def main():
     patch_injector(project)
     patch_viewport_msaa(project)
     patch_airflow_csg(project)
+    patch_reactmsg_lights(project)
+    patch_vehiclemanager_lights(project)
     print("Done — ready to export the iOS .pck.")
 
 

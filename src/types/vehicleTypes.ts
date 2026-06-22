@@ -1,6 +1,10 @@
 export type ThemeMode = 'dark' | 'light';
 
 export type CameraMode = 'PARKED' | 'TOP_DOWN' | 'CLIMATE' | 'CHARGING' | 'CLOSURE_OPEN';
+export type CarModel = 'modelS' | 'model3' | 'modelX' | 'modelY';
+// Scene lighting preset (mirrors the harness lighting-mode cycle). 'view_relative' is omitted — it
+// tracks the live orbit yaw, which is disabled on iOS 26.
+export type LightingMode = 'mobile' | 'ambient_fill';
 export type SeatPosition = 'frontLeft' | 'frontRight' | 'rearLeft' | 'rearMiddle' | 'rearRight';
 export type SeatClimateModeName = 'off' | 'heat' | 'cool' | 'auto';
 export type SteeringWheelClimateMode = 'off' | 'heat' | 'auto';
@@ -37,6 +41,18 @@ export interface VehicleViewState {
   vehicleConnected: boolean;
   tirePressureVisible: boolean;
   mediaPlaying: boolean;
+  // Drive mode: when true the adapter sends a non-parked drive_state (shift D, speed > 0), which the
+  // Godot scene reads to spin the wheels (VehicleManager wheel-spin path). Mirrors the harness "Drive".
+  driving: boolean;
+  // Which Tesla model the Godot scene renders. Switching this re-issues SHOW_PRODUCT with that model's
+  // config (mirrors the harness S/3/X/Y buttons). Only Model Y is texture-verified on device.
+  carModel: CarModel;
+  // Persistent manual lights (harness J / N). Driven via the SET_VEHICLE_LIGHTS message, not the
+  // product payload — the Godot scene has no product-state path for these.
+  headlightsOn: boolean;
+  brakeLightsOn: boolean;
+  // Scene lighting preset (harness lighting-mode cycle). Adjusts the env energies in SET_ENV_PARAMS.
+  lightingMode: LightingMode;
   steeringWheelClimateMode: SteeringWheelClimateMode;
   seatClimateModes: SeatClimateModes;
   cameraMode: CameraMode;
@@ -68,6 +84,11 @@ export const initialVehicleState: VehicleViewState = {
   vehicleConnected: true,
   tirePressureVisible: false,
   mediaPlaying: false,
+  driving: false,
+  carModel: 'modelY',
+  headlightsOn: false,
+  brakeLightsOn: false,
+  lightingMode: 'mobile',
   steeringWheelClimateMode: 'off',
   seatClimateModes: {
     frontLeft: { mode: 'off', level: 0 },
@@ -188,4 +209,77 @@ export const modelYProductConfig: VehicleConfig = {
       },
     },
   },
+};
+
+// The harness' S/3/X configs (LocalDevMessageInjector._vehicle_config_model_*). Climate capabilities
+// are reused from Model Y — they only drive the RN climate UI, not the car visual we're switching.
+const baseVehicleConfig: VehicleConfig['vehicle_config'] = {
+  car_type: 'modely',
+  fascia_type: 'original',
+  chassis_type: 'model_y',
+  exterior_color: 'PearlWhite',
+  paint_color_override: '',
+  wheel_type: 'Unknown',
+  spoiler_type: 'None',
+  charge_port_type: 'EU',
+  interior_trim_type: 'Black',
+  third_row_seats: 'None',
+  headlamp_type: 'Premium',
+  aux_park_lamps: 'NaPremium',
+  eu_vehicle: true,
+  red_brake_calipers: false,
+  window_tint_color: '0,0,0,153',
+  has_tesla_badge: false,
+  has_tesla_word_mark: false,
+};
+
+function makeVehicleConfig(vehicleConfig: VehicleConfig['vehicle_config']): VehicleConfig {
+  const { car_type, fascia_type, chassis_type } = vehicleConfig;
+  return {
+    type: 'VEHICLE',
+    id: `local-${car_type}-${fascia_type}-${chassis_type}`,
+    vin: '000Y',
+    vehicle_config: vehicleConfig,
+    climate_capabilities: modelYProductConfig.climate_capabilities,
+  };
+}
+
+export const vehicleConfigs: Record<CarModel, VehicleConfig> = {
+  modelY: modelYProductConfig,
+  modelS: makeVehicleConfig({
+    ...baseVehicleConfig,
+    car_type: 'lychee',
+    fascia_type: 'original',
+    chassis_type: 'model_s',
+    exterior_color: 'GarnetRed',
+    wheel_type: 'Arachnid21Black',
+    interior_trim_type: 'Black',
+    spoiler_type: 'None',
+    red_brake_calipers: true,
+    window_tint_color: '0,0,0,128',
+  }),
+  model3: makeVehicleConfig({
+    ...baseVehicleConfig,
+    car_type: 'model3',
+    fascia_type: 'performancePoppyseed',
+    chassis_type: 'model_3',
+    exterior_color: 'GlacierBlue',
+    wheel_type: 'Cypress21',
+    interior_trim_type: 'Black',
+    spoiler_type: 'CarbonFiber',
+    red_brake_calipers: true,
+    window_tint_color: '0,0,0,170',
+  }),
+  modelX: makeVehicleConfig({
+    ...baseVehicleConfig,
+    car_type: 'tamarind',
+    fascia_type: 'original',
+    chassis_type: 'model_x',
+    exterior_color: 'PearlWhite',
+    wheel_type: 'MachinaV219',
+    interior_trim_type: 'Cream',
+    spoiler_type: 'None',
+    red_brake_calipers: false,
+    window_tint_color: '0,0,0,190',
+  }),
 };
