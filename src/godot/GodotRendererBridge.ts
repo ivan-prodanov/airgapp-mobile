@@ -119,6 +119,13 @@ export class GodotRendererBridge {
       this.send(createThemeMessage(next.theme));
     }
     this.send(createShowProductMessage(next));
+    // Same model = same Godot vehicle id. SHOW_PRODUCT for an already-loaded vehicle doesn't reset
+    // its dynamic closures, so an incoming same-model car would inherit the previous one's open
+    // frunk/doors/windows. Force-apply the incoming car's state with UPDATE_PRODUCT. (Different-model
+    // switches load a fresh vehicle via SHOW_PRODUCT, so they don't need this.)
+    if (previous && previous.carModel === next.carModel) {
+      this.send(createUpdateProductMessage(next));
+    }
     this.moveCamera(next.cameraMode, false);
     this.requestMarkers();
     this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
