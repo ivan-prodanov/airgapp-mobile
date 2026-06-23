@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { Animated as RNAnimated, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 
 import { ExpoGodotView } from '../../modules/expo-godot-view';
 import { BridgeContext } from './bridgeContext';
@@ -47,13 +47,15 @@ interface VehicleCanvasProps {
   actions: VehicleActions;
   /** Active vehicle id. A change means the user switched cars (full re-apply) vs. editing fields. */
   vehicleId: string;
+  /** Horizontal translation of the live car surface, driven by the Home swipe. Defaults to static. */
+  carTranslateX?: RNAnimated.Value;
   children: ReactNode;
 }
 
 // RN port of web-shell VehicleCanvas. Owns the bridge, renders the Godot surface (iframe →
 // <ExpoGodotView/>), and drives boot/updateFrame/updateState. The marker/tire overlays are
 // intentionally omitted for the Phase 3 wiring PoC.
-export function VehicleCanvas({ state, vehicleId, children }: VehicleCanvasProps) {
+export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
@@ -107,11 +109,11 @@ export function VehicleCanvas({ state, vehicleId, children }: VehicleCanvasProps
             Whole feature reverts to "no touches reach Godot" until Phase 8 (Godot source rebuild
             with iOS 26 GLES2 fixes). Infrastructure (orbitEnabled prop, setOrbitEnabled, recognizer
             code) stays in place so the feature flips back on with one line change when ready. */}
-        <ExpoGodotView
-          sceneName="mobile"
-          orbitEnabled={false}
-          style={StyleSheet.absoluteFill}
-        />
+        <RNAnimated.View
+          style={[StyleSheet.absoluteFill, carTranslateX ? { transform: [{ translateX: carTranslateX }] } : null]}
+          pointerEvents="none">
+          <ExpoGodotView sceneName="mobile" orbitEnabled={false} style={StyleSheet.absoluteFill} />
+        </RNAnimated.View>
         {/* Asleep: dim the 3D car (applies to every screen). UI panels render on top, undimmed. */}
         {!state.awake ? (
           <View style={styles.asleepDim} pointerEvents="none" />
