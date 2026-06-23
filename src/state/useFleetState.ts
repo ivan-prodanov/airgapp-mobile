@@ -44,17 +44,25 @@ export function useFleetState(): {
 
   const current = activeVehicle(fleet);
 
-  const fleetApi: Fleet = {
-    vehicles: fleet.vehicles,
-    activeId: fleet.activeId,
-    activeIndex: activeIndex(fleet),
-    activeName: current.name,
-    addVehicle: (model) => setFleet((f) => addVehicle(f, model)),
-    removeVehicle: (id) => setFleet((f) => removeVehicle(f, id)),
-    setActiveVehicle: (id) => setFleet((f) => setActiveVehicle(f, id)),
-    nextVehicle: () => setFleet((f) => setActiveVehicle(f, nextVehicleId(f))),
-    prevVehicle: () => setFleet((f) => setActiveVehicle(f, prevVehicleId(f))),
-  };
+  const fleetApi = useMemo<Fleet>(
+    () => ({
+      vehicles: fleet.vehicles,
+      activeId: fleet.activeId,
+      activeIndex: activeIndex(fleet),
+      activeName: current.name,
+      addVehicle: (model) => setFleet((f) => addVehicle(f, model)),
+      removeVehicle: (id) => setFleet((f) => removeVehicle(f, id)),
+      setActiveVehicle: (id) => setFleet((f) => setActiveVehicle(f, id)),
+      nextVehicle: () => setFleet((f) => setActiveVehicle(f, nextVehicleId(f))),
+      prevVehicle: () => setFleet((f) => setActiveVehicle(f, prevVehicleId(f))),
+    }),
+    [fleet, current],
+  );
 
-  return { active: [current.state, actions], activeId: fleet.activeId, fleet: fleetApi };
+  const active = useMemo<[VehicleViewState, VehicleActions]>(
+    () => [current.state, actions],
+    [current.state, actions],
+  );
+
+  return { active, activeId: fleet.activeId, fleet: fleetApi };
 }
