@@ -6,7 +6,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useVehicle } from '@/state/VehicleProvider';
+import { useFleet, useVehicle } from '@/state/VehicleProvider';
 import type { CameraMode, CarModel, LightingMode, ThemeMode, VehicleStateKey } from '@/types/vehicleTypes';
 
 const ACCENT = '#3E6AE1'; // Tesla blue for the active state
@@ -27,13 +27,12 @@ const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: 'light', label: 'Light' },
 ];
 
-// Mirrors the harness S/3/X/Y buttons. Only Model Y is texture-verified on device; the others are
-// in the .pck but never validated, so they may render broken or invisible — surfaced in the UI note.
-const CAR_MODEL_OPTIONS: { value: CarModel; label: string }[] = [
-  { value: 'modelS', label: 'S' },
-  { value: 'model3', label: '3' },
-  { value: 'modelX', label: 'X' },
-  { value: 'modelY', label: 'Y' },
+// Models you can add to the fleet. Adding appends a fresh car of that model and makes it active.
+const ADD_MODEL_OPTIONS: { value: CarModel; label: string }[] = [
+  { value: 'modelS', label: 'Add S' },
+  { value: 'model3', label: 'Add 3' },
+  { value: 'modelX', label: 'Add X' },
+  { value: 'modelY', label: 'Add Y' },
 ];
 
 const LIGHTING_OPTIONS: { value: LightingMode; label: string }[] = [
@@ -55,6 +54,7 @@ export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const [state, actions] = useVehicle();
+  const fleet = useFleet();
 
   const anyWindowOpen = WINDOW_KEYS.some((key) => state[key] === true);
   const ventAll = () => {
@@ -84,6 +84,50 @@ export default function ExploreScreen() {
         </ThemedText>
       </View>
 
+      <Section title="Your Vehicles">
+        {fleet.vehicles.map((vehicle) => {
+          const isActive = vehicle.id === fleet.activeId;
+          return (
+            <View
+              key={vehicle.id}
+              style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
+              <Pressable style={styles.vehicleSelect} onPress={() => fleet.setActiveVehicle(vehicle.id)}>
+                <SymbolView
+                  name={isActive ? 'largecircle.fill.circle' : 'circle'}
+                  tintColor={isActive ? ACCENT : theme.textSecondary}
+                  size={22}
+                />
+                <Text style={[styles.rowLabel, { color: theme.text }]}>{vehicle.name}</Text>
+              </Pressable>
+              <Pressable
+                hitSlop={8}
+                disabled={fleet.vehicles.length === 1}
+                onPress={() => fleet.removeVehicle(vehicle.id)}>
+                <SymbolView
+                  name="trash"
+                  tintColor={fleet.vehicles.length === 1 ? theme.backgroundSelected : '#E5484D'}
+                  size={20}
+                />
+              </Pressable>
+            </View>
+          );
+        })}
+        <View style={styles.addRow}>
+          {ADD_MODEL_OPTIONS.map((opt) => (
+            <Pressable
+              key={opt.value}
+              onPress={() => fleet.addVehicle(opt.value)}
+              style={({ pressed }) => [
+                styles.addButton,
+                { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
+              ]}>
+              <SymbolView name="plus" tintColor={ACCENT} size={16} />
+              <Text style={[styles.addButtonLabel, { color: theme.text }]}>{opt.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+
       <Section title="Vehicle state">
         <View style={styles.segment}>
           <SegButton
@@ -103,19 +147,6 @@ export default function ExploreScreen() {
             theme={theme}
           />
         </View>
-      </Section>
-
-      <Section title="Car model">
-        <Segmented
-          options={CAR_MODEL_OPTIONS}
-          value={state.carModel}
-          onChange={(value) => actions.patch({ carModel: value })}
-          theme={theme}
-        />
-        <ThemedText type="small" themeColor="textSecondary">
-          Only Model Y is verified on device — S / 3 / X may render incompletely (textures not
-          validated in the current pack).
-        </ThemedText>
       </Section>
 
       <Section title="Camera view">
@@ -379,6 +410,29 @@ const styles = StyleSheet.create({
   },
   pillText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  vehicleSelect: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  addRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  addButton: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 12,
+    paddingVertical: Spacing.three,
+  },
+  addButtonLabel: {
+    fontSize: 15,
     fontWeight: '700',
   },
 });
