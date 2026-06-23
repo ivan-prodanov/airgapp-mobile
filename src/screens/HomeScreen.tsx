@@ -11,6 +11,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
+import type { GestureResponderHandlers } from 'react-native';
 
 import { useFleet } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -19,13 +20,16 @@ import type { VehicleViewState } from '../types/vehicleTypes';
 interface ScreenProps {
   state: VehicleViewState;
   actions: VehicleActions;
+  // PanResponder handlers from index.tsx, spread onto the car-band view so a horizontal drag there
+  // switches vehicles (vertical drags fall through to this menu's ScrollView).
+  swipeHandlers?: GestureResponderHandlers;
 }
 
 // Tesla-app home. Header over the parked car; the menu (favorite-actions bar + rows) is one
 // scroll-driven sheet sitting just below the car. Swipe up: it slides over the car (which fades to
 // black via a scrim) and snaps fully open past halfway, revealing the rest of the list. The menu is
 // TRANSPARENT (no panel) so it lands on seamless black. Pull down: refresh.
-export function HomeScreen({ state, actions }: ScreenProps) {
+export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const fleet = useFleet();
@@ -74,8 +78,10 @@ export function HomeScreen({ state, actions }: ScreenProps) {
           />
         }
       >
-        {/* car shows through here */}
-        <View style={{ height: carBand }} pointerEvents="none" />
+        {/* car shows through here. box-only + the PanResponder handlers: captures horizontal swipes
+            to switch vehicles while staying visually transparent (car still shows through) and
+            letting vertical drags scroll this menu. */}
+        <View style={{ height: carBand }} pointerEvents="box-only" {...swipeHandlers} />
 
         {/* transparent menu — no background */}
         <View style={styles.menu}>

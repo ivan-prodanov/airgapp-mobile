@@ -1,6 +1,5 @@
 import { useRef } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
@@ -50,41 +49,56 @@ export default function Index() {
     Animated.spring(carTranslateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
   };
 
-  // Horizontal pan over the car. activeOffsetX claims only clearly-horizontal drags; failOffsetY
-  // lets the Home menu's vertical ScrollView win vertical drags. No-op with a single car.
-  // runOnJS(true): this project has reanimated installed, so RNGH would otherwise workletize these
-  // callbacks onto the UI thread — but we drive RN's Animated.Value and call plain-JS fleet methods,
-  // which must run on the JS thread. Forcing JS-thread callbacks is the correct pairing here.
-  const swipe = Gesture.Pan()
-    .runOnJS(true)
-    .activeOffsetX([-20, 20])
-    .failOffsetY([-15, 15])
-    .onUpdate((e) => {
-      if (animating.current || fleet.vehicles.length < 2) {
-        return;
-      }
-      const atStart = fleet.activeIndex === 0;
-      const atEnd = fleet.activeIndex === fleet.vehicles.length - 1;
-      // Rubber-band past the ends so a boundary swipe feels bounded, not stuck.
-      const damped = (e.translationX > 0 && atStart) || (e.translationX < 0 && atEnd);
-      carTranslateX.setValue(damped ? e.translationX * 0.25 : e.translationX);
-    })
-    .onEnd((e) => {
-      if (animating.current || fleet.vehicles.length < 2) {
-        springBack();
-        return;
-      }
-      const threshold = width * 0.25;
-      const atStart = fleet.activeIndex === 0;
-      const atEnd = fleet.activeIndex === fleet.vehicles.length - 1;
-      if (e.translationX <= -threshold && !atEnd) {
-        commitSwitch(-1);
-      } else if (e.translationX >= threshold && !atStart) {
-        commitSwitch(1);
-      } else {
-        springBack();
-      }
-    });
+  // Horizontal car-switch swipe via PanResponder (RN's core responder system). RNGH's GestureDetector
+  // never received touches inside the native-tab Home screen; PanResponder (same system as the proven
+  // edge-back swipe) does. The handlers are spread onto the car-band view in HomeScreen. A horizontal
+  // drag switches cars; a vertical drag returns false from onMoveShouldSet so the menu ScrollView
+  // scrolls. The long-lived responder reads fleet/width from a ref refreshed every render (no stale
+  // closures).
+  const swipeLogic = useRef({ fleet, width });
+  swipeLogic.current = { fleet, width };
+  const swipe = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_e, g) => {
+        const { fleet: f } = swipeLogic.current;
+        return (
+          !animating.current &&
+          f.vehicles.length >= 2 &&
+          Math.abs(g.dx) > 12 &&
+          Math.abs(g.dx) > Math.abs(g.dy) * 1.4
+        );
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_e, g) => {
+        if (animating.current) {
+          return;
+        }
+        const { fleet: f } = swipeLogic.current;
+        const atStart = f.activeIndex === 0;
+        const atEnd = f.activeIndex === f.vehicles.length - 1;
+        const damped = (g.dx > 0 && atStart) || (g.dx < 0 && atEnd);
+        carTranslateX.setValue(damped ? g.dx * 0.25 : g.dx);
+      },
+      onPanResponderRelease: (_e, g) => {
+        const { fleet: f, width: w } = swipeLogic.current;
+        if (animating.current) {
+          return;
+        }
+        const threshold = w * 0.25;
+        const atStart = f.activeIndex === 0;
+        const atEnd = f.activeIndex === f.vehicles.length - 1;
+        if (g.dx <= -threshold && !atEnd) {
+          commitSwitch(-1);
+        } else if (g.dx >= threshold && !atStart) {
+          commitSwitch(1);
+        } else {
+          springBack();
+        }
+      },
+      onPanResponderTerminate: () => springBack(),
+    }),
+  ).current;
 
   const mode =
     state.cameraMode === 'CLIMATE' ? 'climate' : state.cameraMode === 'TOP_DOWN' ? 'controls' : 'home';
@@ -112,13 +126,13 @@ export default function Index() {
   } else if (mode === 'controls') {
     panel = <ControlsScreen state={state} actions={actions} />;
   } else {
-    panel = <HomeScreen state={state} actions={actions} />;
+    panel = <HomeScreen state={state} actions={actions} swipeHandlers={swipe.panHandlers} />;
   }
 
   return (
     <View style={styles.root}>
       <VehicleCanvas state={state} actions={actions} vehicleId={vehicleId} carTranslateX={carTranslateX}>
-        {mode === 'home' ? <GestureDetector gesture={swipe}>{panel}</GestureDetector> : panel}
+        {panel}
       </VehicleCanvas>
 
       {mode !== 'home' ? (

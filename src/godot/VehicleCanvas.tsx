@@ -128,8 +128,10 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
 
 const styles = StyleSheet.create({
   root: {
+    // Match the Godot scene's background grey so that when the car surface slides during a vehicle
+    // swipe, the area it vacates blends into the same grey instead of flashing pure black.
     flex: 1,
-    backgroundColor: 'black',
+    backgroundColor: '#161718',
   },
   overlay: {
     position: 'absolute',
