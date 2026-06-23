@@ -144,6 +144,112 @@ def ensure_lossless_textures(project: str):
     print(f"  [textures] generated={gen} converted_from_vram={converted} already_ok={ok} missing_source={bad}")
 
 
+# ── recover baked-but-sourceless mesh imports (fbx/glb/obj) ───────────────────────────────────────
+# gdre recovers a mesh's *baked* import (.import/<hash>.scn or .mesh) and its `.import` sidecar, but
+# often cannot reconstruct the original source (e.g. the Palladium brake .fbx for Model S/X — there is
+# no FBX source on disk, only the baked .scn). On macOS this still loads: ResourceFormatImporter reads
+# the `.import` sidecar from disk and resolves the baked resource. But the iOS .pck is different — at
+# EXPORT time Godot only writes an import-remap (source path → baked resource) for source files that
+# EXIST on disk. With the source missing, NO remap is written, so on device the `.tscn`'s
+# `[ext_resource path="…fbx"]` can't resolve → the whole car scene fails to parse → invisible car.
+# (Confirmed on device: "No loader found for resource: …Palladium_Brakes_Perf_F.fbx" → S_Palladium.tscn
+# fails → PoolManager can't instantiate it.)
+#
+# Fix: recreate a tiny placeholder source file at each missing path. Godot's exporter then writes the
+# remap and packs the existing baked resource (it does NOT reimport during --export-pack, so the
+# placeholder's contents are irrelevant and the baked .scn is used verbatim — verified by loading the
+# re-exported .pck from an empty project dir). The raw placeholder is a *source asset*, so it is not
+# itself packed; only the remap + baked resource are. Idempotent: skips paths whose source exists.
+_MESH_IMPORT_EXTS = ("fbx", "glb", "obj", "gltf", "dae")
+
+# Only the car scenes the mobile app can actually render (the S/3/X/Y switch). We recover meshes within
+# *their* dependency closure only — recovering project-wide would drag unused models (the 17 MB
+# Cybertruck, Semi, Energy generators, …) into the .pck for cars that can't even be selected.
+_ACTIVE_CAR_SCENES = (
+    "Ego/Bayberry/Bayberry.tscn",
+    "Ego/S_Palladium/S_Palladium.tscn",
+    "Ego/X_Palladium/X_Palladium.tscn",
+    "Ego/v2023/Poppyseed/Poppyseed.tscn",
+)
+_TEXT_RESOURCE_EXTS = ("tscn", "tres", "material", "shader")
+
+
+def _scene_dep_closure(project: str):
+    # Walk ext_resource references from the active car scenes through text resources (.tscn/.tres/
+    # .material/.shader), collecting every res:// path reached. Mesh sources (.fbx/.glb/…) referenced
+    # by a brake/part .tscn show up here even when the source file itself is gone.
+    seen = set()
+    stack = [os.path.join(project, s) for s in _ACTIVE_CAR_SCENES]
+    while stack:
+        path = stack.pop()
+        rp = path
+        if rp in seen:
+            continue
+        seen.add(rp)
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if ext not in _TEXT_RESOURCE_EXTS or not os.path.exists(path):
+            continue
+        for m in re.finditer(r'\[ext_resource path="(res://[^"]+)"', open(path, encoding="utf-8", errors="replace").read()):
+            child = os.path.join(project, m.group(1)[len("res://"):])
+            if child not in seen:
+                stack.append(child)
+    return seen
+
+
+def recover_missing_mesh_sources(project: str):
+    closure = _scene_dep_closure(project)
+    created = 0
+    for path in closure:
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if ext not in _MESH_IMPORT_EXTS or os.path.exists(path):
+            continue
+        imp = path + ".import"
+        if not os.path.exists(imp):
+            continue
+        txt = open(imp).read()
+        m = re.search(r'dest_files=\[\s*"(res://\.import/[^"]+)"', txt) or re.search(
+            r'path="(res://\.import/[^"]+)"', txt
+        )
+        if not m:
+            continue
+        baked = os.path.join(project, m.group(1)[len("res://"):])
+        if not os.path.exists(baked):
+            continue  # truly unrecoverable (no baked resource) — nothing we can do
+        with open(path, "wb") as f:
+            f.write(b"placeholder")  # presence is all that matters; never reimported or packed
+        created += 1
+    print(f"  [mesh sources] placeholder sources for baked-but-sourceless imports: created={created}")
+
+
+# ── recover dynamically-loaded materials gdre failed to extract ───────────────────────────────────
+# Some vehicle materials are loaded at runtime by name (load("res://"+local_dir+"/X.material")) rather
+# than referenced statically in the .tscn, so gdre's dependency-driven recovery can miss them entirely.
+# Model 3 (v2023/Poppyseed) dynamically loads Exterior_Hydroxide.material for the Black exterior trim
+# (Model_3.set_exterior_trim). gdre does not extract it — AND THE OFFICIAL pck DOES NOT SHIP IT EITHER
+# (only Ego/3_High has one). set_exterior_trim handles the miss gracefully: `if material == null: return`
+# keeps the correct BAKED Exterior material — which is exactly what v27 and the official Tesla app do.
+# A previous "recovery" copied 3_High's version in to silence the harmless "Cannot open file" log, but
+# that was wrong: 3_High's UVs/maps don't match the v2023 Highland mesh, so the window/pillar trim
+# rendered garbled. Verified against v27 (renders Model 3 correctly without it) and the IPA's Tesla.pck
+# (no v2023 Hydroxide). So this map is intentionally empty; keep the mechanism for any future genuinely-
+# missing STATIC material.
+_MATERIAL_RECOVERIES: dict = {}
+
+
+def recover_missing_materials(project: str):
+    import shutil
+
+    recovered = 0
+    for dst_rel, src_rel in _MATERIAL_RECOVERIES.items():
+        dst = os.path.join(project, dst_rel)
+        src = os.path.join(project, src_rel)
+        if os.path.exists(dst) or not os.path.exists(src):
+            continue
+        shutil.copyfile(src, dst)
+        recovered += 1
+    print(f"  [materials] recovered missing dynamically-loaded materials: {recovered}")
+
+
 # ── GDScript patch helpers ──────────────────────────────────────────────────────────────────────
 def _replace_function(text: str, name: str, replacement: str):
     start = re.search(r"^func " + re.escape(name) + r"\(", text, re.M)
@@ -528,6 +634,8 @@ def main():
         sys.exit(1)
     print("Patching for iOS:", project)
     ensure_lossless_textures(project)
+    recover_missing_mesh_sources(project)
+    recover_missing_materials(project)
     patch_mobilecomm(project)
     patch_cameramanager(project)
     patch_mainviewcontainer(project)
