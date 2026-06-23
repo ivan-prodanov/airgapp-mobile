@@ -108,6 +108,22 @@ export class GodotRendererBridge {
     }
   }
 
+  // Active-vehicle switch: re-apply the incoming car's FULL state as a fresh product, so the reveal
+  // is clean whether or not the model changed (UPDATE_PRODUCT alone can't swap the model, and a
+  // freshly-instanced vehicle defaults its lights off). Mirrors the carModel-change branch of
+  // updateState but is driven by vehicle IDENTITY, not field diffs.
+  switchVehicle(next: VehicleViewState): void {
+    const previous = this.lastState;
+    this.lastState = next;
+    if (!previous || previous.theme !== next.theme) {
+      this.send(createThemeMessage(next.theme));
+    }
+    this.send(createShowProductMessage(next));
+    this.moveCamera(next.cameraMode, false);
+    this.requestMarkers();
+    this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
+  }
+
   private currentVehicleId(): string {
     return vehicleIdForModel(this.lastState?.carModel ?? 'modelY');
   }

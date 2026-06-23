@@ -7,12 +7,13 @@ import { VehicleCanvas } from '@/godot/VehicleCanvas';
 import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
-import { useVehicle } from '@/state/VehicleProvider';
+import { useActiveVehicleId, useVehicle } from '@/state/VehicleProvider';
 
 // Tesla home + sub-screens (climate / controls) over the embedded Godot car. Each view swaps the
 // bottom panel and camera; the back chevron returns to Home (parked).
 export default function Index() {
   const [state, actions] = useVehicle();
+  const vehicleId = useActiveVehicleId();
   const mode =
     state.cameraMode === 'CLIMATE' ? 'climate' : state.cameraMode === 'TOP_DOWN' ? 'controls' : 'home';
 
@@ -44,7 +45,7 @@ export default function Index() {
 
   return (
     <View style={styles.root}>
-      <VehicleCanvas state={state} actions={actions}>
+      <VehicleCanvas state={state} actions={actions} vehicleId={vehicleId}>
         {panel}
       </VehicleCanvas>
 

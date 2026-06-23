@@ -45,16 +45,19 @@ interface VehicleCanvasProps {
   // `actions` is kept on the contract for parity with web-shell; it feeds the marker overlay,
   // which is deferred until the engine renders markers (the sim stub sends none).
   actions: VehicleActions;
+  /** Active vehicle id. A change means the user switched cars (full re-apply) vs. editing fields. */
+  vehicleId: string;
   children: ReactNode;
 }
 
 // RN port of web-shell VehicleCanvas. Owns the bridge, renders the Godot surface (iframe →
 // <ExpoGodotView/>), and drives boot/updateFrame/updateState. The marker/tire overlays are
 // intentionally omitted for the Phase 3 wiring PoC.
-export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
+export function VehicleCanvas({ state, vehicleId, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
+  const lastVehicleId = useRef<string | null>(null);
 
   // RN swap: web subscribed to the renderer iframe via attachFrame(); here we subscribe to the
   // native module's onGodotMessage stream.
@@ -68,6 +71,7 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
 
     if (!booted.current) {
       bridge.boot(state, frame);
+      lastVehicleId.current = vehicleId;
       booted.current = true;
     } else {
       bridge.updateFrame(frame);
@@ -83,10 +87,16 @@ export function VehicleCanvas({ state, children }: VehicleCanvasProps) {
   }, [bridge, state.cameraMode]);
 
   useEffect(() => {
-    if (booted.current) {
+    if (!booted.current) {
+      return;
+    }
+    if (lastVehicleId.current !== vehicleId) {
+      lastVehicleId.current = vehicleId;
+      bridge.switchVehicle(state);
+    } else {
       bridge.updateState(state);
     }
-  }, [bridge, state]);
+  }, [bridge, state, vehicleId]);
 
   return (
     <BridgeContext.Provider value={bridge}>
