@@ -57,6 +57,9 @@ export interface VehicleViewState {
   seatClimateModes: SeatClimateModes;
   cameraMode: CameraMode;
   theme: ThemeMode;
+  // Per-car battery percentage shown in the Home header (0–100). Stubbed until BLE; each vehicle
+  // carries its own so switching cars shows a different value.
+  batteryLevel: number;
 }
 
 export type VehicleStateKey = keyof VehicleViewState;
@@ -99,6 +102,7 @@ export const initialVehicleState: VehicleViewState = {
   },
   cameraMode: 'PARKED',
   theme: 'dark',
+  batteryLevel: 48,
 };
 
 export interface SeatClimateCapability {
