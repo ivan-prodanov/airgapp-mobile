@@ -12,6 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
+import { useFleet } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -27,6 +28,7 @@ interface ScreenProps {
 export function HomeScreen({ state, actions }: ScreenProps) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const fleet = useFleet();
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
@@ -127,7 +129,7 @@ export function HomeScreen({ state, actions }: ScreenProps) {
       <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
         <View style={styles.header}>
           <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
-            <Text style={styles.name}>Red Velvet</Text>
+            <Text style={styles.name}>{fleet.activeName}</Text>
             <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
           </Pressable>
           <View style={styles.headerIcons}>
@@ -137,11 +139,21 @@ export function HomeScreen({ state, actions }: ScreenProps) {
         </View>
         <View style={styles.status}>
           <View style={styles.battery}>
-            <View style={styles.batteryFill} />
+            <View style={[styles.batteryFill, { width: `${state.batteryLevel}%` }]} />
           </View>
-          <Text style={styles.statusPct}>48%</Text>
+          <Text style={styles.statusPct}>{state.batteryLevel}%</Text>
           <Text style={styles.statusText}>{state.awake ? 'Parked' : 'Last seen 3 days ago'}</Text>
         </View>
+        {fleet.vehicles.length > 1 ? (
+          <View style={styles.dots}>
+            {fleet.vehicles.map((vehicle, index) => (
+              <View
+                key={vehicle.id}
+                style={[styles.dot, index === fleet.activeIndex ? styles.dotActive : null]}
+              />
+            ))}
+          </View>
+        ) : null}
       </SafeAreaView>
     </View>
   );
@@ -246,7 +258,6 @@ const styles = StyleSheet.create({
     padding: 1.5,
   },
   batteryFill: {
-    width: '48%',
     height: '100%',
     borderRadius: 1,
     backgroundColor: 'rgba(255,255,255,0.6)',
@@ -310,5 +321,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.45)',
     marginTop: 2,
+  },
+  dots: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 10,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  dotActive: {
+    backgroundColor: 'white',
   },
 });
