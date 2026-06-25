@@ -13,7 +13,8 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import type { GestureResponderHandlers } from 'react-native';
 
-import { useFleet } from '@/state/VehicleProvider';
+import { useFleet, usePreferences } from '@/state/VehicleProvider';
+import { CONTROL_ACTIONS } from '@/state/controlActions';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -33,6 +34,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const fleet = useFleet();
+  const { favorites } = usePreferences();
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
@@ -86,15 +88,20 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         {/* transparent menu — no background */}
         <View style={styles.menu}>
           <View style={styles.iconRow}>
-            <QuickIcon
-              symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
-              active={!state.locked}
-              onPress={() => actions.toggle('locked')}
-            />
-            <QuickIcon symbol="fanblades.fill" active={state.climateOn} onPress={() => actions.setCameraMode('CLIMATE')} />
-            <QuickIcon symbol="bolt.fill" active={state.charging} onPress={() => actions.setCameraMode('CHARGING')} />
-            <QuickIcon symbol="car.side.front.open.fill" active={state.frunkOpen} onPress={() => actions.toggle('frunkOpen')} />
-            <QuickIcon symbol="wind" active={false} onPress={() => {}} />
+            {favorites.map((id) => {
+              const action = CONTROL_ACTIONS[id];
+              return (
+                <QuickIcon
+                  key={id}
+                  symbol={action.symbol(state)}
+                  active={action.isActive(state)}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    action.run(state, actions);
+                  }}
+                />
+              );
+            })}
           </View>
 
           {state.awake && state.mediaPlaying ? (
