@@ -1,24 +1,53 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import { useFleetState, type Fleet } from './useFleetState';
+import { usePersistedReducer } from './usePersistedReducer';
+import { memoryBackend } from './persistence';
+import { defaultPreferences, preferencesReducer } from './preferences';
+import type { ControlActionId } from './controlActions';
 import type { VehicleActions } from './useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
 type VehicleContextValue = [VehicleViewState, VehicleActions];
 
+interface PreferencesApi {
+  favorites: ControlActionId[];
+  setFavorite: (slotIndex: number, id: ControlActionId) => void;
+}
+
 const VehicleContext = createContext<VehicleContextValue | null>(null);
 const ActiveIdContext = createContext<string | null>(null);
 const FleetContext = createContext<Fleet | null>(null);
+const PreferencesContext = createContext<PreferencesApi | null>(null);
 
 // One shared fleet for the whole app. `useVehicle()` returns the ACTIVE car's [state, actions] so
 // existing screens are unchanged; `useFleet()` exposes the list + add/remove/select; the Godot
-// canvas reads `useActiveVehicleId()` to detect identity switches (vs. field edits).
+// canvas reads `useActiveVehicleId()` to detect identity switches (vs. field edits). `usePreferences()`
+// exposes app-global UI preferences (the customizable favorites bar), persisted via the persistence
+// layer (in-memory by default).
 export function VehicleProvider({ children }: { children: ReactNode }) {
   const { active, activeId, fleet } = useFleetState();
+  const [prefs, dispatch] = usePersistedReducer(
+    memoryBackend,
+    'prefs.v1',
+    defaultPreferences,
+    preferencesReducer,
+  );
+
+  const preferences = useMemo<PreferencesApi>(
+    () => ({
+      favorites: prefs.favorites,
+      setFavorite: (slotIndex, id) => dispatch({ type: 'setFavorite', slotIndex, id }),
+    }),
+    [prefs.favorites, dispatch],
+  );
+
   return (
     <FleetContext.Provider value={fleet}>
       <ActiveIdContext.Provider value={activeId}>
-        <VehicleContext.Provider value={active}>{children}</VehicleContext.Provider>
+        <PreferencesContext.Provider value={preferences}>
+          <VehicleContext.Provider value={active}>{children}</VehicleContext.Provider>
+        </PreferencesContext.Provider>
       </ActiveIdContext.Provider>
     </FleetContext.Provider>
   );
@@ -44,6 +73,14 @@ export function useFleet(): Fleet {
   const ctx = useContext(FleetContext);
   if (!ctx) {
     throw new Error('useFleet must be used inside <VehicleProvider>');
+  }
+  return ctx;
+}
+
+export function usePreferences(): PreferencesApi {
+  const ctx = useContext(PreferencesContext);
+  if (!ctx) {
+    throw new Error('usePreferences must be used inside <VehicleProvider>');
   }
   return ctx;
 }
