@@ -129,6 +129,9 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4,
         onPanResponderGrant: (e) => {
+          for (let i = 0; i < slotRefs.current.length; i += 1) {
+            measureSlot(i);
+          }
           const { pageX, pageY } = e.nativeEvent;
           ghost.setValue({ x: pageX - TILE / 2, y: pageY - TILE / 2 });
           dragRef.current = { id, hoverSlot: -1 };

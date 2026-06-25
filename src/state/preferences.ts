@@ -5,7 +5,7 @@ export interface Preferences {
 }
 
 export const defaultPreferences: Preferences = {
-  favorites: DEFAULT_FAVORITES,
+  favorites: [...DEFAULT_FAVORITES],
 };
 
 // Drop `id` into `slotIndex`. If `id` already occupies another slot, the two slots SWAP (keeps

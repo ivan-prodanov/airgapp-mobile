@@ -31,6 +31,8 @@ export function usePersistedReducer<S, A>(
     (action: A) => {
       setState((current) => {
         const next = reducer(current, action);
+        // Persist the exact committed value here (not in a useEffect): this avoids re-writing the
+        // freshly hydrated value, and makeSaver's debounce collapses React StrictMode's dev double-invoke.
         saver(next);
         return next;
       });
