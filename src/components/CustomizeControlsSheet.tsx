@@ -57,7 +57,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
     if (visible) {
       setMounted(true);
       requestAnimationFrame(open);
-    } else if (mounted) {
+    } else {
       Animated.parallel([
         Animated.timing(translateY, { toValue: height, duration: 200, useNativeDriver: true }),
         Animated.timing(backdropOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
@@ -258,7 +258,11 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   backdrop: {
-    ...StyleSheet.absoluteFill,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   sheet: {
