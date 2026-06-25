@@ -15,6 +15,7 @@ import type { GestureResponderHandlers } from 'react-native';
 
 import { useFleet, usePreferences } from '@/state/VehicleProvider';
 import { CONTROL_ACTIONS } from '@/state/controlActions';
+import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -35,6 +36,11 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const fleet = useFleet();
   const { favorites } = usePreferences();
+  const [customizing, setCustomizing] = useState(false);
+  const openCustomize = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setCustomizing(true);
+  };
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
@@ -87,7 +93,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
 
         {/* transparent menu — no background */}
         <View style={styles.menu}>
-          <View style={styles.iconRow}>
+          <Pressable onLongPress={openCustomize} delayLongPress={300} style={styles.iconRow}>
             {favorites.map((id) => {
               const action = CONTROL_ACTIONS[id];
               return (
@@ -99,10 +105,11 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
                     Haptics.selectionAsync().catch(() => {});
                     action.run(state, actions);
                   }}
+                  onLongPress={openCustomize}
                 />
               );
             })}
-          </View>
+          </Pressable>
 
           {state.awake && state.mediaPlaying ? (
             <View style={styles.mediaBar}>
@@ -138,6 +145,8 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         </View>
       </Animated.ScrollView>
 
+      <CustomizeControlsSheet visible={customizing} onClose={() => setCustomizing(false)} />
+
       {/* fixed header on top */}
       <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
         <View style={styles.header}>
@@ -172,9 +181,19 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   );
 }
 
-function QuickIcon({ symbol, active, onPress }: { symbol: SFSymbol; active: boolean; onPress: () => void }) {
+function QuickIcon({
+  symbol,
+  active,
+  onPress,
+  onLongPress,
+}: {
+  symbol: SFSymbol;
+  active: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
   return (
-    <Pressable style={styles.quickIcon} onPress={onPress} hitSlop={8}>
+    <Pressable style={styles.quickIcon} onPress={onPress} onLongPress={onLongPress} delayLongPress={300} hitSlop={8}>
       <SymbolView name={symbol} tintColor={active ? 'white' : 'rgba(255,255,255,0.45)'} size={28} />
     </Pressable>
   );
