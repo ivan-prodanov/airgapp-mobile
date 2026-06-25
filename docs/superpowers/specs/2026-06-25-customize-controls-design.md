@@ -75,23 +75,24 @@ export const DEFAULT_FAVORITES: ControlActionId[] = ['lock', 'climate', 'chargin
 | `climate` | Climate | `fanblades.fill` | `climateOn` | `setCameraMode('CLIMATE')` |
 | `charging` | Charging | `bolt.fill` | `charging` | `setCameraMode('CHARGING')` |
 | `frunk` | Frunk | `car.side.front.open.fill` | `frunkOpen` | `toggle('frunkOpen')` |
-| `trunk` | Trunk | `car.side.rear.open.fill` † | `trunkOpen` | `toggle('trunkOpen')` |
+| `trunk` | Trunk | `car.side.rear.open.fill` | `trunkOpen` | `toggle('trunkOpen')` |
 | `vent` | Vent | `wind` | any window open | toggle 4 window flags (cf. `ClimateScreen.toggleVent`) |
-| `sentry` | Sentry | `record.circle` † | `sentryEnabled` | `toggle('sentryEnabled')` |
-| `unlatchDoor` | Unlatch Door | `door.left.hand.open` † | `driverFrontDoorOpen` | `toggle('driverFrontDoorOpen')` |
+| `sentry` | Sentry | `record.circle.fill` | `sentryEnabled` | `toggle('sentryEnabled')` |
+| `unlatchDoor` | Unlatch Door | `door.left.hand.open` | `driverFrontDoorOpen` | `toggle('driverFrontDoorOpen')` |
 | `flash` | Flash | `headlight.low.beam` | momentary (false) | brief headlight blink (set `headlightsOn` true→false) |
 | `honk` | Honk | `horn.fill` | false | haptic only |
 | `start` | Start | `key.radiowaves.forward.fill` | false | haptic only |
 | `summon` | Summon | `steeringwheel` | false | haptic only |
-| `lightShow` | Light Show | `sparkles` † | false | haptic only |
-| `lowPower` | Low Power | `battery.25` † | false | haptic only |
+| `lightShow` | Light Show | `globe.americas.fill` | false | haptic only |
+| `lowPower` | Low Power | `battery.25` | false | haptic only |
 | `bioweapon` | Bioweapon Defense | `microbe` | false | haptic only |
 | `homelink` | HomeLink | `house.fill` | false | haptic only |
 
-† **Unproven SF Symbol names** (`car.side.rear.open.fill`, `record.circle`, `door.left.hand.open`,
-`sparkles`, `battery.25`). The implementation plan must include a **device verification pass**:
-render every catalog icon and confirm none fall back to the SF Symbols "missing glyph". Swap any
-that don't resolve. All other names are already used elsewhere in the repo and are known-good.
+All 16 names were **verified to exist** in the `SFSymbol` union (`sf-symbols-typescript@2.2.0`,
+SF Symbols 7.0), so they are type-valid. The implementation plan still includes a **device
+verification pass** — render every catalog icon and confirm none fall back to the SF Symbols
+"missing glyph" on the device's installed SF Symbols version — and swaps any that don't resolve for a
+confirmed alternative.
 
 Momentary actions (`isActive` always false) fire a haptic on tap and otherwise no-op — matching the
 "match the screenshots / stubs otherwise" decision.
