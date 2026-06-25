@@ -42,7 +42,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --import tsx --test src/state/fleet.test.ts"
+    "test": "node --import tsx --test src/state/fleet.test.ts src/state/controlActions.test.ts"
   },
   "private": true
 }

@@ -1,0 +1,187 @@
+import type { SFSymbol } from 'expo-symbols';
+
+import type { VehicleViewState } from '../types/vehicleTypes';
+import type { VehicleActions } from './useVehicleState';
+
+export type ControlActionId =
+  | 'lock'
+  | 'climate'
+  | 'charging'
+  | 'frunk'
+  | 'trunk'
+  | 'vent'
+  | 'flash'
+  | 'honk'
+  | 'lightShow'
+  | 'lowPower'
+  | 'start'
+  | 'sentry'
+  | 'summon'
+  | 'unlatchDoor'
+  | 'bioweapon'
+  | 'homelink';
+
+export interface ControlActionDef {
+  id: ControlActionId;
+  label: string;
+  /** Glyph for the favorites bar / grid; a function so lock can swap open↔closed. */
+  symbol: (state: VehicleViewState) => SFSymbol;
+  /** Whether the favorites-bar icon renders "active" (white) vs dimmed. */
+  isActive: (state: VehicleViewState) => boolean;
+  /** What happens when the favorites-bar icon is tapped. */
+  run: (state: VehicleViewState, actions: VehicleActions) => void;
+}
+
+const noop = () => {};
+
+const anyWindowOpen = (s: VehicleViewState) =>
+  s.leftFrontWindowOpen || s.rightFrontWindowOpen || s.leftRearWindowOpen || s.rightRearWindowOpen;
+
+export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
+  lock: {
+    id: 'lock',
+    label: 'Lock',
+    symbol: (s) => (s.locked ? 'lock.fill' : 'lock.open.fill'),
+    isActive: (s) => !s.locked,
+    run: (_s, a) => a.toggle('locked'),
+  },
+  climate: {
+    id: 'climate',
+    label: 'Climate',
+    symbol: () => 'fanblades.fill',
+    isActive: (s) => s.climateOn,
+    run: (_s, a) => a.setCameraMode('CLIMATE'),
+  },
+  charging: {
+    id: 'charging',
+    label: 'Charging',
+    symbol: () => 'bolt.fill',
+    isActive: (s) => s.charging,
+    run: (_s, a) => a.setCameraMode('CHARGING'),
+  },
+  frunk: {
+    id: 'frunk',
+    label: 'Frunk',
+    symbol: () => 'car.side.front.open.fill',
+    isActive: (s) => s.frunkOpen,
+    run: (_s, a) => a.toggle('frunkOpen'),
+  },
+  trunk: {
+    id: 'trunk',
+    label: 'Trunk',
+    symbol: () => 'car.side.rear.open.fill',
+    isActive: (s) => s.trunkOpen,
+    run: (_s, a) => a.toggle('trunkOpen'),
+  },
+  vent: {
+    id: 'vent',
+    label: 'Vent',
+    symbol: () => 'wind',
+    isActive: anyWindowOpen,
+    run: (s, a) => {
+      const open = !anyWindowOpen(s);
+      a.patch({
+        leftFrontWindowOpen: open,
+        rightFrontWindowOpen: open,
+        leftRearWindowOpen: open,
+        rightRearWindowOpen: open,
+      });
+    },
+  },
+  flash: {
+    id: 'flash',
+    label: 'Flash',
+    symbol: () => 'headlight.low.beam',
+    isActive: () => false,
+    run: (_s, a) => {
+      a.patch({ headlightsOn: true });
+      setTimeout(() => a.patch({ headlightsOn: false }), 1200);
+    },
+  },
+  honk: {
+    id: 'honk',
+    label: 'Honk',
+    symbol: () => 'horn.fill',
+    isActive: () => false,
+    run: noop,
+  },
+  lightShow: {
+    id: 'lightShow',
+    label: 'Light Show',
+    symbol: () => 'globe.americas.fill',
+    isActive: () => false,
+    run: noop,
+  },
+  lowPower: {
+    id: 'lowPower',
+    label: 'Low Power',
+    symbol: () => 'battery.25',
+    isActive: () => false,
+    run: noop,
+  },
+  start: {
+    id: 'start',
+    label: 'Start',
+    symbol: () => 'key.radiowaves.forward.fill',
+    isActive: () => false,
+    run: noop,
+  },
+  sentry: {
+    id: 'sentry',
+    label: 'Sentry',
+    symbol: () => 'record.circle.fill',
+    isActive: (s) => s.sentryEnabled,
+    run: (_s, a) => a.toggle('sentryEnabled'),
+  },
+  summon: {
+    id: 'summon',
+    label: 'Summon',
+    symbol: () => 'steeringwheel',
+    isActive: () => false,
+    run: noop,
+  },
+  unlatchDoor: {
+    id: 'unlatchDoor',
+    label: 'Unlatch Door',
+    symbol: () => 'door.left.hand.open',
+    isActive: (s) => s.driverFrontDoorOpen,
+    run: (_s, a) => a.toggle('driverFrontDoorOpen'),
+  },
+  bioweapon: {
+    id: 'bioweapon',
+    label: 'Bioweapon Defense',
+    symbol: () => 'microbe',
+    isActive: () => false,
+    run: noop,
+  },
+  homelink: {
+    id: 'homelink',
+    label: 'HomeLink',
+    symbol: () => 'house.fill',
+    isActive: () => false,
+    run: noop,
+  },
+};
+
+// Stable grid ordering (the official app's rough grouping). The grid renders this list filtered to
+// the actions NOT currently in the favorites bar, so it is always exactly 11 items.
+export const CONTROL_ACTION_ORDER: ControlActionId[] = [
+  'bioweapon',
+  'flash',
+  'honk',
+  'lightShow',
+  'lowPower',
+  'start',
+  'sentry',
+  'summon',
+  'trunk',
+  'unlatchDoor',
+  'vent',
+  'homelink',
+  'lock',
+  'climate',
+  'charging',
+  'frunk',
+];
+
+export const DEFAULT_FAVORITES: ControlActionId[] = ['lock', 'climate', 'charging', 'frunk', 'vent'];
