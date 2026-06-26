@@ -2,9 +2,10 @@ import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useFleet, useVehicle } from '@/state/VehicleProvider';
 import type { CameraMode, CarModel, LightingMode, ThemeMode, VehicleStateKey } from '@/types/vehicleTypes';
@@ -53,8 +54,10 @@ const WINDOW_KEYS: VehicleStateKey[] = [
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const router = useRouter();
   const [state, actions] = useVehicle();
   const fleet = useFleet();
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   const anyWindowOpen = WINDOW_KEYS.some((key) => state[key] === true);
   const ventAll = () => {
@@ -71,11 +74,19 @@ export default function ExploreScreen() {
     <ScrollView
       style={[styles.scroll, { backgroundColor: theme.background }]}
       contentContainerStyle={{
-        paddingTop: insets.top + Spacing.four,
-        paddingBottom: insets.bottom + BottomTabInset + Spacing.four,
+        paddingTop: insets.top + Spacing.three,
+        paddingBottom: insets.bottom + Spacing.four,
         paddingHorizontal: Spacing.four,
         gap: Spacing.five,
       }}>
+      <Pressable
+        onPress={goBack}
+        hitSlop={8}
+        style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
+        <SymbolView name="chevron.left" tintColor={ACCENT} size={20} weight="semibold" />
+        <Text style={[styles.backLabel, { color: ACCENT }]}>Home</Text>
+      </Pressable>
+
       <View style={styles.header}>
         <ThemedText type="title">Demo Controls</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
@@ -340,6 +351,16 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: Spacing.two,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginLeft: -4,
+  },
+  backLabel: {
+    fontSize: 17,
+    fontWeight: '600',
   },
   section: {
     gap: Spacing.three,

@@ -19,11 +19,18 @@ export type ControlActionId =
   | 'summon'
   | 'unlatchDoor'
   | 'bioweapon'
-  | 'homelink';
+  | 'homelink'
+  | 'fart';
 
 export interface ControlActionDef {
   id: ControlActionId;
   label: string;
+  /**
+   * Optional state-dependent label shown ONLY in the customize grid (and the drag caption). The
+   * favorites bar itself is icon-only. Falls back to `label` when absent. Used by actions whose
+   * grid caption reflects live state (e.g. charging → Open/Close/Unlock, climate → On/Off).
+   */
+  gridLabel?: (state: VehicleViewState) => string;
   /** Glyph for the favorites bar / grid; a function so lock can swap open↔closed. */
   symbol: (state: VehicleViewState) => SFSymbol;
   /** Whether the favorites-bar icon renders "active" (white) vs dimmed. */
@@ -48,6 +55,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   climate: {
     id: 'climate',
     label: 'Climate',
+    gridLabel: (s) => (s.climateOn ? 'On' : 'Off'),
     symbol: () => 'fanblades.fill',
     isActive: (s) => s.climateOn,
     run: (_s, a) => a.setCameraMode('CLIMATE'),
@@ -55,9 +63,15 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   charging: {
     id: 'charging',
     label: 'Charging',
+    // Controls the charge port directly. Closed → "Open"; open & idle → "Close"; open & charging →
+    // "Unlock" (releases the latch, stopping the session so the cable can be removed).
+    gridLabel: (s) => (s.chargePortOpen ? (s.charging ? 'Unlock' : 'Close') : 'Open'),
     symbol: () => 'bolt.fill',
-    isActive: (s) => s.charging,
-    run: (_s, a) => a.setCameraMode('CHARGING'),
+    isActive: (s) => s.chargePortOpen,
+    run: (s, a) =>
+      a.patch(
+        s.chargePortOpen ? { chargePortOpen: false, charging: false } : { chargePortOpen: true },
+      ),
   },
   frunk: {
     id: 'frunk',
@@ -161,10 +175,17 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     isActive: () => false,
     run: noop,
   },
+  fart: {
+    id: 'fart',
+    label: 'Fart',
+    symbol: () => 'smoke.fill',
+    isActive: () => false,
+    run: noop,
+  },
 };
 
 // Stable grid ordering (the official app's rough grouping). The grid renders this list filtered to
-// the actions NOT currently in the favorites bar, so it is always exactly 11 items.
+// the actions NOT currently in the favorites bar, so it is always exactly (catalog − 5) items.
 export const CONTROL_ACTION_ORDER: ControlActionId[] = [
   'bioweapon',
   'flash',
@@ -178,6 +199,7 @@ export const CONTROL_ACTION_ORDER: ControlActionId[] = [
   'unlatchDoor',
   'vent',
   'homelink',
+  'fart',
   'lock',
   'climate',
   'charging',

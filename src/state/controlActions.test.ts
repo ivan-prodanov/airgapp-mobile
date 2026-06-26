@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CONTROL_ACTIONS, CONTROL_ACTION_ORDER, DEFAULT_FAVORITES, type ControlActionId } from './controlActions';
+import { initialVehicleState, type VehicleViewState } from '../types/vehicleTypes';
+
+const stateWith = (patch: Partial<VehicleViewState>): VehicleViewState => ({ ...initialVehicleState, ...patch });
 
 test('CONTROL_ACTION_ORDER lists every catalog action exactly once', () => {
   const ids = Object.keys(CONTROL_ACTIONS) as ControlActionId[];
@@ -9,14 +12,43 @@ test('CONTROL_ACTION_ORDER lists every catalog action exactly once', () => {
   assert.deepEqual([...CONTROL_ACTION_ORDER].sort(), [...ids].sort());
 });
 
-test('there are 16 actions', () => {
-  assert.equal(Object.keys(CONTROL_ACTIONS).length, 16);
+test('there are 17 actions', () => {
+  assert.equal(Object.keys(CONTROL_ACTIONS).length, 17);
 });
 
 test('every action def id matches its catalog key', () => {
   for (const [key, def] of Object.entries(CONTROL_ACTIONS)) {
     assert.equal(def.id, key);
   }
+});
+
+test('climate gridLabel reflects On/Off state', () => {
+  assert.equal(CONTROL_ACTIONS.climate.gridLabel?.(stateWith({ climateOn: false })), 'Off');
+  assert.equal(CONTROL_ACTIONS.climate.gridLabel?.(stateWith({ climateOn: true })), 'On');
+});
+
+test('charging gridLabel reflects charge-port + charging state', () => {
+  const label = (patch: Partial<VehicleViewState>) => CONTROL_ACTIONS.charging.gridLabel?.(stateWith(patch));
+  assert.equal(label({ chargePortOpen: false }), 'Open');
+  assert.equal(label({ chargePortOpen: true, charging: false }), 'Close');
+  assert.equal(label({ chargePortOpen: true, charging: true }), 'Unlock');
+});
+
+test('charging run opens a closed port and closes (+ stops charging) an open one', () => {
+  const patches: Partial<VehicleViewState>[] = [];
+  const actions = { patch: (p: Partial<VehicleViewState>) => patches.push(p) } as never;
+
+  CONTROL_ACTIONS.charging.run(stateWith({ chargePortOpen: false }), actions);
+  assert.deepEqual(patches.at(-1), { chargePortOpen: true });
+
+  CONTROL_ACTIONS.charging.run(stateWith({ chargePortOpen: true, charging: true }), actions);
+  assert.deepEqual(patches.at(-1), { chargePortOpen: false, charging: false });
+});
+
+test('fart action exists with a static label', () => {
+  assert.ok(CONTROL_ACTIONS.fart);
+  assert.equal(CONTROL_ACTIONS.fart.label, 'Fart');
+  assert.equal(CONTROL_ACTIONS.fart.gridLabel, undefined);
 });
 
 test('DEFAULT_FAVORITES are five valid, distinct action ids', () => {

@@ -209,7 +209,9 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
           })}
         </View>
 
-        <Text style={styles.dragLabel}>{dragId ? CONTROL_ACTIONS[dragId].label : ' '}</Text>
+        <Text style={styles.dragLabel}>
+          {dragId ? (CONTROL_ACTIONS[dragId].gridLabel?.(state) ?? CONTROL_ACTIONS[dragId].label) : ' '}
+        </Text>
 
         <View style={styles.divider} />
 
@@ -223,7 +225,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
                   <SymbolView name={action.symbol(state)} tintColor="rgba(255,255,255,0.92)" size={26} />
                 </View>
                 <Text style={styles.tileLabel} numberOfLines={1}>
-                  {action.label}
+                  {action.gridLabel ? action.gridLabel(state) : action.label}
                 </Text>
               </View>
             );

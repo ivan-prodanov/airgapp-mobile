@@ -11,6 +11,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
 import { useFleet, usePreferences } from '@/state/VehicleProvider';
@@ -35,6 +36,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const fleet = useFleet();
+  const router = useRouter();
   const { favorites } = usePreferences();
   const [customizing, setCustomizing] = useState(false);
   const openCustomize = () => {
@@ -155,7 +157,9 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
           </Pressable>
           <View style={styles.headerIcons}>
-            <SymbolView name="ellipsis.message" tintColor="white" size={22} />
+            <Pressable hitSlop={10} onPress={() => router.push('/explore')}>
+              <SymbolView name="ellipsis.message" tintColor="white" size={22} />
+            </Pressable>
             <SymbolView name="line.3.horizontal" tintColor="white" size={24} />
           </View>
         </View>
