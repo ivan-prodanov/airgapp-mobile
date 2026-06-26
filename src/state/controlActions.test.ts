@@ -32,6 +32,13 @@ test('climate gridLabel reflects On/Off state', () => {
   assert.equal(CONTROL_ACTIONS.climate.gridLabel?.(stateWith({ climateOn: true })), 'On');
 });
 
+test('climate spins only while A/C is on; other actions do not spin', () => {
+  assert.equal(CONTROL_ACTIONS.climate.spinning?.(stateWith({ climateOn: true })), true);
+  assert.equal(CONTROL_ACTIONS.climate.spinning?.(stateWith({ climateOn: false })), false);
+  assert.equal(CONTROL_ACTIONS.lock.spinning, undefined);
+  assert.equal(CONTROL_ACTIONS.fart.spinning, undefined);
+});
+
 test('charging gridLabel reflects charge-port + charging state', () => {
   const label = (patch: Partial<VehicleViewState>) => CONTROL_ACTIONS.charging.gridLabel?.(stateWith(patch));
   assert.equal(label({ chargePortOpen: false }), 'Open');

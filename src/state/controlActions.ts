@@ -33,6 +33,8 @@ export interface ControlActionDef {
   gridLabel?: (state: VehicleViewState) => string;
   /** Glyph for the favorites bar / grid; a function so lock can swap open↔closed. */
   symbol: (state: VehicleViewState) => SFSymbol;
+  /** When true, the glyph spins continuously (the climate fan while A/C is on). */
+  spinning?: (state: VehicleViewState) => boolean;
   /** Whether the favorites-bar icon renders "active" (white) vs dimmed. */
   isActive: (state: VehicleViewState) => boolean;
   /** What happens when the favorites-bar icon is tapped. */
@@ -58,6 +60,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     label: 'Climate',
     gridLabel: (s) => (s.climateOn ? 'On' : 'Off'),
     symbol: () => 'fanblades.fill',
+    spinning: (s) => s.climateOn,
     isActive: (s) => s.climateOn,
     run: (_s, a) => a.setCameraMode('CLIMATE'),
   },

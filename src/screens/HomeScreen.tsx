@@ -17,6 +17,7 @@ import type { GestureResponderHandlers } from 'react-native';
 import { useFleet, usePreferences } from '@/state/VehicleProvider';
 import { CONTROL_ACTIONS } from '@/state/controlActions';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
+import { SpinningSymbol } from '@/components/SpinningSymbol';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -103,6 +104,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
                   key={id}
                   symbol={action.symbol(state)}
                   active={action.isActive(state)}
+                  spin={action.spinning?.(state) ?? false}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
                     action.run(state, actions);
@@ -188,17 +190,24 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
 function QuickIcon({
   symbol,
   active,
+  spin,
   onPress,
   onLongPress,
 }: {
   symbol: SFSymbol;
   active: boolean;
+  spin?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
   return (
     <Pressable style={styles.quickIcon} onPress={onPress} onLongPress={onLongPress} delayLongPress={300} hitSlop={8}>
-      <SymbolView name={symbol} tintColor={active ? 'white' : 'rgba(255,255,255,0.45)'} size={28} />
+      <SpinningSymbol
+        name={symbol}
+        tintColor={active ? 'white' : 'rgba(255,255,255,0.45)'}
+        size={28}
+        spin={spin}
+      />
     </Pressable>
   );
 }

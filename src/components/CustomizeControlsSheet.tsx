@@ -14,6 +14,7 @@ import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { CONTROL_ACTIONS, CONTROL_ACTION_ORDER, type ControlActionId } from '@/state/controlActions';
+import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { usePreferences, useVehicle } from '@/state/VehicleProvider';
 
 const TILE = 72; // ghost square size
@@ -199,10 +200,11 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
                 onLayout={() => measureSlot(i)}
                 style={[styles.slot, hoverSlot === i && styles.slotHover]}
               >
-                <SymbolView
+                <SpinningSymbol
                   name={action.symbol(state)}
                   tintColor={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.55)'}
                   size={28}
+                  spin={action.spinning?.(state) ?? false}
                 />
               </View>
             );
@@ -222,7 +224,12 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
             return (
               <View key={id} style={styles.tile} {...tilePans[id].panHandlers}>
                 <View style={dragging ? styles.tileIconHidden : undefined}>
-                  <SymbolView name={action.symbol(state)} tintColor="rgba(255,255,255,0.92)" size={26} />
+                  <SpinningSymbol
+                    name={action.symbol(state)}
+                    tintColor="rgba(255,255,255,0.92)"
+                    size={26}
+                    spin={action.spinning?.(state) ?? false}
+                  />
                 </View>
                 <Text style={styles.tileLabel} numberOfLines={1}>
                   {action.gridLabel ? action.gridLabel(state) : action.label}
