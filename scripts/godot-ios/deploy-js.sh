@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# JS-ONLY fast deploy — push a JS/TS-only change to the iPhone WITHOUT an xcodebuild (~seconds, not
+# ~25 min). Rebuilds the RN bundle, Hermes-compiles it, swaps it into the standalone Release .app,
+# re-signs, installs + launches.
+#
+#   deploy-js.sh
+#
+# Use this ONLY for JS/TS changes. If you touched native code (.mm/.swift) do a full Release build;
+# if you touched the Godot project use deploy-ios.sh (swaps the .pck).
+#
+# Prereq: a standalone Release airgapp.app already exists in DerivedData (build once with the
+# xcodebuild command in deploy-ios.sh's header). This script swaps the JS bundle INTO that .app.
+#
+set -uo pipefail
+
+APP_REPO="/Users/ivan/Work/airgapp/mobile"
+DEVICE="F3867E6E-E95F-5B2A-9C4E-06D1D72475A1"   # CoreDevice id (devicectl)
+BUNDLE_ID="local.airgapp.mobile"
+
+# Newest standalone Release .app (survives clean rebuilds / changing DerivedData hashes).
+APP="$(ls -dt "$HOME"/Library/Developer/Xcode/DerivedData/airgapp-*/Build/Products/Release-iphoneos/airgapp.app 2>/dev/null | head -1)"
+[ -n "$APP" ] && [ -d "$APP" ] || { echo "ERROR: no standalone Release .app — do a full xcodebuild Release once (see deploy-ios.sh)." >&2; exit 1; }
+[ -f "$APP/main.jsbundle" ] || { echo "ERROR: $APP has no main.jsbundle — not a JS-embedded Release app." >&2; exit 1; }
+
+HERMESC="$(find "$APP_REPO/node_modules" -name hermesc -path '*osx-bin*' 2>/dev/null | head -1)"
+[ -x "$HERMESC" ] || { echo "ERROR: hermesc not found under node_modules." >&2; exit 1; }
+
+TMP="$(mktemp -d -t airgapp-js-XXXXXX)"
+trap 'rm -rf "$TMP"' EXIT
+
+echo "→ [1/4] bundling JS (expo export:embed)"
+( cd "$APP_REPO" && npx expo export:embed \
+    --platform ios \
+    --dev false \
+    --entry-file node_modules/expo-router/entry.js \
+    --bundle-output "$TMP/main.plain.js" \
+    --assets-dest "$TMP/assets" ) > "$TMP/bundle.log" 2>&1
+[ -s "$TMP/main.plain.js" ] || { echo "ERROR: bundle failed — last lines:" >&2; tail -25 "$TMP/bundle.log" >&2; exit 1; }
+echo "  plain JS: $(du -h "$TMP/main.plain.js" | cut -f1)"
+
+echo "→ [2/4] Hermes-compiling → main.jsbundle (bytecode)"
+"$HERMESC" -emit-binary -O -w -out "$TMP/main.hbc" "$TMP/main.plain.js" || { echo "ERROR: hermesc failed" >&2; exit 1; }
+# Sanity: Hermes bytecode magic is 1F1903C103BC1FC6 (little-endian: c6 1f bc 03 ...).
+head -c4 "$TMP/main.hbc" | xxd -p | grep -qi '^c61fbc03' || { echo "ERROR: hermesc output is not Hermes bytecode" >&2; exit 1; }
+cp "$TMP/main.hbc" "$APP/main.jsbundle"
+echo "  swapped: $(du -h "$APP/main.jsbundle" | cut -f1)"
+
+echo "→ [3/4] re-signing"
+ID="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 'Apple Development' | awk '{print $2}')"
+[ -n "$ID" ] || { echo "ERROR: no 'Apple Development' codesigning identity found" >&2; exit 1; }
+codesign -f -s "$ID" --preserve-metadata=entitlements,identifier,flags "$APP" >/dev/null 2>&1 \
+  || { echo "ERROR: codesign failed" >&2; exit 1; }
+echo "  re-signed with $ID"
+
+echo "→ [4/4] installing + launching on device"
+xcrun devicectl device install app --device "$DEVICE" "$APP" 2>&1 | grep -iE "App installed|error" | tail -1
+xcrun devicectl device process launch --terminate-existing --device "$DEVICE" "$BUNDLE_ID" 2>&1 \
+  | grep -iE "Launched|Locked|error" | head -1
+
+echo "✓ done"
