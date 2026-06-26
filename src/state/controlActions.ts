@@ -161,7 +161,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   unlatchDoor: {
     id: 'unlatchDoor',
     label: 'Unlatch Door',
-    symbol: () => 'door.left.hand.open',
+    symbol: () => 'car.top.door.front.left.open.fill',
     isActive: (s) => s.driverFrontDoorOpen,
     run: (_s, a) => a.toggle('driverFrontDoorOpen'),
   },
