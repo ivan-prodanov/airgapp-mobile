@@ -48,6 +48,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   lock: {
     id: 'lock',
     label: 'Lock',
+    gridLabel: (s) => (s.locked ? 'Locked' : 'Unlocked'),
     symbol: (s) => (s.locked ? 'lock.fill' : 'lock.open.fill'),
     isActive: (s) => !s.locked,
     run: (_s, a) => a.toggle('locked'),
@@ -90,7 +91,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   vent: {
     id: 'vent',
     label: 'Vent',
-    symbol: () => 'wind',
+    symbol: () => 'car.window.left',
     isActive: anyWindowOpen,
     run: (s, a) => {
       const open = !anyWindowOpen(s);
@@ -178,7 +179,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   fart: {
     id: 'fart',
     label: 'Fart',
-    symbol: () => 'smoke.fill',
+    symbol: () => 'wind',
     isActive: () => false,
     run: noop,
   },

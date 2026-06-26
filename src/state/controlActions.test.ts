@@ -22,6 +22,11 @@ test('every action def id matches its catalog key', () => {
   }
 });
 
+test('lock gridLabel reflects Locked/Unlocked state', () => {
+  assert.equal(CONTROL_ACTIONS.lock.gridLabel?.(stateWith({ locked: true })), 'Locked');
+  assert.equal(CONTROL_ACTIONS.lock.gridLabel?.(stateWith({ locked: false })), 'Unlocked');
+});
+
 test('climate gridLabel reflects On/Off state', () => {
   assert.equal(CONTROL_ACTIONS.climate.gridLabel?.(stateWith({ climateOn: false })), 'Off');
   assert.equal(CONTROL_ACTIONS.climate.gridLabel?.(stateWith({ climateOn: true })), 'On');
