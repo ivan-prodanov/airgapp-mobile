@@ -1,11 +1,14 @@
 import {
+  climateCapabilitiesFor,
   initialVehicleState,
-  modelYProductConfig,
   type CameraMode,
   type CarModel,
+  type SeatClimateCapability,
   type SeatClimateMode,
+  type SeatClimateModeName,
   type SeatPosition,
-  type SteeringWheelClimateMode,
+  type SteeringWheelClimate,
+  type SteeringWheelClimateModeName,
   type VehicleStateKey,
   type VehicleViewState,
 } from '../types/vehicleTypes';
@@ -26,11 +29,19 @@ const MODEL_BASE_NAME: Record<CarModel, string> = {
   model3: 'Model 3',
   modelX: 'Model X',
   modelY: 'Model Y',
+  modelSLegacy: 'Model S (older)',
+  model3Legacy: 'Model 3 (older)',
+  modelXLegacy: 'Model X (older)',
+  modelYLegacy: 'Model Y (older)',
+  modelX6Seat: 'Model X (6-seat)',
+  modelX7Seat: 'Model X (7-seat)',
 };
 
 export function createInitialFleet(): FleetState {
   return {
-    vehicles: [{ id: 'veh_1', name: 'Red Velvet', state: { ...initialVehicleState } }],
+    vehicles: [
+      { id: 'veh_1', name: 'Red Velvet', state: { ...initialVehicleState } },
+    ],
     activeId: 'veh_1',
   };
 }
@@ -76,7 +87,11 @@ export function addVehicle(fleet: FleetState, model: CarModel): FleetState {
   const id = nextId(fleet);
   const name = uniqueName(MODEL_BASE_NAME[model], fleet.vehicles.map((v) => v.name));
   const inheritFrom = activeVehicle(fleet).state;
-  const vehicle: Vehicle = { id, name, state: defaultStateForModel(model, inheritFrom) };
+  const vehicle: Vehicle = {
+    id,
+    name,
+    state: defaultStateForModel(model, inheritFrom),
+  };
   return { vehicles: [...fleet.vehicles, vehicle], activeId: id };
 }
 
@@ -147,50 +162,84 @@ export function setScreenCameraModeState(state: VehicleViewState, cameraMode: Ca
   };
 }
 
-export function cycleSteeringWheelClimateState(state: VehicleViewState): VehicleViewState {
-  const caps = modelYProductConfig.climate_capabilities.steeringWheel;
-  const sequence: SteeringWheelClimateMode[] = ['off'];
-  if (caps.heating) {
-    sequence.push('heat');
-  }
-  if (caps.auto) {
-    sequence.push('auto');
-  }
-  return { ...state, steeringWheelClimateMode: nextInSequence(sequence, state.steeringWheelClimateMode) };
+// --- Climate controls: the official app's TWO interactions ---------------------------------------
+// 1. Tapping the seat/wheel ICON steps the *level* DOWN within the current mode (e.g. 3→2→1→off);
+//    from off it jumps to the current mode's max level (heat by default). See step*ClimateState.
+// 2. The Heat/Cool/Auto popup MENU switches *mode*, snapping to that mode's max level. See set*.
+
+function seatCapsFor(state: VehicleViewState, seat: SeatPosition): SeatClimateCapability {
+  return climateCapabilitiesFor(state.carModel).seats[seat];
 }
 
-export function cycleSeatClimateState(state: VehicleViewState, seat: SeatPosition): VehicleViewState {
-  const caps = modelYProductConfig.climate_capabilities.seats[seat];
-  const sequence = seatClimateSequence(caps.heatLevels, caps.coolLevels, caps.auto);
-  return {
-    ...state,
-    seatClimateModes: {
-      ...state.seatClimateModes,
-      [seat]: nextSeatMode(sequence, state.seatClimateModes[seat]),
-    },
-  };
+// Icon tap: ramp the level down, falling to off after level 1 (auto has no level, so it falls to off).
+function steppedSeat(current: SeatClimateMode, caps: SeatClimateCapability): SeatClimateMode {
+  if (current.mode === 'off') {
+    return caps.heatLevels > 0 ? { mode: 'heat', level: caps.heatLevels } : current;
+  }
+  if (current.mode === 'heat' || current.mode === 'cool') {
+    return current.level > 1
+      ? { mode: current.mode, level: (current.level - 1) as 1 | 2 | 3 }
+      : { mode: 'off', level: 0 };
+  }
+  return { mode: 'off', level: 0 };
 }
 
-function nextInSequence<T>(sequence: T[], current: T): T {
-  const index = sequence.indexOf(current);
-  return sequence[(index + 1) % sequence.length] ?? sequence[0];
+// Menu choice: enter `mode` at its max level (heat/cool) or as plain auto.
+function chosenSeat(mode: SeatClimateModeName, caps: SeatClimateCapability): SeatClimateMode {
+  switch (mode) {
+    case 'heat':
+      return { mode: 'heat', level: (caps.heatLevels || 1) as 1 | 2 | 3 };
+    case 'cool':
+      return { mode: 'cool', level: (caps.coolLevels || 1) as 1 | 2 | 3 };
+    case 'auto':
+      return { mode: 'auto', level: 0 };
+    default:
+      return { mode: 'off', level: 0 };
+  }
 }
 
-function seatClimateSequence(heatLevels: 0 | 1 | 2 | 3, coolLevels: 0 | 1 | 2 | 3, auto: boolean): SeatClimateMode[] {
-  const sequence: SeatClimateMode[] = [{ mode: 'off', level: 0 }];
-  for (let level = 1; level <= heatLevels; level += 1) {
-    sequence.push({ mode: 'heat', level: level as 1 | 2 | 3 });
-  }
-  if (auto) {
-    sequence.push({ mode: 'auto', level: 0 });
-  }
-  for (let level = 1; level <= coolLevels; level += 1) {
-    sequence.push({ mode: 'cool', level: level as 1 | 2 | 3 });
-  }
-  return sequence;
+function withSeat(state: VehicleViewState, seat: SeatPosition, next: SeatClimateMode): VehicleViewState {
+  return { ...state, seatClimateModes: { ...state.seatClimateModes, [seat]: next } };
 }
 
-function nextSeatMode(sequence: SeatClimateMode[], current: SeatClimateMode): SeatClimateMode {
-  const index = sequence.findIndex((item) => item.mode === current.mode && item.level === current.level);
-  return sequence[(index + 1) % sequence.length] ?? sequence[0];
+export function stepSeatClimateState(state: VehicleViewState, seat: SeatPosition): VehicleViewState {
+  return withSeat(state, seat, steppedSeat(state.seatClimateModes[seat], seatCapsFor(state, seat)));
+}
+
+export function setSeatClimateState(
+  state: VehicleViewState,
+  seat: SeatPosition,
+  mode: SeatClimateModeName,
+): VehicleViewState {
+  return withSeat(state, seat, chosenSeat(mode, seatCapsFor(state, seat)));
+}
+
+// Steering wheel: same shape, but capped at level 2 and with no cooling.
+function steppedWheel(current: SteeringWheelClimate, heatLevels: 0 | 1 | 2): SteeringWheelClimate {
+  if (current.mode === 'off') {
+    return heatLevels > 0 ? { mode: 'heat', level: heatLevels } : current;
+  }
+  if (current.mode === 'heat') {
+    return current.level > 1 ? { mode: 'heat', level: (current.level - 1) as 1 } : { mode: 'off', level: 0 };
+  }
+  return { mode: 'off', level: 0 };
+}
+
+export function stepSteeringWheelClimateState(state: VehicleViewState): VehicleViewState {
+  const caps = climateCapabilitiesFor(state.carModel).steeringWheel;
+  return { ...state, steeringWheelClimate: steppedWheel(state.steeringWheelClimate, caps.heatLevels) };
+}
+
+export function setSteeringWheelClimateState(
+  state: VehicleViewState,
+  mode: SteeringWheelClimateModeName,
+): VehicleViewState {
+  const caps = climateCapabilitiesFor(state.carModel).steeringWheel;
+  const next: SteeringWheelClimate =
+    mode === 'heat'
+      ? { mode: 'heat', level: (caps.heatLevels || 1) as 1 | 2 }
+      : mode === 'auto'
+        ? { mode: 'auto', level: 0 }
+        : { mode: 'off', level: 0 };
+  return { ...state, steeringWheelClimate: next };
 }

@@ -29,11 +29,19 @@ const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
 ];
 
 // Models you can add to the fleet. Adding appends a fresh car of that model and makes it active.
+// Current line-up + their pre-facelift "(old)" trims — the older ones carry reduced climate options
+// (no ventilation/auto, limited wheel heat), so adding both lets you verify every conditional control.
 const ADD_MODEL_OPTIONS: { value: CarModel; label: string }[] = [
   { value: 'modelS', label: 'Add S' },
   { value: 'model3', label: 'Add 3' },
   { value: 'modelX', label: 'Add X' },
   { value: 'modelY', label: 'Add Y' },
+  { value: 'modelSLegacy', label: 'Old S' },
+  { value: 'model3Legacy', label: 'Old 3' },
+  { value: 'modelXLegacy', label: 'Old X' },
+  { value: 'modelYLegacy', label: 'Old Y' },
+  { value: 'modelX6Seat', label: 'X 6-seat' },
+  { value: 'modelX7Seat', label: 'X 7-seat' },
 ];
 
 const LIGHTING_OPTIONS: { value: LightingMode; label: string }[] = [
@@ -441,10 +449,13 @@ const styles = StyleSheet.create({
   },
   addRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.two,
   },
   addButton: {
-    flex: 1,
+    // flexBasis ~22% packs 4 per row; the 8 model buttons wrap to two rows (current / older).
+    flexGrow: 1,
+    flexBasis: '22%',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',

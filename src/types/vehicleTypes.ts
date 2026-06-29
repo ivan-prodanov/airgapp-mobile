@@ -1,17 +1,47 @@
 export type ThemeMode = 'dark' | 'light';
 
 export type CameraMode = 'PARKED' | 'TOP_DOWN' | 'CLIMATE' | 'CHARGING' | 'CLOSURE_OPEN';
-export type CarModel = 'modelS' | 'model3' | 'modelX' | 'modelY';
+// Current line-up + their pre-facelift "(older)" counterparts. The older trims render the same 3D body
+// (we only ship the current Godot assets) but carry reduced climate_capabilities — older cars lacked
+// ventilated seats, auto seat climate, and (earliest cars) a heated wheel — so they exercise every
+// conditional branch in the climate UI.
+export type CarModel =
+  | 'modelS'
+  | 'model3'
+  | 'modelX'
+  | 'modelY'
+  | 'modelSLegacy'
+  | 'model3Legacy'
+  | 'modelXLegacy'
+  | 'modelYLegacy'
+  // Model X seat-count variants: 6-seater (captain chairs, no rear centre) and 7-seater (bench),
+  // both with a heated 3rd row. They drive the Godot seat config via third_row_seats + rear_seat_type.
+  | 'modelX6Seat'
+  | 'modelX7Seat';
 // Scene lighting preset (mirrors the harness lighting-mode cycle). 'view_relative' is omitted — it
 // tracks the live orbit yaw, which is disabled on iOS 26.
 export type LightingMode = 'mobile' | 'ambient_fill';
-export type SeatPosition = 'frontLeft' | 'frontRight' | 'rearLeft' | 'rearMiddle' | 'rearRight';
+export type SeatPosition =
+  | 'frontLeft'
+  | 'frontRight'
+  | 'rearLeft'
+  | 'rearMiddle'
+  | 'rearRight'
+  | 'thirdRowLeft'
+  | 'thirdRowRight';
 export type SeatClimateModeName = 'off' | 'heat' | 'cool' | 'auto';
-export type SteeringWheelClimateMode = 'off' | 'heat' | 'auto';
+export type SteeringWheelClimateModeName = 'off' | 'heat' | 'auto';
 
 export interface SeatClimateMode {
   mode: SeatClimateModeName;
   level: 0 | 1 | 2 | 3;
+}
+
+// The steering-wheel heater mirrors the seats but tops out at level 2 (the real app's 2-1-off ramp)
+// and never offers cooling.
+export interface SteeringWheelClimate {
+  mode: SteeringWheelClimateModeName;
+  level: 0 | 1 | 2;
 }
 
 export type SeatClimateModes = Record<SeatPosition, SeatClimateMode>;
@@ -53,13 +83,17 @@ export interface VehicleViewState {
   brakeLightsOn: boolean;
   // Scene lighting preset (harness lighting-mode cycle). Adjusts the env energies in SET_ENV_PARAMS.
   lightingMode: LightingMode;
-  steeringWheelClimateMode: SteeringWheelClimateMode;
+  steeringWheelClimate: SteeringWheelClimate;
   seatClimateModes: SeatClimateModes;
   cameraMode: CameraMode;
   theme: ThemeMode;
   // Per-car battery percentage shown in the Home header (0–100). Stubbed until BLE; each vehicle
   // carries its own so switching cars shows a different value.
   batteryLevel: number;
+  // Live cabin + ambient temperatures (°C), shown on the climate view and the Home Climate row.
+  // Mock for now; maps to BLE ClimateState.inside_temp / outside_temp per vehicle.
+  interiorTempC: number;
+  exteriorTempC: number;
 }
 
 export type VehicleStateKey = keyof VehicleViewState;
@@ -92,31 +126,41 @@ export const initialVehicleState: VehicleViewState = {
   headlightsOn: false,
   brakeLightsOn: false,
   lightingMode: 'mobile',
-  steeringWheelClimateMode: 'off',
+  steeringWheelClimate: { mode: 'off', level: 0 },
   seatClimateModes: {
     frontLeft: { mode: 'off', level: 0 },
     frontRight: { mode: 'off', level: 0 },
     rearLeft: { mode: 'off', level: 0 },
     rearMiddle: { mode: 'off', level: 0 },
     rearRight: { mode: 'off', level: 0 },
+    thirdRowLeft: { mode: 'off', level: 0 },
+    thirdRowRight: { mode: 'off', level: 0 },
   },
   cameraMode: 'PARKED',
   theme: 'dark',
   batteryLevel: 48,
+  interiorTempC: 21,
+  exteriorTempC: 18,
 };
 
 export interface SeatClimateCapability {
-  marker: 'seatRow1L' | 'seatRow1R' | 'seatRow2L' | 'seatRow2M' | 'seatRow2R';
+  marker: 'seatRow1L' | 'seatRow1R' | 'seatRow2L' | 'seatRow2M' | 'seatRow2R' | 'seatRow3L' | 'seatRow3R';
   label: string;
   heatLevels: 0 | 1 | 2 | 3;
   coolLevels: 0 | 1 | 2 | 3;
   auto: boolean;
 }
 
+// Steering-wheel rim style — picks which Tesla wheel icon to draw. From VehicleConfig.steeringWheelType.
+export type SteeringWheelType = 'round' | 'yoke' | 'squircle';
+
 export interface VehicleClimateCapabilities {
   steeringWheel: {
     heating: boolean;
+    // Max heat level (the real app uses 2 for the wheel: 2-1-off). 0 means no wheel heater.
+    heatLevels: 0 | 1 | 2;
     auto: boolean;
+    type: SteeringWheelType;
   };
   seats: Record<SeatPosition, SeatClimateCapability>;
 }
@@ -135,7 +179,11 @@ export interface VehicleConfig {
     spoiler_type: string;
     charge_port_type: string;
     interior_trim_type: string;
+    // third_row_seats: 'None' | 'FlatFold' | 'FuturisFoldFlat' | 'FuturisNoFoldFlat' — anything but
+    // 'None' enables a 3rd row. rear_seat_type is the Godot RearSeatType enum int (3=TwoSeat captain
+    // chairs → 6-seater, 0=Base bench → 7-seater). Together they pick Model X's 5/6/7-seat interior.
     third_row_seats: string;
+    rear_seat_type?: number;
     headlamp_type: string;
     aux_park_lamps: string;
     eu_vehicle: boolean;
@@ -147,8 +195,92 @@ export interface VehicleConfig {
   climate_capabilities: VehicleClimateCapabilities;
 }
 
+// ── Per-model climate capabilities (MOCK) ──────────────────────────────────────────────────────
+// This table is the ONLY thing that decides which climate controls a model shows. Every value maps
+// 1:1 to a field the Tesla CarServer protos already expose over BLE (the RPi POC pulls these today):
+//   seat.heatLevels ← ClimateState.SeatHeater<pos> present · VehicleConfig.{hasFrontRowSeatHeaters,
+//                     rearSeatHeaterType (NONE | LEFTRIGHTONLY | THREESEATS), hasThirdRowSeatHeaters}
+//   seat.coolLevels ← ClimateState seat-cooler present     · VehicleConfig.hasSeatCooling
+//   seat.auto       ← ClimateState.AutoSeatClimate<pos> present · VehicleConfig.hasAutoSeatClimate
+//   wheel.heating   ← VehicleConfig.steeringWheelHeaterInstalled / ClimateState.SteeringWheelHeater
+//   wheel.auto      ← ClimateState.AutoSteeringWheelHeat present
+//   wheel.type      ← VehicleConfig.steeringWheelType
+// When BLE lands, only climateCapabilitiesFor() changes — it reads these off the live vehicle instead
+// of this table. Every consumer already goes through that one function, so nothing else moves.
+type SeatSpec = { heat: 0 | 1 | 2 | 3; cool: 0 | 1 | 2 | 3; auto: boolean };
+const HEAT_VENT_AUTO: SeatSpec = { heat: 3, cool: 3, auto: true }; // heated + ventilated + auto
+const HEAT_ONLY: SeatSpec = { heat: 3, cool: 0, auto: false }; //     heated, no cooling, no auto
+const NO_CLIMATE: SeatSpec = { heat: 0, cool: 0, auto: false }; //    seat has no climate function
+
+// thirdRow defaults to NO_CLIMATE — only the Model X 6-/7-seaters pass a real spec for it. Seats with
+// NO_CLIMATE render no control (and Godot doesn't emit their marker anyway), so it's safe everywhere.
+function makeSeats(
+  front: SeatSpec,
+  rearOuter: SeatSpec,
+  rearCenter: SeatSpec,
+  thirdRow: SeatSpec = NO_CLIMATE,
+): Record<SeatPosition, SeatClimateCapability> {
+  const s = (marker: SeatClimateCapability['marker'], label: string, spec: SeatSpec): SeatClimateCapability => ({
+    marker,
+    label,
+    heatLevels: spec.heat,
+    coolLevels: spec.cool,
+    auto: spec.auto,
+  });
+  return {
+    frontLeft: s('seatRow1L', 'Driver', front),
+    frontRight: s('seatRow1R', 'Passenger', front),
+    rearLeft: s('seatRow2L', 'Rear left', rearOuter),
+    rearMiddle: s('seatRow2M', 'Rear middle', rearCenter),
+    rearRight: s('seatRow2R', 'Rear right', rearOuter),
+    thirdRowLeft: s('seatRow3L', 'Third row left', thirdRow),
+    thirdRowRight: s('seatRow3R', 'Third row right', thirdRow),
+  };
+}
+
+type WheelCap = VehicleClimateCapabilities['steeringWheel'];
+const WHEEL_ROUND_AUTO: WheelCap = { heating: true, heatLevels: 2, auto: true, type: 'round' };
+const WHEEL_ROUND_NO_AUTO: WheelCap = { heating: true, heatLevels: 2, auto: false, type: 'round' };
+const WHEEL_YOKE_AUTO: WheelCap = { heating: true, heatLevels: 2, auto: true, type: 'yoke' };
+const WHEEL_NONE: WheelCap = { heating: false, heatLevels: 0, auto: false, type: 'round' }; // no heated wheel
+
+const CLIMATE_CAPS: Record<CarModel, VehicleClimateCapabilities> = {
+  // ── Current line-up — fully featured (ventilated + auto front seats, heated+auto wheel) ──────────
+  // Model Y (Juniper) / Model 3 (Highland): ventilated+auto front, rear OUTBOARD heat only
+  // (rearSeatHeaterType=LEFTRIGHTONLY → no rear-centre), round wheel heat+auto.
+  modelY: { steeringWheel: WHEEL_ROUND_AUTO, seats: makeSeats(HEAT_VENT_AUTO, HEAT_ONLY, NO_CLIMATE) },
+  model3: { steeringWheel: WHEEL_ROUND_AUTO, seats: makeSeats(HEAT_VENT_AUTO, HEAT_ONLY, NO_CLIMATE) },
+  // Model S/X (refresh): premium — ventilated+auto front + all THREE rear seats heated
+  // (rearSeatHeaterType=THREESEATS → rear-centre control). Model X uses the YOKE wheel.
+  modelS: { steeringWheel: WHEEL_ROUND_AUTO, seats: makeSeats(HEAT_VENT_AUTO, HEAT_ONLY, HEAT_ONLY) },
+  modelX: { steeringWheel: WHEEL_YOKE_AUTO, seats: makeSeats(HEAT_VENT_AUTO, HEAT_ONLY, HEAT_ONLY) },
+
+  // ── Older line-up (pre-facelift) — lacked ventilation & auto seat climate; wheel heat limited ────
+  // Model Y (pre-Juniper): heated-only seats, round wheel heats but NO auto.
+  modelYLegacy: { steeringWheel: WHEEL_ROUND_NO_AUTO, seats: makeSeats(HEAT_ONLY, HEAT_ONLY, NO_CLIMATE) },
+  // Model 3 (pre-Highland, early): heated-only seats AND no heated wheel at all → wheel control absent.
+  model3Legacy: { steeringWheel: WHEEL_NONE, seats: makeSeats(HEAT_ONLY, HEAT_ONLY, NO_CLIMATE) },
+  // Model S/X (classic, pre-2021): heated front + all three rear seats, but no cooling/auto; round wheel.
+  modelSLegacy: { steeringWheel: WHEEL_ROUND_NO_AUTO, seats: makeSeats(HEAT_ONLY, HEAT_ONLY, HEAT_ONLY) },
+  modelXLegacy: { steeringWheel: WHEEL_ROUND_NO_AUTO, seats: makeSeats(HEAT_ONLY, HEAT_ONLY, HEAT_ONLY) },
+
+  // ── Model X seat-count variants (current Palladium body, yoke) — exercise captain-chairs / 3rd row ─
+  // 6-seater: row-2 CAPTAIN CHAIRS (no rear centre) + heated 3rd row. 7-seater: row-2 BENCH (centre) +
+  // heated 3rd row. heated 3rd row ← VehicleConfig.hasThirdRowSeatHeaters.
+  modelX6Seat: { steeringWheel: WHEEL_YOKE_AUTO, seats: makeSeats(HEAT_VENT_AUTO, HEAT_ONLY, NO_CLIMATE, HEAT_ONLY) },
+  modelX7Seat: { steeringWheel: WHEEL_YOKE_AUTO, seats: makeSeats(HEAT_VENT_AUTO, HEAT_ONLY, HEAT_ONLY, HEAT_ONLY) },
+};
+
+// THE mock→BLE boundary. Today: hard-coded per-model table above. Tomorrow: read from the live
+// vehicle's BLE ClimateState/VehicleConfig (keyed per VIN). Callers never change.
+export function climateCapabilitiesFor(model: CarModel): VehicleClimateCapabilities {
+  return CLIMATE_CAPS[model];
+}
+
 export const modelYProductConfig: VehicleConfig = {
   type: 'VEHICLE',
+  // fascia 'performanceBayberry' → res://Ego/Bayberry/Bayberry.tscn — the CURRENT (Juniper) Model Y body.
+  // (The Y_High scene is the OLDER pre-Juniper body, used by the "(older)" trim.)
   id: 'local-modely-performanceBayberry-model_y',
   vin: '000Y',
   vehicle_config: {
@@ -170,53 +302,11 @@ export const modelYProductConfig: VehicleConfig = {
     has_tesla_badge: false,
     has_tesla_word_mark: false,
   },
-  climate_capabilities: {
-    steeringWheel: {
-      heating: true,
-      auto: true,
-    },
-    seats: {
-      frontLeft: {
-        marker: 'seatRow1L',
-        label: 'Driver',
-        heatLevels: 3,
-        coolLevels: 3,
-        auto: true,
-      },
-      frontRight: {
-        marker: 'seatRow1R',
-        label: 'Passenger',
-        heatLevels: 3,
-        coolLevels: 3,
-        auto: true,
-      },
-      rearLeft: {
-        marker: 'seatRow2L',
-        label: 'Rear left',
-        heatLevels: 3,
-        coolLevels: 0,
-        auto: false,
-      },
-      rearMiddle: {
-        marker: 'seatRow2M',
-        label: 'Rear middle',
-        heatLevels: 3,
-        coolLevels: 0,
-        auto: false,
-      },
-      rearRight: {
-        marker: 'seatRow2R',
-        label: 'Rear right',
-        heatLevels: 3,
-        coolLevels: 0,
-        auto: false,
-      },
-    },
-  },
+  climate_capabilities: CLIMATE_CAPS.modelY,
 };
 
-// The harness' S/3/X configs (LocalDevMessageInjector._vehicle_config_model_*). Climate capabilities
-// are reused from Model Y — they only drive the RN climate UI, not the car visual we're switching.
+// The harness' S/3/X configs (LocalDevMessageInjector._vehicle_config_model_*). vehicle_config drives
+// the car visual; climate_capabilities now come per-model from CLIMATE_CAPS (see makeVehicleConfig).
 const baseVehicleConfig: VehicleConfig['vehicle_config'] = {
   car_type: 'modely',
   fascia_type: 'original',
@@ -237,53 +327,86 @@ const baseVehicleConfig: VehicleConfig['vehicle_config'] = {
   has_tesla_word_mark: false,
 };
 
-function makeVehicleConfig(vehicleConfig: VehicleConfig['vehicle_config']): VehicleConfig {
+function makeVehicleConfig(vehicleConfig: VehicleConfig['vehicle_config'], model: CarModel): VehicleConfig {
   const { car_type, fascia_type, chassis_type } = vehicleConfig;
   return {
     type: 'VEHICLE',
     id: `local-${car_type}-${fascia_type}-${chassis_type}`,
     vin: '000Y',
     vehicle_config: vehicleConfig,
-    climate_capabilities: modelYProductConfig.climate_capabilities,
+    climate_capabilities: climateCapabilitiesFor(model),
   };
 }
 
+// Visual configs (car_type/fascia/chassis pick the Godot body, per ProductManager.get_vehicle_node_path).
+// Current trims use the NEWEST body (the 2023+ refreshes live in their own folders); the "(older)" trims
+// point at the genuinely older High/classic scene:
+//   Y: 'performanceBayberry'→Bayberry (CURRENT Juniper) · fascia 'original'→Y_High (older)
+//   3: 'performancePoppyseed'→Poppyseed (CURRENT Highland) · fascia 'original'→Model3_High (older)
+//   S: car 'lychee'→S_Palladium (CURRENT refresh)        · 'models'→Model_S (classic pre-2021)
+//   X: car 'tamarind'→X_Palladium (CURRENT refresh)      · 'modelx'→Model_X (classic pre-2021)
+const modelS_vc: VehicleConfig['vehicle_config'] = {
+  ...baseVehicleConfig,
+  car_type: 'lychee',
+  fascia_type: 'original',
+  chassis_type: 'model_s',
+  exterior_color: 'GarnetRed',
+  wheel_type: 'Arachnid21Black',
+  interior_trim_type: 'Black',
+  spoiler_type: 'None',
+  red_brake_calipers: true,
+  window_tint_color: '0,0,0,128',
+};
+const model3_vc: VehicleConfig['vehicle_config'] = {
+  ...baseVehicleConfig,
+  car_type: 'model3',
+  fascia_type: 'performancePoppyseed', // → v2023/Poppyseed = the CURRENT (Highland) body. Model3_High = older.
+  chassis_type: 'model_3',
+  exterior_color: 'GlacierBlue',
+  wheel_type: 'Cypress21',
+  interior_trim_type: 'Black',
+  spoiler_type: 'CarbonFiber',
+  red_brake_calipers: true,
+  window_tint_color: '0,0,0,170',
+};
+const modelX_vc: VehicleConfig['vehicle_config'] = {
+  ...baseVehicleConfig,
+  car_type: 'tamarind',
+  fascia_type: 'original',
+  chassis_type: 'model_x',
+  exterior_color: 'PearlWhite',
+  wheel_type: 'MachinaV219',
+  interior_trim_type: 'Cream',
+  spoiler_type: 'None',
+  red_brake_calipers: false,
+  window_tint_color: '0,0,0,190',
+};
+
+// Older bodies: same base visual but with the older-body car_type/fascia so a genuinely older 3D body
+// renders (not a clone of the current one). Y/3 older = the High scenes via fascia 'original'.
+const modelY_old_vc: VehicleConfig['vehicle_config'] = { ...modelYProductConfig.vehicle_config, fascia_type: 'original' };
+const model3_old_vc: VehicleConfig['vehicle_config'] = { ...model3_vc, fascia_type: 'original' };
+const modelS_old_vc: VehicleConfig['vehicle_config'] = { ...modelS_vc, car_type: 'models' };
+const modelX_old_vc: VehicleConfig['vehicle_config'] = { ...modelX_vc, car_type: 'modelx' };
+
+// Model X seat-count variants reuse the current X (Palladium) body but enable the 3rd row. third_row_seats
+// !== 'None' + rear_seat_type 3 (TwoSeat)→6-seat captain chairs, 0 (Base)→7-seat bench (Model_X_Palladium
+// .setup_seat_config). They need DISTINCT ids so the renderer re-shows + re-runs the seat config on switch.
+const modelX6_vc: VehicleConfig['vehicle_config'] = { ...modelX_vc, third_row_seats: 'FlatFold', rear_seat_type: 3 };
+const modelX7_vc: VehicleConfig['vehicle_config'] = { ...modelX_vc, third_row_seats: 'FlatFold', rear_seat_type: 0 };
+
 export const vehicleConfigs: Record<CarModel, VehicleConfig> = {
+  // Current line-up (newest body).
   modelY: modelYProductConfig,
-  modelS: makeVehicleConfig({
-    ...baseVehicleConfig,
-    car_type: 'lychee',
-    fascia_type: 'original',
-    chassis_type: 'model_s',
-    exterior_color: 'GarnetRed',
-    wheel_type: 'Arachnid21Black',
-    interior_trim_type: 'Black',
-    spoiler_type: 'None',
-    red_brake_calipers: true,
-    window_tint_color: '0,0,0,128',
-  }),
-  model3: makeVehicleConfig({
-    ...baseVehicleConfig,
-    car_type: 'model3',
-    fascia_type: 'performancePoppyseed',
-    chassis_type: 'model_3',
-    exterior_color: 'GlacierBlue',
-    wheel_type: 'Cypress21',
-    interior_trim_type: 'Black',
-    spoiler_type: 'CarbonFiber',
-    red_brake_calipers: true,
-    window_tint_color: '0,0,0,170',
-  }),
-  modelX: makeVehicleConfig({
-    ...baseVehicleConfig,
-    car_type: 'tamarind',
-    fascia_type: 'original',
-    chassis_type: 'model_x',
-    exterior_color: 'PearlWhite',
-    wheel_type: 'MachinaV219',
-    interior_trim_type: 'Cream',
-    spoiler_type: 'None',
-    red_brake_calipers: false,
-    window_tint_color: '0,0,0,190',
-  }),
+  modelS: makeVehicleConfig(modelS_vc, 'modelS'),
+  model3: makeVehicleConfig(model3_vc, 'model3'),
+  modelX: makeVehicleConfig(modelX_vc, 'modelX'),
+  // Older line-up (pre-facelift body + reduced climate_capabilities).
+  modelYLegacy: makeVehicleConfig(modelY_old_vc, 'modelYLegacy'),
+  modelSLegacy: makeVehicleConfig(modelS_old_vc, 'modelSLegacy'),
+  model3Legacy: makeVehicleConfig(model3_old_vc, 'model3Legacy'),
+  modelXLegacy: makeVehicleConfig(modelX_old_vc, 'modelXLegacy'),
+  // Model X 6-/7-seater (current body) — distinct ids so switching re-applies the seat config.
+  modelX6Seat: { ...makeVehicleConfig(modelX6_vc, 'modelX6Seat'), id: 'local-tamarind-model_x-6seat' },
+  modelX7Seat: { ...makeVehicleConfig(modelX7_vc, 'modelX7Seat'), id: 'local-tamarind-model_x-7seat' },
 };

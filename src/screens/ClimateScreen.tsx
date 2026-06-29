@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
+import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -26,7 +27,20 @@ const LO_TEMP = 15;
 const HI_TEMP = 28;
 const clampTemp = (v: number) => Math.min(HI_TEMP, Math.max(LO_TEMP, Math.round(v * 2) / 2));
 const formatTemp = (v: number) => (v <= LO_TEMP ? 'LO' : v >= HI_TEMP ? 'HI' : `${v.toFixed(1)}°`);
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+// Rubber-band overscroll past the snap bounds — copied from the Tesla app, which uses
+// @gorhom/bottom-sheet's overDrag: you can pull slightly past expanded/collapsed against a
+// √-diminishing resistance, then it springs back on release. `expanded` = top (smaller Y),
+// `collapsed` = bottom (larger Y). This is Gorhom's exact formula (sqrt(1 + overshoot) * factor).
+const OVERDRAG_RESIST = 2.5; // @gorhom/bottom-sheet's overDragResistanceFactor default, as Tesla ships it
+const overDrag = (y: number, expanded: number, collapsed: number) => {
+  if (y < expanded) {
+    return expanded - Math.sqrt(1 + (expanded - y)) * OVERDRAG_RESIST;
+  }
+  if (y > collapsed) {
+    return collapsed + Math.sqrt(1 + (y - collapsed)) * OVERDRAG_RESIST;
+  }
+  return y;
+};
 
 const tap = () => Haptics.selectionAsync().catch(() => {});
 const bump = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -68,14 +82,28 @@ export function ClimateScreen({ state, actions }: Props) {
       onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_e, g) => {
         const { expanded, collapsed } = snap.current;
-        translateY.setValue(clamp(restingY.current + g.dy, expanded, collapsed));
+        translateY.setValue(overDrag(restingY.current + g.dy, expanded, collapsed));
       },
       onPanResponderRelease: (_e, g) => {
         const { expanded, collapsed } = snap.current;
-        const projected = restingY.current + g.dy + g.vy * 120;
+        // Pick the target by projecting the release velocity ~0.2 s ahead (reanimated's snapPoint:
+        // value + 0.2 * velocity; g.vy is px/ms so * 200 = 0.2 s), then settle with @gorhom/bottom-sheet's
+        // exact spring — and CONTINUE from the finger's velocity. Starting the spring from rest (our old
+        // bounciness/speed) is what made ours feel like it stopped-then-animated; this is why Tesla glides.
+        const projected = restingY.current + g.dy + g.vy * 200;
         const target = projected < (expanded + collapsed) / 2 ? expanded : collapsed;
         restingY.current = target;
-        Animated.spring(translateY, { toValue: target, useNativeDriver: true, bounciness: 1, speed: 16 }).start();
+        Animated.spring(translateY, {
+          toValue: target,
+          velocity: g.vy * 500, // px/ms → px/s, halved (Tesla feeds velocityY / 2 into animateToPosition)
+          stiffness: 1000,
+          damping: 500,
+          mass: 3,
+          overshootClamping: true,
+          restDisplacementThreshold: 0.5,
+          restSpeedThreshold: 0.5,
+          useNativeDriver: true,
+        }).start();
       },
     }),
   ).current;
@@ -127,12 +155,21 @@ export function ClimateScreen({ state, actions }: Props) {
     // box-none: touches above the panel fall through to the orbit guard (VehicleCanvas) — nothing
     // happens on the car. The panel below captures its own drags/taps.
     <View style={styles.root} pointerEvents="box-none">
+      {/* Seat + steering-wheel heater controls pinned to the Godot markers over the top-down car. */}
+      <ClimateMarkerOverlay state={state} actions={actions} />
+
       <Animated.View
         onLayout={onSheetLayout}
         style={[styles.sheet, { paddingBottom: insets.bottom + 20, transform: [{ translateY }] }]}
         {...pan.panHandlers}
       >
         <View style={styles.handle} />
+
+        {/* Interior + ambient temps (mock now; BLE ClimateState.inside_temp / outside_temp later) — like
+            the official app, sits centred above the setpoint. */}
+        <Text style={styles.climateTemps}>
+          Interior {Math.round(state.interiorTempC)}°C · Exterior {Math.round(state.exteriorTempC)}°C
+        </Text>
 
         <View style={styles.tempRow}>
           <Quick
@@ -371,12 +408,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.32)',
     marginBottom: 6,
   },
+  climateTemps: {
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 6,
+  },
   tempRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 8,
-    paddingTop: 14,
+    paddingTop: 8,
     paddingBottom: 24,
     marginBottom: 4,
   },

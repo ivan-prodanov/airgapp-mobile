@@ -135,7 +135,8 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
           <NavRow
             symbol="fanblades.fill"
             title="Climate"
-            subtitle={state.climateOn ? 'Active · Interior 21°C' : undefined}
+            status={state.climateOn ? 'Active' : undefined}
+            subtitle={`Interior ${Math.round(state.interiorTempC)}°C`}
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
           <NavRow symbol="location.fill" title="Location" subtitle="Nearby" onPress={() => {}} />
@@ -215,11 +216,14 @@ function QuickIcon({
 function NavRow({
   symbol,
   title,
+  status,
   subtitle,
   onPress,
 }: {
   symbol: SFSymbol;
   title: string;
+  // Bold/bright leading word (e.g. Climate "Active"), like the official app; rendered before subtitle.
+  status?: string;
   subtitle?: string;
   onPress: () => void;
 }) {
@@ -228,7 +232,13 @@ function NavRow({
       <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
       <View style={styles.navText}>
         <Text style={styles.navTitle}>{title}</Text>
-        {subtitle ? <Text style={styles.navSubtitle}>{subtitle}</Text> : null}
+        {status || subtitle ? (
+          <Text style={styles.navSubtitle} numberOfLines={1}>
+            {status ? <Text style={styles.navStatus}>{status}</Text> : null}
+            {status && subtitle ? ' · ' : null}
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
       <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.4)" size={16} />
     </Pressable>
@@ -366,6 +376,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.45)',
     marginTop: 2,
+  },
+  navStatus: {
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.9)',
   },
   dots: {
     flexDirection: 'row',

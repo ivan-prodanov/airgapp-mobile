@@ -78,6 +78,26 @@ export function overlayAnchorsPx(markers: VehicleMarkers): Partial<Record<Overla
   return anchors;
 }
 
+// --- Climate overlay (seat + steering-wheel heaters) ---------------------------------------------
+// These map 1:1 to a Godot marker of the same name (seatRow*/steeringWheel). Per-marker nudges align
+// the glyph to the seat/wheel centre in the top-down climate view; calibrated on device.
+export const CLIMATE_MARKER_CALIBRATION: Partial<Record<MarkerName, { dx: number; dy: number }>> = {
+  seatRow1L: { dx: 0, dy: 0 },
+  seatRow1R: { dx: 0, dy: 0 },
+  seatRow2L: { dx: 0, dy: 0 },
+  seatRow2M: { dx: 0, dy: 0 },
+  seatRow2R: { dx: 0, dy: 0 },
+  // 3rd row (Model X 6-/7-seater). Godot only emits these when the third row is visible.
+  seatRow3L: { dx: 0, dy: 0 },
+  seatRow3R: { dx: 0, dy: 0 },
+  steeringWheel: { dx: 0, dy: 0 },
+};
+
+// Device-pixel anchor for a single marker by name, or null if absent/malformed.
+export function markerAnchorPx(markers: VehicleMarkers, name: MarkerName): MarkerPoint | null {
+  return asPoint(markers[name]);
+}
+
 // Convert a device-pixel anchor to an absolute {left, top} in layout points and apply the per-button
 // calibration offset. A non-positive pixel ratio (shouldn't happen) is treated as 1 to avoid NaN.
 export function anchorToPoint(

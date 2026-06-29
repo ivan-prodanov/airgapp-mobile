@@ -16,7 +16,9 @@ export type MarkerName =
   | 'seatRow1R'
   | 'seatRow2L'
   | 'seatRow2M'
-  | 'seatRow2R';
+  | 'seatRow2R'
+  | 'seatRow3L'
+  | 'seatRow3R';
 
 export type MarkerPoint = [number, number];
 

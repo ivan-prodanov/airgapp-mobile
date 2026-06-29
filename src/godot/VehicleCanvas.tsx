@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
-import { Animated as RNAnimated, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { Animated as RNAnimated, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { ExpoGodotView } from '../../modules/expo-godot-view';
-import { BridgeContext } from './bridgeContext';
-import { GodotRendererBridge } from './GodotRendererBridge';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
+import { BridgeContext } from './bridgeContext';
+import { GodotRendererBridge } from './GodotRendererBridge';
 
 // Per-view framing of the car within the main view (layout points; Godot scales by pixel_ratio).
 //  - heightFrac < 1 shrinks the car (Godot scales the 3D root by frame_height / screen_height).
@@ -19,7 +19,10 @@ const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; t
   PARKED: { heightFrac: 0.76, topMarginPt: -66 },
   CHARGING: { heightFrac: 1, topMarginPt: -64 },
   CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
-  CLIMATE: { heightFrac: 1, topMarginPt: 0 },
+  // Climate uses Tesla's exact camera (offset[0,6,0.6] fov40, WIDTH-fit). At screen-size the whole car
+  // renders small; Tesla shows it larger, so we scale the render frame up (>1) and lift it with a
+  // negative top margin to re-centre. heightFrac is the climate ZOOM knob; topMargin keeps it framed.
+  CLIMATE: { heightFrac: 1.3, topMarginPt: -300 },
   TOP_DOWN: { heightFrac: 1, topMarginPt: 0 },
 };
 

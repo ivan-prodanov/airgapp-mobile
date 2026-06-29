@@ -158,7 +158,7 @@ export function hasVehicleVisualStateChanged(previous: VehicleViewState, next: V
     'brakeLightsOn',
     'lightingMode',
     'seatClimateModes',
-    'steeringWheelClimateMode',
+    'steeringWheelClimate',
     'vehicleConnected',
     'tirePressureVisible',
     'mediaPlaying',

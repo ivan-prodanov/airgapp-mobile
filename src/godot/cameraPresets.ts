@@ -66,12 +66,15 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     label: 'Climate',
     animationId: 'shell-camera-climate',
     moveCamera: {
-      // Climate is an INTERIOR view: the cabin fills the screen and the hood/frunk is off the top.
-      // offset.y 4.5 fills the width; offset.z 1.4 shifts the straight-down view toward the rear so
-      // the frunk goes off-screen and the cabin + rear sit above the controls.
+      // EXACT Tesla climate-view camera, decompiled from the official app's RN bundle
+      // (CameraPose CLIMATE = rotation [0,0,0], offset [0,6,0.6], cam_fov 40). The higher y=6 (vs the
+      // wrong 4.5 we had) flattens the perspective so the front seats read upright/reclined like the
+      // real app, and z=0.6 keeps the frunk off the top with the cabin + rear above the controls.
       rotation: [0, 0, 0],
-      offset: [0, 4.5, 1.4],
+      offset: [0, 6, 0.6],
       cam_fov: 40,
+      // WIDTH keeps the WHOLE car in frame (height-fit cut the frunk off). The Tesla-vs-ours zoom is
+      // carried by the render FRAME scale (VIEW_FRAME.CLIMATE.heightFrac), not the camera — see there.
       keep_aspect: 'WIDTH',
     },
     environment: {
