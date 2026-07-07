@@ -39,6 +39,9 @@ import {
 import { hasChargerInBounds, nearestChargerTo, osmChargersInBounds } from '@/services/chargerSource';
 import { fetchAvailabilityInBounds, fetchAvailabilityNear, matchAvailability } from '@/services/chargeprice';
 import { useNavigateSearch } from '@/hooks/useNavigateSearch';
+import { useTrip } from '@/state/useTrip';
+import { TripSheet, type TripSheetHandle } from '@/components/TripSheet';
+import type { Place } from '@/services/place';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -133,6 +136,22 @@ export default function LocationView() {
 
   // Navigate search (recents tab): live Apple/local results + persisted recents.
   const nav = useNavigateSearch(region);
+
+  // Trip planning: selecting a place builds an in-memory trip shown in the TripSheet.
+  const trip = useTrip();
+  const [screen, setScreen] = useState<'search' | 'trip'>('search');
+  const tripSheetRef = useRef<TripSheetHandle>(null);
+  // Departure clock for the itinerary (set when a trip starts, so times are stable while viewing).
+  const [departAt, setDepartAt] = useState(0);
+
+  // Select a place (from search or a charger row) → record a recent + start a trip to it.
+  const onSelectPlace = (place: Place) => {
+    nav.select(place);
+    trip.start(carCoord, place);
+    setDepartAt(Date.now());
+    setScreen('trip');
+    tripSheetRef.current?.expand();
+  };
 
   // Pool filtered by AC/DC + availability. The map pins and the list both derive from this so they stay
   // consistent (tap a row → its pin exists on the map).
@@ -365,7 +384,14 @@ export default function LocationView() {
   const onCloseDetail = () => setSelectedCharger(null);
   const onNavigateToCharger = (c: Charger) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    openDirections(chargerCoord(c));
+    onSelectPlace({
+      id: `charger:${c.id}`,
+      title: c.name,
+      subtitle: c.region || c.place,
+      coordinate: { latitude: c.latitude, longitude: c.longitude },
+      kind: 'charger',
+      source: 'charger',
+    });
   };
   // Placeholder until there's a trip/route concept to add a waypoint to (native maps deep links can't add
   // a stop to an in-progress route). Kept for the two-button layout; wire up when routing exists.
@@ -462,27 +488,41 @@ export default function LocationView() {
         </View>
       </SafeAreaView>
 
-      <LocationSheet
-        ref={sheetRef}
-        tab={tab}
-        onTabChange={setTab}
-        chargers={listChargers}
-        availability={availability}
-        sort={sort}
-        onSortChange={setSort}
-        filter={filter}
-        onFilterChange={setFilter}
-        selectedCharger={selectedCharger}
-        onSelectCharger={onSelectCharger}
-        onCloseDetail={onCloseDetail}
-        onNavigateCharger={onNavigateToCharger}
-        query={nav.query}
-        onChangeQuery={nav.setQuery}
-        results={nav.results}
-        recentGroups={nav.recentGroups}
-        carCoord={carCoord}
-        onSelectPlace={nav.select}
-      />
+      {screen === 'trip' && trip.trip ? (
+        <TripSheet
+          ref={tripSheetRef}
+          trip={trip.trip}
+          now={departAt}
+          onEditTrip={() => {}}
+          onSendToCar={() => {}}
+          onCancel={() => {
+            trip.clear();
+            setScreen('search');
+          }}
+        />
+      ) : (
+        <LocationSheet
+          ref={sheetRef}
+          tab={tab}
+          onTabChange={setTab}
+          chargers={listChargers}
+          availability={availability}
+          sort={sort}
+          onSortChange={setSort}
+          filter={filter}
+          onFilterChange={setFilter}
+          selectedCharger={selectedCharger}
+          onSelectCharger={onSelectCharger}
+          onCloseDetail={onCloseDetail}
+          onNavigateCharger={onNavigateToCharger}
+          query={nav.query}
+          onChangeQuery={nav.setQuery}
+          results={nav.results}
+          recentGroups={nav.recentGroups}
+          carCoord={carCoord}
+          onSelectPlace={onSelectPlace}
+        />
+      )}
 
       {/* Pinned action bar for the charger detail — floats at the screen bottom over the sheet, so it's
           reachable at every detent (the sheet always covers the screen bottom). */}
