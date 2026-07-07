@@ -16,3 +16,14 @@ export interface AppleResult {
   latitude: number;
   longitude: number;
 }
+
+export interface AppleRouteLeg {
+  distanceM: number;
+  durationS: number;
+}
+export interface AppleRoute {
+  polyline: { latitude: number; longitude: number }[];
+  legs: AppleRouteLeg[];
+  totalDistanceM: number;
+  totalDurationS: number;
+}

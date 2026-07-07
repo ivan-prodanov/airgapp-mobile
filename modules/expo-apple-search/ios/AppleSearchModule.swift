@@ -8,6 +8,14 @@ private func makeRegion(_ r: [String: Double]) -> MKCoordinateRegion {
   return MKCoordinateRegion(center: center, span: span)
 }
 
+// Extract an MKPolyline's coordinates as [{ latitude, longitude }].
+private func polyPoints(_ polyline: MKPolyline) -> [[String: Double]] {
+  let count = polyline.pointCount
+  var buf = [CLLocationCoordinate2D](repeating: CLLocationCoordinate2D(), count: count)
+  polyline.getCoordinates(&buf, range: NSRange(location: 0, length: count))
+  return buf.map { ["latitude": $0.latitude, "longitude": $0.longitude] }
+}
+
 // One-shot wrapper around MKLocalSearchCompleter (which streams updates via its delegate). Retains
 // itself until the first results/error callback, then resolves the promise and releases.
 private final class CompleterBox: NSObject, MKLocalSearchCompleterDelegate {
@@ -78,6 +86,47 @@ public class AppleSearchModule: Module {
           ]
         }
         promise.resolve(items)
+      }
+    }
+
+    AsyncFunction("route") { (coords: [[String: Double]], promise: Promise) in
+      DispatchQueue.main.async {
+        func point(_ c: [String: Double]) -> MKMapItem {
+          MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: c["latitude"] ?? 0, longitude: c["longitude"] ?? 0)))
+        }
+        if coords.count < 2 {
+          promise.resolve(["polyline": [], "legs": [], "totalDistanceM": 0, "totalDurationS": 0])
+          return
+        }
+        var polyline: [[String: Double]] = []
+        var legs: [[String: Double]] = []
+        var totalDistanceM = 0.0
+        var totalDurationS = 0.0
+        func step(_ i: Int) {
+          if i >= coords.count - 1 {
+            promise.resolve([
+              "polyline": polyline, "legs": legs,
+              "totalDistanceM": totalDistanceM, "totalDurationS": totalDurationS,
+            ])
+            return
+          }
+          let req = MKDirections.Request()
+          req.source = point(coords[i])
+          req.destination = point(coords[i + 1])
+          req.transportType = .automobile
+          MKDirections(request: req).calculate { resp, err in
+            guard let r = resp?.routes.first else {
+              promise.reject("APPLE_ROUTE", err?.localizedDescription ?? "no route")
+              return
+            }
+            polyline.append(contentsOf: polyPoints(r.polyline))
+            legs.append(["distanceM": r.distance, "durationS": r.expectedTravelTime])
+            totalDistanceM += r.distance
+            totalDurationS += r.expectedTravelTime
+            step(i + 1)
+          }
+        }
+        step(0)
       }
     }
   }
