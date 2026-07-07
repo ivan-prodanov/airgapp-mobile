@@ -48,7 +48,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "build:places": "tsx scripts/geonames/build-places-db.ts",
-    "test": "node --import tsx --test src/state/fleet.test.ts src/state/controlActions.test.ts src/state/preferences.test.ts src/state/persistence.test.ts src/services/gazetteer.test.ts src/services/place.test.ts"
+    "test": "node --import tsx --test src/state/fleet.test.ts src/state/controlActions.test.ts src/state/preferences.test.ts src/state/persistence.test.ts src/services/gazetteer.test.ts src/services/place.test.ts src/services/searchProvider.test.ts"
   },
   "private": true
 }
