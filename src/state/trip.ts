@@ -55,6 +55,13 @@ export function startTrip(car: TripStop, place: Place): Trip {
 export function addStop(trip: Trip, place: Place): Trip {
   return { stops: [...trip.stops, placeToStop(place)] };
 }
+// Insert a place stop at `index`, clamped to [1, stops.length] so it never lands before the car.
+export function insertStop(trip: Trip, place: Place, index: number): Trip {
+  const at = Math.max(1, Math.min(index, trip.stops.length));
+  const stops = [...trip.stops];
+  stops.splice(at, 0, placeToStop(place));
+  return { stops };
+}
 export function addCharger(trip: Trip, c: Charger): Trip {
   return { stops: [...trip.stops, chargerToStop(c)] };
 }

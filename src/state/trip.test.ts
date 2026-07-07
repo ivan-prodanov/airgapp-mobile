@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  carStop, startTrip, addStop, addCharger, removeStop, reorderStops,
+  carStop, startTrip, addStop, addCharger, removeStop, reorderStops, insertStop,
   straightLineLegs, computeItinerary, tripTotals, type TripStop, type Leg,
 } from './trip';
 import type { Place } from '@/services/place';
@@ -76,4 +76,16 @@ test('computeItinerary drains per km, restores at chargers, advances time', () =
 
 test('tripTotals sums legs', () => {
   assert.deepEqual(tripTotals([{ distanceM: 10, durationS: 1 }, { distanceM: 5, durationS: 2 }]), { distanceM: 15, durationS: 3 });
+});
+
+test('insertStop inserts at index, clamped to [1, length] (never before the car)', () => {
+  let t = startTrip(carStop(CAR), place('A', 43, 23));
+  t = addStop(t, place('B', 44, 24)); // [car, A, B]
+  t = insertStop(t, place('X', 45, 25), 1); // before A
+  assert.deepEqual(t.stops.map((s) => s.title), ['Car location', 'X', 'A', 'B']);
+  t = insertStop(t, place('Y', 46, 26), 0); // clamp → index 1 (never before car)
+  assert.equal(t.stops[0].title, 'Car location');
+  assert.equal(t.stops[1].title, 'Y');
+  const end = insertStop(t, place('Z', 47, 27), 999); // clamp → append
+  assert.equal(end.stops[end.stops.length - 1].title, 'Z');
 });
