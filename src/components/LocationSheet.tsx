@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   Animated,
   Linking,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
   type GestureResponderHandlers,
@@ -14,7 +15,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
-import { busyTimesFor, formatKm, MOCK_RECENTS, type RecentDestination } from '@/state/mockLocation';
+import { busyTimesFor, distanceMeters, formatKm, type LatLng } from '@/state/mockLocation';
+import type { Place } from '@/services/place';
+import type { RecentGroup } from '@/services/recents';
 import {
   chargerBadge,
   formatOpeningHours,
@@ -58,6 +61,13 @@ interface Props {
   onSelectCharger: (charger: Charger) => void;
   onCloseDetail: () => void;
   onNavigateCharger: (charger: Charger) => void; // maps hand-off (detail distance pill)
+  // Navigate search (recents tab): live query + Apple/local results + persisted recents + car pos for distance.
+  query: string;
+  onChangeQuery: (text: string) => void;
+  results: Place[];
+  recentGroups: RecentGroup[];
+  carCoord: LatLng;
+  onSelectPlace: (place: Place) => void;
 }
 
 // Rubber-band overscroll past the snap bounds — the SAME mechanism the Climate sheet uses (Gorhom's
@@ -74,7 +84,7 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 // middle / near-full), exactly like the Climate sheet. Recents tab = search + recent destinations; Charging
 // tab = the "Nearby Chargers" view with Filter / Sort / AC-DC controls and the station list.
 export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function LocationSheet(
-  { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger },
+  { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger, query, onChangeQuery, results, recentGroups, carCoord, onSelectPlace },
   ref,
 ) {
   const { height } = useWindowDimensions();
@@ -135,6 +145,18 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
     }),
   ).current;
 
+  // Search/focused mode: tapping the Navigate field grows the sheet to the full detent and hides the tabs;
+  // clearing/exiting drops it back to the middle.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const openSearch = () => {
+    setSearchFocused(true);
+    settle(snaps.full);
+  };
+  const closeSearch = () => {
+    setSearchFocused(false);
+    settle(snaps.middle);
+  };
+
   return (
     <Animated.View style={[styles.sheet, { height: SHEET_H, transform: [{ translateY }] }]}>
       {/* Only this top strip drags the sheet (PanResponder), so the body below can scroll freely. */}
@@ -143,7 +165,20 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
       </View>
 
       {tab === 'recents' ? (
-        <RecentsView onTabChange={onTabChange} insetBottom={insetBottom} dragHandlers={pan.panHandlers} />
+        <RecentsView
+          insetBottom={insetBottom}
+          dragHandlers={pan.panHandlers}
+          onTabChange={onTabChange}
+          focused={searchFocused}
+          onFocus={openSearch}
+          onExit={closeSearch}
+          query={query}
+          onChangeQuery={onChangeQuery}
+          results={results}
+          recentGroups={recentGroups}
+          carCoord={carCoord}
+          onSelectPlace={onSelectPlace}
+        />
       ) : (
         <ChargingView
           chargers={chargers}
@@ -170,21 +205,60 @@ function RecentsView({
   onTabChange,
   insetBottom,
   dragHandlers,
+  focused,
+  onFocus,
+  onExit,
+  query,
+  onChangeQuery,
+  results,
+  recentGroups,
+  carCoord,
+  onSelectPlace,
 }: {
   onTabChange: (tab: LocationTab) => void;
   insetBottom: number;
   dragHandlers: GestureResponderHandlers;
+  focused: boolean;
+  onFocus: () => void;
+  onExit: () => void;
+  query: string;
+  onChangeQuery: (text: string) => void;
+  results: Place[];
+  recentGroups: RecentGroup[];
+  carCoord: LatLng;
+  onSelectPlace: (place: Place) => void;
 }) {
+  const inputRef = useRef<TextInput | null>(null);
+  const typing = focused && query.trim().length > 0;
+
+  const clear = () => {
+    if (query.length > 0) {
+      onChangeQuery(''); // clear, stay focused
+    } else {
+      inputRef.current?.blur();
+      onExit();
+    }
+  };
+  const select = (place: Place) => {
+    onSelectPlace(place);
+    inputRef.current?.blur();
+    onExit();
+  };
+
   return (
     <View style={styles.tabContent}>
-      {/* Header is draggable (moves the sheet); the list below scrolls. */}
-      <View {...dragHandlers}>
-        <View style={styles.searchField}>
-          <SymbolView name="magnifyingglass" tintColor="rgba(255,255,255,0.5)" size={18} />
-          <Text style={styles.searchPlaceholder}>Navigate</Text>
-        </View>
+      <SearchField
+        inputRef={inputRef}
+        focused={focused}
+        query={query}
+        onChangeQuery={onChangeQuery}
+        onFocus={onFocus}
+        onClear={clear}
+      />
 
-        <View style={styles.tabs}>
+      {/* Tabs only in browse mode; hidden while searching. Draggable so it still resizes the sheet. */}
+      {!focused ? (
+        <View {...dragHandlers} style={styles.tabs}>
           <Pressable style={styles.tab} onPress={() => onTabChange('recents')}>
             <Text style={[styles.tabLabel, styles.tabActive]}>Recents</Text>
           </Pressable>
@@ -193,44 +267,100 @@ function RecentsView({
             <Text style={[styles.tabLabel, styles.tabInactive]}>Charging</Text>
           </Pressable>
         </View>
-      </View>
+      ) : null}
 
       <ScrollView
         style={styles.scrollList}
         contentContainerStyle={[styles.list, { paddingBottom: insetBottom + 24 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {MOCK_RECENTS.map((group) => (
-          <View key={group.title}>
-            <View style={styles.groupHeader}>
-              <Text style={styles.groupTitle}>{group.title}</Text>
-              <View style={styles.groupLine} />
-            </View>
-            {group.items.map((item) => (
-              <RecentRow key={item.id} item={item} />
+        {typing
+          ? results.map((place) => (
+              <PlaceRow key={place.id} place={place} carCoord={carCoord} onPress={() => select(place)} />
+            ))
+          : recentGroups.map((group) => (
+              <View key={group.title}>
+                <View style={styles.groupHeader}>
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                  <View style={styles.groupLine} />
+                </View>
+                {group.items.map((place) => (
+                  <PlaceRow key={place.id} place={place} carCoord={carCoord} onPress={() => select(place)} />
+                ))}
+              </View>
             ))}
-          </View>
-        ))}
       </ScrollView>
     </View>
   );
 }
 
-function RecentRow({ item }: { item: RecentDestination }) {
+// The Navigate field: magnifier + a TextInput with a floating "Navigate" label (shown once there is text),
+// and an ✕ (clear text, or exit search when already empty) while focused.
+function SearchField({
+  inputRef,
+  focused,
+  query,
+  onChangeQuery,
+  onFocus,
+  onClear,
+}: {
+  inputRef: RefObject<TextInput | null>;
+  focused: boolean;
+  query: string;
+  onChangeQuery: (text: string) => void;
+  onFocus: () => void;
+  onClear: () => void;
+}) {
   return (
-    <Pressable style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}>
+    <View style={styles.searchField}>
+      <SymbolView name="magnifyingglass" tintColor="rgba(255,255,255,0.5)" size={18} />
+      <View style={styles.searchInputWrap}>
+        {query.length > 0 ? <Text style={styles.searchFloatLabel}>Navigate</Text> : null}
+        <TextInput
+          ref={inputRef}
+          style={styles.searchInput}
+          value={query}
+          onChangeText={onChangeQuery}
+          onFocus={onFocus}
+          placeholder="Navigate"
+          placeholderTextColor="rgba(255,255,255,0.5)"
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="none"
+          clearButtonMode="never"
+        />
+      </View>
+      {focused ? (
+        <Pressable hitSlop={10} onPress={onClear}>
+          <SymbolView name="xmark" tintColor="rgba(255,255,255,0.6)" size={18} weight="medium" />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+// One row for both autocomplete results and recents: bold title, gray subtitle (1 line), distance pill.
+function PlaceRow({ place, carCoord, onPress }: { place: Place; carCoord: LatLng; onPress: () => void }) {
+  const km = place.coordinate ? formatKm(distanceMeters(carCoord, place.coordinate) / 1000) : '';
+  return (
+    <Pressable style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]} onPress={onPress}>
       <View style={styles.rowText}>
         <Text style={styles.rowName} numberOfLines={1}>
-          {item.name}
+          {place.title}
         </Text>
-        <Text style={styles.rowAddress} numberOfLines={1}>
-          {item.address}
-        </Text>
+        {place.subtitle ? (
+          <Text style={styles.rowAddress} numberOfLines={1}>
+            {place.subtitle}
+          </Text>
+        ) : null}
       </View>
-      <View style={styles.distancePill}>
-        <SymbolView name="mappin" tintColor="rgba(255,255,255,0.55)" size={18} />
-        <Text style={styles.distanceText}>{formatKm(item.distanceKm)}</Text>
-      </View>
+      {km ? (
+        <View style={styles.distancePill}>
+          <SymbolView name="mappin" tintColor="rgba(255,255,255,0.55)" size={18} />
+          <Text style={styles.distanceText}>{km}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -687,7 +817,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
-  searchPlaceholder: { fontSize: 17, color: 'rgba(255,255,255,0.5)' },
+  searchInputWrap: { flex: 1, justifyContent: 'center' },
+  searchFloatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: -2 },
+  searchInput: { fontSize: 17, color: 'white', padding: 0 },
   tabs: { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 6 },
   tab: { flex: 1, alignItems: 'center' },
   tabDivider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: 'rgba(255,255,255,0.18)' },
