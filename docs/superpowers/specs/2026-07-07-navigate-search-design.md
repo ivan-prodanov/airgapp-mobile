@@ -89,14 +89,18 @@ point where the (out-of-scope) destination behavior will later plug in.
 
 ## Data — the gazetteer
 
-- **Source:** GeoNames **`cities1000`** (~150k cities/towns with population ≥ 1000 — good town coverage),
-  **CC BY 4.0** (openly licensed → bundleable with attribution "© GeoNames, CC BY 4.0").
-- **Shape:** a `places` SQLite table — `id, name, asciiname, lat, lng, country, admin1, population` — with an
-  index on `name` (and `asciiname` for accent-insensitive matching) for fast prefix queries.
-- **Delivery:** **bundled in-app** (a few MB) so offline place search works **from first install** — unlike
-  the pushed charger DB, offline place search is core enough to ship with the binary. A small build script
-  (mirroring `build-charger-db.ts`) converts the GeoNames download → the `places` SQLite/asset, re-runnable to
-  refresh. (`cities5000` is the leaner option if size matters; `cities1000` is the default.)
+- **Source:** GeoNames **`cities1000`** — **170,267** cities/towns with population ≥ 1000 (good small-town
+  coverage), **CC BY 4.0** (openly licensed → bundleable with attribution "© GeoNames, CC BY 4.0").
+- **Shape:** a `places` SQLite table — `id, name, asciiname, lat, lng, country, admin1, population` — indexed
+  on `name` and `asciiname` (accent-insensitive matching) for fast prefix queries.
+- **Size (measured, trimmed to those columns + indexes):** **~16 MB** on-device (~8.7 MB gzipped). Density
+  ladder evaluated: cities5000 = 69k/6.4 MB, cities1000 = 170k/16 MB, cities500 = 235k/22 MB. **cities1000
+  chosen** — small-town coverage matters (Balkan towns are often < 5000 pop) and 16 MB is negligible next to
+  the 34 MB charger DB. (Denser than cities500 means the full ~400–500 MB allCountries — not worth it.)
+- **Delivery:** **bundled in-app** so offline place search works **from first install** (unlike the pushed
+  charger DB — offline place search is core enough to ship with the binary). A small build script (mirroring
+  `build-charger-db.ts`) downloads GeoNames → trims to the columns above → writes the `places` SQLite asset,
+  re-runnable to refresh.
 
 ## Data flow (search logic)
 
