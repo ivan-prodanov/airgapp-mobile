@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
-import { BottomSheet, type BottomSheetHandle } from './BottomSheet';
+import { BottomSheet, type BottomSheetHandle, type SheetScrollProps } from './BottomSheet';
 
 import { busyTimesFor, distanceMeters, formatKm, type LatLng } from '@/state/mockLocation';
 import type { Place } from '@/services/place';
@@ -78,7 +78,7 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
 
   return (
     <BottomSheet ref={ref}>
-      {({ dragHandlers, expandFull, collapseToMiddle }) => {
+      {({ dragHandlers, expandFull, collapseToMiddle, contentPanHandlers, scrollProps }) => {
         // Focusing the Navigate field grows the sheet to full; the tabs stay visible.
         const openSearch = () => {
           setSearchFocused(true);
@@ -136,6 +136,8 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
                 recentGroups={recentGroups}
                 carCoord={carCoord}
                 onSelectPlace={onSelectPlace}
+                contentPanHandlers={contentPanHandlers}
+                scrollProps={scrollProps}
               />
             ) : (
               <ChargingBody
@@ -145,6 +147,8 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
                 onFilterChange={onFilterChange}
                 onOpenSort={() => setSortOpen(true)}
                 onSelectCharger={onSelectCharger}
+                contentPanHandlers={contentPanHandlers}
+                scrollProps={scrollProps}
               />
             )}
           </View>
@@ -201,6 +205,8 @@ function LocationBody({
   recentGroups,
   carCoord,
   onSelectPlace,
+  contentPanHandlers,
+  scrollProps,
 }: {
   insetBottom: number;
   inputRef: RefObject<TextInput | null>;
@@ -213,6 +219,8 @@ function LocationBody({
   recentGroups: RecentGroup[];
   carCoord: LatLng;
   onSelectPlace: (place: Place) => void;
+  contentPanHandlers: GestureResponderHandlers;
+  scrollProps: SheetScrollProps;
 }) {
   const typing = focused && query.trim().length > 0;
 
@@ -241,28 +249,31 @@ function LocationBody({
         onClear={clear}
       />
 
-      <ScrollView
-        style={styles.scrollList}
-        contentContainerStyle={[styles.list, { paddingBottom: insetBottom + 24 }]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {typing
-          ? results.map((place) => (
-              <PlaceRow key={place.id} place={place} carCoord={carCoord} onPress={() => select(place)} />
-            ))
-          : recentGroups.map((group) => (
-              <View key={group.title}>
-                <View style={styles.groupHeader}>
-                  <Text style={styles.groupTitle}>{group.title}</Text>
-                  <View style={styles.groupLine} />
+      <View style={styles.scrollList} {...contentPanHandlers}>
+        <ScrollView
+          {...scrollProps}
+          style={styles.scrollList}
+          contentContainerStyle={[styles.list, { paddingBottom: insetBottom + 24 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {typing
+            ? results.map((place) => (
+                <PlaceRow key={place.id} place={place} carCoord={carCoord} onPress={() => select(place)} />
+              ))
+            : recentGroups.map((group) => (
+                <View key={group.title}>
+                  <View style={styles.groupHeader}>
+                    <Text style={styles.groupTitle}>{group.title}</Text>
+                    <View style={styles.groupLine} />
+                  </View>
+                  {group.items.map((place) => (
+                    <PlaceRow key={place.id} place={place} carCoord={carCoord} onPress={() => select(place)} />
+                  ))}
                 </View>
-                {group.items.map((place) => (
-                  <PlaceRow key={place.id} place={place} carCoord={carCoord} onPress={() => select(place)} />
-                ))}
-              </View>
-            ))}
-      </ScrollView>
+              ))}
+        </ScrollView>
+      </View>
     </>
   );
 }
@@ -346,6 +357,8 @@ function ChargingBody({
   onFilterChange,
   onOpenSort,
   onSelectCharger,
+  contentPanHandlers,
+  scrollProps,
 }: {
   insetBottom: number;
   chargers: Charger[];
@@ -353,6 +366,8 @@ function ChargingBody({
   onFilterChange: (f: ChargerFilter) => void;
   onOpenSort: () => void;
   onSelectCharger: (c: Charger) => void;
+  contentPanHandlers: GestureResponderHandlers;
+  scrollProps: SheetScrollProps;
 }) {
   return (
     <>
@@ -368,15 +383,18 @@ function ChargingBody({
       {chargers.length === 0 ? (
         <Text style={styles.emptyText}>No chargers in this area</Text>
       ) : (
-        <ScrollView
-          style={styles.scrollList}
-          contentContainerStyle={[styles.list, { paddingBottom: insetBottom + 24 }]}
-          showsVerticalScrollIndicator={false}
-        >
-          {chargers.map((c) => (
-            <ChargerRow key={c.id} charger={c} badge={chargerBadge(c)} onPress={() => onSelectCharger(c)} />
-          ))}
-        </ScrollView>
+        <View style={styles.scrollList} {...contentPanHandlers}>
+          <ScrollView
+            {...scrollProps}
+            style={styles.scrollList}
+            contentContainerStyle={[styles.list, { paddingBottom: insetBottom + 24 }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {chargers.map((c) => (
+              <ChargerRow key={c.id} charger={c} badge={chargerBadge(c)} onPress={() => onSelectCharger(c)} />
+            ))}
+          </ScrollView>
+        </View>
       )}
     </>
   );

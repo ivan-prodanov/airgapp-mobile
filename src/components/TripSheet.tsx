@@ -43,7 +43,7 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
 
   return (
     <BottomSheet ref={ref} lowestDetent="middle" middleFrac={TRIP_SHEET_FRAC}>
-      {({ dragHandlers }) => (
+      {({ dragHandlers, contentPanHandlers, scrollProps, setContentBusy }) => (
         <View style={styles.content}>
           <View {...dragHandlers} style={styles.header}>
             <Text style={styles.title}>Trip</Text>
@@ -54,18 +54,24 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
           </View>
 
           {/* The car row is the (non-reorderable) list header, so it can never be dragged or displaced. Only
-              the remaining stops are reorderable; their list index maps to trip index + 1. */}
-          <ReorderableList
-            data={rows.slice(1)}
-            keyExtractor={(row) => row.stop.id}
-            onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from + 1, to + 1)}
-            ListHeaderComponent={<CarRow row={rows[0]} onLongPress={onLongPressRow} onRowAction={onRowAction} />}
-            contentContainerStyle={{ paddingBottom: insetBottom + FOOTER_CLEARANCE }}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item, index }) => (
-              <TripRow row={item} index={index + 1} onLongPress={onLongPressRow} onRowAction={onRowAction} />
-            )}
-          />
+              the remaining stops are reorderable; their list index maps to trip index + 1. The content pan
+              resizes the sheet; the busy latch keeps a row reorder from being stolen by it. */}
+          <View style={styles.listWrap} {...contentPanHandlers}>
+            <ReorderableList
+              data={rows.slice(1)}
+              keyExtractor={(row) => row.stop.id}
+              onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from + 1, to + 1)}
+              onDragStart={() => setContentBusy(true)}
+              onDragEnd={() => setContentBusy(false)}
+              scrollEnabled={scrollProps.scrollEnabled}
+              ListHeaderComponent={<CarRow row={rows[0]} onLongPress={onLongPressRow} onRowAction={onRowAction} />}
+              contentContainerStyle={{ paddingBottom: insetBottom + FOOTER_CLEARANCE }}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item, index }) => (
+                <TripRow row={item} index={index + 1} onLongPress={onLongPressRow} onRowAction={onRowAction} />
+              )}
+            />
+          </View>
         </View>
       )}
     </BottomSheet>
@@ -192,6 +198,7 @@ function HeaderButton({ icon, label, tint = 'white', onPress }: { icon: SFSymbol
 
 const styles = StyleSheet.create({
   content: { flex: 1 },
+  listWrap: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 2, marginBottom: 12 },
   title: { fontSize: 22, fontWeight: '700', color: 'white' },
   headerActions: { flexDirection: 'row', gap: 8 },
