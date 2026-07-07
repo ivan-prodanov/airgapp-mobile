@@ -31,9 +31,14 @@ in the binary.
 
 ## Tools
 
-| Interaction | Library | Native? |
+**Architecture A (all-RN)** — chosen so rows stay custom RN views (consistent with the app) and compose
+cleanly. `@expo/ui`'s SwiftUI `ContextMenu` and `react-native-context-menu-view` were both rejected: the
+former is SwiftUI-hosted and won't wrap a custom RN row that's also inside RN swipe/drag; the latter has open
+New-Architecture rendering bugs. The long-press menu is therefore hand-rolled but styled to feel native.
+
+| Interaction | Library / approach | Native? |
 |---|---|---|
-| Long-press context menu | **`@expo/ui` `ContextMenu`** (already installed + linked) | JS-only — native iOS `UIMenu` (blur/preview/haptics), no RNGH |
+| Long-press context menu | **hand-rolled** — RN `Modal` + dark scrim + `expo-haptics` (already installed), menu positioned at the row | JS-only, no new dep |
 | Swipe actions | **`ReanimatedSwipeable`** (`react-native-gesture-handler/ReanimatedSwipeable`, already installed) | JS-only (needs the root view above) |
 | Drag-reorder | **`react-native-reorderable-list`** v0.18 (`pnpm add`) | JS-only, no native code (rides on RNGH + reanimated) |
 | Share | **`Share`** from `react-native` core | JS-only |
@@ -55,7 +60,8 @@ the `editTrip` screen state.
     stays first; the handle is omitted on the car row.
   - **Swipe** (trailing / right→left) reveals actions, with **Delete** as the **destructive full-swipe**
     (`ReanimatedSwipeable`).
-  - **Long-press** opens the native **`@expo/ui` `ContextMenu`** with the same actions.
+  - **Long-press** opens a **hand-rolled context menu** (RN `Modal` + dark scrim + haptics, styled to look
+    native) with the same actions.
   - **Actions** (both swipe and menu): **Copy** (name/address → clipboard, `expo-clipboard`), **Share** (native
     share sheet with the place name + an Apple-Maps URL), **Insert Stop** (search → insert *after this row*),
     **Delete** (remove; removing the last non-car stop discards the trip → back to search).
@@ -124,8 +130,9 @@ Add one pure op (node-tested); the rest already exist (`addStop`, `addCharger`, 
 - **Industry gesture libs over hand-rolled:** `react-native-reorderable-list` + `ReanimatedSwipeable` +
   `@expo/ui ContextMenu`, enabled by a single root `GestureHandlerRootView`; **RNGH smoke-test gates** the
   approach (PanResponder fallback if it fails).
-- **Native context menu via `@expo/ui`** (already installed, New-Arch-native, no RNGH) — chosen over
-  `react-native-context-menu-view` (open Fabric bugs) and `zeego` (stale pinned peers).
+- **Context menu hand-rolled** (RN `Modal` + scrim + haptics) — `@expo/ui`'s SwiftUI `ContextMenu` is
+  SwiftUI-hosted and won't compose with RN swipe/drag on the same custom row; `react-native-context-menu-view`
+  has New-Arch rendering bugs. **Architecture A (all-RN)** keeps rows consistent + fully controllable.
 - **Copy = clipboard; plus Share** (native share sheet, maps-style) — both on rows via swipe and the menu.
 - **One editable trip screen** — the separate Edit Trip mode is removed (direct manipulation).
 - **Add Charger reuses the Charging tab**, not a bespoke picker.
