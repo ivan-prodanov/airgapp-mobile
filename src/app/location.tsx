@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, Pressable, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -44,6 +44,7 @@ import { useTrip } from '@/state/useTrip';
 import { straightLineLegs, tripTotals } from '@/state/trip';
 import { useTripRoute } from '@/state/useTripRoute';
 import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle, type TripRowAction } from '@/components/TripSheet';
+import { TripRowMenu } from '@/components/TripRowMenu';
 import type { Place } from '@/services/place';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
@@ -148,6 +149,10 @@ export default function LocationView() {
   const [departAt, setDepartAt] = useState(0);
   // When set, the next place picked in search is inserted at this index instead of appended (Insert Stop).
   const [pendingInsert, setPendingInsert] = useState<number | null>(null);
+  // Long-press context menu target (trip stop index + the row's screen Y).
+  const [rowMenu, setRowMenu] = useState<{ index: number; anchorY: number } | null>(null);
+  // True while picking a charger to append to the active trip (reuses the Charging tab).
+  const [addingCharger, setAddingCharger] = useState(false);
 
   // Select a place → record a recent, then start a trip (none yet), insert at a pending position, or append.
   const onSelectPlace = (place: Place) => {
@@ -173,11 +178,43 @@ export default function LocationView() {
     else if (action === 'insert') {
       setPendingInsert(index + 1);
       setScreen('search');
+    } else if (action === 'share') {
+      const c = stop.coordinate;
+      const mapsUrl = c ? `https://maps.apple.com/?ll=${c.latitude},${c.longitude}&q=${encodeURIComponent(stop.title)}` : '';
+      Share.share({ message: [stop.title, stop.subtitle, mapsUrl].filter(Boolean).join('\n') }).catch(() => {});
+    } else if (action === 'copy') {
+      copyStop(stop.title, stop.subtitle);
     }
   };
-  // Filled in Task 4 (menu) and Task 5 (Add Charger via the Charging tab).
-  const openRowMenu = (_index: number, _anchorY: number) => {};
-  const onAddChargerToTrip = () => {};
+  const openRowMenu = (index: number, anchorY: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setRowMenu({ index, anchorY });
+  };
+  // Add Charger → frame the trip and open the Charging tab in "add to trip" mode; the charger detail's
+  // action becomes "Add to Trip".
+  const onAddChargerToTrip = () => {
+    if (!trip.trip) return;
+    mapRef.current?.fitToCoordinates(trip.trip.stops.map((s) => s.coordinate), {
+      edgePadding: { top: 80, right: 40, bottom: Math.round(height * (SHEET_MIDDLE_FRAC - SHEET_MINIMAL_FRAC)), left: 40 },
+      animated: true,
+    });
+    setAddingCharger(true);
+    setTab('charging');
+    setScreen('search');
+  };
+  // Closing the Charging tab (X) while adding a charger returns to the trip instead of the recents search.
+  const onTabChangeFromLocation = (t: LocationTab) => {
+    if (addingCharger && t === 'recents') {
+      setAddingCharger(false);
+      setScreen('trip');
+    } else {
+      setTab(t);
+    }
+  };
+  // Filled in Task 6 (expo-clipboard needs the native rebuild); Light haptic gives immediate feedback now.
+  const copyStop = (_title: string, _subtitle?: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
 
   // Removing every non-car stop discards the trip (car alone isn't a trip).
   const onRemoveStop = (id: string) => {
@@ -447,6 +484,14 @@ export default function LocationView() {
   const onCloseDetail = () => setSelectedCharger(null);
   const onNavigateToCharger = (c: Charger) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (addingCharger && trip.trip) {
+      trip.addCharger(c);
+      setAddingCharger(false);
+      onCloseDetail();
+      setTab('recents');
+      setScreen('trip');
+      return;
+    }
     onSelectPlace({
       id: `charger:${c.id}`,
       title: c.name,
@@ -586,7 +631,7 @@ export default function LocationView() {
         <LocationSheet
           ref={sheetRef}
           tab={tab}
-          onTabChange={setTab}
+          onTabChange={onTabChangeFromLocation}
           chargers={listChargers}
           availability={availability}
           sort={sort}
@@ -611,12 +656,20 @@ export default function LocationView() {
       {tab === 'charging' && selectedCharger ? (
         <SafeAreaView edges={['bottom']} style={styles.navigateBar} pointerEvents="box-none">
           <View style={styles.navigateRow}>
-            <Pressable style={styles.navigateButton} onPress={onAddStop}>
-              <Text style={styles.navigateText}>Add Stop</Text>
-            </Pressable>
-            <Pressable style={styles.navigateButton} onPress={() => onNavigateToCharger(selectedCharger)}>
-              <Text style={styles.navigateText}>Navigate</Text>
-            </Pressable>
+            {addingCharger ? (
+              <Pressable style={styles.navigateButton} onPress={() => onNavigateToCharger(selectedCharger)}>
+                <Text style={styles.navigateText}>Add to Trip</Text>
+              </Pressable>
+            ) : (
+              <>
+                <Pressable style={styles.navigateButton} onPress={onAddStop}>
+                  <Text style={styles.navigateText}>Add Stop</Text>
+                </Pressable>
+                <Pressable style={styles.navigateButton} onPress={() => onNavigateToCharger(selectedCharger)}>
+                  <Text style={styles.navigateText}>Navigate</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </SafeAreaView>
       ) : null}
@@ -634,6 +687,16 @@ export default function LocationView() {
             <Text style={styles.tripCancelText}>Cancel</Text>
           </Pressable>
         </SafeAreaView>
+      ) : null}
+
+      {rowMenu && trip.trip ? (
+        <TripRowMenu
+          visible
+          anchorY={rowMenu.anchorY}
+          title={trip.trip.stops[rowMenu.index]?.title ?? ''}
+          onAction={(a) => onTripRowAction(rowMenu.index, a)}
+          onClose={() => setRowMenu(null)}
+        />
       ) : null}
     </View>
   );

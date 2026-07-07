@@ -1,8 +1,9 @@
-import { forwardRef } from 'react';
+import { forwardRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import ReorderableList, { useReorderableDrag, type ReorderableListReorderEvent } from 'react-native-reorderable-list';
+import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import { BottomSheet, type BottomSheetHandle } from './BottomSheet';
 import { computeItinerary, DEFAULT_ITINERARY_OPTS, type ItineraryRow, type Leg, type Trip } from '@/state/trip';
@@ -52,14 +53,17 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
             </View>
           </View>
 
+          {/* The car row is the (non-reorderable) list header, so it can never be dragged or displaced. Only
+              the remaining stops are reorderable; their list index maps to trip index + 1. */}
           <ReorderableList
-            data={rows}
+            data={rows.slice(1)}
             keyExtractor={(row) => row.stop.id}
-            onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from, Math.max(1, to))}
+            onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from + 1, to + 1)}
+            ListHeaderComponent={<RowContent row={rows[0]} isCar />}
             contentContainerStyle={{ paddingBottom: insetBottom + FOOTER_CLEARANCE }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item, index }) => (
-              <TripRow row={item} index={index} isCar={index === 0} onLongPress={onLongPressRow} />
+              <TripRow row={item} index={index + 1} onLongPress={onLongPressRow} onRowAction={onRowAction} />
             )}
           />
         </View>
@@ -68,26 +72,50 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
   );
 });
 
+// A reorderable (non-car) stop: swipe-left for actions, long-press for the menu, drag by the ≡ handle.
 function TripRow({
   row,
   index,
-  isCar,
   onLongPress,
+  onRowAction,
 }: {
   row: ItineraryRow;
   index: number;
-  isCar: boolean;
   onLongPress: (index: number, anchorY: number) => void;
+  onRowAction: (index: number, action: TripRowAction) => void;
 }) {
   const drag = useReorderableDrag();
+  return (
+    <Swipeable
+      friction={2}
+      rightThreshold={44}
+      renderRightActions={() => (
+        <View style={styles.actions}>
+          <SwipeBtn icon="square.and.arrow.up" bg="#3E6AE1" onPress={() => onRowAction(index, 'share')} />
+          <SwipeBtn icon="plus" bg="#5A5A5E" onPress={() => onRowAction(index, 'insert')} />
+          <SwipeBtn icon="trash.fill" bg="#E5484D" onPress={() => onRowAction(index, 'delete')} />
+        </View>
+      )}
+    >
+      <Pressable onLongPress={(e) => onLongPress(index, e.nativeEvent.pageY)} delayLongPress={280}>
+        <RowContent
+          row={row}
+          isCar={false}
+          trailing={
+            <Pressable hitSlop={10} onPressIn={drag} onLongPress={drag} delayLongPress={120}>
+              <SymbolView name="line.3.horizontal" tintColor="rgba(255,255,255,0.4)" size={20} />
+            </Pressable>
+          }
+        />
+      </Pressable>
+    </Swipeable>
+  );
+}
+
+function RowContent({ row, isCar, trailing }: { row: ItineraryRow; isCar: boolean; trailing?: ReactNode }) {
   const { stop } = row;
   return (
-    <Pressable
-      style={styles.row}
-      disabled={isCar}
-      onLongPress={(e) => onLongPress(index, e.nativeEvent.pageY)}
-      delayLongPress={280}
-    >
+    <View style={styles.row}>
       <SymbolView
         name={ICON[stop.kind]}
         tintColor={stop.kind === 'charger' ? '#E5484D' : isCar ? '#3E6AE1' : 'rgba(255,255,255,0.75)'}
@@ -105,11 +133,15 @@ function TripRow({
                 .join(' · ')}
         </Text>
       </View>
-      {isCar ? null : (
-        <Pressable hitSlop={10} onLongPress={drag} delayLongPress={120} onPressIn={drag}>
-          <SymbolView name="line.3.horizontal" tintColor="rgba(255,255,255,0.4)" size={20} />
-        </Pressable>
-      )}
+      {trailing}
+    </View>
+  );
+}
+
+function SwipeBtn({ icon, bg, onPress }: { icon: SFSymbol; bg: string; onPress: () => void }) {
+  return (
+    <Pressable style={[styles.swipeBtn, { backgroundColor: bg }]} onPress={onPress}>
+      <SymbolView name={icon} tintColor="white" size={20} />
     </Pressable>
   );
 }
@@ -134,4 +166,6 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: 'white' },
   rowMeta: { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 3 },
+  actions: { flexDirection: 'row' },
+  swipeBtn: { width: 64, height: 60, alignItems: 'center', justifyContent: 'center' },
 });
