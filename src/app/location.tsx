@@ -43,9 +43,7 @@ import { useNavigateSearch } from '@/hooks/useNavigateSearch';
 import { useTrip } from '@/state/useTrip';
 import { straightLineLegs, tripTotals } from '@/state/trip';
 import { useTripRoute } from '@/state/useTripRoute';
-import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle } from '@/components/TripSheet';
-import { EditTripSheet } from '@/components/EditTripSheet';
-import { AddChargerSheet } from '@/components/AddChargerSheet';
+import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle, type TripRowAction } from '@/components/TripSheet';
 import type { Place } from '@/services/place';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
@@ -144,17 +142,21 @@ export default function LocationView() {
 
   // Trip planning: selecting a place builds an in-memory trip shown in the TripSheet.
   const trip = useTrip();
-  const [screen, setScreen] = useState<'search' | 'trip' | 'editTrip' | 'addCharger'>('search');
+  const [screen, setScreen] = useState<'search' | 'trip'>('search');
   const tripSheetRef = useRef<TripSheetHandle>(null);
   // Departure clock for the itinerary (set when a trip starts, so times are stable while viewing).
   const [departAt, setDepartAt] = useState(0);
+  // When set, the next place picked in search is inserted at this index instead of appended (Insert Stop).
+  const [pendingInsert, setPendingInsert] = useState<number | null>(null);
 
-  // Select a place → record a recent, then either start a trip (none yet) or append to the one being edited.
+  // Select a place → record a recent, then start a trip (none yet), insert at a pending position, or append.
   const onSelectPlace = (place: Place) => {
     nav.select(place);
     if (trip.trip) {
-      trip.addStop(place);
-      setScreen('editTrip');
+      if (pendingInsert != null) trip.insertStop(place, pendingInsert);
+      else trip.addStop(place);
+      setPendingInsert(null);
+      setScreen('trip');
     } else {
       trip.start(carCoord, place);
       setDepartAt(Date.now());
@@ -162,6 +164,20 @@ export default function LocationView() {
       tripSheetRef.current?.expand();
     }
   };
+
+  // Row actions from the swipe/long-press menu. Copy/Share are wired in later tasks.
+  const onTripRowAction = (index: number, action: TripRowAction) => {
+    if (!trip.trip) return;
+    const stop = trip.trip.stops[index];
+    if (action === 'delete') onRemoveStop(stop.id);
+    else if (action === 'insert') {
+      setPendingInsert(index + 1);
+      setScreen('search');
+    }
+  };
+  // Filled in Task 4 (menu) and Task 5 (Add Charger via the Charging tab).
+  const openRowMenu = (_index: number, _anchorY: number) => {};
+  const onAddChargerToTrip = () => {};
 
   // Removing every non-car stop discards the trip (car alone isn't a trip).
   const onRemoveStop = (id: string) => {
@@ -186,21 +202,6 @@ export default function LocationView() {
   const tripTotalsVal = tripRoute
     ? { distanceM: tripRoute.totalDistanceM, durationS: tripRoute.totalDurationS }
     : tripTotals(tripLegs);
-
-  // Chargers within the bounding box of all trip stops (padded) — for the Add Charger picker.
-  const tripChargers = useMemo(() => {
-    if (!trip.trip) return [];
-    const lats = trip.trip.stops.map((s) => s.coordinate.latitude);
-    const lngs = trip.trip.stops.map((s) => s.coordinate.longitude);
-    const pad = 0.05;
-    const bounds = {
-      north: Math.max(...lats) + pad,
-      south: Math.min(...lats) - pad,
-      east: Math.max(...lngs) + pad,
-      west: Math.min(...lngs) - pad,
-    };
-    return osmChargersInBounds(bounds, carCoord).chargers;
-  }, [trip.trip, carCoord]);
 
   // Frame the whole trip (route if we have it, else the stops) above the trip sheet — same rule as the
   // Charging tab: mapPadding already reserves the lowest gear, so pad the bottom by the gap up to the trip
@@ -567,23 +568,19 @@ export default function LocationView() {
       </SafeAreaView>
 
       {screen === 'trip' && trip.trip ? (
-        <TripSheet ref={tripSheetRef} trip={trip.trip} legs={tripLegs} now={departAt} onEditTrip={() => setScreen('editTrip')} />
-      ) : screen === 'editTrip' && trip.trip ? (
-        <EditTripSheet
+        <TripSheet
+          ref={tripSheetRef}
           trip={trip.trip}
-          onRemove={onRemoveStop}
-          onReorder={trip.reorder}
-          onAddStop={() => setScreen('search')}
-          onAddCharger={() => setScreen('addCharger')}
-        />
-      ) : screen === 'addCharger' && trip.trip ? (
-        <AddChargerSheet
-          chargers={tripChargers}
-          onSelect={(c) => {
-            trip.addCharger(c);
-            setScreen('editTrip');
+          legs={tripLegs}
+          now={departAt}
+          onAddStop={() => {
+            setPendingInsert(null);
+            setScreen('search');
           }}
-          onClose={() => setScreen('editTrip')}
+          onAddCharger={onAddChargerToTrip}
+          onReorder={trip.reorder}
+          onRowAction={onTripRowAction}
+          onLongPressRow={openRowMenu}
         />
       ) : (
         <LocationSheet
@@ -632,18 +629,6 @@ export default function LocationView() {
             <Text style={styles.tripSendText}>
               Send to Car · {formatDuration(tripTotalsVal.durationS)} · {formatKm(tripTotalsVal.distanceM / 1000)}
             </Text>
-          </Pressable>
-          <Pressable hitSlop={8} style={styles.tripCancelButton} onPress={onTripCancel}>
-            <Text style={styles.tripCancelText}>Cancel</Text>
-          </Pressable>
-        </SafeAreaView>
-      ) : null}
-
-      {/* Pinned Edit-Trip actions — Done returns to the trip view; Cancel discards the trip. */}
-      {screen === 'editTrip' && trip.trip ? (
-        <SafeAreaView edges={['bottom']} style={styles.tripBar} pointerEvents="box-none">
-          <Pressable style={styles.tripSendButton} onPress={() => setScreen('trip')}>
-            <Text style={styles.tripSendText}>Done</Text>
           </Pressable>
           <Pressable hitSlop={8} style={styles.tripCancelButton} onPress={onTripCancel}>
             <Text style={styles.tripCancelText}>Cancel</Text>

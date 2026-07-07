@@ -1,5 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { VehicleProvider } from '@/state/VehicleProvider';
@@ -11,15 +12,17 @@ import { VehicleProvider } from '@/state/VehicleProvider';
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <VehicleProvider>
-        <AnimatedSplashOverlay />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
-          <Stack.Screen name="location" options={{ animation: 'slide_from_right' }} />
-        </Stack>
-      </VehicleProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <VehicleProvider>
+          <AnimatedSplashOverlay />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="location" options={{ animation: 'slide_from_right' }} />
+          </Stack>
+        </VehicleProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
