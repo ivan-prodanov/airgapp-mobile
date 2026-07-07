@@ -26,7 +26,7 @@ import {
   type StationAvailability,
 } from '@/services/tomtom';
 
-export type LocationTab = 'recents' | 'charging';
+export type LocationTab = 'location' | 'charging';
 export type ChargerSort = 'distance' | 'availability' | 'price';
 export interface ChargerFilter {
   dc: boolean;
@@ -54,28 +54,32 @@ interface Props {
   onSelectCharger: (charger: Charger) => void;
   onCloseDetail: () => void;
   onNavigateCharger: (charger: Charger) => void; // maps hand-off (detail distance pill)
-  // Navigate search (recents tab): live query + Apple/local results + persisted recents + car pos for distance.
+  // Navigate search (Location tab): live query + Apple/local results + persisted recents + car pos for distance.
   query: string;
   onChangeQuery: (text: string) => void;
   results: Place[];
   recentGroups: RecentGroup[];
   carCoord: LatLng;
   onSelectPlace: (place: Place) => void;
+  // When provided (a trip is active), render a ‹ Trip button that returns to the trip panel.
+  onBackToTrip?: () => void;
 }
 
-// Tesla Location bottom sheet content: Recents tab = search + recent destinations; Charging tab = the
-// "Nearby Chargers" view. The sheet chrome (detents, drag, handle) is the shared BottomSheet.
+// Tesla Location bottom sheet: one frame with a persistent header (optional ‹ Trip + always-visible
+// Location | Charging tabs) over a tab-switched body. Sort options + charger detail are overlays.
 export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function LocationSheet(
-  { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger, query, onChangeQuery, results, recentGroups, carCoord, onSelectPlace },
+  { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger, query, onChangeQuery, results, recentGroups, carCoord, onSelectPlace, onBackToTrip },
   ref,
 ) {
   const insetBottom = useSafeAreaInsets().bottom;
   const [searchFocused, setSearchFocused] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const inputRef = useRef<TextInput | null>(null);
 
   return (
     <BottomSheet ref={ref}>
       {({ dragHandlers, expandFull, collapseToMiddle }) => {
-        // Focusing the Navigate field grows the sheet to full + hides the tabs; exiting drops to middle.
+        // Focusing the Navigate field grows the sheet to full; the tabs stay visible.
         const openSearch = () => {
           setSearchFocused(true);
           expandFull();
@@ -84,48 +88,110 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
           setSearchFocused(false);
           collapseToMiddle();
         };
-        return tab === 'recents' ? (
-          <RecentsView
-            insetBottom={insetBottom}
-            dragHandlers={dragHandlers}
-            onTabChange={onTabChange}
-            focused={searchFocused}
-            onFocus={openSearch}
-            onExit={closeSearch}
-            query={query}
-            onChangeQuery={onChangeQuery}
-            results={results}
-            recentGroups={recentGroups}
-            carCoord={carCoord}
-            onSelectPlace={onSelectPlace}
-          />
-        ) : (
-          <ChargingView
-            chargers={chargers}
-            availability={availability}
-            sort={sort}
-            onSortChange={onSortChange}
-            filter={filter}
-            onFilterChange={onFilterChange}
-            selectedCharger={selectedCharger}
-            onSelectCharger={onSelectCharger}
-            onCloseDetail={onCloseDetail}
-            onNavigateCharger={onNavigateCharger}
-            onClose={() => onTabChange('recents')}
-            dragHandlers={dragHandlers}
-          />
+
+        if (sortOpen) {
+          return (
+            <SubSheet title="Sort By" onClose={() => setSortOpen(false)}>
+              {SORT_OPTIONS.map((opt) => (
+                <RadioRow
+                  key={opt.key}
+                  label={opt.label}
+                  selected={sort === opt.key}
+                  onPress={() => {
+                    onSortChange(opt.key);
+                    setSortOpen(false);
+                  }}
+                />
+              ))}
+            </SubSheet>
+          );
+        }
+
+        if (tab === 'charging' && selectedCharger) {
+          return (
+            <ChargerDetail
+              charger={selectedCharger}
+              availability={availability}
+              onClose={onCloseDetail}
+              onNavigate={onNavigateCharger}
+              dragHandlers={dragHandlers}
+              insetBottom={insetBottom}
+            />
+          );
+        }
+
+        return (
+          <View style={styles.tabContent}>
+            <Header dragHandlers={dragHandlers} tab={tab} onTabChange={onTabChange} onBackToTrip={onBackToTrip} />
+            {tab === 'location' ? (
+              <LocationBody
+                insetBottom={insetBottom}
+                inputRef={inputRef}
+                focused={searchFocused}
+                onFocus={openSearch}
+                onExit={closeSearch}
+                query={query}
+                onChangeQuery={onChangeQuery}
+                results={results}
+                recentGroups={recentGroups}
+                carCoord={carCoord}
+                onSelectPlace={onSelectPlace}
+              />
+            ) : (
+              <ChargingBody
+                insetBottom={insetBottom}
+                chargers={chargers}
+                filter={filter}
+                onFilterChange={onFilterChange}
+                onOpenSort={() => setSortOpen(true)}
+                onSelectCharger={onSelectCharger}
+              />
+            )}
+          </View>
         );
       }}
     </BottomSheet>
   );
 });
 
-// --- Recents ------------------------------------------------------------------------------------
-
-function RecentsView({
-  onTabChange,
-  insetBottom,
+// Persistent header: an optional ‹ Trip back button + the always-visible Location | Charging tabs. Draggable.
+function Header({
   dragHandlers,
+  tab,
+  onTabChange,
+  onBackToTrip,
+}: {
+  dragHandlers: GestureResponderHandlers;
+  tab: LocationTab;
+  onTabChange: (t: LocationTab) => void;
+  onBackToTrip?: () => void;
+}) {
+  return (
+    <View {...dragHandlers} style={styles.headerBar}>
+      {onBackToTrip ? (
+        <Pressable style={styles.backToTrip} hitSlop={8} onPress={onBackToTrip}>
+          <SymbolView name="chevron.left" tintColor="#3E6AE1" size={16} weight="semibold" />
+          <Text style={styles.backToTripText}>Trip</Text>
+        </Pressable>
+      ) : null}
+      <View style={styles.tabs}>
+        <Pressable style={styles.tab} onPress={() => onTabChange('location')}>
+          <Text style={[styles.tabLabel, tab === 'location' ? styles.tabActive : styles.tabInactive]}>Location</Text>
+        </Pressable>
+        <View style={styles.tabDivider} />
+        <Pressable style={styles.tab} onPress={() => onTabChange('charging')}>
+          <Text style={[styles.tabLabel, tab === 'charging' ? styles.tabActive : styles.tabInactive]}>Charging</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// --- Location tab body (search + results/recents) ----------------------------------------------
+
+function LocationBody({
+  insetBottom,
+  inputRef,
   focused,
   onFocus,
   onExit,
@@ -136,9 +202,8 @@ function RecentsView({
   carCoord,
   onSelectPlace,
 }: {
-  onTabChange: (tab: LocationTab) => void;
   insetBottom: number;
-  dragHandlers: GestureResponderHandlers;
+  inputRef: RefObject<TextInput | null>;
   focused: boolean;
   onFocus: () => void;
   onExit: () => void;
@@ -149,7 +214,6 @@ function RecentsView({
   carCoord: LatLng;
   onSelectPlace: (place: Place) => void;
 }) {
-  const inputRef = useRef<TextInput | null>(null);
   const typing = focused && query.trim().length > 0;
 
   const clear = () => {
@@ -167,7 +231,7 @@ function RecentsView({
   };
 
   return (
-    <View style={styles.tabContent}>
+    <>
       <SearchField
         inputRef={inputRef}
         focused={focused}
@@ -176,19 +240,6 @@ function RecentsView({
         onFocus={onFocus}
         onClear={clear}
       />
-
-      {/* Tabs only in browse mode; hidden while searching. Draggable so it still resizes the sheet. */}
-      {!focused ? (
-        <View {...dragHandlers} style={styles.tabs}>
-          <Pressable style={styles.tab} onPress={() => onTabChange('recents')}>
-            <Text style={[styles.tabLabel, styles.tabActive]}>Recents</Text>
-          </Pressable>
-          <View style={styles.tabDivider} />
-          <Pressable style={styles.tab} onPress={() => onTabChange('charging')}>
-            <Text style={[styles.tabLabel, styles.tabInactive]}>Charging</Text>
-          </Pressable>
-        </View>
-      ) : null}
 
       <ScrollView
         style={styles.scrollList}
@@ -212,7 +263,7 @@ function RecentsView({
               </View>
             ))}
       </ScrollView>
-    </View>
+    </>
   );
 }
 
@@ -286,108 +337,32 @@ function PlaceRow({ place, carCoord, onPress }: { place: Place; carCoord: LatLng
   );
 }
 
-// --- Charging -----------------------------------------------------------------------------------
+// --- Charging tab body (Sort By · DC · AC controls + list) --------------------------------------
 
-type ChargingSubMode = 'list' | 'sort' | 'filter';
-
-function ChargingView({
+function ChargingBody({
+  insetBottom,
   chargers,
-  availability,
-  sort,
-  onSortChange,
   filter,
   onFilterChange,
-  selectedCharger,
+  onOpenSort,
   onSelectCharger,
-  onCloseDetail,
-  onNavigateCharger,
-  onClose,
-  dragHandlers,
 }: {
+  insetBottom: number;
   chargers: Charger[];
-  availability: Record<string, StationAvailability>;
-  sort: ChargerSort;
-  onSortChange: (s: ChargerSort) => void;
   filter: ChargerFilter;
   onFilterChange: (f: ChargerFilter) => void;
-  selectedCharger: Charger | null;
+  onOpenSort: () => void;
   onSelectCharger: (c: Charger) => void;
-  onCloseDetail: () => void;
-  onNavigateCharger: (c: Charger) => void;
-  onClose: () => void;
-  dragHandlers: GestureResponderHandlers;
 }) {
-  const [sub, setSub] = useState<ChargingSubMode>('list');
-  const insetBottom = useSafeAreaInsets().bottom;
-
-  // A selected charger takes over the panel with its detail view (overrides the list/sort/filter subs).
-  if (selectedCharger) {
-    return (
-      <ChargerDetail
-        charger={selectedCharger}
-        availability={availability}
-        onClose={onCloseDetail}
-        onNavigate={onNavigateCharger}
-        dragHandlers={dragHandlers}
-        insetBottom={insetBottom}
-      />
-    );
-  }
-
-  if (sub === 'sort') {
-    return (
-      <SubSheet title="Sort By" onClose={() => setSub('list')}>
-        {SORT_OPTIONS.map((opt) => (
-          <RadioRow
-            key={opt.key}
-            label={opt.label}
-            selected={sort === opt.key}
-            onPress={() => {
-              onSortChange(opt.key);
-              setSub('list');
-            }}
-          />
-        ))}
-      </SubSheet>
-    );
-  }
-
-  if (sub === 'filter') {
-    return (
-      <SubSheet title="Filter" onClose={() => setSub('list')}>
-        <ToggleRow label="DC fast charging" on={filter.dc} onPress={() => onFilterChange({ ...filter, dc: !filter.dc })} />
-        <ToggleRow label="AC charging" on={filter.ac} onPress={() => onFilterChange({ ...filter, ac: !filter.ac })} />
-        <ToggleRow
-          label="Available only"
-          on={filter.availableOnly}
-          onPress={() => onFilterChange({ ...filter, availableOnly: !filter.availableOnly })}
-        />
-      </SubSheet>
-    );
-  }
-
   return (
-    <View style={styles.tabContent}>
-      {/* Header + controls are draggable (move the sheet); the list below scrolls. */}
-      <View {...dragHandlers}>
-        <View style={styles.chargingHeader}>
-          <Text style={styles.chargingTitle}>Nearby Chargers</Text>
-          <Pressable hitSlop={10} onPress={onClose}>
-            <SymbolView name="xmark" tintColor="rgba(255,255,255,0.7)" size={20} weight="medium" />
-          </Pressable>
-        </View>
-
-        <View style={styles.controlsRow}>
-          <Pressable style={styles.filterButton} onPress={() => setSub('filter')}>
-            <SymbolView name="slider.horizontal.3" tintColor="white" size={18} />
-          </Pressable>
-          <Pressable style={styles.sortButton} onPress={() => setSub('sort')}>
-            <Text style={styles.sortLabel}>Sort By</Text>
-            <SymbolView name="chevron.down" tintColor="rgba(255,255,255,0.6)" size={13} weight="semibold" />
-          </Pressable>
-          <BoltButton bolts={3} active={filter.dc} onPress={() => onFilterChange({ ...filter, dc: !filter.dc })} />
-          <BoltButton bolts={1} active={filter.ac} onPress={() => onFilterChange({ ...filter, ac: !filter.ac })} />
-        </View>
+    <>
+      <View style={styles.controlsRow}>
+        <Pressable style={styles.sortButton} onPress={onOpenSort}>
+          <Text style={styles.sortLabel}>Sort By</Text>
+          <SymbolView name="chevron.down" tintColor="rgba(255,255,255,0.6)" size={13} weight="semibold" />
+        </Pressable>
+        <BoltButton bolts={3} active={filter.dc} onPress={() => onFilterChange({ ...filter, dc: !filter.dc })} />
+        <BoltButton bolts={1} active={filter.ac} onPress={() => onFilterChange({ ...filter, ac: !filter.ac })} />
       </View>
 
       {chargers.length === 0 ? (
@@ -403,7 +378,7 @@ function ChargingView({
           ))}
         </ScrollView>
       )}
-    </View>
+    </>
   );
 }
 
@@ -681,19 +656,6 @@ function RadioRow({ label, selected, onPress }: { label: string; selected: boole
   );
 }
 
-function ToggleRow({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable style={styles.optionRow} onPress={onPress}>
-      <Text style={styles.optionLabel}>{label}</Text>
-      <SymbolView
-        name={on ? 'checkmark.circle.fill' : 'circle'}
-        tintColor={on ? '#3E6AE1' : 'rgba(255,255,255,0.35)'}
-        size={22}
-      />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   // Fills the sheet below the handle; its header is fixed and its list (scrollList) scrolls.
   tabContent: {
@@ -715,34 +677,17 @@ const styles = StyleSheet.create({
   searchInputWrap: { flex: 1, justifyContent: 'center' },
   searchFloatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: -2 },
   searchInput: { fontSize: 17, color: 'white', padding: 0 },
-  tabs: { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 6 },
+  headerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 2, marginBottom: 10, minHeight: 30 },
+  backToTrip: { flexDirection: 'row', alignItems: 'center', gap: 2, position: 'absolute', left: 12, zIndex: 1 },
+  backToTripText: { fontSize: 16, color: '#3E6AE1', fontWeight: '600' },
+  tabs: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   tab: { flex: 1, alignItems: 'center' },
   tabDivider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: 'rgba(255,255,255,0.18)' },
   tabLabel: { fontSize: 17 },
   tabActive: { color: 'white', fontWeight: '700' },
   tabInactive: { color: 'rgba(255,255,255,0.4)', fontWeight: '600' },
 
-  // Charging header (Nearby Chargers / Sort By / Filter) + close.
-  chargingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginTop: 4,
-    marginBottom: 18,
-  },
-  chargingTitle: { fontSize: 26, fontWeight: '700', color: 'white' },
-
-  controlsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 4 },
-  filterButton: {
-    width: 46,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 4, marginTop: 2 },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
