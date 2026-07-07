@@ -16,6 +16,9 @@ interface Props {
   onEditTrip: () => void;
 }
 
+// Trip sheet rests at a taller ~half-screen detent (top near the middle of the screen), locked there so its
+// pinned action buttons stay in view.
+const TRIP_SHEET_FRAC = 0.5;
 // Room left at the bottom of the itinerary so its last row clears the pinned Send-to-Car / Cancel overlay.
 const FOOTER_CLEARANCE = 132;
 
@@ -35,7 +38,7 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet({
   const rows = computeItinerary(trip.stops, legs, { ...DEFAULT_ITINERARY_OPTS, departAt: now });
 
   return (
-    <BottomSheet ref={ref} lowestDetent="middle">
+    <BottomSheet ref={ref} lowestDetent="middle" middleFrac={TRIP_SHEET_FRAC}>
       {({ dragHandlers }) => (
         <View style={styles.content}>
           <View {...dragHandlers} style={styles.header}>

@@ -23,6 +23,8 @@ interface Props {
   // 'middle' locks the sheet so it can't be dragged below the middle detent (used by the Trip sheet, which
   // keeps its pinned action buttons in view). Default 'minimal' = the full three-detent range.
   lowestDetent?: 'minimal' | 'middle';
+  // Override the middle detent's visible screen fraction. The Trip sheet uses a taller ~half-screen detent.
+  middleFrac?: number;
 }
 
 const OVERDRAG_RESIST = 2.5;
@@ -34,16 +36,19 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 
 // Bottom-anchored panel dragged by its top handle between three detents (full / middle / minimal), shared by
 // LocationSheet (search/charging) and TripSheet (itinerary).
-export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomSheet({ children, lowestDetent = 'minimal' }, ref) {
+export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomSheet(
+  { children, lowestDetent = 'minimal', middleFrac = SHEET_MIDDLE_FRAC },
+  ref,
+) {
   const { height } = useWindowDimensions();
   const SHEET_H = Math.round(height * SHEET_FULL_FRAC);
   const snaps = useMemo(() => {
     const full = 0;
-    const middle = Math.round(SHEET_H - height * SHEET_MIDDLE_FRAC);
+    const middle = Math.round(SHEET_H - height * middleFrac);
     const minimal = Math.round(SHEET_H - height * SHEET_MINIMAL_FRAC);
     const points = lowestDetent === 'middle' ? [full, middle] : [full, middle, minimal];
     return { full, middle, minimal, points, collapsed: points[points.length - 1] };
-  }, [SHEET_H, height, lowestDetent]);
+  }, [SHEET_H, height, lowestDetent, middleFrac]);
   const snapsRef = useRef(snaps);
   snapsRef.current = snaps;
 
