@@ -60,3 +60,7 @@ modules/expo-godot-view/ios/*.pck
 
 # Charger DB build artifacts (pushed to device, not bundled)
 scripts/osm/out/
+
+# Gazetteer build artifacts — GeoNames cities1000 → bundled SQLite (build via scripts/geonames/build-places-db.ts)
+scripts/geonames/out/
+assets/places.db
