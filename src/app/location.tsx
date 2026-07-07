@@ -5,7 +5,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import MapView, { Marker, PROVIDER_DEFAULT, type MapType, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT, type MapType, type Region } from 'react-native-maps';
 
 import {
   LocationSheet,
@@ -42,6 +42,7 @@ import { fetchAvailabilityInBounds, fetchAvailabilityNear, matchAvailability } f
 import { useNavigateSearch } from '@/hooks/useNavigateSearch';
 import { useTrip } from '@/state/useTrip';
 import { straightLineLegs, tripTotals } from '@/state/trip';
+import { useTripRoute } from '@/state/useTripRoute';
 import { TripSheet, type TripSheetHandle } from '@/components/TripSheet';
 import type { Place } from '@/services/place';
 
@@ -155,10 +156,24 @@ export default function LocationView() {
     tripSheetRef.current?.expand();
   };
 
-  // Route legs for the active trip (Phase 1: straight-line mock; Phase 2 → real Apple route). Shared by the
-  // TripSheet itinerary and the pinned Send-to-Car footer.
-  const tripLegs = useMemo(() => (trip.trip ? straightLineLegs(trip.trip.stops) : []), [trip.trip]);
-  const tripTotalsVal = tripTotals(tripLegs);
+  // Real Apple route for the active trip (null while loading / offline → straight-line fallback). Shared by
+  // the TripSheet itinerary, the pinned Send-to-Car footer, and the map polyline.
+  const tripRoute = useTripRoute(trip.trip?.stops);
+  const tripLegs = tripRoute?.legs ?? (trip.trip ? straightLineLegs(trip.trip.stops) : []);
+  const tripTotalsVal = tripRoute
+    ? { distanceM: tripRoute.totalDistanceM, durationS: tripRoute.totalDurationS }
+    : tripTotals(tripLegs);
+
+  // Frame the whole trip (route if we have it, else the stops) above the trip sheet.
+  useEffect(() => {
+    if (screen !== 'trip' || !trip.trip) return;
+    const coords = tripRoute?.polyline?.length ? tripRoute.polyline : trip.trip.stops.map((s) => s.coordinate);
+    mapRef.current?.fitToCoordinates(coords, {
+      edgePadding: { top: 90, right: 44, bottom: Math.round(height * 0.55), left: 44 },
+      animated: true,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, trip.trip, tripRoute]);
 
   // Pool filtered by AC/DC + availability. The map pins and the list both derive from this so they stay
   // consistent (tap a row → its pin exists on the map).
@@ -473,6 +488,22 @@ export default function LocationView() {
               </Marker>
             );
           })}
+
+        {screen === 'trip' && tripRoute?.polyline?.length ? (
+          <Polyline coordinates={tripRoute.polyline} strokeColor="#3E6AE1" strokeWidth={5} />
+        ) : null}
+
+        {screen === 'trip' && trip.trip
+          ? trip.trip.stops.slice(1).map((s) => (
+              <Marker key={s.id} coordinate={s.coordinate} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
+                <SymbolView
+                  name={s.kind === 'charger' ? 'bolt.circle.fill' : 'mappin.circle.fill'}
+                  tintColor={s.kind === 'charger' ? '#E5484D' : '#3E6AE1'}
+                  size={30}
+                />
+              </Marker>
+            ))
+          : null}
       </MapView>
 
       <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
