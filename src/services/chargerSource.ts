@@ -133,3 +133,21 @@ export function nearestChargerTo(coord: LatLng): LatLng | null {
   );
   return row ? { latitude: row.lat, longitude: row.lng } : null;
 }
+
+// Name-substring match over the charger DB, for the Navigate search (secondary to the gazetteer).
+export function chargersMatchingName(
+  query: string,
+  limit: number,
+): { id: string; name: string; lat: number; lng: number; place: string; region: string }[] {
+  const handle = getDb();
+  if (!handle) return [];
+  return handle.getAllSync<{ id: string; name: string; lat: number; lng: number; place: string; region: string }>(
+    `SELECT id, name, lat, lng, place, region
+       FROM chargers
+      WHERE name LIKE ?
+      ORDER BY maxPowerKW DESC
+      LIMIT ?`,
+    `%${query}%`,
+    limit,
+  );
+}
