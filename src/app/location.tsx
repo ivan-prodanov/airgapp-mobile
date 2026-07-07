@@ -188,15 +188,30 @@ export default function LocationView() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setRowMenu({ index, anchorY });
   };
-  // Add Charger → frame the trip and open the Charging tab; the charger detail's action reads "Add to Trip".
+  // Add Charger → open the Charging tab (charger detail's action reads "Add to Trip"), reset any stale
+  // detail/insert, and frame the whole trip + the current map view so nearby chargers are visible.
   const onAddChargerToTrip = () => {
     if (!trip.trip) return;
-    mapRef.current?.fitToCoordinates(trip.trip.stops.map((s) => s.coordinate), {
-      edgePadding: { top: 80, right: 40, bottom: Math.round(height * (SHEET_MIDDLE_FRAC - SHEET_MINIMAL_FRAC)), left: 40 },
-      animated: true,
-    });
+    const stops = trip.trip.stops.map((s) => s.coordinate);
+    onCloseDetail(); // Bug 1: clear a cached charger detail so the Charging tab shows the list fresh
+    setPendingInsert(null); // Add Charger appends unless an Insert Stop set a position (handled on select)
     setTab('charging');
     setScreen('search');
+    // Bug 3: frame the trip + the current view (getCamera = live centre) — the charging-tab fit is skipped
+    // while a trip is active (below), so this is authoritative on the first Add Charger too.
+    (async () => {
+      const coords: LatLng[] = [...stops];
+      try {
+        const cam = await mapRef.current?.getCamera();
+        if (cam?.center) coords.push(cam.center);
+      } catch {
+        // keep the stops-only framing
+      }
+      mapRef.current?.fitToCoordinates(coords, {
+        edgePadding: { top: 80, right: 40, bottom: Math.round(height * (SHEET_MIDDLE_FRAC - SHEET_MINIMAL_FRAC)), left: 40 },
+        animated: true,
+      });
+    })();
   };
   // Filled in Task 6 (expo-clipboard needs the native rebuild); Light haptic gives immediate feedback now.
   const copyStop = (_title: string, _subtitle?: string) => {
@@ -375,6 +390,7 @@ export default function LocationView() {
   useEffect(() => {
     if (tab !== 'charging') return;
     fetchViewport(region);
+    if (trip.trip) return; // adding a charger to a trip: onAddChargerToTrip frames the whole trip instead
     (async () => {
       // Read the ACTUAL current map centre. On a fresh open, `region` state hasn't been set yet (it only
       // updates on a settle), so getCamera() is what makes framing work without nudging the map first.
@@ -472,7 +488,9 @@ export default function LocationView() {
   const onNavigateToCharger = (c: Charger) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (trip.trip) {
-      trip.addCharger(c);
+      if (pendingInsert != null) trip.insertCharger(c, pendingInsert);
+      else trip.addCharger(c);
+      setPendingInsert(null);
       onCloseDetail();
       setTab('location');
       setScreen('trip');
@@ -631,7 +649,14 @@ export default function LocationView() {
           recentGroups={nav.recentGroups}
           carCoord={carCoord}
           onSelectPlace={onSelectPlace}
-          onBackToTrip={trip.trip ? () => setScreen('trip') : undefined}
+          onBackToTrip={
+            trip.trip
+              ? () => {
+                  setPendingInsert(null);
+                  setScreen('trip');
+                }
+              : undefined
+          }
         />
       )}
 

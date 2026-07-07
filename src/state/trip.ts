@@ -73,6 +73,13 @@ export function insertStop(trip: Trip, place: Place, index: number): Trip {
 export function addCharger(trip: Trip, c: Charger): Trip {
   return { stops: [...trip.stops, chargerToStop(c)] };
 }
+// Insert a charger stop at `index`, clamped to [1, stops.length] (never before the car).
+export function insertCharger(trip: Trip, c: Charger, index: number): Trip {
+  const at = Math.max(1, Math.min(index, trip.stops.length));
+  const stops = [...trip.stops];
+  stops.splice(at, 0, chargerToStop(c));
+  return { stops };
+}
 // Remove by id, but never the car (index 0).
 export function removeStop(trip: Trip, id: string): Trip {
   return { stops: trip.stops.filter((s, i) => i === 0 || s.id !== id) };

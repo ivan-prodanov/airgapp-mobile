@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  carStop, startTrip, addStop, addCharger, removeStop, reorderStops, insertStop,
+  carStop, startTrip, addStop, addCharger, insertCharger, removeStop, reorderStops, insertStop,
   straightLineLegs, computeItinerary, tripTotals, type TripStop, type Leg,
 } from './trip';
 import type { Place } from '@/services/place';
@@ -76,6 +76,13 @@ test('computeItinerary drains per km, restores at chargers, advances time', () =
 
 test('tripTotals sums legs', () => {
   assert.deepEqual(tripTotals([{ distanceM: 10, durationS: 1 }, { distanceM: 5, durationS: 2 }]), { distanceM: 15, durationS: 3 });
+});
+
+test('insertCharger inserts a charger stop at index (clamped ≥ 1)', () => {
+  let t = startTrip(carStop(CAR), place('Dest', 44, 24)); // [car, Dest]
+  t = insertCharger(t, charger('c1'), 1); // between car and Dest
+  assert.deepEqual(t.stops.map((s) => s.kind), ['car', 'charger', 'place']);
+  assert.equal(t.stops[1].title, 'Charger c1');
 });
 
 test('duplicate places get distinct instance ids → removing one keeps the other', () => {

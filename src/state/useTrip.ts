@@ -9,6 +9,7 @@ import {
   addCharger as addChargerOp,
   addStop as addStopOp,
   carStop,
+  insertCharger as insertChargerOp,
   insertStop as insertStopOp,
   removeStop as removeStopOp,
   reorderStops as reorderStopsOp,
@@ -23,9 +24,10 @@ export function useTrip() {
   const addStop = useCallback((place: Place) => setTrip((t) => (t ? addStopOp(t, place) : t)), []);
   const insertStop = useCallback((place: Place, index: number) => setTrip((t) => (t ? insertStopOp(t, place, index) : t)), []);
   const addCharger = useCallback((c: Charger) => setTrip((t) => (t ? addChargerOp(t, c) : t)), []);
+  const insertCharger = useCallback((c: Charger, index: number) => setTrip((t) => (t ? insertChargerOp(t, c, index) : t)), []);
   const removeStop = useCallback((id: string) => setTrip((t) => (t ? removeStopOp(t, id) : t)), []);
   const reorder = useCallback((from: number, to: number) => setTrip((t) => (t ? reorderStopsOp(t, from, to) : t)), []);
   const clear = useCallback(() => setTrip(null), []);
 
-  return { trip, start, addStop, insertStop, addCharger, removeStop, reorder, clear };
+  return { trip, start, addStop, insertStop, addCharger, insertCharger, removeStop, reorder, clear };
 }
