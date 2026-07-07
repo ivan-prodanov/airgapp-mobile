@@ -111,8 +111,8 @@ Add one pure op (node-tested); the rest already exist (`addStop`, `addCharger`, 
 
 ## Error handling
 
-- RNGH inert after the smoke-test → PanResponder drag + `swipe-list-view` fallback (documented); native menu /
-  share / clipboard unaffected.
+- RNGH inert after the smoke-test → PanResponder drag + `swipe-list-view` fallback (documented); the
+  hand-rolled menu / share / clipboard are RNGH-independent and unaffected.
 - Clipboard/share failures are caught and no-op (never crash).
 - Removing all non-car stops → discard trip → search.
 - Empty Add-Charger area → the Charging tab's existing "No chargers in this area" empty state.
@@ -122,13 +122,13 @@ Add one pure op (node-tested); the rest already exist (`addStop`, `addCharger`, 
 - **Unit (node):** `insertStop` (clamp ≥ 1, correct position); existing `reorderStops`/`removeStop` cover the
   car-pinning invariants.
 - **Manual (device):** the RNGH smoke-test; drag-reorder (car fixed); swipe → Copy/Share/Insert/Delete with
-  Delete as full-swipe; long-press native menu; Copy lands on clipboard; Share opens the share sheet; Add Stop
+  Delete as full-swipe; long-press context menu; Copy lands on clipboard; Share opens the share sheet; Add Stop
   vs Insert position; Add Charger opens the Charging tab and "Add to Trip" appends a charger.
 
 ## Decision record
 
-- **Industry gesture libs over hand-rolled:** `react-native-reorderable-list` + `ReanimatedSwipeable` +
-  `@expo/ui ContextMenu`, enabled by a single root `GestureHandlerRootView`; **RNGH smoke-test gates** the
+- **Industry gesture libs over hand-rolled (for drag + swipe):** `react-native-reorderable-list` +
+  `ReanimatedSwipeable`, enabled by a single root `GestureHandlerRootView`; **RNGH smoke-test gates** the
   approach (PanResponder fallback if it fails).
 - **Context menu hand-rolled** (RN `Modal` + scrim + haptics) — `@expo/ui`'s SwiftUI `ContextMenu` is
   SwiftUI-hosted and won't compose with RN swipe/drag on the same custom row; `react-native-context-menu-view`
