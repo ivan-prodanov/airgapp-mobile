@@ -28,6 +28,20 @@ export async function appleComplete(q: string, region: SearchRegion): Promise<Pl
   }));
 }
 
+// Online list source: Apple MKLocalSearch (full results WITH coordinates → distance pill). Rejects offline →
+// searchProvider catches and falls back to local. This is the real SearchDeps.appleSearch.
+export async function appleSearch(q: string, region: SearchRegion): Promise<Place[]> {
+  const raw = await AppleSearch.search(q, toRegion(region));
+  return raw.map((r, i) => ({
+    id: `apple:${i}:${r.title}`,
+    title: r.title,
+    subtitle: r.subtitle || undefined,
+    coordinate: { latitude: r.latitude, longitude: r.longitude },
+    kind: 'poi' as const,
+    source: 'apple' as const,
+  }));
+}
+
 // Resolve a tapped Apple completion (coordinate === null) to a coordinate via MKLocalSearch. Local
 // results already have a coordinate and don't need this.
 export async function appleResolve(place: Place, region: SearchRegion): Promise<Place> {
