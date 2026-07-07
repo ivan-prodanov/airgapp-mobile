@@ -45,6 +45,7 @@ import { straightLineLegs, tripTotals } from '@/state/trip';
 import { useTripRoute } from '@/state/useTripRoute';
 import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle } from '@/components/TripSheet';
 import { EditTripSheet } from '@/components/EditTripSheet';
+import { AddChargerSheet } from '@/components/AddChargerSheet';
 import type { Place } from '@/services/place';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
@@ -185,6 +186,21 @@ export default function LocationView() {
   const tripTotalsVal = tripRoute
     ? { distanceM: tripRoute.totalDistanceM, durationS: tripRoute.totalDurationS }
     : tripTotals(tripLegs);
+
+  // Chargers within the bounding box of all trip stops (padded) — for the Add Charger picker.
+  const tripChargers = useMemo(() => {
+    if (!trip.trip) return [];
+    const lats = trip.trip.stops.map((s) => s.coordinate.latitude);
+    const lngs = trip.trip.stops.map((s) => s.coordinate.longitude);
+    const pad = 0.05;
+    const bounds = {
+      north: Math.max(...lats) + pad,
+      south: Math.min(...lats) - pad,
+      east: Math.max(...lngs) + pad,
+      west: Math.min(...lngs) - pad,
+    };
+    return osmChargersInBounds(bounds, carCoord).chargers;
+  }, [trip.trip, carCoord]);
 
   // Frame the whole trip (route if we have it, else the stops) above the trip sheet — same rule as the
   // Charging tab: mapPadding already reserves the lowest gear, so pad the bottom by the gap up to the trip
@@ -559,6 +575,15 @@ export default function LocationView() {
           onReorder={trip.reorder}
           onAddStop={() => setScreen('search')}
           onAddCharger={() => setScreen('addCharger')}
+        />
+      ) : screen === 'addCharger' && trip.trip ? (
+        <AddChargerSheet
+          chargers={tripChargers}
+          onSelect={(c) => {
+            trip.addCharger(c);
+            setScreen('editTrip');
+          }}
+          onClose={() => setScreen('editTrip')}
         />
       ) : (
         <LocationSheet
