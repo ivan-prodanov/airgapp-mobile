@@ -78,6 +78,17 @@ test('tripTotals sums legs', () => {
   assert.deepEqual(tripTotals([{ distanceM: 10, durationS: 1 }, { distanceM: 5, durationS: 2 }]), { distanceM: 15, durationS: 3 });
 });
 
+test('duplicate places get distinct instance ids → removing one keeps the other', () => {
+  let t = startTrip(carStop(CAR), place('A', 43, 23)); // [car, A]
+  t = addStop(t, place('B', 44, 24)); // [car, A, B]
+  t = addStop(t, place('A', 43, 23)); // [car, A, B, A] — same place added twice
+  const firstA = t.stops[1];
+  const secondA = t.stops[3];
+  assert.notEqual(firstA.id, secondA.id);
+  t = removeStop(t, firstA.id);
+  assert.deepEqual(t.stops.map((s) => s.title), ['Car location', 'B', 'A']);
+});
+
 test('insertStop inserts at index, clamped to [1, length] (never before the car)', () => {
   let t = startTrip(carStop(CAR), place('A', 43, 23));
   t = addStop(t, place('B', 44, 24)); // [car, A, B]

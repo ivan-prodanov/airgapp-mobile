@@ -575,11 +575,13 @@ export default function LocationView() {
             );
           })}
 
-        {screen === 'trip' && tripRoute?.polyline?.length ? (
+        {/* Keep the route + stop pins on the map for the whole active trip — including while Add Stop /
+            Add Charger switch the sheet — so the navigation isn't hidden. */}
+        {trip.trip && tripRoute?.polyline?.length ? (
           <Polyline coordinates={tripRoute.polyline} strokeColor="#3E6AE1" strokeWidth={5} />
         ) : null}
 
-        {screen === 'trip' && trip.trip
+        {trip.trip
           ? trip.trip.stops.slice(1).map((s) => (
               <Marker key={s.id} coordinate={s.coordinate} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
                 <SymbolView
@@ -694,6 +696,7 @@ export default function LocationView() {
           visible
           anchorY={rowMenu.anchorY}
           title={trip.trip.stops[rowMenu.index]?.title ?? ''}
+          allowDelete={rowMenu.index !== 0}
           onAction={(a) => onTripRowAction(rowMenu.index, a)}
           onClose={() => setRowMenu(null)}
         />

@@ -59,7 +59,7 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
             data={rows.slice(1)}
             keyExtractor={(row) => row.stop.id}
             onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from + 1, to + 1)}
-            ListHeaderComponent={<RowContent row={rows[0]} isCar />}
+            ListHeaderComponent={<CarRow row={rows[0]} onLongPress={onLongPressRow} onRowAction={onRowAction} />}
             contentContainerStyle={{ paddingBottom: insetBottom + FOOTER_CLEARANCE }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item, index }) => (
@@ -72,7 +72,30 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
   );
 });
 
-// A reorderable (non-car) stop: swipe-left for actions, long-press for the menu, drag by the ≡ handle.
+// The car row (list header): swipe → Share/Insert (no Delete), long-press → menu (no Delete), never draggable.
+function CarRow({
+  row,
+  onLongPress,
+  onRowAction,
+}: {
+  row: ItineraryRow;
+  onLongPress: (index: number, anchorY: number) => void;
+  onRowAction: (index: number, action: TripRowAction) => void;
+}) {
+  return (
+    <Swipeable
+      friction={2}
+      rightThreshold={44}
+      renderRightActions={() => <SwipeActions actions={['share', 'insert']} index={0} onRowAction={onRowAction} />}
+    >
+      <Pressable onLongPress={(e) => onLongPress(0, e.nativeEvent.pageY)} delayLongPress={280}>
+        <RowContent row={row} isCar />
+      </Pressable>
+    </Swipeable>
+  );
+}
+
+// A reorderable (non-car) stop: swipe → Share/Insert/Delete, long-press → menu, drag by the ≡ handle.
 function TripRow({
   row,
   index,
@@ -89,13 +112,7 @@ function TripRow({
     <Swipeable
       friction={2}
       rightThreshold={44}
-      renderRightActions={() => (
-        <View style={styles.actions}>
-          <SwipeBtn icon="square.and.arrow.up" bg="#3E6AE1" onPress={() => onRowAction(index, 'share')} />
-          <SwipeBtn icon="plus" bg="#5A5A5E" onPress={() => onRowAction(index, 'insert')} />
-          <SwipeBtn icon="trash.fill" bg="#E5484D" onPress={() => onRowAction(index, 'delete')} />
-        </View>
-      )}
+      renderRightActions={() => <SwipeActions actions={['share', 'insert', 'delete']} index={index} onRowAction={onRowAction} />}
     >
       <Pressable onLongPress={(e) => onLongPress(index, e.nativeEvent.pageY)} delayLongPress={280}>
         <RowContent
@@ -138,11 +155,29 @@ function RowContent({ row, isCar, trailing }: { row: ItineraryRow; isCar: boolea
   );
 }
 
-function SwipeBtn({ icon, bg, onPress }: { icon: SFSymbol; bg: string; onPress: () => void }) {
+const SWIPE_BTN: Record<'share' | 'insert' | 'delete', { icon: SFSymbol; bg: string }> = {
+  share: { icon: 'square.and.arrow.up', bg: '#3E6AE1' },
+  insert: { icon: 'plus', bg: '#5A5A5E' },
+  delete: { icon: 'trash.fill', bg: '#E5484D' },
+};
+
+function SwipeActions({
+  actions,
+  index,
+  onRowAction,
+}: {
+  actions: ('share' | 'insert' | 'delete')[];
+  index: number;
+  onRowAction: (index: number, action: TripRowAction) => void;
+}) {
   return (
-    <Pressable style={[styles.swipeBtn, { backgroundColor: bg }]} onPress={onPress}>
-      <SymbolView name={icon} tintColor="white" size={20} />
-    </Pressable>
+    <View style={styles.actions}>
+      {actions.map((a) => (
+        <Pressable key={a} style={[styles.swipeBtn, { backgroundColor: SWIPE_BTN[a].bg }]} onPress={() => onRowAction(index, a)}>
+          <SymbolView name={SWIPE_BTN[a].icon} tintColor="white" size={20} />
+        </Pressable>
+      ))}
+    </View>
   );
 }
 

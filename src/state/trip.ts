@@ -27,12 +27,20 @@ export interface ItineraryRow {
   chargeMinutes?: number; // dwell for charger stops (mock)
 }
 
+// Each stop gets a unique INSTANCE id (not derived from the place) so the same place can appear twice in a
+// trip (Car → A → B → A) and be removed / reordered / keyed independently.
+let stopSeq = 0;
+const uid = (): string => {
+  stopSeq += 1;
+  return String(stopSeq);
+};
+
 export function carStop(coordinate: LatLng): TripStop {
   return { id: 'car', kind: 'car', title: 'Car location', coordinate };
 }
 export function placeToStop(place: Place): TripStop {
   return {
-    id: `place:${place.id}`,
+    id: `place:${uid()}`,
     kind: 'place',
     title: place.title,
     subtitle: place.subtitle,
@@ -41,7 +49,7 @@ export function placeToStop(place: Place): TripStop {
 }
 export function chargerToStop(c: Charger): TripStop {
   return {
-    id: `charger:${c.id}`,
+    id: `charger:${uid()}`,
     kind: 'charger',
     title: c.name,
     subtitle: c.region || c.place,

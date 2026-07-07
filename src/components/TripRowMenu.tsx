@@ -15,15 +15,18 @@ export function TripRowMenu({
   visible,
   anchorY,
   title,
+  allowDelete = true,
   onAction,
   onClose,
 }: {
   visible: boolean;
   anchorY: number;
   title: string;
+  allowDelete?: boolean; // false for the car row (per iOS HIG, we omit inapplicable actions rather than disable)
   onAction: (a: TripRowAction) => void;
   onClose: () => void;
 }) {
+  const items = allowDelete ? ITEMS : ITEMS.filter((it) => it.action !== 'delete');
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
@@ -31,7 +34,7 @@ export function TripRowMenu({
           <Text style={styles.header} numberOfLines={1}>
             {title}
           </Text>
-          {ITEMS.map((it) => (
+          {items.map((it) => (
             <Pressable
               key={it.action}
               style={({ pressed }) => [styles.item, { backgroundColor: pressed ? 'rgba(255,255,255,0.08)' : 'transparent' }]}
