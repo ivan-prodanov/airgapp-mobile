@@ -1,19 +1,18 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { forwardRef, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
-  Animated,
   Linking,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
   type GestureResponderHandlers,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
+
+import { BottomSheet, type BottomSheetHandle } from './BottomSheet';
 
 import { busyTimesFor, distanceMeters, formatKm, type LatLng } from '@/state/mockLocation';
 import type { Place } from '@/services/place';
@@ -35,16 +34,10 @@ export interface ChargerFilter {
   availableOnly: boolean;
 }
 
-// Visible fraction of the screen at each detent (measured off the Tesla app's three states). Exported
-// so the map can pad its centring/fitting by these panel heights.
-export const SHEET_MINIMAL_FRAC = 0.25;
-export const SHEET_MIDDLE_FRAC = 0.34;
-const SHEET_FULL_FRAC = 0.92;
-
-export interface LocationSheetHandle {
-  expand: () => void; // open at least to the middle detent (never shrinks)
-  collapse: () => void; // drop to the minimal detent
-}
+// The sheet chrome (detents, drag, handle) lives in BottomSheet now; re-export the detent fractions the map
+// uses for padding, and alias the handle type.
+export { SHEET_MIDDLE_FRAC, SHEET_MINIMAL_FRAC } from './BottomSheet';
+export type LocationSheetHandle = BottomSheetHandle;
 
 interface Props {
   tab: LocationTab;
@@ -70,132 +63,60 @@ interface Props {
   onSelectPlace: (place: Place) => void;
 }
 
-// Rubber-band overscroll past the snap bounds — the SAME mechanism the Climate sheet uses (Gorhom's
-// overDragResistanceFactor formula ported onto RN's Animated native driver), so the feel is glassy where
-// @gorhom/bottom-sheet on this app's reanimated-4 stack jittered.
-const OVERDRAG_RESIST = 2.5;
-const overDrag = (y: number, expanded: number, collapsed: number) => {
-  if (y < expanded) return expanded - Math.sqrt(1 + (expanded - y)) * OVERDRAG_RESIST;
-  if (y > collapsed) return collapsed + Math.sqrt(1 + (y - collapsed)) * OVERDRAG_RESIST;
-  return y;
-};
-
-// Tesla Location bottom sheet: a bottom-anchored panel dragged by itself between three detents (minimal /
-// middle / near-full), exactly like the Climate sheet. Recents tab = search + recent destinations; Charging
-// tab = the "Nearby Chargers" view with Filter / Sort / AC-DC controls and the station list.
+// Tesla Location bottom sheet content: Recents tab = search + recent destinations; Charging tab = the
+// "Nearby Chargers" view. The sheet chrome (detents, drag, handle) is the shared BottomSheet.
 export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function LocationSheet(
   { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger, query, onChangeQuery, results, recentGroups, carCoord, onSelectPlace },
   ref,
 ) {
-  const { height } = useWindowDimensions();
   const insetBottom = useSafeAreaInsets().bottom;
-  const SHEET_H = Math.round(height * SHEET_FULL_FRAC);
-  const snaps = useMemo(() => {
-    const full = 0;
-    const middle = Math.round(SHEET_H - height * SHEET_MIDDLE_FRAC);
-    const minimal = Math.round(SHEET_H - height * SHEET_MINIMAL_FRAC);
-    return { full, middle, minimal, points: [full, middle, minimal] };
-  }, [SHEET_H, height]);
-  const snapsRef = useRef(snaps);
-  snapsRef.current = snaps;
-
-  const translateY = useRef(new Animated.Value(snaps.middle)).current;
-  const restingY = useRef(snaps.middle);
-
-  const settle = (target: number, velocityY = 0) => {
-    restingY.current = target;
-    Animated.spring(translateY, {
-      toValue: target,
-      velocity: velocityY * 500,
-      stiffness: 1000,
-      damping: 500,
-      mass: 3,
-      overshootClamping: true,
-      restDisplacementThreshold: 0.5,
-      restSpeedThreshold: 0.5,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      expand: () => settle(Math.min(restingY.current, snapsRef.current.middle)),
-      collapse: () => settle(snapsRef.current.minimal),
-    }),
-    [],
-  );
-
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_e, g) => {
-        const s = snapsRef.current;
-        translateY.setValue(overDrag(restingY.current + g.dy, s.full, s.minimal));
-      },
-      onPanResponderRelease: (_e, g) => {
-        const s = snapsRef.current;
-        const projected = restingY.current + g.dy + g.vy * 200;
-        const target = s.points.reduce(
-          (best, p) => (Math.abs(p - projected) < Math.abs(best - projected) ? p : best),
-          s.points[0],
-        );
-        settle(target, g.vy);
-      },
-    }),
-  ).current;
-
-  // Search/focused mode: tapping the Navigate field grows the sheet to the full detent and hides the tabs;
-  // clearing/exiting drops it back to the middle.
   const [searchFocused, setSearchFocused] = useState(false);
-  const openSearch = () => {
-    setSearchFocused(true);
-    settle(snaps.full);
-  };
-  const closeSearch = () => {
-    setSearchFocused(false);
-    settle(snaps.middle);
-  };
 
   return (
-    <Animated.View style={[styles.sheet, { height: SHEET_H, transform: [{ translateY }] }]}>
-      {/* Only this top strip drags the sheet (PanResponder), so the body below can scroll freely. */}
-      <View style={styles.handleWrap} {...pan.panHandlers}>
-        <View style={styles.handle} />
-      </View>
-
-      {tab === 'recents' ? (
-        <RecentsView
-          insetBottom={insetBottom}
-          dragHandlers={pan.panHandlers}
-          onTabChange={onTabChange}
-          focused={searchFocused}
-          onFocus={openSearch}
-          onExit={closeSearch}
-          query={query}
-          onChangeQuery={onChangeQuery}
-          results={results}
-          recentGroups={recentGroups}
-          carCoord={carCoord}
-          onSelectPlace={onSelectPlace}
-        />
-      ) : (
-        <ChargingView
-          chargers={chargers}
-          availability={availability}
-          sort={sort}
-          onSortChange={onSortChange}
-          filter={filter}
-          onFilterChange={onFilterChange}
-          selectedCharger={selectedCharger}
-          onSelectCharger={onSelectCharger}
-          onCloseDetail={onCloseDetail}
-          onNavigateCharger={onNavigateCharger}
-          onClose={() => onTabChange('recents')}
-          dragHandlers={pan.panHandlers}
-        />
-      )}
-    </Animated.View>
+    <BottomSheet ref={ref}>
+      {({ dragHandlers, expandFull, collapseToMiddle }) => {
+        // Focusing the Navigate field grows the sheet to full + hides the tabs; exiting drops to middle.
+        const openSearch = () => {
+          setSearchFocused(true);
+          expandFull();
+        };
+        const closeSearch = () => {
+          setSearchFocused(false);
+          collapseToMiddle();
+        };
+        return tab === 'recents' ? (
+          <RecentsView
+            insetBottom={insetBottom}
+            dragHandlers={dragHandlers}
+            onTabChange={onTabChange}
+            focused={searchFocused}
+            onFocus={openSearch}
+            onExit={closeSearch}
+            query={query}
+            onChangeQuery={onChangeQuery}
+            results={results}
+            recentGroups={recentGroups}
+            carCoord={carCoord}
+            onSelectPlace={onSelectPlace}
+          />
+        ) : (
+          <ChargingView
+            chargers={chargers}
+            availability={availability}
+            sort={sort}
+            onSortChange={onSortChange}
+            filter={filter}
+            onFilterChange={onFilterChange}
+            selectedCharger={selectedCharger}
+            onSelectCharger={onSelectCharger}
+            onCloseDetail={onCloseDetail}
+            onNavigateCharger={onNavigateCharger}
+            onClose={() => onTabChange('recents')}
+            dragHandlers={dragHandlers}
+          />
+        );
+      }}
+    </BottomSheet>
   );
 });
 
@@ -774,32 +695,6 @@ function ToggleRow({ label, on, onPress }: { label: string; on: boolean; onPress
 }
 
 const styles = StyleSheet.create({
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#161616',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-  },
-  // The only drag target — a full-width strip at the top, so grabbing the handle resizes the sheet while
-  // the scrollable body below stays free to scroll.
-  handleWrap: {
-    alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  handle: {
-    width: 38,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-  },
   // Fills the sheet below the handle; its header is fixed and its list (scrollList) scrolls.
   tabContent: {
     flex: 1,
