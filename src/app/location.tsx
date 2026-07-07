@@ -112,7 +112,7 @@ export default function LocationView() {
 
   const [userCoord, setUserCoord] = useState<LatLng | null>(null);
   const [mapType, setMapType] = useState<MapType>('standard');
-  const [tab, setTab] = useState<LocationTab>('recents');
+  const [tab, setTab] = useState<LocationTab>('location');
   // `fetched` = the cached bbox pool from the last TomTom fetch; `region` = the current settled viewport.
   const [fetched, setFetched] = useState<Charger[]>([]);
   const [region, setRegion] = useState<ViewportRegion>({ ...FALLBACK_COORD, ...DEFAULT_DELTA });
@@ -151,8 +151,6 @@ export default function LocationView() {
   const [pendingInsert, setPendingInsert] = useState<number | null>(null);
   // Long-press context menu target (trip stop index + the row's screen Y).
   const [rowMenu, setRowMenu] = useState<{ index: number; anchorY: number } | null>(null);
-  // True while picking a charger to append to the active trip (reuses the Charging tab).
-  const [addingCharger, setAddingCharger] = useState(false);
 
   // Select a place → record a recent, then start a trip (none yet), insert at a pending position, or append.
   const onSelectPlace = (place: Place) => {
@@ -190,26 +188,15 @@ export default function LocationView() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setRowMenu({ index, anchorY });
   };
-  // Add Charger → frame the trip and open the Charging tab in "add to trip" mode; the charger detail's
-  // action becomes "Add to Trip".
+  // Add Charger → frame the trip and open the Charging tab; the charger detail's action reads "Add to Trip".
   const onAddChargerToTrip = () => {
     if (!trip.trip) return;
     mapRef.current?.fitToCoordinates(trip.trip.stops.map((s) => s.coordinate), {
       edgePadding: { top: 80, right: 40, bottom: Math.round(height * (SHEET_MIDDLE_FRAC - SHEET_MINIMAL_FRAC)), left: 40 },
       animated: true,
     });
-    setAddingCharger(true);
     setTab('charging');
     setScreen('search');
-  };
-  // Closing the Charging tab (X) while adding a charger returns to the trip instead of the recents search.
-  const onTabChangeFromLocation = (t: LocationTab) => {
-    if (addingCharger && t === 'recents') {
-      setAddingCharger(false);
-      setScreen('trip');
-    } else {
-      setTab(t);
-    }
   };
   // Filled in Task 6 (expo-clipboard needs the native rebuild); Light haptic gives immediate feedback now.
   const copyStop = (_title: string, _subtitle?: string) => {
@@ -484,11 +471,10 @@ export default function LocationView() {
   const onCloseDetail = () => setSelectedCharger(null);
   const onNavigateToCharger = (c: Charger) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    if (addingCharger && trip.trip) {
+    if (trip.trip) {
       trip.addCharger(c);
-      setAddingCharger(false);
       onCloseDetail();
-      setTab('recents');
+      setTab('location');
       setScreen('trip');
       return;
     }
@@ -500,11 +486,6 @@ export default function LocationView() {
       kind: 'charger',
       source: 'charger',
     });
-  };
-  // Placeholder until there's a trip/route concept to add a waypoint to (native maps deep links can't add
-  // a stop to an in-progress route). Kept for the two-button layout; wire up when routing exists.
-  const onAddStop = () => {
-    Haptics.selectionAsync().catch(() => {});
   };
   // Button 2: drop the panel to its minimal detent and recentre the car in the freed space above it
   // (the map is padded by the minimal panel height, so the car lands centred there, not behind it).
@@ -633,7 +614,7 @@ export default function LocationView() {
         <LocationSheet
           ref={sheetRef}
           tab={tab}
-          onTabChange={onTabChangeFromLocation}
+          onTabChange={setTab}
           chargers={listChargers}
           availability={availability}
           sort={sort}
@@ -650,6 +631,7 @@ export default function LocationView() {
           recentGroups={nav.recentGroups}
           carCoord={carCoord}
           onSelectPlace={onSelectPlace}
+          onBackToTrip={trip.trip ? () => setScreen('trip') : undefined}
         />
       )}
 
@@ -658,20 +640,9 @@ export default function LocationView() {
       {tab === 'charging' && selectedCharger ? (
         <SafeAreaView edges={['bottom']} style={styles.navigateBar} pointerEvents="box-none">
           <View style={styles.navigateRow}>
-            {addingCharger ? (
-              <Pressable style={styles.navigateButton} onPress={() => onNavigateToCharger(selectedCharger)}>
-                <Text style={styles.navigateText}>Add to Trip</Text>
-              </Pressable>
-            ) : (
-              <>
-                <Pressable style={styles.navigateButton} onPress={onAddStop}>
-                  <Text style={styles.navigateText}>Add Stop</Text>
-                </Pressable>
-                <Pressable style={styles.navigateButton} onPress={() => onNavigateToCharger(selectedCharger)}>
-                  <Text style={styles.navigateText}>Navigate</Text>
-                </Pressable>
-              </>
-            )}
+            <Pressable style={styles.navigateButton} onPress={() => onNavigateToCharger(selectedCharger)}>
+              <Text style={styles.navigateText}>{trip.trip ? 'Add to Trip' : 'Navigate'}</Text>
+            </Pressable>
           </View>
         </SafeAreaView>
       ) : null}
