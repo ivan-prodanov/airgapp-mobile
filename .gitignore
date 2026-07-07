@@ -57,3 +57,6 @@ modules/expo-godot-view/ios/*.pck
 # Local-only build artifacts
 *.log
 
+
+# Charger DB build artifacts (pushed to device, not bundled)
+scripts/osm/out/

@@ -1,3 +1,4 @@
+import { createMockLocationOffset, type MockLocationOffset } from './mockLocation';
 import {
   climateCapabilitiesFor,
   initialVehicleState,
@@ -17,6 +18,9 @@ export interface Vehicle {
   id: string;
   name: string;
   state: VehicleViewState;
+  // Stable mock GPS offset from the user's live position (random bearing, fixed ~100 m). Generated
+  // once at creation so the Location pin doesn't re-randomize on every render. Removed when BLE lands.
+  mockLocationOffset: MockLocationOffset;
 }
 
 export interface FleetState {
@@ -40,7 +44,7 @@ const MODEL_BASE_NAME: Record<CarModel, string> = {
 export function createInitialFleet(): FleetState {
   return {
     vehicles: [
-      { id: 'veh_1', name: 'Red Velvet', state: { ...initialVehicleState } },
+      { id: 'veh_1', name: 'Red Velvet', state: { ...initialVehicleState }, mockLocationOffset: createMockLocationOffset() },
     ],
     activeId: 'veh_1',
   };
@@ -91,6 +95,7 @@ export function addVehicle(fleet: FleetState, model: CarModel): FleetState {
     id,
     name,
     state: defaultStateForModel(model, inheritFrom),
+    mockLocationOffset: createMockLocationOffset(),
   };
   return { vehicles: [...fleet.vehicles, vehicle], activeId: id };
 }

@@ -18,6 +18,10 @@ APP_REPO="/Users/ivan/Work/airgapp/mobile"
 DEVICE="F3867E6E-E95F-5B2A-9C4E-06D1D72475A1"   # CoreDevice id (devicectl)
 BUNDLE_ID="local.airgapp.mobile"
 
+# Load gitignored local secrets so EXPO_PUBLIC_* vars (e.g. the TomTom key) are inlined into the bundle.
+# `expo export:embed` does NOT auto-load .env.local, so we export it ourselves before bundling.
+[ -f "$APP_REPO/.env.local" ] && { set -a; . "$APP_REPO/.env.local"; set +a; }
+
 # Newest standalone Release .app (survives clean rebuilds / changing DerivedData hashes).
 APP="$(ls -dt "$HOME"/Library/Developer/Xcode/DerivedData/airgapp-*/Build/Products/Release-iphoneos/airgapp.app 2>/dev/null | head -1)"
 [ -n "$APP" ] && [ -d "$APP" ] || { echo "ERROR: no standalone Release .app — do a full xcodebuild Release once (see deploy-ios.sh)." >&2; exit 1; }

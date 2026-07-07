@@ -6,7 +6,8 @@ import { VehicleProvider } from '@/state/VehicleProvider';
 
 // Home is the root screen; Explore is pushed on top (reached from the Home header, dismissed with its
 // own back button). The native tab bar was removed — see the messages-icon → Explore wiring in
-// HomeScreen and the back button in explore.tsx.
+// HomeScreen and the back button in explore.tsx. All panels (Home swipe, Climate & Location sheets) use
+// the core PanResponder system, so no GestureHandlerRootView is needed.
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
@@ -16,6 +17,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="location" options={{ animation: 'slide_from_right' }} />
         </Stack>
       </VehicleProvider>
     </ThemeProvider>

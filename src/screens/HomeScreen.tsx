@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Pressable,
@@ -18,6 +18,7 @@ import { useFleet, usePreferences } from '@/state/VehicleProvider';
 import { CONTROL_ACTIONS } from '@/state/controlActions';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
+import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -39,6 +40,10 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const fleet = useFleet();
   const router = useRouter();
   const { favorites } = usePreferences();
+  // Geographic bearing to the active car (mock = its stable offset bearing; real coords arrive via BLE).
+  // Drives the compass arrow on the Location row.
+  const activeVehicle = fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0];
+  const bearingToCar = activeVehicle.mockLocationOffset.bearingDeg;
   const [customizing, setCustomizing] = useState(false);
   const openCustomize = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -139,7 +144,13 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             subtitle={`Interior ${Math.round(state.interiorTempC)}°C`}
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
-          <NavRow symbol="location.fill" title="Location" subtitle="Nearby" onPress={() => {}} />
+          <NavRow
+            symbol="location.fill"
+            title="Location"
+            subtitle="Nearby"
+            onPress={() => router.push('/location')}
+            leading={<CarHeadingArrow bearingToCar={bearingToCar} size={26} color="white" />}
+          />
           <NavRow symbol="steeringwheel" title="Summon" onPress={() => {}} />
           <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
           <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
@@ -219,6 +230,7 @@ function NavRow({
   status,
   subtitle,
   onPress,
+  leading,
 }: {
   symbol: SFSymbol;
   title: string;
@@ -226,10 +238,16 @@ function NavRow({
   status?: string;
   subtitle?: string;
   onPress: () => void;
+  // Optional custom leading icon; defaults to the SF Symbol. The Location row passes its compass arrow.
+  leading?: ReactNode;
 }) {
   return (
     <Pressable style={styles.navRow} onPress={onPress}>
-      <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
+      {leading ? (
+        <View style={styles.navIcon}>{leading}</View>
+      ) : (
+        <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
+      )}
       <View style={styles.navText}>
         <Text style={styles.navTitle}>{title}</Text>
         {status || subtitle ? (
