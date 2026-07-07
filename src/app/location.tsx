@@ -44,6 +44,7 @@ import { useTrip } from '@/state/useTrip';
 import { straightLineLegs, tripTotals } from '@/state/trip';
 import { useTripRoute } from '@/state/useTripRoute';
 import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle } from '@/components/TripSheet';
+import { EditTripSheet } from '@/components/EditTripSheet';
 import type { Place } from '@/services/place';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
@@ -142,18 +143,39 @@ export default function LocationView() {
 
   // Trip planning: selecting a place builds an in-memory trip shown in the TripSheet.
   const trip = useTrip();
-  const [screen, setScreen] = useState<'search' | 'trip'>('search');
+  const [screen, setScreen] = useState<'search' | 'trip' | 'editTrip' | 'addCharger'>('search');
   const tripSheetRef = useRef<TripSheetHandle>(null);
   // Departure clock for the itinerary (set when a trip starts, so times are stable while viewing).
   const [departAt, setDepartAt] = useState(0);
 
-  // Select a place (from search or a charger row) → record a recent + start a trip to it.
+  // Select a place → record a recent, then either start a trip (none yet) or append to the one being edited.
   const onSelectPlace = (place: Place) => {
     nav.select(place);
-    trip.start(carCoord, place);
-    setDepartAt(Date.now());
-    setScreen('trip');
-    tripSheetRef.current?.expand();
+    if (trip.trip) {
+      trip.addStop(place);
+      setScreen('editTrip');
+    } else {
+      trip.start(carCoord, place);
+      setDepartAt(Date.now());
+      setScreen('trip');
+      tripSheetRef.current?.expand();
+    }
+  };
+
+  // Removing every non-car stop discards the trip (car alone isn't a trip).
+  const onRemoveStop = (id: string) => {
+    if (!trip.trip) return;
+    const remaining = trip.trip.stops.filter((s, i) => i === 0 || s.id !== id);
+    if (remaining.length <= 1) {
+      trip.clear();
+      setScreen('search');
+    } else {
+      trip.removeStop(id);
+    }
+  };
+  const onTripCancel = () => {
+    trip.clear();
+    setScreen('search');
   };
 
   // Real Apple route for the active trip (null while loading / offline → straight-line fallback). Shared by
@@ -529,7 +551,15 @@ export default function LocationView() {
       </SafeAreaView>
 
       {screen === 'trip' && trip.trip ? (
-        <TripSheet ref={tripSheetRef} trip={trip.trip} legs={tripLegs} now={departAt} onEditTrip={() => {}} />
+        <TripSheet ref={tripSheetRef} trip={trip.trip} legs={tripLegs} now={departAt} onEditTrip={() => setScreen('editTrip')} />
+      ) : screen === 'editTrip' && trip.trip ? (
+        <EditTripSheet
+          trip={trip.trip}
+          onRemove={onRemoveStop}
+          onReorder={trip.reorder}
+          onAddStop={() => setScreen('search')}
+          onAddCharger={() => setScreen('addCharger')}
+        />
       ) : (
         <LocationSheet
           ref={sheetRef}
@@ -578,14 +608,19 @@ export default function LocationView() {
               Send to Car · {formatDuration(tripTotalsVal.durationS)} · {formatKm(tripTotalsVal.distanceM / 1000)}
             </Text>
           </Pressable>
-          <Pressable
-            hitSlop={8}
-            style={styles.tripCancelButton}
-            onPress={() => {
-              trip.clear();
-              setScreen('search');
-            }}
-          >
+          <Pressable hitSlop={8} style={styles.tripCancelButton} onPress={onTripCancel}>
+            <Text style={styles.tripCancelText}>Cancel</Text>
+          </Pressable>
+        </SafeAreaView>
+      ) : null}
+
+      {/* Pinned Edit-Trip actions — Done returns to the trip view; Cancel discards the trip. */}
+      {screen === 'editTrip' && trip.trip ? (
+        <SafeAreaView edges={['bottom']} style={styles.tripBar} pointerEvents="box-none">
+          <Pressable style={styles.tripSendButton} onPress={() => setScreen('trip')}>
+            <Text style={styles.tripSendText}>Done</Text>
+          </Pressable>
+          <Pressable hitSlop={8} style={styles.tripCancelButton} onPress={onTripCancel}>
             <Text style={styles.tripCancelText}>Cancel</Text>
           </Pressable>
         </SafeAreaView>
