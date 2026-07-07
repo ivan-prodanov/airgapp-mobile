@@ -38,6 +38,7 @@ import {
 } from '@/services/tomtom';
 import { hasChargerInBounds, nearestChargerTo, osmChargersInBounds } from '@/services/chargerSource';
 import { fetchAvailabilityInBounds, fetchAvailabilityNear, matchAvailability } from '@/services/chargeprice';
+import { useNavigateSearch } from '@/hooks/useNavigateSearch';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -129,6 +130,9 @@ export default function LocationView() {
     () => offsetCoordinate(userCoord ?? FALLBACK_COORD, offset),
     [userCoord, offset],
   );
+
+  // Navigate search (recents tab): live Apple/local results + persisted recents.
+  const nav = useNavigateSearch(region);
 
   // Pool filtered by AC/DC + availability. The map pins and the list both derive from this so they stay
   // consistent (tap a row → its pin exists on the map).
@@ -472,6 +476,12 @@ export default function LocationView() {
         onSelectCharger={onSelectCharger}
         onCloseDetail={onCloseDetail}
         onNavigateCharger={onNavigateToCharger}
+        query={nav.query}
+        onChangeQuery={nav.setQuery}
+        results={nav.results}
+        recentGroups={nav.recentGroups}
+        carCoord={carCoord}
+        onSelectPlace={nav.select}
       />
 
       {/* Pinned action bar for the charger detail — floats at the screen bottom over the sheet, so it's
