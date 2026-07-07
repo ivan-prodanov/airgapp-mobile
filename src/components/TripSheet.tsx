@@ -1,28 +1,23 @@
 import { forwardRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { BottomSheet, type BottomSheetHandle } from './BottomSheet';
-import { formatKm } from '@/state/mockLocation';
-import {
-  computeItinerary,
-  straightLineLegs,
-  tripTotals,
-  DEFAULT_ITINERARY_OPTS,
-  type ItineraryRow,
-  type Trip,
-} from '@/state/trip';
+import { computeItinerary, DEFAULT_ITINERARY_OPTS, type ItineraryRow, type Leg, type Trip } from '@/state/trip';
 
 export type TripSheetHandle = BottomSheetHandle;
 
 interface Props {
   trip: Trip;
+  legs: Leg[]; // route legs (Phase 1: straight-line; Phase 2: real Apple route) — owned by the screen
   now: number; // departure clock (epoch ms); passed in so the component stays deterministic
   onEditTrip: () => void;
-  onSendToCar: () => void;
-  onCancel: () => void;
 }
+
+// Room left at the bottom of the itinerary so its last row clears the pinned Send-to-Car / Cancel overlay.
+const FOOTER_CLEARANCE = 132;
 
 const ICON: Record<ItineraryRow['stop']['kind'], SFSymbol> = {
   car: 'car.fill',
@@ -34,23 +29,13 @@ function hhmm(at: number): string {
   const d = new Date(at);
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
-function hoursMins(totalS: number): string {
-  const m = Math.round(totalS / 60);
-  const h = Math.floor(m / 60);
-  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
-}
 
-export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
-  { trip, now, onEditTrip, onSendToCar, onCancel },
-  ref,
-) {
+export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet({ trip, legs, now, onEditTrip }, ref) {
   const insetBottom = useSafeAreaInsets().bottom;
-  const legs = straightLineLegs(trip.stops); // Phase 1 mock; Phase 2 → real Apple legs
   const rows = computeItinerary(trip.stops, legs, { ...DEFAULT_ITINERARY_OPTS, departAt: now });
-  const totals = tripTotals(legs);
 
   return (
-    <BottomSheet ref={ref}>
+    <BottomSheet ref={ref} lowestDetent="middle">
       {({ dragHandlers }) => (
         <View style={styles.content}>
           <View {...dragHandlers} style={styles.header}>
@@ -65,7 +50,7 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
 
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={{ paddingTop: 8, paddingBottom: 12 }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: insetBottom + FOOTER_CLEARANCE }}
             showsVerticalScrollIndicator={false}
           >
             {rows.map((row, i) => (
@@ -85,11 +70,7 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
                   <Text style={styles.rowMeta} numberOfLines={1}>
                     {row.stop.kind === 'car'
                       ? `${Math.round(row.pct)}% · Set Departure Energy`
-                      : [
-                          `${Math.round(row.pct)}%`,
-                          row.chargeMinutes ? `⚡ ${row.chargeMinutes} min` : null,
-                          hhmm(row.at),
-                        ]
+                      : [`${Math.round(row.pct)}%`, row.chargeMinutes ? `⚡ ${row.chargeMinutes} min` : null, hhmm(row.at)]
                           .filter(Boolean)
                           .join(' · ')}
                   </Text>
@@ -97,17 +78,6 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
               </View>
             ))}
           </ScrollView>
-
-          <View style={[styles.footer, { paddingBottom: insetBottom + 8 }]}>
-            <Pressable style={styles.sendBtn} onPress={onSendToCar}>
-              <Text style={styles.sendText}>
-                Send to Car · {hoursMins(totals.durationS)} · {formatKm(totals.distanceM / 1000)}
-              </Text>
-            </Pressable>
-            <Pressable hitSlop={8} onPress={onCancel} style={styles.cancelBtn}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-          </View>
         </View>
       )}
     </BottomSheet>
@@ -142,9 +112,4 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, paddingBottom: 22 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: 'white' },
   rowMeta: { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 3 },
-  footer: { paddingHorizontal: 16, paddingTop: 8, gap: 10 },
-  sendBtn: { height: 52, borderRadius: 12, backgroundColor: '#3E6AE1', alignItems: 'center', justifyContent: 'center' },
-  sendText: { fontSize: 17, fontWeight: '700', color: 'white' },
-  cancelBtn: { alignItems: 'center', paddingVertical: 6 },
-  cancelText: { fontSize: 16, color: 'rgba(255,255,255,0.7)' },
 });

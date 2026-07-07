@@ -19,6 +19,7 @@ import {
 import { useFleet } from '@/state/VehicleProvider';
 import {
   distanceMeters,
+  formatKm,
   formatTimeAgo,
   getMockLastUpdated,
   offsetCoordinate,
@@ -40,6 +41,7 @@ import { hasChargerInBounds, nearestChargerTo, osmChargersInBounds } from '@/ser
 import { fetchAvailabilityInBounds, fetchAvailabilityNear, matchAvailability } from '@/services/chargeprice';
 import { useNavigateSearch } from '@/hooks/useNavigateSearch';
 import { useTrip } from '@/state/useTrip';
+import { straightLineLegs, tripTotals } from '@/state/trip';
 import { TripSheet, type TripSheetHandle } from '@/components/TripSheet';
 import type { Place } from '@/services/place';
 
@@ -152,6 +154,11 @@ export default function LocationView() {
     setScreen('trip');
     tripSheetRef.current?.expand();
   };
+
+  // Route legs for the active trip (Phase 1: straight-line mock; Phase 2 → real Apple route). Shared by the
+  // TripSheet itinerary and the pinned Send-to-Car footer.
+  const tripLegs = useMemo(() => (trip.trip ? straightLineLegs(trip.trip.stops) : []), [trip.trip]);
+  const tripTotalsVal = tripTotals(tripLegs);
 
   // Pool filtered by AC/DC + availability. The map pins and the list both derive from this so they stay
   // consistent (tap a row → its pin exists on the map).
@@ -489,17 +496,7 @@ export default function LocationView() {
       </SafeAreaView>
 
       {screen === 'trip' && trip.trip ? (
-        <TripSheet
-          ref={tripSheetRef}
-          trip={trip.trip}
-          now={departAt}
-          onEditTrip={() => {}}
-          onSendToCar={() => {}}
-          onCancel={() => {
-            trip.clear();
-            setScreen('search');
-          }}
-        />
+        <TripSheet ref={tripSheetRef} trip={trip.trip} legs={tripLegs} now={departAt} onEditTrip={() => {}} />
       ) : (
         <LocationSheet
           ref={sheetRef}
@@ -538,8 +535,37 @@ export default function LocationView() {
           </View>
         </SafeAreaView>
       ) : null}
+
+      {/* Pinned trip actions — Send to Car / Cancel float at the screen bottom so they stay visible while the
+          Trip sheet rests at the middle detent (Send to Car is a local mock — never a network/Tesla call). */}
+      {screen === 'trip' && trip.trip ? (
+        <SafeAreaView edges={['bottom']} style={styles.tripBar} pointerEvents="box-none">
+          <Pressable style={styles.tripSendButton} onPress={() => {}}>
+            <Text style={styles.tripSendText}>
+              Send to Car · {formatDuration(tripTotalsVal.durationS)} · {formatKm(tripTotalsVal.distanceM / 1000)}
+            </Text>
+          </Pressable>
+          <Pressable
+            hitSlop={8}
+            style={styles.tripCancelButton}
+            onPress={() => {
+              trip.clear();
+              setScreen('search');
+            }}
+          >
+            <Text style={styles.tripCancelText}>Cancel</Text>
+          </Pressable>
+        </SafeAreaView>
+      ) : null}
     </View>
   );
+}
+
+// "3h 45m" / "45m" from a seconds duration.
+function formatDuration(totalS: number): string {
+  const m = Math.round(totalS / 60);
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
 }
 
 // Map pin for a charging station: a bubble with a bolt and the availability text, on a little downward
@@ -661,6 +687,25 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     backgroundColor: '#161616',
   },
+  tripBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    backgroundColor: '#161616',
+  },
+  tripSendButton: {
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: '#3E6AE1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripSendText: { fontSize: 17, fontWeight: '700', color: 'white' },
+  tripCancelButton: { alignItems: 'center', paddingVertical: 8, marginTop: 2 },
+  tripCancelText: { fontSize: 16, color: 'rgba(255,255,255,0.7)' },
   navigateRow: {
     flexDirection: 'row',
     gap: 10,

@@ -20,6 +20,9 @@ interface RenderProps {
 }
 interface Props {
   children: (props: RenderProps) => ReactNode;
+  // 'middle' locks the sheet so it can't be dragged below the middle detent (used by the Trip sheet, which
+  // keeps its pinned action buttons in view). Default 'minimal' = the full three-detent range.
+  lowestDetent?: 'minimal' | 'middle';
 }
 
 const OVERDRAG_RESIST = 2.5;
@@ -31,15 +34,16 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 
 // Bottom-anchored panel dragged by its top handle between three detents (full / middle / minimal), shared by
 // LocationSheet (search/charging) and TripSheet (itinerary).
-export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomSheet({ children }, ref) {
+export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomSheet({ children, lowestDetent = 'minimal' }, ref) {
   const { height } = useWindowDimensions();
   const SHEET_H = Math.round(height * SHEET_FULL_FRAC);
   const snaps = useMemo(() => {
     const full = 0;
     const middle = Math.round(SHEET_H - height * SHEET_MIDDLE_FRAC);
     const minimal = Math.round(SHEET_H - height * SHEET_MINIMAL_FRAC);
-    return { full, middle, minimal, points: [full, middle, minimal] };
-  }, [SHEET_H, height]);
+    const points = lowestDetent === 'middle' ? [full, middle] : [full, middle, minimal];
+    return { full, middle, minimal, points, collapsed: points[points.length - 1] };
+  }, [SHEET_H, height, lowestDetent]);
   const snapsRef = useRef(snaps);
   snapsRef.current = snaps;
 
@@ -68,7 +72,7 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
     ref,
     () => ({
       expand: () => settle(Math.min(restingY.current, snapsRef.current.middle)),
-      collapse: () => settle(snapsRef.current.minimal),
+      collapse: () => settle(snapsRef.current.collapsed),
       expandFull: () => settle(snapsRef.current.full),
     }),
     [settle],
@@ -79,7 +83,7 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
       onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_e, g) => {
         const s = snapsRef.current;
-        translateY.setValue(overDrag(restingY.current + g.dy, s.full, s.minimal));
+        translateY.setValue(overDrag(restingY.current + g.dy, s.full, s.collapsed));
       },
       onPanResponderRelease: (_e, g) => {
         const s = snapsRef.current;
