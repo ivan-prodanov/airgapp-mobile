@@ -50,6 +50,24 @@ head -c4 "$TMP/main.hbc" | xxd -p | grep -qi '^c61fbc03' || { echo "ERROR: herme
 cp "$TMP/main.hbc" "$APP/main.jsbundle"
 echo "  swapped: $(du -h "$APP/main.jsbundle" | cut -f1)"
 
+# Sync bundled assets (e.g. assets/places.db — the GeoNames gazetteer) into the .app so JS-only deploys
+# pick up new/changed assets. expo export:embed wrote them to $TMP/assets; mirror that tree into the
+# app's assets root.
+if [ -d "$TMP/assets" ]; then
+  rsync -a "$TMP/assets/" "$APP/assets/" 2>/dev/null || cp -R "$TMP/assets/." "$APP/assets/"
+  echo "  synced assets → $APP/assets"
+fi
+# GOTCHA: expo-sqlite's importDatabaseFromAssetAsync resolves the bundled gazetteer to
+# <app>/assets/assets/places.db — one level SHALLOWER than the image-loader asset layout the rsync above
+# produces (<app>/assets/assets/assets/places.db). So ALSO place the DB at the shallower path explicitly,
+# else initPlaceSources() silently fails ("Database …/assets/assets/places.db not found") and the
+# gazetteer returns zero rows. See docs/superpowers/plans/2026-07-07-navigate-search.md (Task 7).
+if [ -f "$APP_REPO/assets/places.db" ]; then
+  mkdir -p "$APP/assets/assets"
+  cp "$APP_REPO/assets/places.db" "$APP/assets/assets/places.db"
+  echo "  placed gazetteer DB → assets/assets/places.db (importDatabaseFromAssetAsync path)"
+fi
+
 echo "→ [3/4] re-signing"
 ID="$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 'Apple Development' | awk '{print $2}')"
 [ -n "$ID" ] || { echo "ERROR: no 'Apple Development' codesigning identity found" >&2; exit 1; }

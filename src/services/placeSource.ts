@@ -22,18 +22,24 @@ interface PlaceRow {
 
 // undefined = not initialized; null = no usable DB; else the open handle.
 let placesDb: SQLite.SQLiteDatabase | null | undefined;
+let initPromise: Promise<void> | undefined;
 
 // Copy the bundled gazetteer asset into the SQLite directory (idempotent — skipped if already present)
-// and open it. Call once on mount before searchLocal. importDatabaseFromAssetAsync is a no-op copy when
-// the file already exists (no forceOverwrite).
-export async function initPlaceSources(): Promise<void> {
-  if (placesDb !== undefined) return;
-  try {
-    await SQLite.importDatabaseFromAssetAsync(PLACES_DB, { assetId: require('../../assets/places.db') });
-    placesDb = SQLite.openDatabaseSync(PLACES_DB);
-  } catch {
-    placesDb = null; // asset missing / import failed → gazetteer results simply empty
+// and open it. Call on mount before searchLocal. Concurrency-safe: the in-flight promise is memoized so
+// overlapping callers (e.g. the hook + a caller) share one import. importDatabaseFromAssetAsync is a
+// no-op copy when the file already exists (no forceOverwrite).
+export function initPlaceSources(): Promise<void> {
+  if (!initPromise) {
+    initPromise = (async () => {
+      try {
+        await SQLite.importDatabaseFromAssetAsync(PLACES_DB, { assetId: require('../../assets/places.db') });
+        placesDb = SQLite.openDatabaseSync(PLACES_DB);
+      } catch {
+        placesDb = null; // asset missing / import failed → gazetteer results simply empty
+      }
+    })();
   }
+  return initPromise;
 }
 
 function gazetteerMatching(q: string): Place[] {
