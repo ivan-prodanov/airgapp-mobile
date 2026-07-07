@@ -632,8 +632,8 @@ const SORT_OPTIONS: { key: ChargerSort; label: string }[] = [
 function SubSheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <View>
-      <View style={styles.chargingHeader}>
-        <Text style={styles.chargingTitle}>{title}</Text>
+      <View style={styles.subSheetHeader}>
+        <Text style={styles.subSheetTitle}>{title}</Text>
         <Pressable hitSlop={10} onPress={onClose}>
           <SymbolView name="xmark" tintColor="rgba(255,255,255,0.7)" size={20} weight="medium" />
         </Pressable>
@@ -686,6 +686,16 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 17 },
   tabActive: { color: 'white', fontWeight: '700' },
   tabInactive: { color: 'rgba(255,255,255,0.4)', fontWeight: '600' },
+
+  subSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  subSheetTitle: { fontSize: 26, fontWeight: '700', color: 'white' },
 
   controlsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 4, marginTop: 2 },
   sortButton: {
