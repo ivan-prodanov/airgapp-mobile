@@ -43,7 +43,7 @@ import { useNavigateSearch } from '@/hooks/useNavigateSearch';
 import { useTrip } from '@/state/useTrip';
 import { straightLineLegs, tripTotals } from '@/state/trip';
 import { useTripRoute } from '@/state/useTripRoute';
-import { TripSheet, type TripSheetHandle } from '@/components/TripSheet';
+import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle } from '@/components/TripSheet';
 import type { Place } from '@/services/place';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
@@ -164,12 +164,14 @@ export default function LocationView() {
     ? { distanceM: tripRoute.totalDistanceM, durationS: tripRoute.totalDurationS }
     : tripTotals(tripLegs);
 
-  // Frame the whole trip (route if we have it, else the stops) above the trip sheet.
+  // Frame the whole trip (route if we have it, else the stops) above the trip sheet — same rule as the
+  // Charging tab: mapPadding already reserves the lowest gear, so pad the bottom by the gap up to the trip
+  // sheet's (taller) detent.
   useEffect(() => {
     if (screen !== 'trip' || !trip.trip) return;
     const coords = tripRoute?.polyline?.length ? tripRoute.polyline : trip.trip.stops.map((s) => s.coordinate);
     mapRef.current?.fitToCoordinates(coords, {
-      edgePadding: { top: 90, right: 44, bottom: Math.round(height * 0.55), left: 44 },
+      edgePadding: { top: 80, right: 40, bottom: Math.round(height * (TRIP_SHEET_FRAC - SHEET_MINIMAL_FRAC)), left: 40 },
       animated: true,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
