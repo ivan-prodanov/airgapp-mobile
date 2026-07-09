@@ -193,9 +193,8 @@ export default function LocationView() {
     };
     setSelectedCharger(null);
     setTab('location');
-    if (action === 'addToTrip') void trip.addToSaved(place);
-    else onSelectPlace(place);
-    setScreen('trip');
+    if (action === 'addToTrip') void trip.addToSaved(place).then(() => setScreen('trip'));
+    else onSelectPlace(place); // onSelectPlace already switches to the Trip view
     setSharedIntent(null);
   }, [sharedIntent]);
   // Let the Share popup know whether "Add to Trip" should be enabled (the trip lives in AsyncStorage, which the

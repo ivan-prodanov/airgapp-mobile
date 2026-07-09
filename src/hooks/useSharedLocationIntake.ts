@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState, Linking } from 'react-native';
 import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 
 import SharedIntake from '../../modules/shared-intake';
 import AppleSearch, { type AppleResult } from '../../modules/expo-apple-search';
@@ -70,6 +71,7 @@ const deps: ParseDeps = {
 // publishes {location, action} to the Location screen. Runs on cold launch, every foreground, and url events.
 export function useSharedLocationIntake(): void {
   const busy = useRef(false);
+  const router = useRouter();
 
   useEffect(() => {
     const process = async () => {
@@ -95,7 +97,10 @@ export function useSharedLocationIntake(): void {
           } else if (intent.raw) {
             loc = await parseSharedLocation(intent.raw, deps); // degraded fallback
           }
-          if (loc) sharedLocationStore.set({ location: loc, action: intent.action });
+          if (loc) {
+            sharedLocationStore.set({ location: loc, action: intent.action });
+            router.navigate('/location');
+          }
         }
       } finally {
         busy.current = false;
@@ -111,5 +116,5 @@ export function useSharedLocationIntake(): void {
       sub.remove();
       linkSub.remove();
     };
-  }, []);
+  }, [router]);
 }
