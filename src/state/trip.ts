@@ -22,9 +22,7 @@ export interface Leg {
 }
 export interface ItineraryRow {
   stop: TripStop;
-  pct: number; // battery % on arrival (mock)
-  at: number; // arrival time, epoch ms
-  chargeMinutes?: number; // dwell for charger stops (mock)
+  at: number; // arrival time, epoch ms (real: departure + cumulative Apple leg durations)
 }
 
 // Each stop gets a unique INSTANCE id (not derived from the place) so the same place can appear twice in a
@@ -116,39 +114,15 @@ export function straightLineLegs(stops: TripStop[]): Leg[] {
   return legs;
 }
 
-export interface ItineraryOpts {
-  departAt: number; // epoch ms
-  startPct: number;
-  drainPctPerKm: number;
-  chargerRestorePct: number;
-  chargeMinutes: number;
-}
-export const DEFAULT_ITINERARY_OPTS: Omit<ItineraryOpts, 'departAt'> = {
-  startPct: 90,
-  drainPctPerKm: 0.18,
-  chargerRestorePct: 80,
-  chargeMinutes: 8,
-};
-
-// Battery % + arrival time per stop. `legs[i-1]` is the leg into stops[i]. Chargers restore to
-// chargerRestorePct and add chargeMinutes of dwell AFTER arrival. All numbers are mock.
-export function computeItinerary(stops: TripStop[], legs: Leg[], opts: ItineraryOpts): ItineraryRow[] {
-  const rows: ItineraryRow[] = [];
-  let pct = opts.startPct;
-  let at = opts.departAt;
-  rows.push({ stop: stops[0], pct, at });
+// Arrival time per stop: departure (`departAt`) + cumulative real Apple leg durations. `legs[i-1]` is the leg
+// into stops[i]. No battery/charge modelling — we have no real vehicle SOC/consumption data.
+export function computeItinerary(stops: TripStop[], legs: Leg[], departAt: number): ItineraryRow[] {
+  const rows: ItineraryRow[] = [{ stop: stops[0], at: departAt }];
+  let at = departAt;
   for (let i = 1; i < stops.length; i += 1) {
     const leg = legs[i - 1] ?? { distanceM: 0, durationS: 0 };
-    pct = Math.max(0, pct - opts.drainPctPerKm * (leg.distanceM / 1000));
     at += leg.durationS * 1000;
-    const stop = stops[i];
-    if (stop.kind === 'charger') {
-      rows.push({ stop, pct, at, chargeMinutes: opts.chargeMinutes });
-      pct = opts.chargerRestorePct;
-      at += opts.chargeMinutes * 60_000;
-    } else {
-      rows.push({ stop, pct, at });
-    }
+    rows.push({ stop: stops[i], at });
   }
   return rows;
 }

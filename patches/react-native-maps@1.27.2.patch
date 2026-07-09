@@ -1,0 +1,359 @@
+diff --git a/dist/src/MapView.d.ts b/dist/src/MapView.d.ts
+index 2c9f5f8224b3c735faf95d4e6eb7cea8330b072f..92a19c47c77cdd09f5590bda61b50948bccf37cf 100644
+--- a/dist/src/MapView.d.ts
++++ b/dist/src/MapView.d.ts
+@@ -656,6 +656,7 @@ declare class MapView extends React.Component<MapViewProps, State> {
+     getMapBoundaries(): Promise<BoundingBox>;
+     setMapBoundaries(northEast: LatLng, southWest: LatLng): void;
+     setIndoorActiveLevelIndex(activeLevelIndex: number): void | Promise<never>;
++    deselectFeatures(): void;
+     /**
+      * Takes a snapshot of the map and saves it to a picture
+      * file or returns the image as a base64 encoded string.
+diff --git a/dist/src/createFabricMap.d.ts b/dist/src/createFabricMap.d.ts
+index 57f8f1b628790ed31f34db81e5b955ddc5de8175..db9e47871d06067f2eb0c5e027adeff709dc80e4 100644
+--- a/dist/src/createFabricMap.d.ts
++++ b/dist/src/createFabricMap.d.ts
+@@ -20,6 +20,7 @@ export interface FabricMapHandle {
+     getPointForCoordinate: (coordinate: LatLng) => Promise<Point>;
+     getCoordinateForPoint: (point: Point) => Promise<LatLng>;
+     setIndoorActiveLevelIndex: (activeLevelIndex: number) => void;
++    deselectFeatures: () => void;
+ }
+ declare const createFabricMap: (ViewComponent: typeof GoogleMapView | typeof FabricMapView, Commands: typeof FabricCommands | typeof GoogleCommands) => React.ForwardRefExoticComponent<MapViewProps & React.RefAttributes<FabricMapHandle | null>>;
+ export default createFabricMap;
+diff --git a/ios/AirMaps/AIRMap.h b/ios/AirMaps/AIRMap.h
+index 17c1755000fd70d4390c6b8df847813310c8d101..cc99c089c12ccac6c077bfd5f296a1aa0b7a98d0 100644
+--- a/ios/AirMaps/AIRMap.h
++++ b/ios/AirMaps/AIRMap.h
+@@ -65,6 +65,11 @@ extern const NSInteger AIRMapMaxZoomLevel;
+ @property (nonatomic, copy) RCTDirectEventBlock onRegionChangeComplete;
+ @property (nonatomic, copy) RCTBubblingEventBlock onPress;
+ @property (nonatomic, copy) RCTBubblingEventBlock onLongPress;
++@property (nonatomic, copy) RCTBubblingEventBlock onPoiClick; // Apple map-feature (POI) tap — patched in for parity with the Google view
++// A background-tap onPress deferred so an Apple map-feature selection from the SAME tap (which resolves a
++// frame or two later, asynchronously) can cancel it — a feature tap is not a background tap. Cancelled in
++// didSelectAnnotation. Patched in alongside onPoiClick.
++@property (nonatomic, copy) dispatch_block_t pendingMapPressBlock;
+ @property (nonatomic, copy) RCTDirectEventBlock onPanDrag;
+ @property (nonatomic, copy) RCTDirectEventBlock onDoublePress;
+ @property (nonatomic, copy) RCTDirectEventBlock onMarkerPress;
+diff --git a/ios/AirMaps/AIRMapManager.m b/ios/AirMaps/AIRMapManager.m
+index d03403473e0e4ab4c891709259652a2546d2170f..d7005af361d4540141f6153cffda79cf6044d4f4 100644
+--- a/ios/AirMaps/AIRMapManager.m
++++ b/ios/AirMaps/AIRMapManager.m
+@@ -50,6 +50,15 @@ - (UIView *)view
+     AIRMap *map = [AIRMap new];
+     map.delegate = self;
+ 
++    // Make Apple's own built-in labels tappable (POIs like airports/shops, territories like cities/countries,
++    // physical features like mountains/parks). A tap on one fires mapView:didSelectAnnotation: with an
++    // MKMapFeatureAnnotation, which we forward to JS via onPoiClick below. iOS 16+; no-op on older versions.
++    if (@available(iOS 16.0, *)) {
++        map.selectableMapFeatures = MKMapFeatureOptionPointsOfInterest
++                                  | MKMapFeatureOptionTerritories
++                                  | MKMapFeatureOptionPhysicalFeatures;
++    }
++
+     map.isAccessibilityElement = NO;
+     map.accessibilityElementsHidden = NO;
+ 
+@@ -660,7 +669,15 @@ - (void)handleMapTap:(UITapGestureRecognizer *)recognizer {
+     }
+ 
+     if (!map.onPress) return;
+-    map.onPress(@{
++
++    // A tap that lands on a built-in Apple map feature ALSO fires this map-level tap recognizer. Emitting
++    // onPress for it would momentarily dismiss the RN preview card before onPoiClick re-opens it (a visible
++    // flicker). MapKit resolves a feature selection asynchronously (a frame or two later — and when no feature
++    // was previously selected there's nothing in selectedAnnotations to hint at it), so a one-shot deferred
++    // check races the selection. Instead defer onPress in a CANCELABLE block that didSelectAnnotation cancels
++    // the moment a feature is selected. A genuine empty-map tap selects nothing, so nothing cancels it and it
++    // fires after the short delay. The selectedAnnotations re-check is a belt-and-suspenders fallback.
++    NSDictionary *pressEvent = @{
+             @"coordinate": @{
+                     @"latitude": @(tapCoordinate.latitude),
+                     @"longitude": @(tapCoordinate.longitude),
+@@ -669,7 +686,26 @@ - (void)handleMapTap:(UITapGestureRecognizer *)recognizer {
+                     @"x": @(tapPoint.x),
+                     @"y": @(tapPoint.y),
+             },
++    };
++    if (map.pendingMapPressBlock) {
++        dispatch_block_cancel(map.pendingMapPressBlock);
++        map.pendingMapPressBlock = nil;
++    }
++    __weak AIRMap *weakMap = map;
++    dispatch_block_t pressBlock = dispatch_block_create(0, ^{
++        AIRMap *m = weakMap;
++        if (!m) return;
++        m.pendingMapPressBlock = nil;
++        if (!m.onPress) return;
++        if (@available(iOS 16.0, *)) {
++            for (id<MKAnnotation> a in m.selectedAnnotations) {
++                if ([a isKindOfClass:[MKMapFeatureAnnotation class]]) return; // feature tap → not a background tap
++            }
++        }
++        m.onPress(pressEvent);
+     });
++    map.pendingMapPressBlock = pressBlock;
++    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)), dispatch_get_main_queue(), pressBlock);
+ 
+ }
+ 
+@@ -719,6 +755,15 @@ - (void)handleMapLongPress:(UITapGestureRecognizer *)recognizer {
+     if (recognizer.state != UIGestureRecognizerStateBegan) return;
+ 
+     AIRMap *map = (AIRMap *)recognizer.view;
++
++    // Dropping a pin should clear any built-in Apple feature that's currently selected (enlarged), matching
++    // the Maps app — otherwise the previously-tapped POI stays enlarged behind the new pin. iOS 16+.
++    if (@available(iOS 16.0, *)) {
++        for (id<MKAnnotation> a in [map.selectedAnnotations copy]) {
++            if ([a isKindOfClass:[MKMapFeatureAnnotation class]]) [map deselectAnnotation:a animated:YES];
++        }
++    }
++
+     if (!map.onLongPress) return;
+ 
+     CGPoint touchPoint = [recognizer locationInView:map];
+@@ -789,6 +834,79 @@ - (void)mapView:(AIRMap *)mapView didSelectAnnotationView:(MKAnnotationView *)vi
+ 
+ }
+ 
++// iOS 16+ routes taps on Apple's built-in map features (POIs / cities / landmarks made tappable via
++// selectableMapFeatures) through THIS annotation-based delegate, NOT didSelectAnnotationView:. Forward the
++// feature to JS via onPoiClick. We leave the feature selected (Apple's native enlarge), mirroring the Maps
++// app; tapping elsewhere deselects it and our JS dismisses the card. Extra place data that doesn't fit the
++// pre-generated onPoiClick struct (category, icon colour, address, phone, website) is packed as a JSON string
++// in `placeId` — the synchronous fields fire immediately; address/phone/website enrich via MKMapItemRequest.
++- (void)mapView:(AIRMap *)mapView didSelectAnnotation:(id<MKAnnotation>)annotation
++{
++    if (@available(iOS 16.0, *)) {
++        if (![annotation isKindOfClass:[MKMapFeatureAnnotation class]]) return;
++        MKMapFeatureAnnotation *feature = (MKMapFeatureAnnotation *)annotation;
++
++        // This tap selected a built-in feature → it's a feature tap, not a background tap. Cancel the pending
++        // map onPress queued by handleMapTap so the RN preview card doesn't flicker to the Location sheet.
++        if (mapView.pendingMapPressBlock) {
++            dispatch_block_cancel(mapView.pendingMapPressBlock);
++            mapView.pendingMapPressBlock = nil;
++        }
++
++        if (!mapView.onPoiClick) return;
++
++        CLLocationCoordinate2D coord = feature.coordinate;
++        NSString *name = feature.title ?: @"";
++        CGPoint pt = [mapView convertCoordinate:coord toPointToView:mapView];
++
++        // Emits onPoiClick with the extras packed into placeId as JSON (name/coordinate stay first-class).
++        __weak AIRMap *weakMap = mapView;
++        void (^emit)(NSDictionary *) = ^(NSDictionary *extra) {
++            AIRMap *m = weakMap;
++            if (!m || !m.onPoiClick) return;
++            NSData *json = [NSJSONSerialization dataWithJSONObject:extra options:0 error:nil];
++            NSString *jsonStr = json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"{}";
++            m.onPoiClick(@{
++                @"placeId": jsonStr ?: @"{}",
++                @"name": name,
++                @"coordinate": @{ @"latitude": @(coord.latitude), @"longitude": @(coord.longitude) },
++                @"position": @{ @"x": @(pt.x), @"y": @(pt.y) },
++            });
++        };
++
++        // Synchronous extras straight off the feature (no network): category + Apple's own icon colour.
++        NSMutableDictionary *extra = [NSMutableDictionary dictionary];
++        if (feature.pointOfInterestCategory) extra[@"category"] = feature.pointOfInterestCategory; // raw MKPOICategory*, cleaned in JS
++        UIColor *bg = feature.iconStyle.backgroundColor;
++        if (bg) {
++            CGFloat r = 0, g = 0, b = 0, a = 0;
++            if ([bg getRed:&r green:&g blue:&b alpha:&a]) {
++                extra[@"color"] = [NSString stringWithFormat:@"#%02X%02X%02X", (int)(r * 255), (int)(g * 255), (int)(b * 255)];
++            }
++        }
++        emit(extra); // fire the card immediately from the synchronous data
++
++        // Enrich asynchronously with the full place-card data (address / phone / website), then fire again.
++        MKMapItemRequest *req = [[MKMapItemRequest alloc] initWithMapFeatureAnnotation:feature];
++        [req getMapItemWithCompletionHandler:^(MKMapItem * _Nullable item, NSError * _Nullable e) {
++            if (!item) return;
++            NSMutableDictionary *rich = [extra mutableCopy];
++            MKPlacemark *pm = item.placemark;
++            NSMutableArray<NSString *> *parts = [NSMutableArray array];
++            if (pm.thoroughfare.length) {
++                [parts addObject:(pm.subThoroughfare.length ? [NSString stringWithFormat:@"%@ %@", pm.subThoroughfare, pm.thoroughfare] : pm.thoroughfare)];
++            }
++            if (pm.locality.length) [parts addObject:pm.locality];
++            if (pm.administrativeArea.length) [parts addObject:pm.administrativeArea];
++            NSString *addr = [parts componentsJoinedByString:@", "];
++            if (addr.length) rich[@"address"] = addr;
++            if (item.phoneNumber.length) rich[@"phone"] = item.phoneNumber;
++            if (item.url.absoluteString.length) rich[@"url"] = item.url.absoluteString;
++            dispatch_async(dispatch_get_main_queue(), ^{ emit(rich); });
++        }];
++    }
++}
++
+ - (void)mapView:(AIRMap *)mapView didDeselectAnnotationView:(MKAnnotationView *)view {
+     if ([view.annotation isKindOfClass:[AIRMapMarker class]]) {
+         [(AIRMapMarker *)view.annotation hideCalloutView];
+diff --git a/ios/AirMaps/RNMapsMapView.mm b/ios/AirMaps/RNMapsMapView.mm
+index 447520de1a15c439f1fa2f748180a21dac573b02..69e93231fb778e0d7c42c3826b4ceeb667edc34f 100644
+--- a/ios/AirMaps/RNMapsMapView.mm
++++ b/ios/AirMaps/RNMapsMapView.mm
+@@ -56,6 +56,19 @@ - (void) prepareForRecycle
+ }
+ 
+ #pragma mark - JS Commands
++// Deselect any built-in Apple map feature the user tapped (its native "enlarged" highlight), so the RN
++// preview card and the map's selection stay in sync when the card is dismissed. iOS 16+ (feature annotations);
++// leaves the user's own AIRMapMarkers untouched. Patched in for parity with the Google view. See onPoiClick.
++- (void)deselectFeatures {
++    if (@available(iOS 16.0, *)) {
++        for (id<MKAnnotation> a in [_view.selectedAnnotations copy]) {
++            if ([a isKindOfClass:[MKMapFeatureAnnotation class]]) {
++                [_view deselectAnnotation:a animated:YES];
++            }
++        }
++    }
++}
++
+ - (void)animateToRegion:(NSString *)regionJSON duration:(NSInteger)duration{
+     NSDictionary* regionDic = [RCTConvert dictonaryFromString:regionJSON];
+     MKCoordinateRegion region = [RCTConvert MKCoordinateRegion:regionDic];
+@@ -188,6 +201,33 @@ - (void) prepareMapView
+         }
+     };
+ 
++    // Apple map-feature (POI) tap → Fabric onPoiClick emitter. Mirror of RNMapsGoogleMapView.mm's onPoiClick;
++    // AIRMapManager fills the NSDictionary from the tapped MKMapFeatureAnnotation.
++    _view.onPoiClick = [self](NSDictionary* dictionary) {
++        if (_eventEmitter) {
++            NSDictionary* coordinateDict = dictionary[@"coordinate"];
++            NSDictionary* positionDict = dictionary[@"position"];
++
++            facebook::react::RNMapsMapViewEventEmitter::OnPoiClickCoordinate coordinate = {
++                .latitude = [coordinateDict[@"latitude"] doubleValue],
++                .longitude = [coordinateDict[@"longitude"] doubleValue],
++            };
++            facebook::react::RNMapsMapViewEventEmitter::OnPoiClickPosition position = {
++                .x = [positionDict[@"x"] doubleValue],
++                .y = [positionDict[@"y"] doubleValue],
++            };
++
++            auto mapViewEventEmitter = std::static_pointer_cast<RNMapsMapViewEventEmitter const>(_eventEmitter);
++            facebook::react::RNMapsMapViewEventEmitter::OnPoiClick data = {
++                .placeId = std::string([dictionary[@"placeId"] UTF8String]),
++                .name = std::string([dictionary[@"name"] UTF8String]),
++                .coordinate = coordinate,
++                .position = position,
++            };
++            mapViewEventEmitter->onPoiClick(data);
++        }
++    };
++
+ 
+     _view.onMapReady = [self](NSDictionary* dictionary) {
+         if (_eventEmitter) {
+diff --git a/ios/generated/RNMapsSpecs/RCTComponentViewHelpers.h b/ios/generated/RNMapsSpecs/RCTComponentViewHelpers.h
+index 0a5f8de1c4283fcd197244210e5f85bb383f6b84..de695ff932a8974af2130ccfec677f2ce53c16ae 100644
+--- a/ios/generated/RNMapsSpecs/RCTComponentViewHelpers.h
++++ b/ios/generated/RNMapsSpecs/RCTComponentViewHelpers.h
+@@ -241,6 +241,7 @@ if ([commandName isEqualToString:@"setIndoorActiveLevelIndex"]) {
+ - (void)fitToSuppliedMarkers:(NSString *)markersJSON edgePaddingJSON:(NSString *)edgePaddingJSON animated:(BOOL)animated;
+ - (void)fitToCoordinates:(NSString *)coordinatesJSON edgePaddingJSON:(NSString *)edgePaddingJSON animated:(BOOL)animated;
+ - (void)setIndoorActiveLevelIndex:(NSInteger)activeLevelIndex;
++- (void)deselectFeatures;
+ @end
+ 
+ RCT_EXTERN inline void RCTRNMapsMapViewHandleCommand(
+@@ -444,6 +445,18 @@ if ([commandName isEqualToString:@"setIndoorActiveLevelIndex"]) {
+   return;
+ }
+ 
++if ([commandName isEqualToString:@"deselectFeatures"]) {
++#if RCT_DEBUG
++  if ([args count] != 0) {
++    RCTLogError(@"%@ command %@ received %d arguments, expected %d.", @"RNMapsMapView", commandName, (int)[args count], 0);
++    return;
++  }
++#endif
++
++  [componentView deselectFeatures];
++  return;
++}
++
+ #if RCT_DEBUG
+   RCTLogError(@"%@ received command %@, which is not a supported command.", @"RNMapsMapView", commandName);
+ #endif
+diff --git a/src/MapView.tsx b/src/MapView.tsx
+index 6fd5565185dc610ceaf435212d2b27ec4245a7a5..271656cb0cfda1a182369c9aa2bdc4d38a9c0ef2 100644
+--- a/src/MapView.tsx
++++ b/src/MapView.tsx
+@@ -946,6 +946,16 @@ class MapView extends React.Component<MapViewProps, State> {
+     return Promise.reject('getMapBoundaries not supported on this platform');
+   }
+ 
++  /**
++   * Deselect any built-in Apple map feature (POI/territory/physical) the user tapped, clearing its native
++   * "enlarged" highlight. iOS + Fabric only (Apple Maps); no-op elsewhere.
++   */
++  deselectFeatures() {
++    if (this.fabricMap.current) {
++      this.fabricMap.current.deselectFeatures();
++    }
++  }
++
+   /**
+    * Takes a snapshot of the map and saves it to a picture
+    * file or returns the image as a base64 encoded string.
+diff --git a/src/createFabricMap.tsx b/src/createFabricMap.tsx
+index aefb42fc3e7fd6fb8bf87d0432587d5cde24b13f..15fedb158c151cbaaa1231c6b6e9f85f0e65d6c7 100644
+--- a/src/createFabricMap.tsx
++++ b/src/createFabricMap.tsx
+@@ -46,6 +46,7 @@ export interface FabricMapHandle {
+   getPointForCoordinate: (coordinate: LatLng) => Promise<Point>;
+   getCoordinateForPoint: (point: Point) => Promise<LatLng>;
+   setIndoorActiveLevelIndex: (activeLevelIndex: number) => void;
++  deselectFeatures: () => void;
+ }
+ 
+ const createFabricMap = (
+@@ -245,6 +246,15 @@ const createFabricMap = (
+           console.warn('setCamera is not supported');
+         }
+       },
++      deselectFeatures() {
++        if (fabricRef.current) {
++          try {
++            (Commands as any).deselectFeatures?.(fabricRef.current);
++          } catch (error) {
++            console.error('Failed to deselectFeatures:', error);
++          }
++        }
++      },
+     }));
+ 
+     // @ts-ignore
+diff --git a/src/specs/NativeComponentMapView.ts b/src/specs/NativeComponentMapView.ts
+index b4fd5c18ca8f7a306eddc2b505df9260de3b3ff1..08f83ea2505e2fba360adc0f5ac4c8e020c226ec 100644
+--- a/src/specs/NativeComponentMapView.ts
++++ b/src/specs/NativeComponentMapView.ts
+@@ -1110,6 +1110,8 @@ interface NativeCommands {
+     viewRef: React.ElementRef<typeof FabricMapView>,
+     activeLevelIndex: Int32,
+   ) => void;
++
++  deselectFeatures: (viewRef: React.ElementRef<typeof FabricMapView>) => void;
+ }
+ 
+ export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
+@@ -1121,6 +1123,7 @@ export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
+     'fitToSuppliedMarkers',
+     'fitToCoordinates',
+     'setIndoorActiveLevelIndex',
++    'deselectFeatures',
+   ],
+ });
+ 

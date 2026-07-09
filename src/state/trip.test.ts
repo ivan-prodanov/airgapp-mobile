@@ -55,23 +55,18 @@ test('straightLineLegs returns one leg per consecutive pair with positive distan
   assert.ok(legs[0].durationS > 0);
 });
 
-test('computeItinerary drains per km, restores at chargers, advances time', () => {
+test('computeItinerary sets arrival time = departure + cumulative leg durations', () => {
   const stops: TripStop[] = [
     carStop(CAR),
     { id: 'c', kind: 'charger', title: 'C', coordinate: CAR },
     { id: 'd', kind: 'place', title: 'D', coordinate: CAR },
   ];
   const legs: Leg[] = [{ distanceM: 100_000, durationS: 3600 }, { distanceM: 50_000, durationS: 1800 }];
-  const rows = computeItinerary(stops, legs, {
-    departAt: 0, startPct: 90, drainPctPerKm: 0.2, chargerRestorePct: 80, chargeMinutes: 8,
-  });
+  const rows = computeItinerary(stops, legs, 0);
   assert.equal(rows.length, 3);
-  assert.equal(rows[0].pct, 90);              // car
-  assert.equal(rows[1].pct, 70);              // 90 - 0.2*100 (arrival at charger)
-  assert.equal(rows[1].chargeMinutes, 8);
-  assert.equal(rows[1].at, 3_600_000);        // 1h
-  assert.equal(rows[2].pct, 70);              // restored to 80 then -0.2*50
-  assert.equal(rows[2].at, 3_600_000 + 8 * 60_000 + 1_800_000); // +8min charge +30min drive
+  assert.equal(rows[0].at, 0); // departure
+  assert.equal(rows[1].at, 3_600_000); // +1h
+  assert.equal(rows[2].at, 3_600_000 + 1_800_000); // +30m (no fake charge dwell)
 });
 
 test('tripTotals sums legs', () => {

@@ -12,9 +12,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
-import { BottomSheet, type BottomSheetHandle, type SheetScrollProps } from './BottomSheet';
+import { BottomSheet, SHEET_TALL_FRAC, type BottomSheetHandle, type SheetScrollProps } from './BottomSheet';
 
-import { busyTimesFor, distanceMeters, formatKm, type LatLng } from '@/state/mockLocation';
+import { distanceMeters, formatKm, type LatLng } from '@/state/mockLocation';
 import type { Place } from '@/services/place';
 import type { RecentGroup } from '@/services/recents';
 import {
@@ -27,7 +27,7 @@ import {
 } from '@/services/tomtom';
 
 export type LocationTab = 'location' | 'charging';
-export type ChargerSort = 'distance' | 'availability' | 'price';
+export type ChargerSort = 'distance' | 'power';
 export interface ChargerFilter {
   dc: boolean;
   ac: boolean;
@@ -36,7 +36,7 @@ export interface ChargerFilter {
 
 // The sheet chrome (detents, drag, handle) lives in BottomSheet now; re-export the detent fractions the map
 // uses for padding, and alias the handle type.
-export { SHEET_MIDDLE_FRAC, SHEET_MINIMAL_FRAC } from './BottomSheet';
+export { SHEET_MIDDLE_FRAC, SHEET_MINIMAL_FRAC, SHEET_TALL_FRAC } from './BottomSheet';
 export type LocationSheetHandle = BottomSheetHandle;
 
 interface Props {
@@ -77,7 +77,7 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
   const inputRef = useRef<TextInput | null>(null);
 
   return (
-    <BottomSheet ref={ref}>
+    <BottomSheet ref={ref} middleFrac={SHEET_TALL_FRAC}>
       {({ dragHandlers, expandFull, collapseToMiddle, contentPanHandlers, scrollProps }) => {
         // Focusing the Navigate field grows the sheet to full; the tabs stay visible.
         const openSearch = () => {
@@ -111,10 +111,10 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
           return (
             <ChargerDetail
               charger={selectedCharger}
-              availability={availability}
               onClose={onCloseDetail}
               onNavigate={onNavigateCharger}
-              dragHandlers={dragHandlers}
+              contentPanHandlers={contentPanHandlers}
+              scrollProps={scrollProps}
               insetBottom={insetBottom}
             />
           );
@@ -171,21 +171,24 @@ function Header({
   onBackToTrip?: () => void;
 }) {
   return (
-    <View {...dragHandlers} style={styles.headerBar}>
+    <View {...dragHandlers}>
+      {/* Back-to-trip is its own top-left nav row (standard), so it doesn't crowd the Location tab. */}
       {onBackToTrip ? (
-        <Pressable style={styles.backToTrip} hitSlop={8} onPress={onBackToTrip}>
+        <Pressable style={styles.backRow} hitSlop={8} onPress={onBackToTrip}>
           <SymbolView name="chevron.left" tintColor="#3E6AE1" size={16} weight="semibold" />
           <Text style={styles.backToTripText}>Trip</Text>
         </Pressable>
       ) : null}
-      <View style={styles.tabs}>
-        <Pressable style={styles.tab} onPress={() => onTabChange('location')}>
-          <Text style={[styles.tabLabel, tab === 'location' ? styles.tabActive : styles.tabInactive]}>Location</Text>
-        </Pressable>
-        <View style={styles.tabDivider} />
-        <Pressable style={styles.tab} onPress={() => onTabChange('charging')}>
-          <Text style={[styles.tabLabel, tab === 'charging' ? styles.tabActive : styles.tabInactive]}>Charging</Text>
-        </Pressable>
+      <View style={styles.headerBar}>
+        <View style={styles.tabs}>
+          <Pressable style={styles.tab} onPress={() => onTabChange('location')}>
+            <Text style={[styles.tabLabel, tab === 'location' ? styles.tabActive : styles.tabInactive]}>Location</Text>
+          </Pressable>
+          <View style={styles.tabDivider} />
+          <Pressable style={styles.tab} onPress={() => onTabChange('charging')}>
+            <Text style={[styles.tabLabel, tab === 'charging' ? styles.tabActive : styles.tabInactive]}>Charging</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -448,59 +451,64 @@ function BoltButton({ bolts, active, onPress }: { bolts: number; active: boolean
 
 function ChargerDetail({
   charger,
-  availability,
   onClose,
   onNavigate,
-  dragHandlers,
+  contentPanHandlers,
+  scrollProps,
   insetBottom,
 }: {
   charger: Charger;
-  availability: Record<string, StationAvailability>;
   onClose: () => void;
   onNavigate: (c: Charger) => void;
-  dragHandlers: GestureResponderHandlers;
+  contentPanHandlers: GestureResponderHandlers;
+  scrollProps: SheetScrollProps;
   insetBottom: number;
 }) {
-  const info = availability[charger.id];
-  const availText = info
-    ? `${info.available} of ${info.total} stalls available now`
-    : charger.totalConnectors > 0
-      ? `${charger.totalConnectors} ${charger.totalConnectors === 1 ? 'stall' : 'stalls'}`
-      : 'Availability unknown';
+  // No live free-slot count (OSM doesn't provide it) — show the real connector count, not "available now".
+  const availText =
+    charger.totalConnectors > 0
+      ? `${charger.totalConnectors} ${charger.totalConnectors === 1 ? 'connector' : 'connectors'}`
+      : `${charger.currentType} charging`;
   const hours = formatOpeningHours(charger.openingHours);
 
+  // No fixed header (Tesla-style): the title/location is the top of the scroll content, and the ScrollView is
+  // wired into the sheet coordination (contentPanHandlers + scrollProps) so a swipe-down at the top lowers the
+  // panel like every other sheet.
   return (
     <View style={styles.tabContent}>
-      {/* Header is draggable (moves the sheet). */}
-      <View {...dragHandlers} style={styles.detailHeader}>
-        <View style={styles.detailTopRow}>
-          <View style={styles.detailNetwork}>
-            <SymbolView name="bolt.fill" tintColor="#E5484D" size={15} />
-            <Text style={styles.detailNetworkText} numberOfLines={1}>
-              {charger.name}
+      <View style={styles.scrollList} {...contentPanHandlers}>
+        <ScrollView
+          {...scrollProps}
+          style={styles.scrollList}
+          contentContainerStyle={{ paddingTop: 10, paddingBottom: insetBottom + 96 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.detailBlock}>
+            <View style={styles.detailTopRow}>
+              <View style={styles.detailNetwork}>
+                <SymbolView name="bolt.fill" tintColor="#E5484D" size={15} />
+                <Text style={styles.detailNetworkText} numberOfLines={1}>
+                  {charger.name}
+                </Text>
+              </View>
+              <Pressable hitSlop={10} onPress={onClose}>
+                <SymbolView name="xmark.circle.fill" tintColor="rgba(235,235,245,0.45)" size={26} />
+              </Pressable>
+            </View>
+            <Text style={styles.detailTitle} numberOfLines={1}>
+              {charger.region}
+            </Text>
+            <Text style={styles.detailPlace} numberOfLines={1}>
+              {charger.place}
             </Text>
           </View>
-          <Pressable hitSlop={10} onPress={onClose}>
-            <SymbolView name="xmark" tintColor="rgba(255,255,255,0.7)" size={20} weight="medium" />
-          </Pressable>
-        </View>
-        <Text style={styles.detailTitle} numberOfLines={1}>
-          {charger.region}
-        </Text>
-        <Text style={styles.detailPlace} numberOfLines={1}>
-          {charger.place}
-        </Text>
-      </View>
 
-      <ScrollView
-        style={styles.scrollList}
-        contentContainerStyle={{ paddingTop: 18, paddingBottom: insetBottom + 96 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.detailBlock}>
-          <Text style={styles.detailAvail}>{availText}</Text>
-          <Text style={styles.detailPower}>{charger.maxPowerKW} kW max</Text>
-        </View>
+          <View style={styles.detailDivider} />
+
+          <View style={styles.detailBlock}>
+            <Text style={styles.detailAvail}>{availText}</Text>
+            <Text style={styles.detailPower}>{charger.maxPowerKW} kW max</Text>
+          </View>
 
         {charger.connectors.length > 0 ? (
           <>
@@ -512,23 +520,6 @@ function ChargerDetail({
                   <ConnectorRow key={i} group={g} />
                 ))}
               </View>
-            </View>
-          </>
-        ) : null}
-
-        <View style={styles.detailDivider} />
-
-        <View style={styles.detailBlock}>
-          <Text style={styles.detailSectionTitle}>Busy Times</Text>
-          <BusyTimesChart weights={busyTimesFor(charger.id)} />
-        </View>
-
-        {charger.pricePerKWh != null ? (
-          <>
-            <View style={styles.detailDivider} />
-            <View style={[styles.detailBlock, styles.feesRow]}>
-              <Text style={styles.detailSectionTitle}>Charging Fees</Text>
-              <Text style={styles.feesValue}>€{charger.pricePerKWh.toFixed(2)}/kWh</Text>
             </View>
           </>
         ) : null}
@@ -570,34 +561,7 @@ function ChargerDetail({
             <Text style={styles.distanceText}>{formatKm(charger.distanceM / 1000)}</Text>
           </Pressable>
         </View>
-      </ScrollView>
-    </View>
-  );
-}
-
-// Mock popular-times histogram: 24 bars starting at 4a (…→3a), current hour highlighted white.
-function BusyTimesChart({ weights }: { weights: number[] }) {
-  const order = Array.from({ length: 24 }, (_, i) => (i + 4) % 24);
-  const nowHour = new Date().getHours();
-  return (
-    <View>
-      <View style={styles.busyBars}>
-        {order.map((hour) => (
-          <View
-            key={hour}
-            style={[
-              styles.busyBar,
-              { height: 6 + weights[hour] * 54, backgroundColor: hour === nowHour ? 'white' : 'rgba(255,255,255,0.16)' },
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.busyLabels}>
-        {['4a', '8a', '12p', '4p', '8p', '12a', '4a'].map((l, i) => (
-          <Text key={i} style={styles.busyLabel}>
-            {l}
-          </Text>
-        ))}
+        </ScrollView>
       </View>
     </View>
   );
@@ -643,8 +607,7 @@ function InfoRow({ icon, text, onPress }: { icon: SFSymbol; text: string; onPres
 
 const SORT_OPTIONS: { key: ChargerSort; label: string }[] = [
   { key: 'distance', label: 'Distance' },
-  { key: 'availability', label: 'Availability' },
-  { key: 'price', label: 'Price' },
+  { key: 'power', label: 'Power' },
 ];
 
 function SubSheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -696,7 +659,7 @@ const styles = StyleSheet.create({
   searchFloatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: -2 },
   searchInput: { fontSize: 17, color: 'white', padding: 0 },
   headerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 2, marginBottom: 10, minHeight: 30 },
-  backToTrip: { flexDirection: 'row', alignItems: 'center', gap: 2, position: 'absolute', left: 12, zIndex: 1 },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 1, alignSelf: 'flex-start', paddingHorizontal: 14, paddingTop: 2, paddingBottom: 6 },
   backToTripText: { fontSize: 16, color: '#3E6AE1', fontWeight: '600' },
   tabs: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   tab: { flex: 1, alignItems: 'center' },
@@ -792,7 +755,6 @@ const styles = StyleSheet.create({
   optionLabel: { fontSize: 18, color: 'white' },
 
   // --- Charger detail ---
-  detailHeader: { paddingHorizontal: 20, paddingBottom: 2 },
   detailTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   detailNetwork: { flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1, marginRight: 12 },
   detailNetworkText: { fontSize: 15, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
@@ -808,12 +770,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
   detailSectionTitle: { fontSize: 17, fontWeight: '700', color: 'white' },
-  busyBars: { flexDirection: 'row', alignItems: 'flex-end', height: 64, gap: 3, marginTop: 16 },
-  busyBar: { flex: 1, borderRadius: 2 },
-  busyLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  busyLabel: { fontSize: 13, color: 'rgba(255,255,255,0.4)' },
-  feesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  feesValue: { fontSize: 15, color: 'rgba(255,255,255,0.55)' },
   connectorList: { marginTop: 14, gap: 12 },
   connectorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   connectorLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },

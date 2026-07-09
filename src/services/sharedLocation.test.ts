@@ -127,3 +127,44 @@ test('parse: address-only apple → geocode fallback', async () => {
 test('parse: garbage → null', async () => {
   assert.equal(await parseSharedLocation('hello world', noDeps), null);
 });
+
+import { isShortLink } from './sharedLocation';
+
+test('isShortLink recognizes Apple maps.apple/p short link', () => {
+  assert.equal(isShortLink('https://maps.apple/p/6zSLmCMDQ0HYAr'), true);
+  assert.equal(isShortLink('https://maps.apple.com/place?coordinate=1,2'), false); // resolved target, not a short link
+});
+
+test('parse resolves Apple maps.apple/p short link → coordinate=', async () => {
+  const deps = {
+    resolveUrl: async () => ({
+      finalUrl: 'https://maps.apple.com/place?address=X&auid=1&coordinate=39.918409,25.366319&lsp=7618&name=814%2001&map=explore',
+      body: '',
+    }),
+    geocode: async () => null,
+  };
+  const loc = await parseSharedLocation('https://maps.apple/p/6zSLmCMDQ0HYAr', deps);
+  assert.equal(loc?.source, 'apple');
+  near(loc!.coordinate.latitude, 39.918409);
+  near(loc!.coordinate.longitude, 25.366319);
+});
+
+test('extractFromUrl: unwraps google consent continue param → place name as address', () => {
+  const r = extractFromUrl('https://consent.google.com/ml?continue=https://maps.google.com/maps?q%3DKeros%2BBay%2BView,%2BKeros,%2BGreece%26ftid%3D0x1:0x2&m=1&gl=BG');
+  assert.equal(r?.source, 'google');
+  assert.equal(r?.coordinate, undefined);
+  assert.equal(r?.address, 'Keros Bay View, Keros, Greece');
+});
+
+test('parse: google goo.gl → consent wall → geocode the place name', async () => {
+  const deps = {
+    resolveUrl: async () => ({
+      finalUrl: 'https://consent.google.com/ml?continue=https://maps.google.com/maps?q%3DKeros%2BBay%2BView,%2BKeros,%2BGreece%26ftid%3D0x1:0x2&m=1',
+      body: '<!DOCTYPE html>consent',
+    }),
+    geocode: async (a: string) => (a.includes('Keros') ? { latitude: 39.9, longitude: 25.3 } : null),
+  };
+  const loc = await parseSharedLocation('https://maps.app.goo.gl/3GYn4xAcU9wruSpr6?g_st=x', deps);
+  assert.equal(loc?.source, 'google');
+  near(loc!.coordinate.latitude, 39.9);
+});

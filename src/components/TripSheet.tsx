@@ -1,12 +1,13 @@
-import { forwardRef, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { forwardRef, useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import ReorderableList, { useReorderableDrag, type ReorderableListReorderEvent } from 'react-native-reorderable-list';
 import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { runOnJS } from 'react-native-reanimated';
 
 import { BottomSheet, type BottomSheetHandle } from './BottomSheet';
-import { computeItinerary, DEFAULT_ITINERARY_OPTS, type ItineraryRow, type Leg, type Trip } from '@/state/trip';
+import { computeItinerary, type ItineraryRow, type Leg, type Trip } from '@/state/trip';
 
 // Trip sheet rests at a taller ~half-screen detent (top near the middle of the screen). Exported so the map's
 // fit-to-trip can pad by this height.
@@ -34,83 +35,124 @@ function hhmm(at: number): string {
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// Two modes, so the reorder gesture and the sheet's drag never overlap (the iOS "Edit mode" pattern):
+//  • Normal → a plain ScrollView (like the Location sheet): swipe-up expands the sheet, the list scrolls,
+//    rows tap / swipe / long-press. NO reorderable list mounted, so nothing steals the sheet's drag.
+//  • Edit → the reorderable list with ≡ handles, and the sheet pinned to full so there's no resize gesture
+//    to fight the reorder. "Done" returns to normal.
 export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
   { trip, legs, now, onAddStop, onAddCharger, onReorder, onRowAction, onLongPressRow },
   ref,
 ) {
   const insetBottom = useSafeAreaInsets().bottom;
-  const rows = computeItinerary(trip.stops, legs, { ...DEFAULT_ITINERARY_OPTS, departAt: now });
+  const [editing, setEditing] = useState(false);
+  const rows = computeItinerary(trip.stops, legs, now);
+  const padBottom = insetBottom + FOOTER_CLEARANCE;
 
   return (
-    <BottomSheet ref={ref} lowestDetent="middle" middleFrac={TRIP_SHEET_FRAC}>
-      {({ dragHandlers, contentPanHandlers, scrollProps, setContentBusy }) => (
+    <BottomSheet ref={ref} lowestDetent="middle" middleFrac={TRIP_SHEET_FRAC} locked={editing}>
+      {({ dragHandlers, expandFull, contentPanHandlers, scrollProps, setContentBusy }) => (
         <View style={styles.content}>
           <View {...dragHandlers} style={styles.header}>
             <Text style={styles.title}>Trip</Text>
             <View style={styles.headerActions}>
-              <HeaderButton icon="plus" label="Add Stop" onPress={onAddStop} />
-              <HeaderButton icon="bolt.fill" label="Add Charger" tint="#E5484D" onPress={onAddCharger} />
+              {editing ? (
+                <Pressable hitSlop={8} onPress={() => setEditing(false)}>
+                  <Text style={styles.editText}>Done</Text>
+                </Pressable>
+              ) : (
+                <>
+                  <HeaderButton icon="plus" label="Add Stop" onPress={onAddStop} />
+                  <HeaderButton icon="bolt.fill" label="Add Charger" tint="#E5484D" onPress={onAddCharger} />
+                  {/* Enter reorder mode + pin the sheet to full so the reorder gesture owns the panel. */}
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => {
+                      setEditing(true);
+                      expandFull();
+                    }}
+                  >
+                    <Text style={styles.editText}>Edit</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           </View>
 
-          {/* The car row is the (non-reorderable) list header, so it can never be dragged or displaced. Only
-              the remaining stops are reorderable; their list index maps to trip index + 1. The content pan
-              resizes the sheet; the busy latch keeps a row reorder from being stolen by it. */}
-          <View style={styles.listWrap} {...contentPanHandlers}>
-            <ReorderableList
-              data={rows.slice(1)}
-              keyExtractor={(row) => row.stop.id}
-              onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from + 1, to + 1)}
-              onDragStart={() => setContentBusy(true)}
-              onDragEnd={() => setContentBusy(false)}
-              scrollEnabled={scrollProps.scrollEnabled}
-              ListHeaderComponent={<CarRow row={rows[0]} onLongPress={onLongPressRow} onRowAction={onRowAction} />}
-              contentContainerStyle={{ paddingBottom: insetBottom + FOOTER_CLEARANCE }}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item, index }) => (
-                <TripRow row={item} index={index + 1} onLongPress={onLongPressRow} onRowAction={onRowAction} />
-              )}
-            />
-          </View>
+          {editing ? (
+            // Edit mode: the car row is the (non-reorderable) list header; only stops reorder (list index →
+            // trip index + 1). The content pan + busy latch stay wired, but at full there's no resize to steal.
+            <View style={styles.listWrap} {...contentPanHandlers}>
+              <ReorderableList
+                data={rows.slice(1)}
+                keyExtractor={(row) => row.stop.id}
+                onReorder={({ from, to }: ReorderableListReorderEvent) => onReorder(from + 1, to + 1)}
+                // The library fires these on the UI thread as worklets — flip the busy latch via runOnJS so a
+                // reorder yields the content pan. Passing a plain closure crashes at drag start.
+                onDragStart={() => {
+                  'worklet';
+                  runOnJS(setContentBusy)(true);
+                }}
+                onDragEnd={() => {
+                  'worklet';
+                  runOnJS(setContentBusy)(false);
+                }}
+                scrollEnabled={scrollProps.scrollEnabled}
+                ListHeaderComponent={<EditCarRow row={rows[0]} onRowAction={onRowAction} />}
+                contentContainerStyle={{ paddingBottom: padBottom }}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item, index }) => <DragRow row={item} index={index + 1} onRowAction={onRowAction} />}
+              />
+            </View>
+          ) : (
+            // Normal mode: a plain scroll list. Same structure as the (working) Location sheet, so the sheet's
+            // content pan resizes/scrolls without a reorderable gesture competing for the vertical drag.
+            <View style={styles.listWrap} {...contentPanHandlers}>
+              <ScrollView {...scrollProps} contentContainerStyle={{ paddingBottom: padBottom }} showsVerticalScrollIndicator={false}>
+                {rows.map((row, i) => (
+                  <PlainRow key={row.stop.id} row={row} index={i} isCar={i === 0} isLast={i === rows.length - 1} onLongPress={onLongPressRow} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
       )}
     </BottomSheet>
   );
 });
 
-// The car row (list header): swipe → Share/Insert (no Delete), long-press → menu (no Delete), never draggable.
-function CarRow({
+// Normal-mode row: tap + long-press → context menu (Copy/Share/Insert/Delete). Deliberately NO Swipeable:
+// its RNGH pan sets activeOffsetX but no failOffsetY, so it holds vertical touches and intermittently blocks
+// the sheet's PanResponder resize. Plain rows (like the Location sheet) keep body-drag resize/scroll solid;
+// swipe-to-reveal lives in Edit mode instead.
+function PlainRow({
   row,
+  index,
+  isCar,
+  isLast,
   onLongPress,
-  onRowAction,
 }: {
   row: ItineraryRow;
+  index: number;
+  isCar: boolean;
+  isLast: boolean;
   onLongPress: (index: number, anchorY: number) => void;
-  onRowAction: (index: number, action: TripRowAction) => void;
 }) {
   return (
-    <Swipeable
-      friction={2}
-      rightThreshold={44}
-      renderRightActions={() => <SwipeActions actions={['share', 'insert']} index={0} onRowAction={onRowAction} />}
-    >
-      <Pressable onLongPress={(e) => onLongPress(0, e.nativeEvent.pageY)} delayLongPress={280}>
-        <RowContent row={row} isCar />
-      </Pressable>
-    </Swipeable>
+    <Pressable onLongPress={(e) => onLongPress(index, e.nativeEvent.pageY)} delayLongPress={280}>
+      <RowContent row={row} isCar={isCar} lineTop={index > 0} lineBottom={!isLast} />
+    </Pressable>
   );
 }
 
-// A reorderable (non-car) stop: swipe → Share/Insert/Delete, long-press → menu, drag by the ≡ handle.
-function TripRow({
+// Edit-mode reorderable stop: swipe → Share/Insert/Delete, drag by the ≡ handle. No long-press (redundant here).
+function DragRow({
   row,
   index,
-  onLongPress,
   onRowAction,
 }: {
   row: ItineraryRow;
   index: number;
-  onLongPress: (index: number, anchorY: number) => void;
   onRowAction: (index: number, action: TripRowAction) => void;
 }) {
   const drag = useReorderableDrag();
@@ -120,40 +162,67 @@ function TripRow({
       rightThreshold={44}
       renderRightActions={() => <SwipeActions actions={['share', 'insert', 'delete']} index={index} onRowAction={onRowAction} />}
     >
-      <Pressable onLongPress={(e) => onLongPress(index, e.nativeEvent.pageY)} delayLongPress={280}>
-        <RowContent
-          row={row}
-          isCar={false}
-          trailing={
-            <Pressable hitSlop={10} onPressIn={drag} onLongPress={drag} delayLongPress={120}>
-              <SymbolView name="line.3.horizontal" tintColor="rgba(255,255,255,0.4)" size={20} />
-            </Pressable>
-          }
-        />
-      </Pressable>
+      <RowContent
+        row={row}
+        isCar={false}
+        trailing={
+          <Pressable hitSlop={10} onPressIn={drag} onLongPress={drag} delayLongPress={120}>
+            <SymbolView name="line.3.horizontal" tintColor="rgba(255,255,255,0.4)" size={20} />
+          </Pressable>
+        }
+      />
     </Swipeable>
   );
 }
 
-function RowContent({ row, isCar, trailing }: { row: ItineraryRow; isCar: boolean; trailing?: ReactNode }) {
+// Edit-mode car row (list header): swipe → Share/Insert, never draggable, no long-press.
+function EditCarRow({ row, onRowAction }: { row: ItineraryRow; onRowAction: (index: number, action: TripRowAction) => void }) {
+  return (
+    <Swipeable
+      friction={2}
+      rightThreshold={44}
+      renderRightActions={() => <SwipeActions actions={['share', 'insert']} index={0} onRowAction={onRowAction} />}
+    >
+      <RowContent row={row} isCar />
+    </Swipeable>
+  );
+}
+
+function RowContent({
+  row,
+  isCar,
+  trailing,
+  lineTop,
+  lineBottom,
+}: {
+  row: ItineraryRow;
+  isCar: boolean;
+  trailing?: ReactNode;
+  lineTop?: boolean; // draw the timeline spine up to the previous stop
+  lineBottom?: boolean; // draw the timeline spine down to the next stop
+}) {
   const { stop } = row;
   return (
     <View style={styles.row}>
-      <SymbolView
-        name={ICON[stop.kind]}
-        tintColor={stop.kind === 'charger' ? '#E5484D' : isCar ? '#3E6AE1' : 'rgba(255,255,255,0.75)'}
-        size={18}
-      />
+      {/* Icon column doubles as a route "timeline": a vertical spine connects each stop's node to the next.
+          The node sits on an opaque dot so the spine reads as connecting between icons, not through them. */}
+      <View style={styles.iconCol}>
+        {lineTop ? <View style={[styles.spine, styles.spineTop]} /> : null}
+        {lineBottom ? <View style={[styles.spine, styles.spineBottom]} /> : null}
+        <View style={styles.iconDot}>
+          <SymbolView
+            name={ICON[stop.kind]}
+            tintColor={stop.kind === 'charger' ? '#E5484D' : isCar ? '#3E6AE1' : 'rgba(255,255,255,0.75)'}
+            size={18}
+          />
+        </View>
+      </View>
       <View style={styles.rowText}>
         <Text style={styles.rowTitle} numberOfLines={1}>
           {stop.title}
         </Text>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {isCar
-            ? `${Math.round(row.pct)}% · Set Departure Energy`
-            : [`${Math.round(row.pct)}%`, row.chargeMinutes ? `⚡ ${row.chargeMinutes} min` : null, hhmm(row.at)]
-                .filter(Boolean)
-                .join(' · ')}
+          {isCar ? 'Departure' : hhmm(row.at)}
         </Text>
       </View>
       {trailing}
@@ -199,12 +268,21 @@ function HeaderButton({ icon, label, tint = 'white', onPress }: { icon: SFSymbol
 const styles = StyleSheet.create({
   content: { flex: 1 },
   listWrap: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 2, marginBottom: 12 },
+  // Fixed height so the header (and the whole list) doesn't jump when the taller Add-Stop/Add-Charger pills
+  // are swapped for the shorter Done/Edit text between normal and edit mode.
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 40, paddingHorizontal: 20, marginTop: 2, marginBottom: 12 },
   title: { fontSize: 22, fontWeight: '700', color: 'white' },
-  headerActions: { flexDirection: 'row', gap: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: 12, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.1)' },
   headerBtnText: { fontSize: 13, fontWeight: '600', color: 'white' },
+  editText: { fontSize: 15, fontWeight: '600', color: '#3E6AE1' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, height: 60, backgroundColor: '#161616' },
+  // Route "timeline" spine in the icon column (normal mode). The dot masks the spine behind each node.
+  iconCol: { width: 24, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  spine: { position: 'absolute', left: 11, width: 2, backgroundColor: 'rgba(255,255,255,0.18)' },
+  spineTop: { top: 0, height: 30 },
+  spineBottom: { top: 30, bottom: 0 },
+  iconDot: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#161616' },
   rowText: { flex: 1 },
   rowTitle: { fontSize: 17, fontWeight: '700', color: 'white' },
   rowMeta: { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginTop: 3 },

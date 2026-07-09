@@ -60,7 +60,7 @@ function parseLatLng(s: string | null | undefined): LatLng | null {
 
 function hostSource(host: string): ShareSource {
   if (host.includes('waze.com')) return 'waze';
-  if (host.includes('apple.com')) return 'apple';
+  if (host.includes('apple')) return 'apple'; // maps.apple.com AND the maps.apple/p short-link domain
   if (host.includes('google.') || host.includes('goo.gl') || host.includes('g.co')) return 'google';
   return 'unknown';
 }
@@ -72,6 +72,13 @@ export function extractFromUrl(url: string): RawExtract | null {
   if (source === 'unknown') return null;
   const qp = u.searchParams;
   const decoded = safeDecode(url);
+
+  // Google EU consent interstitial (consent.google.com/ml?continue=… or /sorry) wraps the real maps URL in
+  // the `continue` param — unwrap it and re-extract from that.
+  if (u.hostname.includes('consent.google') || u.pathname.startsWith('/sorry')) {
+    const cont = qp.get('continue');
+    if (cont) return extractFromUrl(cont);
+  }
 
   if (source === 'apple') {
     const coord = parseLatLng(qp.get('ll')) ?? parseLatLng(qp.get('coordinate'));
@@ -101,7 +108,15 @@ export function extractFromUrl(url: string): RawExtract | null {
     (at ? validCoord(parseFloat(at[1]), parseFloat(at[2])) : null);
   const placeSeg = u.pathname.match(/\/place\/([^/@]+)/);
   const name = placeSeg ? safeDecode(placeSeg[1]).replace(/\+/g, ' ') : undefined;
-  return { source, coordinate: coord ?? undefined, name };
+  // A q=/query= NAME (not coordinates) — e.g. from a resolved goo.gl share that only carries a place name +
+  // feature-id — becomes the geocode address so parseSharedLocation's fallback can turn it into a point.
+  const qName = !qCoord ? (qp.get('q') ?? qp.get('query') ?? undefined)?.trim() : undefined;
+  return {
+    source,
+    coordinate: coord ?? undefined,
+    name: name ?? qName ?? undefined,
+    address: coord ? undefined : qName,
+  };
 }
 
 export interface ParseDeps {
@@ -109,7 +124,9 @@ export interface ParseDeps {
   geocode: (address: string) => Promise<LatLng | null>;
 }
 
-const SHORT_LINK_RE = /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs)\b/i;
+// Short links that carry no coords and must be resolved: Google (maps.app.goo.gl / goo.gl/maps / g.co) and
+// Apple's newer maps.apple/p/<id> (redirects to maps.apple.com/place?coordinate=…).
+const SHORT_LINK_RE = /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs|maps\.apple\/p)/i;
 
 export function firstUrl(raw: string): string | null {
   const m = raw.match(/https?:\/\/[^\s]+/);
@@ -117,7 +134,7 @@ export function firstUrl(raw: string): string | null {
 }
 
 export function isShortLink(url: string): boolean {
-  return SHORT_LINK_RE.test(url) || /\/maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs/i.test(url);
+  return SHORT_LINK_RE.test(url);
 }
 
 function toShared(r: RawExtract | null): SharedLocation | null {

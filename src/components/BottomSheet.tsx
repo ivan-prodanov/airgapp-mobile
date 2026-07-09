@@ -14,19 +14,32 @@ import {
 // map can pad its centring/fitting by these panel heights.
 export const SHEET_MINIMAL_FRAC = 0.25;
 export const SHEET_MIDDLE_FRAC = 0.34;
+// A middle detent a bit taller than the default, shared by the location list + charger + dropped-pin/POI
+// preview sheets so they rest at a consistent, roomier height (between the default middle and the Trip sheet).
+export const SHEET_TALL_FRAC = 0.43;
 const SHEET_FULL_FRAC = 0.92;
 
 export interface BottomSheetHandle {
   expand: () => void; // open at least to the middle detent (never shrinks)
   collapse: () => void; // drop to the minimal detent
   expandFull: () => void; // open to the full detent
+  // The visible screen fraction the sheet currently rests at — but the MIDDLE detent's fraction when fully
+  // extended, so a map fit that pads by this never reserves (nearly) the whole screen. Lets the map frame
+  // content just above wherever the sheet actually is (shrunk / middle / trip), not a hardcoded height.
+  reserveFrac: () => number;
 }
 
 // Props to spread on the consumer's scroll container so it scrolls only when the sheet is fully expanded and
 // reports its offset (for the "at top → swipe down lowers the sheet" hand-off).
 export interface SheetScrollProps {
   scrollEnabled: boolean;
+  // false only while a fully-expanded list is SETTLED at its top — kills the native iOS TOP rubber-band so a
+  // downward drag lowers the sheet cleanly; true everywhere else so BOTTOM/end over-scroll AND scrolling back
+  // up to the top still bounce.
+  bounces: boolean;
   onScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onScrollEndDrag: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onMomentumScrollEnd: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   scrollEventThrottle: number;
 }
 
@@ -48,6 +61,8 @@ interface Props {
   lowestDetent?: 'minimal' | 'middle';
   // Override the middle detent's visible screen fraction. The Trip sheet uses a taller ~half-screen detent.
   middleFrac?: number;
+  // Freeze the sheet size (no handle/body resize). Used by the Trip sheet's Edit mode, which pins to full.
+  locked?: boolean;
 }
 
 const OVERDRAG_RESIST = 2.5;
@@ -62,10 +77,12 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 // expanded → a body drag resizes the sheet; fully expanded → the list scrolls, and a downward drag at the top
 // lowers the sheet.
 export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomSheet(
-  { children, lowestDetent = 'minimal', middleFrac = SHEET_MIDDLE_FRAC },
+  { children, lowestDetent = 'minimal', middleFrac = SHEET_MIDDLE_FRAC, locked = false },
   ref,
 ) {
   const { height } = useWindowDimensions();
+  const lockedRef = useRef(locked); // read live from the PanResponder closures
+  lockedRef.current = locked;
   const SHEET_H = Math.round(height * SHEET_FULL_FRAC);
   const snaps = useMemo(() => {
     const full = 0;
@@ -79,9 +96,20 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
 
   const translateY = useRef(new Animated.Value(snaps.middle)).current;
   const restingY = useRef(snaps.middle);
-  const scrollOffset = useRef(0); // current scroll position of the body list (plain-ScrollView sheets)
   const contentBusy = useRef(false); // an internal drag (reorder) owns the gesture → the sheet pan yields
   const [atFull, setAtFull] = useState(false); // reactive: drives scrollEnabled on the body
+  // "The list is SETTLED at its top." Drives `bounces` (off only here) and the down-drag-lowers-the-sheet
+  // capture. Kept as a ref too so the PanResponder closure reads the live value. Flips false the instant you
+  // scroll away from the top; flips back true only when a scroll SETTLES at the top (not mid-scroll), so
+  // scrolling back UP to the top still bounces.
+  const [atTop, setAtTop] = useState(true);
+  const atTopRef = useRef(true);
+  const markAtTop = useCallback((v: boolean) => {
+    if (atTopRef.current !== v) {
+      atTopRef.current = v;
+      setAtTop(v);
+    }
+  }, []);
 
   const settle = useCallback(
     (target: number, velocityY = 0) => {
@@ -112,7 +140,11 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
   const onRelease = useCallback(
     (dy: number, vy: number) => {
       const s = snapsRef.current;
-      const projected = restingY.current + dy + vy * 200;
+      // Commit toward the drag direction once you've travelled ~35% of the way to the next detent — plain
+      // "nearest" (50%) felt sticky on the trip sheet's tall middle↔full gap ("sometimes up, sometimes stuck
+      // in the middle"). Amplifying dy + weighting the fling velocity lets a normal swipe snap to the next
+      // detent instead of falling back.
+      const projected = restingY.current + dy * 1.4 + vy * 260;
       const target = s.points.reduce(
         (best, p) => (Math.abs(p - projected) < Math.abs(best - projected) ? p : best),
         s.points[0],
@@ -128,14 +160,20 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
       expand: () => settle(Math.min(restingY.current, snapsRef.current.middle)),
       collapse: () => settle(snapsRef.current.collapsed),
       expandFull: () => settle(snapsRef.current.full),
+      reserveFrac: () => {
+        const s = snapsRef.current;
+        // Fully extended → reserve only the middle detent's height (never the whole screen).
+        const y = restingY.current === s.full ? s.middle : restingY.current;
+        return (SHEET_H - y) / height;
+      },
     }),
-    [settle],
+    [settle, SHEET_H, height],
   );
 
   // The top handle strip: always resizes the sheet.
   const handlePan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
+      onMoveShouldSetPanResponderCapture: (_e, g) => !lockedRef.current && Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_e, g) => onMove(g.dy),
       onPanResponderRelease: (_e, g) => onRelease(g.dy, g.vy),
     }),
@@ -146,10 +184,11 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
   const contentPan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponderCapture: (_e, g) => {
+        if (lockedRef.current) return false; // Edit mode: sheet size is frozen (scroll/reorder still pass through)
         if (contentBusy.current) return false; // a reorder drag owns the gesture
         if (Math.abs(g.dy) <= Math.abs(g.dx)) return false; // horizontal → row swipe / let through
         if (restingY.current !== snapsRef.current.full) return Math.abs(g.dy) > 6; // not full → resize
-        return g.dy > 6 && scrollOffset.current <= 0; // full → down at the top → lower
+        return g.dy > 6 && atTopRef.current; // full → drag down while SETTLED at the top → lower the sheet
       },
       onPanResponderMove: (_e, g) => onMove(g.dy),
       onPanResponderRelease: (_e, g) => onRelease(g.dy, g.vy),
@@ -167,9 +206,16 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
     contentPanHandlers: contentPan.panHandlers,
     scrollProps: {
       scrollEnabled: atFull,
+      // Off only while SETTLED at the top (there a downward drag = lower the sheet; killing the native top
+      // rubber-band avoids the flash/snap-back under the pan). onScroll flips it false the moment you scroll
+      // away (so BOTTOM over-scroll bounces); it turns back on only when a scroll SETTLES at the top, so
+      // scrolling UP into the top edge still rubber-bands (the reported case).
+      bounces: !(atFull && atTop),
       onScroll: (e) => {
-        scrollOffset.current = e.nativeEvent.contentOffset.y;
+        if (e.nativeEvent.contentOffset.y > 0) markAtTop(false);
       },
+      onScrollEndDrag: (e) => markAtTop(e.nativeEvent.contentOffset.y <= 0),
+      onMomentumScrollEnd: (e) => markAtTop(e.nativeEvent.contentOffset.y <= 0),
       scrollEventThrottle: 16,
     },
     setContentBusy,
@@ -177,9 +223,9 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
 
   return (
     <Animated.View style={[styles.sheet, { height: SHEET_H, transform: [{ translateY }] }]}>
-      <View style={styles.handleWrap} {...handlePan.panHandlers}>
-        <View style={styles.handle} />
-      </View>
+      {/* Grabber hidden (and non-draggable) while locked, so the frozen sheet doesn't invite a drag. Spacing
+          is preserved so the content below doesn't shift. */}
+      <View style={styles.handleWrap} {...(locked ? {} : handlePan.panHandlers)}>{locked ? null : <View style={styles.handle} />}</View>
       {children(renderProps)}
     </Animated.View>
   );
