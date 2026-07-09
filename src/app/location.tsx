@@ -48,6 +48,7 @@ import { TripRowMenu } from '@/components/TripRowMenu';
 import { PlacePreviewSheet, type DroppedPin } from '@/components/PlacePreviewSheet';
 import type { Place } from '@/services/place';
 import { sharedLocationStore } from '@/state/sharedLocationStore';
+import SharedIntake from '../../modules/shared-intake';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -175,28 +176,34 @@ export default function LocationView() {
   // A point long-pressed on the map (our own pin, reverse-geocoded) OR a tapped Apple map feature (Apple's
   // own marker, enriched via onPoiClick). Its preview panel takes over the sheet.
   const [droppedPin, setDroppedPin] = useState<DroppedPin | null>(null);
-  // A location handed off from outside the app (share-sheet intake, Task 4). Consumed once on mount and on
-  // every subsequent publish, then turned into a dropped pin below.
-  const [shared, setShared] = useState(() => sharedLocationStore.consume());
-  useEffect(() => sharedLocationStore.subscribe(() => setShared(sharedLocationStore.consume())), []);
-  // Pending shared-location centre. Applied both here AND on onMapReady, because on a cold-launch share the
-  // map often isn't laid out yet when this effect fires, so the animate no-ops; onMapReady re-applies it.
-  const sharedCenterRef = useRef<LatLng | null>(null);
-  const centerOnShared = () => {
-    const c = sharedCenterRef.current;
-    if (c) mapRef.current?.animateToRegion({ ...c, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 400);
-  };
-  // A shared location arrived: drop a pin at it (reusing the same preview/footer as a long-press pin) and
-  // centre the map there.
+  // An intent handed off from the share popup (resolved location + the chosen action). Consumed once on mount
+  // and on every subsequent publish; applied as Navigate (start/extend trip) or Add to Trip.
+  const [sharedIntent, setSharedIntent] = useState(() => sharedLocationStore.consume());
+  useEffect(() => sharedLocationStore.subscribe(() => setSharedIntent(sharedLocationStore.consume())), []);
   useEffect(() => {
-    if (!shared) return;
+    if (!sharedIntent) return;
+    const { location, action } = sharedIntent;
+    const place: Place = {
+      id: `pin:${location.coordinate.latitude.toFixed(5)},${location.coordinate.longitude.toFixed(5)}`,
+      title: location.name ?? 'Shared Location',
+      subtitle: '',
+      coordinate: location.coordinate,
+      kind: 'poi',
+      source: 'apple',
+    };
     setSelectedCharger(null);
     setTab('location');
-    setDroppedPin({ coordinate: shared.coordinate, name: shared.name ?? 'Shared Location', subtitle: '', fromPoi: false });
-    sharedCenterRef.current = shared.coordinate;
-    centerOnShared();
-    setShared(null);
-  }, [shared]);
+    if (action === 'addToTrip') void trip.addToSaved(place);
+    else onSelectPlace(place);
+    setScreen('trip');
+    setSharedIntent(null);
+  }, [sharedIntent]);
+  // Let the Share popup know whether "Add to Trip" should be enabled (the trip lives in AsyncStorage, which the
+  // extension can't read — so mirror the flag through the App Group).
+  useEffect(() => {
+    const name = trip.trip?.stops[trip.trip.stops.length - 1]?.title ?? null;
+    void SharedIntake.setSavedTrip(trip.savedExists, name);
+  }, [trip.savedExists, trip.trip]);
   // Dismiss the preview card AND clear Apple's native feature selection (the "enlarged" highlight), so the
   // card and the map stay in sync — otherwise a tapped POI stays enlarged after the card closes. (The stray
   // onPress a feature tap would otherwise fire is suppressed natively, so no debounce is needed here.)
@@ -460,20 +467,17 @@ export default function LocationView() {
     fetchLocation();
   }, []);
 
-  // On a cold-launch share the map should OPEN on the shared location, not the car — so seed initialRegion
-  // from the pending shared location (consumed on mount) when there is one.
-  const initialRegion: Region = shared
-    ? { ...shared.coordinate, latitudeDelta: 0.01, longitudeDelta: 0.01 }
-    : { ...carCoord, ...DEFAULT_DELTA };
+  const initialRegion: Region = { ...carCoord, ...DEFAULT_DELTA };
   const recenter = (coord: LatLng) => {
     mapRef.current?.animateToRegion({ ...coord, ...DEFAULT_DELTA }, 400);
   };
-  // Recentre on the car when a GPS fix arrives/refreshes — but NOT while a pin preview (shared/long-press/POI)
-  // is showing, or the late GPS fix would yank the map off the previewed location back to the car.
+  // Recentre on the car when a GPS fix arrives/refreshes — but NOT while a pin preview (long-press/POI) is
+  // showing, or the late GPS fix would yank the map off the previewed location back to the car. (A shared
+  // intent no longer drops a preview pin — it routes straight to the Trip view, which frames itself.)
   const droppedPinRef = useRef(droppedPin);
   droppedPinRef.current = droppedPin;
   useEffect(() => {
-    if (droppedPinRef.current || shared) return;
+    if (droppedPinRef.current) return;
     if (userCoord) recenter(offsetCoordinate(userCoord, offset));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userCoord]);
@@ -654,7 +658,6 @@ export default function LocationView() {
         mapPadding={mapPadding}
         userInterfaceStyle="dark"
         customMapStyle={mapType === 'standard' ? DARK_MAP_STYLE : undefined}
-        onMapReady={centerOnShared}
         onRegionChangeComplete={onRegionChangeComplete}
         onLongPress={(e) => dropPin(e.nativeEvent.coordinate)}
         // Single-tap a built-in Apple place label (POI/city/landmark) → preview it (patched native
@@ -839,10 +842,10 @@ export default function LocationView() {
         </SafeAreaView>
       ) : null}
 
-      {/* Pinned action bar for the dropped-pin / shared-location preview: Navigate always starts/extends a
-          trip via the existing onSelectPlace plumbing; Add to Trip appends to the active OR last-saved trip
-          (Task 5's addToSaved), disabled when neither exists. A shared pin and a long-press pin are treated
-          identically here. */}
+      {/* Pinned action bar for the long-press/POI dropped-pin preview: Navigate always starts/extends a trip
+          via the existing onSelectPlace plumbing; Add to Trip appends to the active OR last-saved trip
+          (trip.addToSaved), disabled when neither exists. (A shared intent no longer routes through here —
+          it applies its action and lands directly on the Trip view; see the sharedIntent effect above.) */}
       {droppedPin ? (
         <SafeAreaView edges={['bottom']} style={styles.navigateBar} pointerEvents="box-none">
           <View style={styles.navigateRow}>

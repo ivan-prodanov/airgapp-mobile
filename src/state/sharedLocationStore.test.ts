@@ -2,13 +2,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedLocationStore } from './sharedLocationStore';
 
-test('set notifies subscribers; consume returns once then null', () => {
+const sample = {
+  location: { coordinate: { latitude: 1, longitude: 2 }, name: 'X', source: 'apple' as const },
+  action: 'navigate' as const,
+};
+
+test('set → consume returns the intent once, then null', () => {
+  sharedLocationStore.set(sample);
+  assert.deepEqual(sharedLocationStore.consume(), sample);
+  assert.equal(sharedLocationStore.consume(), null);
+});
+
+test('subscribe fires on set', () => {
   let fired = 0;
   const unsub = sharedLocationStore.subscribe(() => { fired++; });
-  sharedLocationStore.set({ coordinate: { latitude: 1, longitude: 2 }, source: 'apple' });
+  sharedLocationStore.set({ ...sample, action: 'addToTrip' });
   assert.equal(fired, 1);
-  const first = sharedLocationStore.consume();
-  assert.equal(first?.coordinate.latitude, 1);
-  assert.equal(sharedLocationStore.consume(), null);
+  sharedLocationStore.consume();
   unsub();
 });

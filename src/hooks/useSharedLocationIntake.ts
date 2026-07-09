@@ -1,13 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { Alert, AppState, Linking } from 'react-native';
-import { useRouter } from 'expo-router';
+import { AppState, Linking } from 'react-native';
 import * as Location from 'expo-location';
 
 import SharedIntake from '../../modules/shared-intake';
 import AppleSearch, { type AppleResult } from '../../modules/expo-apple-search';
-import { parseSharedLocation, type ParseDeps } from '@/services/sharedLocation';
-import { sharedLocationStore } from '@/state/sharedLocationStore';
+import { parseSharedLocation, type ParseDeps, type SharedLocation } from '@/services/sharedLocation';
+import { sharedLocationStore, type SharedAction } from '@/state/sharedLocationStore';
 import type { LatLng } from '@/state/mockLocation';
+
+interface Intent {
+  location?: { lat: number; lng: number; name?: string; address?: string; source: SharedLocation['source'] };
+  action: SharedAction;
+  raw: string;
+}
 
 // Cap an awaited promise so a hung network call resolves to `fallback` instead of wedging intake (which would
 // leave the busy-guard stuck true and silently drop later shares).
@@ -15,8 +20,8 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 }
 
-// Real dependencies for the parser: resolve short links over the network, and resolve name-only shares with
-// Apple Maps search (MKLocalSearch — far more reliable than CLGeocoder for named places).
+// Degraded fallback only: the native extension normally resolves the location itself. Used when
+// `intent.location` is absent (offline / goo.gl timeout on-device).
 const deps: ParseDeps = {
   resolveUrl: async (url) => {
     try {
@@ -61,10 +66,9 @@ const deps: ParseDeps = {
   },
 };
 
-// Consumes a location shared into the app (via the Share Extension → App Group), parses it, and routes to the
-// Location screen. Runs on cold launch, every foreground, and the airgapp://shared wake event.
+// Drains the App Group intents the Share popup queued, resolves the location (native-first, JS fallback), and
+// publishes {location, action} to the Location screen. Runs on cold launch, every foreground, and url events.
 export function useSharedLocationIntake(): void {
-  const router = useRouter();
   const busy = useRef(false);
 
   useEffect(() => {
@@ -72,18 +76,26 @@ export function useSharedLocationIntake(): void {
       if (busy.current) return;
       busy.current = true;
       try {
-        // Drain: a new share can be written WHILE we're parsing the previous one, firing no fresh trigger —
+        // Drain: a new share can be written WHILE we're processing the previous one, firing no fresh trigger —
         // so consume again until empty. This is what makes rapid successive shares reliable.
         for (;;) {
-          const raw = await SharedIntake.consumePendingShare();
-          if (!raw) break;
-          const loc = await parseSharedLocation(raw, deps);
-          if (loc) {
-            sharedLocationStore.set(loc);
-            router.navigate('/location');
-          } else {
-            Alert.alert('airgapp', "Couldn't read a location from that share.");
+          const json = await SharedIntake.consumeSharedIntent();
+          if (!json) break;
+          let intent: Intent;
+          try {
+            intent = JSON.parse(json) as Intent;
+          } catch {
+            continue;
           }
+
+          let loc: SharedLocation | null = null;
+          if (intent.location) {
+            const { lat, lng, name, source } = intent.location;
+            loc = { coordinate: { latitude: lat, longitude: lng }, name, source };
+          } else if (intent.raw) {
+            loc = await parseSharedLocation(intent.raw, deps); // degraded fallback
+          }
+          if (loc) sharedLocationStore.set({ location: loc, action: intent.action });
         }
       } finally {
         busy.current = false;
@@ -99,5 +111,5 @@ export function useSharedLocationIntake(): void {
       sub.remove();
       linkSub.remove();
     };
-  }, [router]);
+  }, []);
 }
