@@ -82,6 +82,24 @@ final class SharedLocationExtractTests: XCTestCase {
     XCTAssertTrue(SharedLocationExtract.isShortLink("https://maps.apple/p/6zSLmCMDQ0HYAr"))
     XCTAssertFalse(SharedLocationExtract.isShortLink("https://maps.apple.com/place?coordinate=1,2"))
   }
+  // Regression: `queryValue` must replace `+`→space on the STILL-ENCODED value before percent-decoding,
+  // so an escaped literal `+` (%2B) survives — matching `new URL(...).searchParams.get("q")` on the same URL.
+  func testQueryValueEscapedPlusSurvives() {
+    let r = SharedLocationExtract.extract(fromUrl: "https://maps.apple.com/?q=T%2BMobile")
+    XCTAssertEqual(r?.name, "T+Mobile")
+  }
+  // Regression: SHORT_LINK_RE has the JS `/i` flag; an uppercase scheme must still match.
+  func testIsShortLinkCaseInsensitiveScheme() {
+    XCTAssertTrue(SharedLocationExtract.isShortLink("HTTPS://maps.app.goo.gl/x"))
+  }
+  // Regression: JS `URL.hostname` is lowercased; an uppercase host must still resolve to a known source
+  // instead of falling through to `.unknown` (which would make `extract` return nil).
+  func testUppercaseHostStillResolves() {
+    let r = SharedLocationExtract.extract(fromUrl: "https://WWW.GOOGLE.COM/maps/@52.520008,13.404954,15z")
+    XCTAssertEqual(r?.source, .google)
+    XCTAssertNotNil(r?.coordinate)
+    near(r!.coordinate!.latitude, 52.520008); near(r!.coordinate!.longitude, 13.404954)
+  }
   func testFirstUrlFromText() {
     XCTAssertEqual(SharedLocationExtract.firstUrl(in: "Colosseum\nhttps://maps.apple.com/?ll=41.89,12.49&q=Colosseum"),
                    "https://maps.apple.com/?ll=41.89,12.49&q=Colosseum")
