@@ -100,6 +100,6 @@ export function extractFromUrl(url: string): RawExtract | null {
     qCoord ??
     (at ? validCoord(parseFloat(at[1]), parseFloat(at[2])) : null);
   const placeSeg = u.pathname.match(/\/place\/([^/@]+)/);
-  const name = placeSeg ? decodeURIComponent(placeSeg[1]).replace(/\+/g, ' ') : undefined;
+  const name = placeSeg ? safeDecode(placeSeg[1]).replace(/\+/g, ' ') : undefined;
   return { source, coordinate: coord ?? undefined, name };
 }

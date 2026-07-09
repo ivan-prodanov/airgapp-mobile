@@ -84,3 +84,8 @@ test('extractFromUrl never throws on a stray % in the URL', () => {
   const r = extractFromUrl('https://maps.apple.com/?ll=41.890221,12.492317&q=Deal%20-%2050%25%20off%20SAVE%');
   near(r!.coordinate!.latitude, 41.890221);
 });
+
+test('extractFromUrl never throws on a stray % in a google /place name', () => {
+  const r = extractFromUrl('https://www.google.com/maps/place/foo%/@48.8582602,2.2944991,17z/data=!3d48.8582602!4d2.2944991');
+  near(r!.coordinate!.latitude, 48.8582602);
+});
