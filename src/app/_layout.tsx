@@ -3,6 +3,7 @@ import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
 import { VehicleProvider } from '@/state/VehicleProvider';
 
 // Home is the root screen; Explore is pushed on top (reached from the Home header, dismissed with its
@@ -11,6 +12,7 @@ import { VehicleProvider } from '@/state/VehicleProvider';
 // the core PanResponder system, so no GestureHandlerRootView is needed.
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  useSharedLocationIntake();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
