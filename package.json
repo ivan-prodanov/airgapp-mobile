@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~56.0.15",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~56.0.8",
     "expo-build-properties": "~56.0.19",
     "expo-constants": "~56.0.16",
@@ -49,7 +50,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "build:places": "tsx scripts/geonames/build-places-db.ts",
-    "test": "node --import tsx --test src/state/fleet.test.ts src/state/controlActions.test.ts src/state/preferences.test.ts src/state/persistence.test.ts src/services/gazetteer.test.ts src/services/place.test.ts src/services/searchProvider.test.ts src/services/recents.test.ts src/state/trip.test.ts src/services/sharedLocation.test.ts src/state/sharedLocationStore.test.ts"
+    "test": "node --import tsx --test src/state/fleet.test.ts src/state/controlActions.test.ts src/state/preferences.test.ts src/state/persistence.test.ts src/services/gazetteer.test.ts src/services/place.test.ts src/services/searchProvider.test.ts src/services/recents.test.ts src/state/trip.test.ts src/services/sharedLocation.test.ts src/state/sharedLocationStore.test.ts src/state/tripSnapshot.test.ts"
   },
   "private": true
 }
