@@ -1,6 +1,6 @@
 // Holds the in-memory trip and exposes mutators over the pure ops in trip.ts. Session-only (Cancel/clear
 // discards it). The screen state machine lives in location.tsx.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { Place } from '@/services/place';
 import type { Charger } from '@/services/tomtom';
@@ -27,6 +27,9 @@ const saveSnapshot = makeSaver<Trip | null>(appStorage, TRIP_SNAPSHOT_KEY, 400);
 export function useTrip() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [savedExists, setSavedExists] = useState(false);
+  // Mirror of `trip` for synchronous reads (addToSaved) without a stale closure or a setState round-trip.
+  const tripRef = useRef<Trip | null>(trip);
+  tripRef.current = trip;
 
   // Check once on mount whether a persisted "last trip" exists — but do NOT load it into the session
   // (a normal launch stays clean; no stale route on the map).
@@ -34,10 +37,14 @@ export function useTrip() {
     void loadTripSnapshotFrom(appStorage).then((t) => setSavedExists(!!t));
   }, []);
 
-  // Persist a snapshot of every trip change (debounced); keep savedExists in sync.
+  // Persist a snapshot of every trip change (debounced); keep savedExists in sync. Only ever write a TRUTHY
+  // trip — never persist null, so the initial mount (trip === null) and clearing the active trip both leave
+  // the previously-saved "last trip" snapshot intact.
   useEffect(() => {
-    saveSnapshot(trip);
-    if (trip) setSavedExists(true);
+    if (trip) {
+      saveSnapshot(trip);
+      setSavedExists(true);
+    }
   }, [trip]);
 
   const start = useCallback((carCoord: LatLng, place: Place) => setTrip(startTrip(carStop(carCoord), place)), []);
@@ -52,7 +59,7 @@ export function useTrip() {
   // Append to the active trip if one is in progress; else load the persisted snapshot and append (making it
   // active); else start a fresh single-destination trip. The snapshot load must resolve before the setState.
   const addToSaved = useCallback(async (place: Place) => {
-    const active = await new Promise<Trip | null>((resolve) => setTrip((cur) => { resolve(cur); return cur; }));
+    const active = tripRef.current;
     if (active) { setTrip(addStopOp(active, place)); return; }
     const snap = await loadTripSnapshotFrom(appStorage);
     setTrip(snap ? addStopOp(snap, place) : startTrip(carStop(place.coordinate ?? { latitude: 0, longitude: 0 }), place));
