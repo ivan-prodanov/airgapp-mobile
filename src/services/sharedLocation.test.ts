@@ -79,3 +79,8 @@ test('rejects out-of-range and swaps reversed lat/lng', () => {
 test('non-map url → null', () => {
   assert.equal(extractFromUrl('https://example.com/foo'), null);
 });
+
+test('extractFromUrl never throws on a stray % in the URL', () => {
+  const r = extractFromUrl('https://maps.apple.com/?ll=41.890221,12.492317&q=Deal%20-%2050%25%20off%20SAVE%');
+  near(r!.coordinate!.latitude, 41.890221);
+});

@@ -36,6 +36,10 @@ export function decodeGeohash(hash: string): LatLng {
 
 const LATLNG_RE = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/;
 
+function safeDecode(s: string): string {
+  try { return decodeURIComponent(s); } catch { return s; }
+}
+
 // Build a validated coordinate; swap if "lat" is out of range but "lng" is a valid latitude; else null.
 function validCoord(latRaw: number, lngRaw: number): LatLng | null {
   let lat = latRaw;
@@ -50,7 +54,7 @@ function validCoord(latRaw: number, lngRaw: number): LatLng | null {
 // Parse a "lat,lng" string into a validated coordinate, or null if it isn't a coordinate pair.
 function parseLatLng(s: string | null | undefined): LatLng | null {
   if (!s) return null;
-  const m = decodeURIComponent(s).match(LATLNG_RE);
+  const m = s.match(LATLNG_RE);
   return m ? validCoord(parseFloat(m[1]), parseFloat(m[2])) : null;
 }
 
@@ -67,7 +71,7 @@ export function extractFromUrl(url: string): RawExtract | null {
   const source = hostSource(u.hostname);
   if (source === 'unknown') return null;
   const qp = u.searchParams;
-  const decoded = decodeURIComponent(url);
+  const decoded = safeDecode(url);
 
   if (source === 'apple') {
     const coord = parseLatLng(qp.get('ll')) ?? parseLatLng(qp.get('coordinate'));
