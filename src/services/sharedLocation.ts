@@ -92,7 +92,7 @@ export function extractFromUrl(url: string): RawExtract | null {
   }
 
   // google
-  const d = decoded.match(/!3d(-?\d+(?:\.\d+)?).*?!4d(-?\d+(?:\.\d+)?)/); // the real place pin
+  const d = decoded.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/); // the real place pin
   const at = decoded.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/); // camera fallback
   const qCoord = parseLatLng(qp.get('q')) ?? parseLatLng(qp.get('query')) ?? parseLatLng(qp.get('ll'));
   const coord =
@@ -141,7 +141,7 @@ export async function parseSharedLocation(raw: string, deps: ParseDeps): Promise
       if (coordHit) return coordHit;
       // Some links land on a consent interstitial that carries the coords only in the body.
       const body = resolved.body;
-      const d = body.match(/!3d(-?\d+(?:\.\d+)?).*?!4d(-?\d+(?:\.\d+)?)/) || body.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+      const d = body.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/) || body.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
       if (d) {
         const lat = parseFloat(d[1]);
         const lng = parseFloat(d[2]);

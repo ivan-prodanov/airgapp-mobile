@@ -101,7 +101,7 @@ test('parse: extracts URL from "Label\\nURL" text', async () => {
 
 test('parse: resolves a google short link via deps.resolveUrl', async () => {
   const deps = {
-    resolveUrl: async (_u: string) => ({ finalUrl: 'https://www.google.com/maps/place/X/@1,2,17z/data=!3d48.8&!4d2.29', body: '' }),
+    resolveUrl: async (_u: string) => ({ finalUrl: 'https://www.google.com/maps/place/X/@1,2,17z/data=!8m2!3d48.8!4d2.29', body: '' }),
     geocode: async () => null,
   };
   const loc = await parseSharedLocation('https://maps.app.goo.gl/abc123', deps);
