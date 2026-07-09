@@ -1,22 +1,30 @@
 import ExpoModulesCore
 
-// Atomically reads and clears the shared-location payload the Share Extension wrote into the App Group.
+// Bridges the App Group between the Share Extension and the app: reads the resolved shared intent the
+// extension queued, and mirrors whether a saved trip exists so the extension can enable "Add to Trip".
 public class SharedIntakeModule: Module {
   private let suite = "group.local.airgapp.mobile"
-  private let key = "pendingSharedLocation"
+  private let intentKey = "pendingSharedIntent"
+  private let legacyKey = "pendingSharedLocation"
 
   public func definition() -> ModuleDefinition {
     Name("SharedIntake")
 
-    AsyncFunction("consumePendingShare") { () -> String? in
-      guard let defaults = UserDefaults(suiteName: self.suite),
-            let json = defaults.string(forKey: self.key) else { return nil }
-      defaults.removeObject(forKey: self.key)
+    AsyncFunction("consumeSharedIntent") { () -> String? in
+      guard let defaults = UserDefaults(suiteName: self.suite) else { return nil }
+      defaults.removeObject(forKey: self.legacyKey) // discard any pre-popup payload format
+      guard let json = defaults.string(forKey: self.intentKey) else { return nil }
+      defaults.removeObject(forKey: self.intentKey)
       defaults.synchronize()
-      guard let data = json.data(using: .utf8),
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let raw = obj["raw"] as? String, !raw.isEmpty else { return nil }
-      return raw
+      return json.isEmpty ? nil : json
+    }
+
+    AsyncFunction("setSavedTrip") { (exists: Bool, name: String?) in
+      guard let defaults = UserDefaults(suiteName: self.suite) else { return }
+      defaults.set(exists, forKey: "savedTripExists")
+      if let name = name { defaults.set(name, forKey: "savedTripName") }
+      else { defaults.removeObject(forKey: "savedTripName") }
+      defaults.synchronize()
     }
   }
 }
