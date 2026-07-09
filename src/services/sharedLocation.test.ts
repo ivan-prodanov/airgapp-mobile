@@ -89,3 +89,41 @@ test('extractFromUrl never throws on a stray % in a google /place name', () => {
   const r = extractFromUrl('https://www.google.com/maps/place/foo%/@48.8582602,2.2944991,17z/data=!3d48.8582602!4d2.2944991');
   near(r!.coordinate!.latitude, 48.8582602);
 });
+
+import { parseSharedLocation } from './sharedLocation';
+
+const noDeps = { resolveUrl: async () => null, geocode: async () => null };
+
+test('parse: extracts URL from "Label\\nURL" text', async () => {
+  const loc = await parseSharedLocation('Colosseum\nhttps://maps.apple.com/?ll=41.89,12.49&q=Colosseum', noDeps);
+  near(loc!.coordinate.latitude, 41.89); assert.equal(loc!.source, 'apple');
+});
+
+test('parse: resolves a google short link via deps.resolveUrl', async () => {
+  const deps = {
+    resolveUrl: async (_u: string) => ({ finalUrl: 'https://www.google.com/maps/place/X/@1,2,17z/data=!3d48.8&!4d2.29', body: '' }),
+    geocode: async () => null,
+  };
+  const loc = await parseSharedLocation('https://maps.app.goo.gl/abc123', deps);
+  assert.equal(loc!.source, 'google');
+  near(loc!.coordinate.latitude, 48.8);
+});
+
+test('parse: short link coords only in the HTML body', async () => {
+  const deps = {
+    resolveUrl: async () => ({ finalUrl: 'https://consent.google.com/x', body: 'blah @50.1,4.2 blah !3d50.1!4d4.2' }),
+    geocode: async () => null,
+  };
+  const loc = await parseSharedLocation('https://maps.app.goo.gl/abc', deps);
+  near(loc!.coordinate.latitude, 50.1);
+});
+
+test('parse: address-only apple → geocode fallback', async () => {
+  const deps = { resolveUrl: async () => null, geocode: async (a: string) => (a ? { latitude: 9, longitude: 8 } : null) };
+  const loc = await parseSharedLocation('https://maps.apple.com/place?address=1000%20Fifth%20Ave', deps);
+  near(loc!.coordinate.latitude, 9);
+});
+
+test('parse: garbage → null', async () => {
+  assert.equal(await parseSharedLocation('hello world', noDeps), null);
+});

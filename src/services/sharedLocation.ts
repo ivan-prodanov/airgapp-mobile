@@ -92,7 +92,7 @@ export function extractFromUrl(url: string): RawExtract | null {
   }
 
   // google
-  const d = decoded.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/); // the real place pin
+  const d = decoded.match(/!3d(-?\d+(?:\.\d+)?).*?!4d(-?\d+(?:\.\d+)?)/); // the real place pin
   const at = decoded.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/); // camera fallback
   const qCoord = parseLatLng(qp.get('q')) ?? parseLatLng(qp.get('query')) ?? parseLatLng(qp.get('ll'));
   const coord =
@@ -102,4 +102,62 @@ export function extractFromUrl(url: string): RawExtract | null {
   const placeSeg = u.pathname.match(/\/place\/([^/@]+)/);
   const name = placeSeg ? safeDecode(placeSeg[1]).replace(/\+/g, ' ') : undefined;
   return { source, coordinate: coord ?? undefined, name };
+}
+
+export interface ParseDeps {
+  resolveUrl: (url: string) => Promise<{ finalUrl: string; body: string } | null>;
+  geocode: (address: string) => Promise<LatLng | null>;
+}
+
+const SHORT_LINK_RE = /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs)\b/i;
+
+export function firstUrl(raw: string): string | null {
+  const m = raw.match(/https?:\/\/[^\s]+/);
+  return m ? m[0] : null;
+}
+
+export function isShortLink(url: string): boolean {
+  return SHORT_LINK_RE.test(url) || /\/maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs/i.test(url);
+}
+
+function toShared(r: RawExtract | null): SharedLocation | null {
+  return r && r.coordinate ? { coordinate: r.coordinate, name: r.name, source: r.source } : null;
+}
+
+export async function parseSharedLocation(raw: string, deps: ParseDeps): Promise<SharedLocation | null> {
+  const url = firstUrl(raw);
+  if (!url) return null;
+
+  // 1) Direct extraction.
+  let extract = extractFromUrl(url);
+  let coordHit = toShared(extract);
+  if (coordHit) return coordHit;
+
+  // 2) Short link → resolve, then re-extract over the final URL AND the HTML body.
+  if (isShortLink(url)) {
+    const resolved = await deps.resolveUrl(url);
+    if (resolved) {
+      coordHit = toShared(extractFromUrl(resolved.finalUrl));
+      if (coordHit) return coordHit;
+      // Some links land on a consent interstitial that carries the coords only in the body.
+      const body = resolved.body;
+      const d = body.match(/!3d(-?\d+(?:\.\d+)?).*?!4d(-?\d+(?:\.\d+)?)/) || body.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+      if (d) {
+        const lat = parseFloat(d[1]);
+        const lng = parseFloat(d[2]);
+        if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)) {
+          return { coordinate: { latitude: lat, longitude: lng }, source: 'google' };
+        }
+      }
+      extract = extractFromUrl(resolved.finalUrl) ?? extract;
+    }
+  }
+
+  // 3) Address-only → geocode.
+  const address = extract?.address;
+  if (address) {
+    const c = await deps.geocode(address);
+    if (c) return { coordinate: c, name: extract?.name, source: extract?.source ?? 'unknown' };
+  }
+  return null;
 }
