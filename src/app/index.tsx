@@ -85,12 +85,18 @@ export default function Index() {
         if (animating.current) {
           return;
         }
-        const threshold = w * 0.25;
+        // Commit on EITHER a moderate drag distance OR a flick — so a quick swipe switches even when
+        // it doesn't physically travel far (matches the edge-back gesture's dx-or-vx feel). Without
+        // the velocity term a fast flick under `distThreshold` used to snap back, which felt sticky.
+        const distThreshold = w * 0.18;
+        const flickVelocity = 0.3;
         const atStart = f.activeIndex === 0;
         const atEnd = f.activeIndex === f.vehicles.length - 1;
-        if (g.dx <= -threshold && !atEnd) {
+        const goLeft = g.dx <= -distThreshold || (g.vx <= -flickVelocity && g.dx < 0);
+        const goRight = g.dx >= distThreshold || (g.vx >= flickVelocity && g.dx > 0);
+        if (goLeft && !atEnd) {
           commitSwitch(-1);
-        } else if (g.dx >= threshold && !atStart) {
+        } else if (goRight && !atStart) {
           commitSwitch(1);
         } else {
           springBack();
