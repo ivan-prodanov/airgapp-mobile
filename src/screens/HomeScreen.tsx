@@ -155,7 +155,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
           <NavRow symbol="steeringwheel" title="Summon" disabled />
           <NavRow symbol="bolt.fill" title="Charging" onPress={() => router.push('/charging')} />
           <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
-          <NavRow symbol="lock.shield.fill" title="Security & Drivers" subtitle="Ivan P" onPress={() => {}} />
+          <NavRow symbol="lock.shield.fill" title="Security & Drivers" subtitle="Ivan P" onPress={() => router.push('/security')} />
           <NavRow symbol="wrench.and.screwdriver.fill" title="Service" disabled />
           <NavRow symbol="camera.fill" title="Dashcam Viewer" disabled />
           <NavRow symbol="camera.viewfinder" title="Photobooth" disabled />

@@ -65,6 +65,11 @@ export interface VehicleViewState {
   charging: boolean;
   locked: boolean;
   sentryEnabled: boolean;
+  // Security & Drivers screen toggles (UI state for now; persisted per-vehicle like the rest).
+  valetMode: boolean;
+  parentalControls: boolean;
+  speedLimitMode: boolean;
+  pinToDrive: boolean;
   // Whether the car is awake (online) vs. asleep. Asleep dims the 3D car on every screen and shows
   // "Last seen ..." instead of "Parked". Stubbed for now; real wake state arrives via BLE.
   awake: boolean;
@@ -117,6 +122,10 @@ export const initialVehicleState: VehicleViewState = {
   charging: false,
   locked: true,
   sentryEnabled: false,
+  valetMode: false,
+  parentalControls: false,
+  speedLimitMode: false,
+  pinToDrive: false,
   awake: true,
   vehicleConnected: true,
   tirePressureVisible: false,
