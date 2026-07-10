@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Pressable,
@@ -62,6 +62,34 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     extrapolate: 'clamp',
   });
 
+  // Fade the fixed top row (name / battery / icons) out as the menu rises, so the scrolling rows don't
+  // collide with it — like the official app. Anchored to the ACTUAL max scroll offset (content height −
+  // viewport height) rather than EXPAND multiples, so the header stays solid until the very last stretch
+  // of travel and finishes hiding right at the top — "as late as possible", independent of device.
+  const [contentH, setContentH] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+  const maxScroll = Math.max(0, contentH - viewportH);
+  const scrollCeil = maxScroll > EXPAND ? maxScroll : EXPAND * 1.22; // measured top of travel; fallback pre-layout
+  const fadeStart = Math.max(1, scrollCeil - EXPAND * 0.55); // begin fading in the final ~0.55·EXPAND
+  const fadeEnd = fadeStart + EXPAND * 0.2; // quick fade: fully hidden well before the top, then stays hidden
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, fadeStart, fadeEnd],
+    outputRange: [1, 1, 0],
+    extrapolate: 'clamp',
+  });
+  // Drop the header's touch handling past the fade midpoint (opacity < ~0.5) so taps in that zone
+  // scroll the menu behind it instead of hitting the near-invisible name/icons. Threshold-crossing
+  // guard avoids a setState on every scroll frame.
+  const [headerInteractive, setHeaderInteractive] = useState(true);
+  useEffect(() => {
+    const offThreshold = (fadeStart + fadeEnd) / 2;
+    const id = scrollY.addListener(({ value }) => {
+      const interactive = value < offThreshold;
+      setHeaderInteractive((prev) => (prev === interactive ? prev : interactive));
+    });
+    return () => scrollY.removeListener(id);
+  }, [scrollY, fadeStart, fadeEnd]);
+
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -81,6 +109,8 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
+        onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setContentH(h)}
         // No snapToOffsets / decelerationRate="fast": the drawer snap made a scroll started on the car
         // spring back to 0 unless the drag crossed the midpoint, so the menu felt sticky/slow vs. the
         // free scroll on Climate/Location. Plain momentum scroll (default deceleration) matches them;
@@ -165,8 +195,11 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
 
       <CustomizeControlsSheet visible={customizing} onClose={() => setCustomizing(false)} />
 
-      {/* fixed header on top */}
+      {/* fixed header on top — fades out (and stops taking touches) as the menu scrolls up over it */}
       <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
+        <Animated.View
+          style={{ opacity: headerOpacity }}
+          pointerEvents={headerInteractive ? 'box-none' : 'none'}>
         <View style={styles.header}>
           <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
             <Text style={styles.name}>{fleet.activeName}</Text>
@@ -196,6 +229,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             ))}
           </View>
         ) : null}
+        </Animated.View>
       </SafeAreaView>
     </View>
   );
