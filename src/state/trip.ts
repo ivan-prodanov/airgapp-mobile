@@ -26,11 +26,14 @@ export interface ItineraryRow {
 }
 
 // Each stop gets a unique INSTANCE id (not derived from the place) so the same place can appear twice in a
-// trip (Car → A → B → A) and be removed / reordered / keyed independently.
+// trip (Car → A → B → A) and be removed / reordered / keyed independently. The per-launch `idBase` prefix
+// keeps ids minted after a snapshot restore from ever colliding with the restored stops' ids (which were
+// minted in a prior session where the counter started from 0 again).
 let stopSeq = 0;
-const uid = (): string => {
+const idBase = Date.now().toString(36);
+export const uid = (): string => {
   stopSeq += 1;
-  return String(stopSeq);
+  return `${idBase}-${stopSeq}`;
 };
 
 export function carStop(coordinate: LatLng): TripStop {

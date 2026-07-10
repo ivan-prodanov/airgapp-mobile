@@ -53,6 +53,9 @@ interface RenderProps {
   scrollProps: SheetScrollProps;
   // Latch OFF the content pan while an internal drag (e.g. a row reorder) owns the gesture.
   setContentBusy: (busy: boolean) => void;
+  // Whether the sheet currently rests at the full detent (lets a consumer remember/restore the detent, e.g.
+  // the Trip sheet's Edit mode which expands to full then returns to the prior detent on Done).
+  atFull: boolean;
 }
 interface Props {
   children: (props: RenderProps) => ReactNode;
@@ -219,13 +222,16 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
       scrollEventThrottle: 16,
     },
     setContentBusy,
+    atFull,
   };
 
   return (
     <Animated.View style={[styles.sheet, { height: SHEET_H, transform: [{ translateY }] }]}>
-      {/* Grabber hidden (and non-draggable) while locked, so the frozen sheet doesn't invite a drag. Spacing
-          is preserved so the content below doesn't shift. */}
-      <View style={styles.handleWrap} {...(locked ? {} : handlePan.panHandlers)}>{locked ? null : <View style={styles.handle} />}</View>
+      {/* Grabber made invisible (and non-draggable) while locked, so the frozen sheet doesn't invite a drag —
+          but it still occupies its 5px so the content below doesn't shift when toggling Edit. */}
+      <View style={styles.handleWrap} {...(locked ? {} : handlePan.panHandlers)}>
+        <View style={[styles.handle, locked && styles.handleHidden]} />
+      </View>
       {children(renderProps)}
     </Animated.View>
   );
@@ -247,4 +253,5 @@ const styles = StyleSheet.create({
   },
   handleWrap: { alignItems: 'center', paddingTop: 8, paddingBottom: 12 },
   handle: { width: 38, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.28)' },
+  handleHidden: { opacity: 0 },
 });

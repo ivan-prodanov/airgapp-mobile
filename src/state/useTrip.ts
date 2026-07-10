@@ -17,6 +17,7 @@ import {
   reorderStops as reorderStopsOp,
   startTrip,
   type Trip,
+  type TripStop,
 } from './trip';
 import { TRIP_SNAPSHOT_KEY, loadTripSnapshotFrom, saveTripSnapshotTo } from './tripSnapshot';
 
@@ -55,6 +56,17 @@ export function useTrip() {
   const removeStop = useCallback((id: string) => setTrip((t) => (t ? removeStopOp(t, id) : t)), []);
   const reorder = useCallback((from: number, to: number) => setTrip((t) => (t ? reorderStopsOp(t, from, to) : t)), []);
   const clear = useCallback(() => setTrip(null), []);
+  // Replace the whole trip with a given ordered stop list (used to apply a reordered trip from the Share popup).
+  const replaceStops = useCallback((stops: TripStop[]) => setTrip(stops.length ? { stops } : null), []);
+  // Discard the trip entirely — session AND the persisted "last trip" — so nothing resurrects it (Cancel). The
+  // debounced `saveSnapshot(null)` also cancels any pending truthy write; the direct write covers an immediate
+  // relaunch before the debounce fires.
+  const clearSaved = useCallback(() => {
+    setTrip(null);
+    setSavedExists(false);
+    saveSnapshot(null);
+    void saveTripSnapshotTo(appStorage, null);
+  }, []);
 
   // Append to the active trip if one is in progress; else load the persisted snapshot and append (making it
   // active); else start a fresh single-destination trip. The snapshot load must resolve before the setState.
@@ -65,5 +77,5 @@ export function useTrip() {
     setTrip(snap ? addStopOp(snap, place) : startTrip(carStop(place.coordinate ?? { latitude: 0, longitude: 0 }), place));
   }, []);
 
-  return { trip, savedExists, start, addStop, insertStop, addCharger, insertCharger, removeStop, reorder, clear, addToSaved };
+  return { trip, savedExists, start, addStop, insertStop, addCharger, insertCharger, removeStop, reorder, clear, addToSaved, replaceStops, clearSaved };
 }

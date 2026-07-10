@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, Share, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -41,7 +41,7 @@ import { hasChargerInBounds, nearestChargerTo, osmChargersInBounds } from '@/ser
 import { fetchAvailabilityInBounds, fetchAvailabilityNear, matchAvailability } from '@/services/chargeprice';
 import { useNavigateSearch } from '@/hooks/useNavigateSearch';
 import { useTrip } from '@/state/useTrip';
-import { straightLineLegs, tripTotals } from '@/state/trip';
+import { carStop, straightLineLegs, tripTotals, uid, type TripStop } from '@/state/trip';
 import { useTripRoute } from '@/state/useTripRoute';
 import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle, type TripRowAction } from '@/components/TripSheet';
 import { TripRowMenu } from '@/components/TripRowMenu';
@@ -49,6 +49,8 @@ import { PlacePreviewSheet, type DroppedPin } from '@/components/PlacePreviewShe
 import type { Place } from '@/services/place';
 import { sharedLocationStore } from '@/state/sharedLocationStore';
 import SharedIntake from '../../modules/shared-intake';
+import { loadTripSnapshotFrom } from '@/state/tripSnapshot';
+import { appStorage } from '@/state/appStorage';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -99,7 +101,7 @@ function cleanCategory(raw?: string): string | undefined {
   return bare.replace(/([a-z])([A-Z])/g, '$1 $2') || undefined;
 }
 
-// Turn a dropped/shared pin into a Place for trip persistence (mirrors onAddDroppedPin's construction).
+// Turn a dropped/shared pin into a Place for trip persistence.
 function pinToPlace(pin: DroppedPin): Place {
   return {
     id: `pin:${pin.coordinate.latitude.toFixed(5)},${pin.coordinate.longitude.toFixed(5)}`,
@@ -166,9 +168,42 @@ export default function LocationView() {
   // Trip planning: selecting a place builds an in-memory trip shown in the TripSheet.
   const trip = useTrip();
   const [screen, setScreen] = useState<'search' | 'trip'>('search');
+  const [tripEditing, setTripEditing] = useState(false); // hide the Send-to-Car/Cancel bar while editing the trip
   const tripSheetRef = useRef<TripSheetHandle>(null);
-  // Departure clock for the itinerary (set when a trip starts, so times are stable while viewing).
-  const [departAt, setDepartAt] = useState(0);
+  // Live "now" clock for the itinerary. The car isn't moving, so departure is always "now" and each stop's ETA
+  // is now + cumulative travel time — recomputed as real time passes (ticks) so the times stay current, and it
+  // starts from the actual current time on every launch (not epoch 0).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  // The car's real location name (reverse-geocoded), shown on the car row instead of "Car location". Refreshed
+  // only when the rounded (~100m) car position changes, to avoid geocoder rate-limits.
+  const carKey = `${carCoord.latitude.toFixed(3)},${carCoord.longitude.toFixed(3)}`;
+  const [carName, setCarName] = useState('Car location');
+  useEffect(() => {
+    let cancelled = false;
+    void Location.reverseGeocodeAsync(carCoord)
+      .then(([a]) => {
+        // Prefer the area/locality (town → district → county → region) over `name`/`street`, which come back as
+        // a postal code or street number (e.g. "814 01").
+        if (!cancelled && a) setCarName(a.city || a.district || a.subregion || a.region || 'Car location');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carKey]);
+  // Mirror the car's current stop so the Share popup can start a "New Trip" ([car, sharedPlace]) even before the
+  // app is next opened.
+  useEffect(() => {
+    void SharedIntake.setSavedCar(
+      JSON.stringify({ id: 'car', kind: 'car', title: carName, lat: carCoord.latitude, lng: carCoord.longitude }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carKey, carName]);
   // When set, the next place picked in search is inserted at this index instead of appended (Insert Stop).
   const [pendingInsert, setPendingInsert] = useState<number | null>(null);
   // Long-press context menu target (trip stop index + the row's screen Y).
@@ -193,15 +228,63 @@ export default function LocationView() {
     };
     setSelectedCharger(null);
     setTab('location');
-    if (action === 'addToTrip') void trip.addToSaved(place).then(() => setScreen('trip'));
-    else onSelectPlace(place); // onSelectPlace already switches to the Trip view
+    if (action === 'addToTrip') {
+      // The popup already appended the shared stop at its chosen position, so `reorderedStops` IS the full trip
+      // — adopt it as-is. (Fallback to a plain append if no arrangement was sent.)
+      const reordered = sharedIntent.reorderedStops;
+      if (reordered && reordered.length) {
+        const stops: TripStop[] = reordered.map((r) => ({
+          id: r.id,
+          kind: r.kind as TripStop['kind'],
+          title: r.title,
+          subtitle: r.subtitle,
+          coordinate: { latitude: r.lat, longitude: r.lng },
+        }));
+        // The extension seeds "New Trip" as [car, shared] from the mirrored car, but on a fresh install the car
+        // hasn't been mirrored yet, so the arrangement can arrive car-less. Enforce the stops[0]===car invariant.
+        if (stops[0]?.kind !== 'car') stops.unshift(carStop(carCoord));
+        trip.replaceStops(stops);
+        setScreen('trip');
+      } else {
+        void trip.addToSaved(place).then(() => setScreen('trip'));
+      }
+    } else {
+      startNewTrip(place); // New Trip: a fresh trip to the shared place, replacing any existing one
+    }
     setSharedIntent(null);
   }, [sharedIntent]);
-  // Let the Share popup know whether "Add to Trip" should be enabled (the trip lives in AsyncStorage, which the
-  // extension can't read — so mirror the flag through the App Group).
+  // On mount, restore the saved "last trip" into the Trip view so an existing trip is shown whenever you open
+  // Location (it persists until explicitly cancelled). Skipped when a shared intent is incoming — that effect
+  // owns the screen/trip in that case.
   useEffect(() => {
-    const name = trip.trip?.stops[trip.trip.stops.length - 1]?.title ?? null;
-    void SharedIntake.setSavedTrip(trip.savedExists, name);
+    if (sharedIntent) return;
+    void loadTripSnapshotFrom(appStorage).then((snap) => {
+      if (snap) {
+        trip.replaceStops(snap.stops);
+        setScreen('trip');
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Mirror the saved trip through the App Group so the Share popup can draw the route + list its stops (the trip
+  // lives in AsyncStorage, which the extension can't read). The displayed trip is the active one, or — when none
+  // is in session but a snapshot exists — the persisted "last trip".
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const active = trip.trip;
+      const display = active ?? (trip.savedExists ? await loadTripSnapshotFrom(appStorage) : null);
+      if (cancelled) return;
+      const stops = display?.stops ?? [];
+      const name = stops[stops.length - 1]?.title ?? null;
+      const stopsJson = JSON.stringify(
+        stops.map((s) => ({ id: s.id, title: s.title, subtitle: s.subtitle, lat: s.coordinate.latitude, lng: s.coordinate.longitude, kind: s.kind })),
+      );
+      void SharedIntake.setSavedTrip(trip.savedExists, name, stopsJson);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [trip.savedExists, trip.trip]);
   // Dismiss the preview card AND clear Apple's native feature selection (the "enlarged" highlight), so the
   // card and the map stay in sync — otherwise a tapped POI stays enlarged after the card closes. (The stray
@@ -221,7 +304,6 @@ export default function LocationView() {
       setScreen('trip');
     } else {
       trip.start(carCoord, place);
-      setDepartAt(Date.now());
       setScreen('trip');
       tripSheetRef.current?.expand();
     }
@@ -257,21 +339,23 @@ export default function LocationView() {
 
   // Add-to-Trip / Navigate from the dropped-pin preview: turn the pin into a Place and reuse onSelectPlace
   // (starts a trip when there's none, else appends/inserts a stop).
-  const onAddDroppedPin = () => {
+  // Start a FRESH trip to a place (replaces any existing trip), unlike onSelectPlace which appends to an active
+  // trip. Used by the dropped-pin "New Trip" and the shared "Send to Car" (navigate) action.
+  const startNewTrip = (place: Place) => {
+    nav.select(place);
+    trip.start(carCoord, place);
+    setScreen('trip');
+    tripSheetRef.current?.expand();
+  };
+  const onNewTripFromPin = () => {
     if (!droppedPin) return;
-    const place: Place = {
-      id: `pin:${droppedPin.coordinate.latitude.toFixed(5)},${droppedPin.coordinate.longitude.toFixed(5)}`,
-      title: droppedPin.name,
-      subtitle: droppedPin.subtitle,
-      coordinate: droppedPin.coordinate,
-      kind: 'poi',
-      source: 'apple',
-    };
+    const place = pinToPlace(droppedPin);
     dismissDroppedPin(); // clears the card + Apple's feature highlight before the trip view takes over
-    onSelectPlace(place);
+    startNewTrip(place);
   };
 
-  // Row actions from the swipe/long-press menu. Copy/Share are wired in later tasks.
+  // Row actions from the swipe/long-press menu: Duplicate (append a copy), Insert (pick a stop after this one),
+  // Delete.
   const onTripRowAction = (index: number, action: TripRowAction) => {
     if (!trip.trip) return;
     const stop = trip.trip.stops[index];
@@ -279,12 +363,17 @@ export default function LocationView() {
     else if (action === 'insert') {
       setPendingInsert(index + 1);
       setScreen('search');
-    } else if (action === 'share') {
-      const c = stop.coordinate;
-      const mapsUrl = c ? `https://maps.apple.com/?ll=${c.latitude},${c.longitude}&q=${encodeURIComponent(stop.title)}` : '';
-      Share.share({ message: [stop.title, stop.subtitle, mapsUrl].filter(Boolean).join('\n') }).catch(() => {});
-    } else if (action === 'copy') {
-      copyStop(stop.title, stop.subtitle);
+    } else if (action === 'duplicate') {
+      // Append a copy of the stop at the end. The car row duplicates as a NORMAL place (not a car) at its real
+      // location name, so the trip keeps a single car origin.
+      const dup: TripStop = {
+        id: `dup:${uid()}`, // fresh unique id — never keyed on the throttled `now`, so rapid re-duplicates don't collide
+        kind: stop.kind === 'car' ? 'place' : stop.kind,
+        title: stop.kind === 'car' ? carName : stop.title,
+        subtitle: stop.subtitle,
+        coordinate: stop.coordinate,
+      };
+      trip.replaceStops([...trip.trip.stops, dup]);
     }
   };
   const openRowMenu = (index: number, anchorY: number) => {
@@ -330,10 +419,6 @@ export default function LocationView() {
       animated: true,
     });
   };
-  // Filled in Task 6 (expo-clipboard needs the native rebuild); Light haptic gives immediate feedback now.
-  const copyStop = (_title: string, _subtitle?: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  };
 
   // Removing every non-car stop discards the trip (car alone isn't a trip).
   const onRemoveStop = (id: string) => {
@@ -347,7 +432,7 @@ export default function LocationView() {
     }
   };
   const onTripCancel = () => {
-    trip.clear();
+    trip.clearSaved(); // discard session AND the saved snapshot, so a later "Add to Trip" starts fresh
     setScreen('search');
   };
 
@@ -785,7 +870,8 @@ export default function LocationView() {
           ref={tripSheetRef}
           trip={trip.trip}
           legs={tripLegs}
-          now={departAt}
+          now={now}
+          carName={carName}
           onAddStop={() => {
             setPendingInsert(null);
             setScreen('search');
@@ -794,6 +880,8 @@ export default function LocationView() {
           onReorder={trip.reorder}
           onRowAction={onTripRowAction}
           onLongPressRow={openRowMenu}
+          onEditingChange={setTripEditing}
+          onRevertEdit={trip.replaceStops}
         />
       ) : (
         <LocationSheet
@@ -848,22 +936,23 @@ export default function LocationView() {
       {droppedPin ? (
         <SafeAreaView edges={['bottom']} style={styles.navigateBar} pointerEvents="box-none">
           <View style={styles.navigateRow}>
-            <Pressable style={styles.navigateButton} onPress={onAddDroppedPin}>
-              <SymbolView name="arrow.turn.up.right" tintColor="white" size={17} weight="semibold" />
-              <Text style={styles.navigateText}>Navigate</Text>
+            <Pressable style={styles.navigateButton} onPress={onNewTripFromPin}>
+              <Text style={styles.navigateText}>New Trip</Text>
             </Pressable>
-            <Pressable
-              style={[styles.navigateButtonSecondary, !trip.savedExists && styles.navigateButtonDisabled]}
-              disabled={!trip.savedExists}
-              onPress={async () => {
-                if (!droppedPin) return;
-                await trip.addToSaved(pinToPlace(droppedPin));
-                dismissDroppedPin();
-                setScreen('trip');
-              }}
-            >
-              <Text style={[styles.navigateText, !trip.savedExists && styles.navigateTextDisabled]}>Add to Trip</Text>
-            </Pressable>
+            {/* Add to Trip is HIDDEN (not disabled) when there's no trip — New Trip then fills the row. */}
+            {trip.savedExists ? (
+              <Pressable
+                style={styles.navigateButtonSecondary}
+                onPress={async () => {
+                  if (!droppedPin) return;
+                  await trip.addToSaved(pinToPlace(droppedPin));
+                  dismissDroppedPin();
+                  setScreen('trip');
+                }}
+              >
+                <Text style={styles.navigateText}>Add to Trip</Text>
+              </Pressable>
+            ) : null}
           </View>
         </SafeAreaView>
       ) : null}
@@ -871,7 +960,7 @@ export default function LocationView() {
       {/* Pinned trip actions — Send to Car / Cancel float at the screen bottom so they stay visible while the
           Trip sheet rests at the middle detent (Send to Car is a local mock — never a network/Tesla call).
           Hidden behind the pin preview. */}
-      {!droppedPin && screen === 'trip' && trip.trip ? (
+      {!droppedPin && !tripEditing && screen === 'trip' && trip.trip ? (
         <SafeAreaView edges={['bottom']} style={styles.tripBar} pointerEvents="box-none">
           <Pressable style={styles.tripSendButton} onPress={() => {}}>
             <Text style={styles.tripSendText}>
@@ -889,7 +978,7 @@ export default function LocationView() {
           visible
           anchorY={rowMenu.anchorY}
           title={trip.trip.stops[rowMenu.index]?.title ?? ''}
-          allowDelete={rowMenu.index !== 0}
+          allowDelete={rowMenu.index !== 0 && trip.trip.stops.length > 2}
           onAction={(a) => onTripRowAction(rowMenu.index, a)}
           onClose={() => setRowMenu(null)}
         />

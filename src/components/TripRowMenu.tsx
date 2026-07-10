@@ -4,8 +4,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import type { TripRowAction } from './TripSheet';
 
 const ITEMS: { action: TripRowAction; label: string; icon: SFSymbol; destructive?: boolean }[] = [
-  { action: 'copy', label: 'Copy', icon: 'doc.on.doc' },
-  { action: 'share', label: 'Share', icon: 'square.and.arrow.up' },
+  { action: 'duplicate', label: 'Duplicate', icon: 'plus.square.on.square' },
   { action: 'insert', label: 'Insert Stop', icon: 'plus' },
   { action: 'delete', label: 'Delete', icon: 'trash', destructive: true },
 ];

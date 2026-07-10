@@ -1,4 +1,4 @@
-import { forwardRef, useState, type ReactNode } from 'react';
+import { forwardRef, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
@@ -7,24 +7,27 @@ import Swipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { runOnJS } from 'react-native-reanimated';
 
 import { BottomSheet, type BottomSheetHandle } from './BottomSheet';
-import { computeItinerary, type ItineraryRow, type Leg, type Trip } from '@/state/trip';
+import { computeItinerary, type ItineraryRow, type Leg, type Trip, type TripStop } from '@/state/trip';
 
 // Trip sheet rests at a taller ~half-screen detent (top near the middle of the screen). Exported so the map's
 // fit-to-trip can pad by this height.
 export const TRIP_SHEET_FRAC = 0.5;
 export type TripSheetHandle = BottomSheetHandle;
 
-export type TripRowAction = 'copy' | 'share' | 'insert' | 'delete';
+export type TripRowAction = 'duplicate' | 'insert' | 'delete';
 
 interface Props {
   trip: Trip;
   legs: Leg[];
   now: number;
+  carName: string; // the car's real location name, shown on the car row instead of "Car location"
   onAddStop: () => void;
   onAddCharger: () => void;
   onReorder: (from: number, to: number) => void;
   onRowAction: (index: number, action: TripRowAction) => void;
   onLongPressRow: (index: number, anchorY: number) => void; // opens the hand-rolled menu
+  onEditingChange: (editing: boolean) => void; // so the screen can hide the Send-to-Car/Cancel bar while editing
+  onRevertEdit: (stops: TripStop[]) => void; // Cancel-in-edit restores the pre-edit stops
 }
 
 const FOOTER_CLEARANCE = 132;
@@ -41,35 +44,67 @@ function hhmm(at: number): string {
 //  • Edit → the reorderable list with ≡ handles, and the sheet pinned to full so there's no resize gesture
 //    to fight the reorder. "Done" returns to normal.
 export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
-  { trip, legs, now, onAddStop, onAddCharger, onReorder, onRowAction, onLongPressRow },
+  { trip, legs, now, carName, onAddStop, onAddCharger, onReorder, onRowAction, onLongPressRow, onEditingChange, onRevertEdit },
   ref,
 ) {
   const insetBottom = useSafeAreaInsets().bottom;
   const [editing, setEditing] = useState(false);
-  const rows = computeItinerary(trip.stops, legs, now);
+  const wasFullBeforeEdit = useRef(false); // remember the detent so Done/Cancel can return to it
+  const editSnapshot = useRef<TripStop[]>(trip.stops); // pre-edit stops, restored on Cancel
+  // Show the car's real location name on the car row (index 0) instead of the placeholder "Car location".
+  const rows = computeItinerary(trip.stops, legs, now).map((r, i) =>
+    i === 0 && r.stop.kind === 'car' ? { ...r, stop: { ...r.stop, title: carName } } : r,
+  );
   const padBottom = insetBottom + FOOTER_CLEARANCE;
 
   return (
     <BottomSheet ref={ref} lowestDetent="middle" middleFrac={TRIP_SHEET_FRAC} locked={editing}>
-      {({ dragHandlers, expandFull, contentPanHandlers, scrollProps, setContentBusy }) => (
+      {({ dragHandlers, expandFull, collapseToMiddle, contentPanHandlers, scrollProps, setContentBusy, atFull }) => (
         <View style={styles.content}>
           <View {...dragHandlers} style={styles.header}>
-            <Text style={styles.title}>Trip</Text>
+            {editing ? (
+              // Cancel discards the edits (restore the pre-edit stops) and exits + returns the sheet down.
+              <Pressable
+                hitSlop={8}
+                onPress={() => {
+                  onRevertEdit(editSnapshot.current);
+                  setEditing(false);
+                  onEditingChange(false);
+                  if (!wasFullBeforeEdit.current) collapseToMiddle();
+                }}
+              >
+                <Text style={styles.editText}>Cancel</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.title}>Trip</Text>
+            )}
             <View style={styles.headerActions}>
               {editing ? (
-                <Pressable hitSlop={8} onPress={() => setEditing(false)}>
+                // Done keeps the edits and exits + returns the sheet down.
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => {
+                    setEditing(false);
+                    onEditingChange(false);
+                    if (!wasFullBeforeEdit.current) collapseToMiddle();
+                  }}
+                >
                   <Text style={styles.editText}>Done</Text>
                 </Pressable>
               ) : (
                 <>
                   <HeaderButton icon="plus" label="Add Stop" onPress={onAddStop} />
                   <HeaderButton icon="bolt.fill" label="Add Charger" tint="#E5484D" onPress={onAddCharger} />
-                  {/* Enter reorder mode + pin the sheet to full so the reorder gesture owns the panel. */}
+                  {/* Enter reorder mode + pin the sheet to full; snapshot the stops so Cancel can revert, and
+                      remember the detent so Done/Cancel return to it. */}
                   <Pressable
                     hitSlop={8}
                     onPress={() => {
+                      wasFullBeforeEdit.current = atFull;
+                      editSnapshot.current = trip.stops;
                       setEditing(true);
                       expandFull();
+                      onEditingChange(true);
                     }}
                   >
                     <Text style={styles.editText}>Edit</Text>
@@ -100,15 +135,25 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
                 scrollEnabled={scrollProps.scrollEnabled}
                 ListHeaderComponent={<EditCarRow row={rows[0]} onRowAction={onRowAction} />}
                 contentContainerStyle={{ paddingBottom: padBottom }}
+                contentInsetAdjustmentBehavior="never"
+                automaticallyAdjustContentInsets={false}
                 showsVerticalScrollIndicator={false}
-                renderItem={({ item, index }) => <DragRow row={item} index={index + 1} onRowAction={onRowAction} />}
+                renderItem={({ item, index }) => (
+                  <DragRow row={item} index={index + 1} canDelete={rows.length > 2} onRowAction={onRowAction} />
+                )}
               />
             </View>
           ) : (
             // Normal mode: a plain scroll list. Same structure as the (working) Location sheet, so the sheet's
             // content pan resizes/scrolls without a reorderable gesture competing for the vertical drag.
             <View style={styles.listWrap} {...contentPanHandlers}>
-              <ScrollView {...scrollProps} contentContainerStyle={{ paddingBottom: padBottom }} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                {...scrollProps}
+                contentContainerStyle={{ paddingBottom: padBottom }}
+                contentInsetAdjustmentBehavior="never"
+                automaticallyAdjustContentInsets={false}
+                showsVerticalScrollIndicator={false}
+              >
                 {rows.map((row, i) => (
                   <PlainRow key={row.stop.id} row={row} index={i} isCar={i === 0} isLast={i === rows.length - 1} onLongPress={onLongPressRow} />
                 ))}
@@ -121,7 +166,7 @@ export const TripSheet = forwardRef<TripSheetHandle, Props>(function TripSheet(
   );
 });
 
-// Normal-mode row: tap + long-press → context menu (Copy/Share/Insert/Delete). Deliberately NO Swipeable:
+// Normal-mode row: tap + long-press → context menu (Duplicate/Insert/Delete). Deliberately NO Swipeable:
 // its RNGH pan sets activeOffsetX but no failOffsetY, so it holds vertical touches and intermittently blocks
 // the sheet's PanResponder resize. Plain rows (like the Location sheet) keep body-drag resize/scroll solid;
 // swipe-to-reveal lives in Edit mode instead.
@@ -145,22 +190,25 @@ function PlainRow({
   );
 }
 
-// Edit-mode reorderable stop: swipe → Share/Insert/Delete, drag by the ≡ handle. No long-press (redundant here).
+// Edit-mode reorderable stop: swipe → Duplicate/Insert/Delete, drag by the ≡ handle. No long-press (redundant here).
 function DragRow({
   row,
   index,
+  canDelete,
   onRowAction,
 }: {
   row: ItineraryRow;
   index: number;
+  canDelete: boolean; // false for the last remaining non-car stop (keep car + ≥1 stop)
   onRowAction: (index: number, action: TripRowAction) => void;
 }) {
   const drag = useReorderableDrag();
+  const actions: ('duplicate' | 'insert' | 'delete')[] = canDelete ? ['duplicate', 'insert', 'delete'] : ['duplicate', 'insert'];
   return (
     <Swipeable
       friction={2}
       rightThreshold={44}
-      renderRightActions={() => <SwipeActions actions={['share', 'insert', 'delete']} index={index} onRowAction={onRowAction} />}
+      renderRightActions={() => <SwipeActions actions={actions} index={index} onRowAction={onRowAction} />}
     >
       <RowContent
         row={row}
@@ -175,13 +223,13 @@ function DragRow({
   );
 }
 
-// Edit-mode car row (list header): swipe → Share/Insert, never draggable, no long-press.
+// Edit-mode car row (list header): swipe → Duplicate/Insert, never draggable, no long-press.
 function EditCarRow({ row, onRowAction }: { row: ItineraryRow; onRowAction: (index: number, action: TripRowAction) => void }) {
   return (
     <Swipeable
       friction={2}
       rightThreshold={44}
-      renderRightActions={() => <SwipeActions actions={['share', 'insert']} index={0} onRowAction={onRowAction} />}
+      renderRightActions={() => <SwipeActions actions={['duplicate', 'insert']} index={0} onRowAction={onRowAction} />}
     >
       <RowContent row={row} isCar />
     </Swipeable>
@@ -222,7 +270,7 @@ function RowContent({
           {stop.title}
         </Text>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {isCar ? 'Departure' : hhmm(row.at)}
+          {isCar ? 'now' : hhmm(row.at)}
         </Text>
       </View>
       {trailing}
@@ -230,8 +278,8 @@ function RowContent({
   );
 }
 
-const SWIPE_BTN: Record<'share' | 'insert' | 'delete', { icon: SFSymbol; bg: string }> = {
-  share: { icon: 'square.and.arrow.up', bg: '#3E6AE1' },
+const SWIPE_BTN: Record<'duplicate' | 'insert' | 'delete', { icon: SFSymbol; bg: string }> = {
+  duplicate: { icon: 'plus.square.on.square', bg: '#3E6AE1' },
   insert: { icon: 'plus', bg: '#5A5A5E' },
   delete: { icon: 'trash.fill', bg: '#E5484D' },
 };
@@ -241,7 +289,7 @@ function SwipeActions({
   index,
   onRowAction,
 }: {
-  actions: ('share' | 'insert' | 'delete')[];
+  actions: ('duplicate' | 'insert' | 'delete')[];
   index: number;
   onRowAction: (index: number, action: TripRowAction) => void;
 }) {

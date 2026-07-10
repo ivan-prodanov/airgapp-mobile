@@ -6,13 +6,14 @@ import { useRouter } from 'expo-router';
 import SharedIntake from '../../modules/shared-intake';
 import AppleSearch, { type AppleResult } from '../../modules/expo-apple-search';
 import { parseSharedLocation, type ParseDeps, type SharedLocation } from '@/services/sharedLocation';
-import { sharedLocationStore, type SharedAction } from '@/state/sharedLocationStore';
+import { sharedLocationStore, type SharedAction, type ReorderedStop } from '@/state/sharedLocationStore';
 import type { LatLng } from '@/state/mockLocation';
 
 interface Intent {
   location?: { lat: number; lng: number; name?: string; address?: string; source: SharedLocation['source'] };
   action: SharedAction;
   raw: string;
+  reorderedStops?: ReorderedStop[];
 }
 
 // Cap an awaited promise so a hung network call resolves to `fallback` instead of wedging intake (which would
@@ -98,7 +99,7 @@ export function useSharedLocationIntake(): void {
             loc = await parseSharedLocation(intent.raw, deps); // degraded fallback
           }
           if (loc) {
-            sharedLocationStore.set({ location: loc, action: intent.action });
+            sharedLocationStore.set({ location: loc, action: intent.action, reorderedStops: intent.reorderedStops });
             router.navigate('/location');
           }
         }
