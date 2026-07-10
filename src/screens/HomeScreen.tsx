@@ -81,9 +81,10 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        snapToOffsets={[0, EXPAND]}
-        snapToEnd={false}
-        decelerationRate="fast"
+        // No snapToOffsets / decelerationRate="fast": the drawer snap made a scroll started on the car
+        // spring back to 0 unless the drag crossed the midpoint, so the menu felt sticky/slow vs. the
+        // free scroll on Climate/Location. Plain momentum scroll (default deceleration) matches them;
+        // the scrim still fades over [0, EXPAND] at any offset, so the open-over-car look is preserved.
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
         refreshControl={
           <RefreshControl
