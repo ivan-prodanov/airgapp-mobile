@@ -152,7 +152,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             leading={<CarHeadingArrow bearingToCar={bearingToCar} size={26} color="white" />}
           />
           <NavRow symbol="steeringwheel" title="Summon" disabled />
-          <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
+          <NavRow symbol="bolt.fill" title="Charging" onPress={() => router.push('/charging')} />
           <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
           <NavRow symbol="lock.shield.fill" title="Security & Drivers" subtitle="Ivan P" onPress={() => {}} />
           <NavRow symbol="wrench.and.screwdriver.fill" title="Service" disabled />

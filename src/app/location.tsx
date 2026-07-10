@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT, type MapType, type Region } from 'react-native-maps';
 
 import {
@@ -46,6 +46,7 @@ import { useTripRoute } from '@/state/useTripRoute';
 import { TripSheet, TRIP_SHEET_FRAC, type TripSheetHandle, type TripRowAction } from '@/components/TripSheet';
 import { TripRowMenu } from '@/components/TripRowMenu';
 import { PlacePreviewSheet, type DroppedPin } from '@/components/PlacePreviewSheet';
+import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import type { Place } from '@/services/place';
 import { sharedLocationStore } from '@/state/sharedLocationStore';
 import SharedIntake from '../../modules/shared-intake';
@@ -118,6 +119,8 @@ function pinToPlace(pin: DroppedPin): Place {
 // the draggable bottom sheet holds Navigate + Recents/Charging.
 export default function LocationView() {
   const router = useRouter();
+  // Deep-link: the Charging screen's "Find Chargers" opens `/location?tab=charging` straight on the Charging tab.
+  const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
   const fleet = useFleet();
   const { height } = useWindowDimensions();
   const mapRef = useRef<MapView | null>(null);
@@ -136,7 +139,7 @@ export default function LocationView() {
 
   const [userCoord, setUserCoord] = useState<LatLng | null>(null);
   const [mapType, setMapType] = useState<MapType>('standard');
-  const [tab, setTab] = useState<LocationTab>('location');
+  const [tab, setTab] = useState<LocationTab>(tabParam === 'charging' ? 'charging' : 'location');
   // `fetched` = the cached bbox pool from the last TomTom fetch; `region` = the current settled viewport.
   const [fetched, setFetched] = useState<Charger[]>([]);
   const [region, setRegion] = useState<ViewportRegion>({ ...FALLBACK_COORD, ...DEFAULT_DELTA });
@@ -254,16 +257,24 @@ export default function LocationView() {
     setSharedIntent(null);
   }, [sharedIntent]);
   // On mount, restore the saved "last trip" into the Trip view so an existing trip is shown whenever you open
-  // Location (it persists until explicitly cancelled). Skipped when a shared intent is incoming — that effect
-  // owns the screen/trip in that case.
+  // Location (it persists until explicitly cancelled). Skipped when a shared intent is incoming (that effect owns
+  // the screen/trip) OR when deep-linked to the Charging tab (we want the charger search, not the trip view).
   useEffect(() => {
-    if (sharedIntent) return;
+    if (sharedIntent || tabParam === 'charging') return;
     void loadTripSnapshotFrom(appStorage).then((snap) => {
       if (snap) {
         trip.replaceStops(snap.stops);
         setScreen('trip');
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Charging deep-link: expand the sheet so the charger list is visible on arrival (the [tab] effect already
+  // frames the map + fetches stations). Deferred a frame so the sheet's imperative handle is ready.
+  useEffect(() => {
+    if (tabParam !== 'charging') return;
+    const id = requestAnimationFrame(() => sheetRef.current?.expand());
+    return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // Mirror the saved trip through the App Group so the Share popup can draw the route + list its stops (the trip
@@ -983,6 +994,10 @@ export default function LocationView() {
           onClose={() => setRowMenu(null)}
         />
       ) : null}
+
+      {/* Standard iOS left-edge swipe-back (the native full-screen gesture is disabled in _layout — since iOS
+          26 it responds to the whole screen, which would fight map/sheet drags). */}
+      <EdgeSwipeBack onBack={() => router.back()} />
     </View>
   );
 }

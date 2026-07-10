@@ -21,7 +21,17 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="location" options={{ animation: 'slide_from_right' }} />
+            {/* gestureEnabled:false disables the iOS-26 native full-screen swipe-back (it responds to the whole
+                screen, colliding with the Charging slider); each screen renders an EdgeSwipeBack strip for the
+                standard edge-only gesture instead. */}
+            <Stack.Screen
+              name="location"
+              options={{ animation: 'slide_from_right', gestureEnabled: false }}
+            />
+            <Stack.Screen
+              name="charging"
+              options={{ animation: 'slide_from_right', gestureEnabled: false }}
+            />
           </Stack>
         </VehicleProvider>
       </ThemeProvider>
