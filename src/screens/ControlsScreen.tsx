@@ -1,8 +1,10 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { SymbolView } from 'expo-symbols';
 
 import { MarkerOverlay } from '../godot/MarkerOverlay';
+import { CONTROL_ACTIONS, type ControlActionId } from '../state/controlActions';
+import { controlHaptic } from '../state/controlHaptic';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -23,20 +25,40 @@ export function ControlsScreen({ state, actions }: Props) {
     <>
       <MarkerOverlay state={state} actions={actions} />
       <SafeAreaView edges={['bottom']} style={styles.bar}>
-        <Action symbol="headlight.low.beam" label="Flash" />
-        <Action symbol="horn.fill" label="Honk" />
-        <Action symbol="key.radiowaves.forward.fill" label="Start" />
-        <Action symbol="car.window.left" label="Vent" />
+        {/* Same actions as the Customize Controls grid — they run identically. */}
+        <Action id="flash" state={state} actions={actions} />
+        <Action id="honk" state={state} actions={actions} />
+        <Action id="start" state={state} actions={actions} />
+        <Action id="vent" state={state} actions={actions} />
       </SafeAreaView>
     </>
   );
 }
 
-function Action({ symbol, label }: { symbol: SFSymbol; label: string }) {
+function Action({
+  id,
+  state,
+  actions,
+}: {
+  id: ControlActionId;
+  state: VehicleViewState;
+  actions: VehicleActions;
+}) {
+  const action = CONTROL_ACTIONS[id];
   return (
-    <Pressable style={styles.action}>
-      <SymbolView name={symbol} tintColor="rgba(255,255,255,0.85)" size={26} />
-      <Text style={styles.label}>{label}</Text>
+    <Pressable
+      style={styles.action}
+      onPress={() => {
+        controlHaptic();
+        action.run(state, actions);
+      }}
+    >
+      <SymbolView
+        name={action.symbol(state)}
+        tintColor={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.85)'}
+        size={26}
+      />
+      <Text style={styles.label}>{action.label}</Text>
     </Pressable>
   );
 }

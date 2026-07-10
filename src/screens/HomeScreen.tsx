@@ -16,6 +16,7 @@ import type { GestureResponderHandlers } from 'react-native';
 
 import { useFleet, usePreferences } from '@/state/VehicleProvider';
 import { CONTROL_ACTIONS } from '@/state/controlActions';
+import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
@@ -111,7 +112,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
                   active={action.isActive(state)}
                   spin={action.spinning?.(state) ?? false}
                   onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
+                    controlHaptic();
                     action.run(state, actions);
                   }}
                   onLongPress={openCustomize}

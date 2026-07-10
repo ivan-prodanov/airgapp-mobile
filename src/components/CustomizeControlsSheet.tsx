@@ -14,6 +14,7 @@ import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { CONTROL_ACTIONS, CONTROL_ACTION_ORDER, type ControlActionId } from '@/state/controlActions';
+import { controlHaptic } from '@/state/controlHaptic';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { usePreferences, useVehicle } from '@/state/VehicleProvider';
 
@@ -31,7 +32,7 @@ interface Props {
 export function CustomizeControlsSheet({ visible, onClose }: Props) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [state] = useVehicle();
+  const [state, actions] = useVehicle();
   const { favorites, setFavorite } = usePreferences();
 
   // Grid = catalog order minus the current favorites → always 11 items.
@@ -46,6 +47,9 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
   onCloseRef.current = onClose;
   const setFavoriteRef = useRef(setFavorite);
   setFavoriteRef.current = setFavorite;
+  // Run a control with the LIVE state/actions (the tile PanResponders are built once, so read via a ref).
+  const runActionRef = useRef((_id: ControlActionId) => {});
+  runActionRef.current = (id) => CONTROL_ACTIONS[id].run(state, actions);
 
   const open = useCallback(() => {
     Animated.parallel([
@@ -93,6 +97,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
   const slotFrames = useRef<LayoutRectangle[]>([]);
   const slotRefs = useRef<(View | null)[]>([]);
   const dragRef = useRef<{ id: ControlActionId | null; hoverSlot: number }>({ id: null, hoverSlot: -1 });
+  const gestureStarted = useRef(false); // did the current touch become a drag (vs a plain tap)?
 
   const measureSlot = useCallback((i: number) => {
     const node = slotRefs.current[i];
@@ -115,33 +120,46 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
   }, []);
 
   const endDrag = useCallback(() => {
-    Animated.timing(ghostScale, { toValue: 0, duration: 120, useNativeDriver: false }).start(() => {
+    Animated.timing(ghostScale, { toValue: 0, duration: 120, useNativeDriver: false }).start(({ finished }) => {
+      // A new drag started within the 120ms fade restarts ghostScale, firing this callback with finished=false;
+      // don't tear down that fresh drag's state.
+      if (!finished) return;
       setDragId(null);
       setHoverSlot(-1);
       dragRef.current = { id: null, hoverSlot: -1 };
     });
   }, [ghostScale]);
 
-  // One PanResponder per action id, built once (closures read live values via refs).
+  // One PanResponder per action id, built once (closures read live values via refs). Each tile is BOTH a
+  // tappable control (tap → run the action, like the favorites bar) and a drag source (drag → drop onto a
+  // favorite slot). We claim the touch on start, then a small move promotes it from tap to drag.
   const tilePans = useMemo(() => {
     const map = {} as Record<ControlActionId, ReturnType<typeof PanResponder.create>>;
     for (const id of CONTROL_ACTION_ORDER) {
+      const beginDrag = (x: number, y: number) => {
+        for (let i = 0; i < slotRefs.current.length; i += 1) {
+          measureSlot(i);
+        }
+        ghost.setValue({ x: x - TILE / 2, y: y - TILE / 2 });
+        dragRef.current = { id, hoverSlot: -1 };
+        setDragId(id);
+        setHoverSlot(-1);
+        Animated.spring(ghostScale, { toValue: 1, useNativeDriver: false, friction: 6 }).start();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      };
       map[id] = PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4,
-        onPanResponderGrant: (e) => {
-          for (let i = 0; i < slotRefs.current.length; i += 1) {
-            measureSlot(i);
-          }
-          const { pageX, pageY } = e.nativeEvent;
-          ghost.setValue({ x: pageX - TILE / 2, y: pageY - TILE / 2 });
-          dragRef.current = { id, hoverSlot: -1 };
-          setDragId(id);
-          setHoverSlot(-1);
-          Animated.spring(ghostScale, { toValue: 1, useNativeDriver: false, friction: 6 }).start();
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          gestureStarted.current = false;
         },
         onPanResponderMove: (_e, g) => {
+          if (!gestureStarted.current) {
+            if (Math.abs(g.dx) <= 4 && Math.abs(g.dy) <= 4) {
+              return; // still a tap — wait for a real move before starting a drag
+            }
+            gestureStarted.current = true;
+            beginDrag(g.moveX, g.moveY);
+          }
           ghost.setValue({ x: g.moveX - TILE / 2, y: g.moveY - TILE / 2 });
           const slot = hitSlot(g.moveX, g.moveY);
           if (slot !== dragRef.current.hoverSlot) {
@@ -153,15 +171,26 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
           }
         },
         onPanResponderRelease: (_e, g) => {
-          const slot = hitSlot(g.moveX, g.moveY);
-          const draggedId = dragRef.current.id;
-          if (slot !== -1 && draggedId) {
-            setFavoriteRef.current(slot, draggedId);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          if (gestureStarted.current) {
+            const slot = hitSlot(g.moveX, g.moveY);
+            const draggedId = dragRef.current.id;
+            if (slot !== -1 && draggedId) {
+              setFavoriteRef.current(slot, draggedId);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+            }
+            endDrag();
+          } else {
+            controlHaptic();
+            runActionRef.current(id);
           }
-          endDrag();
+          gestureStarted.current = false;
         },
-        onPanResponderTerminate: () => endDrag(),
+        onPanResponderTerminate: () => {
+          if (gestureStarted.current) {
+            endDrag();
+          }
+          gestureStarted.current = false;
+        },
       });
     }
     return map;
@@ -192,12 +221,16 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
           {favorites.map((id, i) => {
             const action = CONTROL_ACTIONS[id];
             return (
-              <View
+              <Pressable
                 key={id}
                 ref={(n) => {
                   slotRefs.current[i] = n;
                 }}
                 onLayout={() => measureSlot(i)}
+                onPress={() => {
+                  controlHaptic();
+                  runActionRef.current(id);
+                }}
                 style={[styles.slot, hoverSlot === i && styles.slotHover]}
               >
                 <SpinningSymbol
@@ -206,7 +239,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
                   size={28}
                   spin={action.spinning?.(state) ?? false}
                 />
-              </View>
+              </Pressable>
             );
           })}
         </View>

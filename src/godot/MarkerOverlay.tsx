@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { PixelRatio, Pressable, StyleSheet, Text } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
+import { controlHaptic } from '../state/controlHaptic';
 import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -114,7 +115,10 @@ function TextButton({
         { left: point.left - BOX.text.w / 2, top: point.top - BOX.text.h / 2, width: BOX.text.w, height: BOX.text.h },
       ]}
       hitSlop={10}
-      onPress={onPress}>
+      onPress={() => {
+        controlHaptic();
+        onPress();
+      }}>
       <Text style={styles.label}>{label}</Text>
     </Pressable>
   );
@@ -145,7 +149,10 @@ function IconButton({
         { left: point.left - BOX.icon.w / 2, top: point.top - BOX.icon.h / 2, width: BOX.icon.w, height: BOX.icon.h },
       ]}
       hitSlop={10}
-      onPress={onPress}>
+      onPress={() => {
+        controlHaptic();
+        onPress();
+      }}>
       <SymbolView name={symbol} tintColor={tint} size={size} />
     </Pressable>
   );
