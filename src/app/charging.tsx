@@ -185,7 +185,7 @@ export default function ChargingScreen() {
               title="Find Chargers"
               onPress={() => router.push({ pathname: '/location', params: { tab: 'charging' } })}
             />
-            <LinkRow symbol="alarm.fill" title="Schedule Charging" onPress={() => {}} />
+            <LinkRow symbol="alarm.fill" title="Schedule Charging" onPress={() => {}} disabled />
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -194,9 +194,20 @@ export default function ChargingScreen() {
   );
 }
 
-function LinkRow({ symbol, title, onPress }: { symbol: SFSymbol; title: string; onPress: () => void }) {
+function LinkRow({
+  symbol,
+  title,
+  onPress,
+  disabled,
+}: {
+  symbol: SFSymbol;
+  title: string;
+  onPress: () => void;
+  // Greyed-out + non-interactive (feature not wired yet), matching Home's NavRow.
+  disabled?: boolean;
+}) {
   return (
-    <Pressable style={styles.linkRow} onPress={onPress}>
+    <Pressable style={[styles.linkRow, disabled && styles.linkRowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={styles.badge}>
         <SymbolView name={symbol} tintColor="white" size={20} />
       </View>
@@ -339,6 +350,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     paddingVertical: 14,
+  },
+  linkRowDisabled: {
+    opacity: 0.35,
   },
   badge: {
     width: 36,
