@@ -151,13 +151,13 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             onPress={() => router.push('/location')}
             leading={<CarHeadingArrow bearingToCar={bearingToCar} size={26} color="white" />}
           />
-          <NavRow symbol="steeringwheel" title="Summon" onPress={() => {}} />
+          <NavRow symbol="steeringwheel" title="Summon" disabled />
           <NavRow symbol="bolt.fill" title="Charging" onPress={() => actions.setCameraMode('CHARGING')} />
           <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => {}} />
           <NavRow symbol="lock.shield.fill" title="Security & Drivers" subtitle="Ivan P" onPress={() => {}} />
-          <NavRow symbol="wrench.and.screwdriver.fill" title="Service" onPress={() => {}} />
-          <NavRow symbol="camera.fill" title="Dashcam Viewer" onPress={() => {}} />
-          <NavRow symbol="camera.viewfinder" title="Photobooth" onPress={() => {}} />
+          <NavRow symbol="wrench.and.screwdriver.fill" title="Service" disabled />
+          <NavRow symbol="camera.fill" title="Dashcam Viewer" disabled />
+          <NavRow symbol="camera.viewfinder" title="Photobooth" disabled />
         </View>
       </Animated.ScrollView>
 
@@ -231,18 +231,21 @@ function NavRow({
   subtitle,
   onPress,
   leading,
+  disabled,
 }: {
   symbol: SFSymbol;
   title: string;
   // Bold/bright leading word (e.g. Climate "Active"), like the official app; rendered before subtitle.
   status?: string;
   subtitle?: string;
-  onPress: () => void;
+  onPress?: () => void;
   // Optional custom leading icon; defaults to the SF Symbol. The Location row passes its compass arrow.
   leading?: ReactNode;
+  // Greyed-out + non-interactive (feature not wired yet).
+  disabled?: boolean;
 }) {
   return (
-    <Pressable style={styles.navRow} onPress={onPress}>
+    <Pressable style={[styles.navRow, disabled && styles.navRowDisabled]} onPress={onPress} disabled={disabled}>
       {leading ? (
         <View style={styles.navIcon}>{leading}</View>
       ) : (
@@ -378,6 +381,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 18,
     paddingVertical: 18,
+  },
+  navRowDisabled: {
+    opacity: 0.35,
   },
   navIcon: {
     width: 28,
