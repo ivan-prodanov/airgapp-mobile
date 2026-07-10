@@ -140,6 +140,11 @@ export default function LocationView() {
   const [userCoord, setUserCoord] = useState<LatLng | null>(null);
   const [mapType, setMapType] = useState<MapType>('standard');
   const [tab, setTab] = useState<LocationTab>(tabParam === 'charging' ? 'charging' : 'location');
+  // The native map fires onMapReady once it's laid out and ready for camera ops. The Charging-tab
+  // framing (getCamera + fitToCoordinates) is a no-op before this, so when deep-linked straight onto
+  // the Charging tab (Charging → "Find Chargers") the [tab] effect used to run too early and the map
+  // never zoomed to the nearest charger. Gating the effect on this defers framing until the map is ready.
+  const [mapReady, setMapReady] = useState(false);
   // `fetched` = the cached bbox pool from the last TomTom fetch; `region` = the current settled viewport.
   const [fetched, setFetched] = useState<Charger[]>([]);
   const [region, setRegion] = useState<ViewportRegion>({ ...FALLBACK_COORD, ...DEFAULT_DELTA });
@@ -605,7 +610,7 @@ export default function LocationView() {
   // screen at once. fitToCoordinates zooms out/in to frame them; the padding just keeps them off the top bar
   // and the sheet. The settle refetches the framed viewport, so pins load across the between-area.
   useEffect(() => {
-    if (tab !== 'charging') return;
+    if (tab !== 'charging' || !mapReady) return; // wait for the map — see mapReady; deep-link fires this on mount
     fetchViewport(region);
     if (trip.trip) return; // adding a charger to a trip: onAddChargerToTrip frames the whole trip instead
     (async () => {
@@ -640,7 +645,7 @@ export default function LocationView() {
       });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, mapReady]);
 
   // On settle: update the viewport and (debounced) refetch its stations. Cheap enough at personal scale,
   // and it guarantees the pins/list always reflect the area you're actually looking at. We always update
@@ -749,6 +754,7 @@ export default function LocationView() {
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_DEFAULT}
         initialRegion={initialRegion}
+        onMapReady={() => setMapReady(true)}
         mapType={mapType}
         mapPadding={mapPadding}
         userInterfaceStyle="dark"
