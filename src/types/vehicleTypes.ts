@@ -193,6 +193,9 @@ export interface VehicleConfig {
     // chairs → 6-seater, 0=Base bench → 7-seater). Together they pick Model X's 5/6/7-seat interior.
     third_row_seats: string;
     rear_seat_type?: number;
+    // Godot InteriorUpperTrimType enum int (0=BLACK, 1=GREY headliner/pillars). Vehicle.gd defaults
+    // absent → 0, so only set it where the GREY map applies (Model Y Juniper).
+    interior_upper_trim_materials?: number;
     headlamp_type: string;
     aux_park_lamps: string;
     eu_vehicle: boolean;
@@ -302,6 +305,7 @@ export const modelYProductConfig: VehicleConfig = {
     spoiler_type: 'CarbonFiber',
     charge_port_type: 'EU',
     interior_trim_type: 'White',
+    interior_upper_trim_materials: 1,
     third_row_seats: 'None',
     headlamp_type: 'Premium',
     aux_park_lamps: 'NaPremium',
@@ -393,7 +397,12 @@ const modelX_vc: VehicleConfig['vehicle_config'] = {
 
 // Older bodies: same base visual but with the older-body car_type/fascia so a genuinely older 3D body
 // renders (not a clone of the current one). Y/3 older = the High scenes via fascia 'original'.
-const modelY_old_vc: VehicleConfig['vehicle_config'] = { ...modelYProductConfig.vehicle_config, fascia_type: 'original' };
+const modelY_old_vc: VehicleConfig['vehicle_config'] = {
+  ...modelYProductConfig.vehicle_config,
+  fascia_type: 'original',
+  // GREY upper trim is Juniper-only; the pre-Juniper (Y_High) body keeps the BLACK default.
+  interior_upper_trim_materials: 0,
+};
 const model3_old_vc: VehicleConfig['vehicle_config'] = { ...model3_vc, fascia_type: 'original' };
 const modelS_old_vc: VehicleConfig['vehicle_config'] = { ...modelS_vc, car_type: 'models' };
 const modelX_old_vc: VehicleConfig['vehicle_config'] = { ...modelX_vc, car_type: 'modelx' };
