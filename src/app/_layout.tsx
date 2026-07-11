@@ -36,6 +36,10 @@ export default function RootLayout() {
               name="security"
               options={{ animation: 'slide_from_right', gestureEnabled: false }}
             />
+            <Stack.Screen
+              name="schedules"
+              options={{ animation: 'slide_from_right', gestureEnabled: false }}
+            />
           </Stack>
         </VehicleProvider>
       </ThemeProvider>

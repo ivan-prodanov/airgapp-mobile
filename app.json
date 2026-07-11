@@ -48,7 +48,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

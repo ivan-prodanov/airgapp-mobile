@@ -185,7 +185,11 @@ export default function ChargingScreen() {
               title="Find Chargers"
               onPress={() => router.push({ pathname: '/location', params: { tab: 'charging' } })}
             />
-            <LinkRow symbol="alarm.fill" title="Schedule Charging" onPress={() => {}} disabled />
+            <LinkRow
+              symbol="alarm.fill"
+              title="Schedule Charging"
+              onPress={() => router.push('/schedules')}
+            />
           </View>
         </ScrollView>
       </SafeAreaView>

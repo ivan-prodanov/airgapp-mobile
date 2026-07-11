@@ -1,17 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
+import { Toggle } from '@/components/Toggle';
 import { controlHaptic } from '@/state/controlHaptic';
 import { useVehicle } from '@/state/VehicleProvider';
 import type { VehicleStateKey } from '@/types/vehicleTypes';
-
-// Tesla-blue "on" track; iOS dark "off" track.
-const TRACK_ON = '#3E6AE1';
-const TRACK_OFF = '#39393D';
 
 // Security & Drivers screen (route). Everything from Dashcam Viewer down to PIN to Drive; the driver/key rows
 // below PIN to Drive in the real app are intentionally dropped.
@@ -141,24 +137,6 @@ function ToggleRow({
   );
 }
 
-// Classic round-thumb toggle (the pre-iOS-26 look the Tesla app keeps). RN's native <Switch> now renders the
-// iOS-26 restyle, so we draw our own: a pill track that fades grey↔blue and a white circle that slides across.
-function Toggle({ value, onToggle }: { value: boolean; onToggle: () => void }) {
-  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-  useEffect(() => {
-    Animated.timing(anim, { toValue: value ? 1 : 0, duration: 180, useNativeDriver: false }).start();
-  }, [value, anim]);
-  const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, 20] });
-  const backgroundColor = anim.interpolate({ inputRange: [0, 1], outputRange: [TRACK_OFF, TRACK_ON] });
-  return (
-    <Pressable onPress={onToggle} hitSlop={8}>
-      <Animated.View style={[styles.track, { backgroundColor }]}>
-        <Animated.View style={[styles.thumb, { transform: [{ translateX }] }]} />
-      </Animated.View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -221,22 +199,5 @@ const styles = StyleSheet.create({
   },
   more: {
     paddingHorizontal: 6,
-  },
-  track: {
-    width: 51,
-    height: 31,
-    borderRadius: 15.5,
-    padding: 2,
-  },
-  thumb: {
-    width: 27,
-    height: 27,
-    borderRadius: 13.5,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 2,
-    elevation: 2,
   },
 });
