@@ -35,12 +35,22 @@ export interface VcsecStatus {
 }
 
 export interface InfotainmentSnapshot {
-  charge?: { soc: number; rangeKm: number | null; chargingState: string; chargeLimitSoc: number };
-  climate?: { insideTempC: number; outsideTempC: number; targetTempC: number; isOn: boolean };
+  charge?: {
+    soc: number | undefined;
+    rangeKm: number | null;
+    chargingState: string | undefined;
+    chargeLimitSoc: number | undefined;
+  };
+  climate?: {
+    insideTempC: number | undefined;
+    outsideTempC: number | undefined;
+    targetTempC: number | undefined;
+    isOn: boolean;
+  };
   drive?: { speed: number | null; gear: string };
-  location?: { lat: number; lon: number; heading: number };
+  location?: { lat: number | undefined; lon: number | undefined; heading: number | undefined };
   closures?: {
-    sentryOn: boolean;
+    sentryOn: boolean | undefined;
     windows: Partial<Record<'leftFront' | 'rightFront' | 'leftRear' | 'rightRear', boolean>>;
   };
 }
@@ -172,23 +182,29 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
   const vehicleData = isRecord(root.vehicleData) ? root.vehicleData : undefined;
   const snap: InfotainmentSnapshot = {};
 
+  // proto3 explicit-optional ("synthetic optional") fields can be absent even when their parent
+  // sub-message is present, and the reference (`_applySliceFromSync`) gates EVERY field write on
+  // `v !== undefined` before writing. We mirror that here by carrying `undefined` straight through
+  // (via `num`/`oneofName`, neither of which fabricates a default) instead of coalescing to 0/''/
+  // false — infotainmentToPatch then only emits a VehicleViewState key when the value survived as
+  // non-undefined, so an absent field is OMITTED rather than reported as a fake real-looking value.
   const cs = pick(vehicleData, root, 'chargeState');
   if (cs) {
     const batteryRange = num(cs.batteryRange);
     snap.charge = {
-      soc: num(cs.batteryLevel) ?? 0,
+      soc: num(cs.batteryLevel),
       rangeKm: batteryRange !== undefined ? Math.round(batteryRange * 1.60934) : null,
-      chargingState: oneofName(cs.chargingState) ?? 'unknown',
-      chargeLimitSoc: num(cs.chargeLimitSoc) ?? 0,
+      chargingState: oneofName(cs.chargingState),
+      chargeLimitSoc: num(cs.chargeLimitSoc),
     };
   }
 
   const cl = pick(vehicleData, root, 'climateState');
   if (cl) {
     snap.climate = {
-      insideTempC: num(cl.insideTempCelsius) ?? 0,
-      outsideTempC: num(cl.outsideTempCelsius) ?? 0,
-      targetTempC: num(cl.driverTempSetting) ?? 0,
+      insideTempC: num(cl.insideTempCelsius),
+      outsideTempC: num(cl.outsideTempCelsius),
+      targetTempC: num(cl.driverTempSetting),
       isOn: cl.isClimateOn === true,
     };
   }
@@ -204,14 +220,17 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
   const loc = pick(vehicleData, root, 'locationState');
   if (loc) {
     snap.location = {
-      lat: num(loc.latitude) ?? 0,
-      lon: num(loc.longitude) ?? 0,
-      heading: num(loc.heading) ?? 0,
+      lat: num(loc.latitude),
+      lon: num(loc.longitude),
+      heading: num(loc.heading),
     };
   }
 
   const cls = pick(vehicleData, root, 'closuresState');
   if (cls) {
+    // sentryModeState is only set on sentry-capable cars (proto comment: "only set when sentry
+    // mode supported"). The reference gates on `if (cls.sentryModeState)` — mirror that: absent ->
+    // sentryOn stays undefined (omitted downstream), present -> derive on/off from the mode name.
     const sentryMode = oneofName(cls.sentryModeState);
     const windows: NonNullable<InfotainmentSnapshot['closures']>['windows'] = {};
     if (typeof cls.windowOpenDriverFront === 'boolean') windows.leftFront = cls.windowOpenDriverFront;
@@ -220,10 +239,7 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     if (typeof cls.windowOpenPassengerRear === 'boolean') windows.rightRear = cls.windowOpenPassengerRear;
 
     snap.closures = {
-      // sentryModeState is only set on sentry-capable cars (proto comment: "only set when sentry
-      // mode supported"); absent -> not armed is the safe reading, matching the reference's
-      // `mode === 'Off' || mode == null` -> not-on check.
-      sentryOn: sentryMode != null && sentryMode !== 'Off',
+      sentryOn: sentryMode !== undefined ? sentryMode !== 'Off' : undefined,
       windows,
     };
   }
@@ -278,13 +294,20 @@ export function vcsecStatusToPatch(
     patch.awake = false;
   } // 'unknown' -> omitted
 
+  // Carry forward every still-valid intent entry up front, not just the ones keyed by the 7-key
+  // view map below — `closureIntent` can hold keys with no VehicleViewState field (e.g. 'tonneau')
+  // or any other ClosureFieldName, and those must survive too rather than being silently dropped
+  // just because the view-key loop never visits them.
   const newIntent: Record<string, number> = {};
+  for (const [field, expiresAt] of Object.entries(closureIntent)) {
+    if (expiresAt > now) newIntent[field] = expiresAt;
+  }
+
   for (const [field, viewKey] of Object.entries(CLOSURE_FIELD_TO_VIEW_KEY) as [ClosureFieldName, ClosureViewKey][]) {
     const expiresAt = closureIntent[field];
     if (expiresAt !== undefined && expiresAt > now) {
-      // Optimistic write still within its grace window: keep the UI's current value, carry the
-      // intent forward, and do NOT let this VCSEC read overwrite it.
-      newIntent[field] = expiresAt;
+      // Optimistic write still within its grace window (already carried forward above): keep the
+      // UI's current value and do NOT let this VCSEC read overwrite it.
       continue;
     }
 
@@ -313,13 +336,19 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
   const patch: Partial<VehicleViewState> = {};
 
   if (snap.charge) {
-    patch.batteryLevel = snap.charge.soc;
-    patch.charging = snap.charge.chargingState.toLowerCase() === 'charging';
+    // soc/chargingState are proto3 explicit-optional: `undefined` means the sub-field was absent
+    // from this particular read (e.g. a chargingState-only push), not that the value is really 0/
+    // unknown. Only emit when the underlying field was actually present — 0 is still emitted when
+    // it's a genuinely reported value (soc !== undefined includes soc === 0).
+    if (snap.charge.soc !== undefined) patch.batteryLevel = snap.charge.soc;
+    if (snap.charge.chargingState !== undefined) {
+      patch.charging = snap.charge.chargingState.toLowerCase() === 'charging';
+    }
   }
 
   if (snap.climate) {
-    patch.interiorTempC = snap.climate.insideTempC;
-    patch.exteriorTempC = snap.climate.outsideTempC;
+    if (snap.climate.insideTempC !== undefined) patch.interiorTempC = snap.climate.insideTempC;
+    if (snap.climate.outsideTempC !== undefined) patch.exteriorTempC = snap.climate.outsideTempC;
     patch.climateOn = snap.climate.isOn;
   }
 
@@ -328,7 +357,9 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
   }
 
   if (snap.closures) {
-    patch.sentryEnabled = snap.closures.sentryOn;
+    // sentryModeState absent -> sentryOn is undefined -> omit sentryEnabled entirely rather than
+    // reporting a fabricated "false" (matches the reference's `if (cls.sentryModeState)` gate).
+    if (snap.closures.sentryOn !== undefined) patch.sentryEnabled = snap.closures.sentryOn;
     const w = snap.closures.windows;
     if (w.leftFront !== undefined) patch.leftFrontWindowOpen = w.leftFront;
     if (w.rightFront !== undefined) patch.rightFrontWindowOpen = w.rightFront;

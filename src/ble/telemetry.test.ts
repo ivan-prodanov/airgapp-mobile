@@ -347,3 +347,68 @@ test('oneof normalization: sentryModeState as plain string "Armed"', () => {
   const snap = parseCarServerResponse({ closuresState: { sentryModeState: 'Armed' } });
   assert.equal(infotainmentToPatch(snap).sentryEnabled, true);
 });
+
+// ── proto3 explicit-optional: slice present, sub-field absent -> omitted, not fabricated ──
+
+test('charge: slice present with ONLY chargingState set -> charging emitted, batteryLevel omitted', () => {
+  const snap = parseCarServerResponse({ chargeState: { chargingState: { Charging: {} } } });
+  assert.equal(snap.charge?.soc, undefined);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.charging, true);
+  assert.ok(!('batteryLevel' in patch));
+});
+
+test('climate: slice present with ONLY isClimateOn:true set -> climateOn emitted, temps omitted', () => {
+  const snap = parseCarServerResponse({ climateState: { isClimateOn: true } });
+  assert.equal(snap.climate?.insideTempC, undefined);
+  assert.equal(snap.climate?.outsideTempC, undefined);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.climateOn, true);
+  assert.ok(!('interiorTempC' in patch));
+  assert.ok(!('exteriorTempC' in patch));
+});
+
+test('closures: window bool present but sentryModeState absent -> window emitted, sentryEnabled omitted', () => {
+  const snap = parseCarServerResponse({ closuresState: { windowOpenDriverFront: true } });
+  assert.equal(snap.closures?.sentryOn, undefined);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.leftFrontWindowOpen, true);
+  assert.ok(!('sentryEnabled' in patch));
+});
+
+test('present-and-zero is still emitted: batteryLevel:0 is a real value, not treated as absent', () => {
+  const snap = parseCarServerResponse({ chargeState: { batteryLevel: 0, chargingState: { Disconnected: {} } } });
+  assert.equal(snap.charge?.soc, 0);
+  const patch = infotainmentToPatch(snap);
+  assert.ok('batteryLevel' in patch);
+  assert.equal(patch.batteryLevel, 0);
+});
+
+test('present-and-zero is still emitted: interiorTempC/exteriorTempC of 0C are real values', () => {
+  const snap = parseCarServerResponse({
+    climateState: { insideTempCelsius: 0, outsideTempCelsius: 0, isClimateOn: false },
+  });
+  const patch = infotainmentToPatch(snap);
+  assert.ok('interiorTempC' in patch);
+  assert.ok('exteriorTempC' in patch);
+  assert.equal(patch.interiorTempC, 0);
+  assert.equal(patch.exteriorTempC, 0);
+});
+
+// ── vcsecStatusToPatch: closure-intent survives for keys outside the 7-key view map ──
+
+test('vcsecStatusToPatch: still-valid intent for a key with no VehicleViewState field (e.g. tonneau) survives', () => {
+  const now = 1_000_000;
+  const status = parseVcsecStatus({});
+  const intent = { tonneau: now + 5000 };
+  const { closureIntent } = vcsecStatusToPatch(status, intent, now);
+  assert.equal(closureIntent.tonneau, now + 5000);
+});
+
+test('vcsecStatusToPatch: expired intent for a key with no VehicleViewState field is dropped', () => {
+  const now = 1_000_000;
+  const status = parseVcsecStatus({});
+  const intent = { tonneau: now - 1 };
+  const { closureIntent } = vcsecStatusToPatch(status, intent, now);
+  assert.equal('tonneau' in closureIntent, false);
+});
