@@ -429,6 +429,7 @@ export function getClosuresStateAction(): ActionPayload {
 export function getFullVehicleDataAction(): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
     bytes: encodeInfotainmentAction({
       getVehicleData: {
         getChargeState: {},

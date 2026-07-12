@@ -266,6 +266,7 @@ test('state-read builders set FLAG_ENCRYPT_RESPONSE_BIT and the right GetVehicle
   assert.equal(closures.flags, FLAG_ENCRYPT_RESPONSE_BIT);
 
   const full = getFullVehicleDataAction();
+  assert.equal(full.flags, FLAG_ENCRYPT_RESPONSE_BIT);
   const decodedFull = decodeAction(full.bytes).vehicleAction?.getVehicleData;
   assert.notEqual(decodedFull?.getChargeState, undefined);
   assert.notEqual(decodedFull?.getClimateState, undefined);
