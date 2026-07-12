@@ -29,6 +29,36 @@ export interface DeviceKeys {
   publicKeyRaw: Uint8Array;
 }
 
+// SecretStore is the injectable, async key-value store keystore.ts and
+// config.ts persist SENSITIVE material through: the device private scalar
+// and the Pi bearer token. It is intentionally storage-agnostic — tests
+// inject an in-memory implementation (see __testutils__/memorySecretStore.ts),
+// and the app is expected to inject an `expo-secure-store`/iOS-Keychain-backed
+// adapter in production. That adapter is a documented Phase-2 HARDWARE task
+// (adding the native module needs a rebuild, per AGENTS.md) and is
+// deliberately NOT implemented here — see keystore.ts's header comment for
+// the seam. Callers must NEVER default this to AsyncStorage: AsyncStorage is
+// plaintext on-disk storage and unsuitable for a private key or bearer token.
+export interface SecretStore {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+}
+
+// PiConfig is the persisted shape of one Pi connection: the base URL +
+// bearer token (both secret — the token is what proves this device is
+// enrolled) plus optional user-facing/display metadata. Owned by config.ts
+// (load/save/clear/parseEnrolUrl); kept here alongside the other shared BLE
+// interfaces so keystore.ts, config.ts, transport.ts and index.ts all share
+// one definition instead of each declaring their own shape.
+export interface PiConfig {
+  baseUrl: string;
+  token: string;
+  vin?: string;
+  nickname?: string;
+  vehicleId?: string;
+}
+
 // Domain is the BLE routing domain a session targets.
 //   2 = VEHICLE_SECURITY (VCSEC — lock/unlock, closures, status)
 //   3 = INFOTAINMENT     (CarServer — climate, charging, honk, state reads)

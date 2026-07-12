@@ -17,6 +17,11 @@
 import type { PiTransport } from './types';
 import { assertPiBaseUrl } from './teslaHostGuard';
 
+// PiConfig now lives in ./types (config.ts is its real owner: load/save/
+// clear/parseEnrolUrl); re-exported here so existing importers of
+// `./transport`'s PiConfig keep working without a divergent duplicate shape.
+export type { PiConfig } from './types';
+
 // --- Typed errors ------------------------------------------------------
 
 // TransportErrorKind mirrors the Pi's HTTP contract onto the shapes callers
@@ -45,15 +50,6 @@ export class TransportError extends Error {
     this.kind = kind;
     this.status = status;
   }
-}
-
-// PiConfig is the shape a future config.ts owns for persistence; defined
-// here (not re-derived from PiClient's constructor arg) so callers have one
-// import site for "what does a saved Pi connection look like."
-export interface PiConfig {
-  baseUrl: string;
-  token: string;
-  vin?: string;
 }
 
 // --- Injectable fetch --------------------------------------------------
