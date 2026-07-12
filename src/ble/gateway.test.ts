@@ -272,6 +272,44 @@ test('awakeSync: merges charge + climate + drive + location on one session', asy
   assert.deepEqual(car.handshakeDomains, [DOMAIN_INFOTAINMENT]);
 });
 
+test('awakeSync: all four reads fault (car asleep/unreachable) → rejects, no silent empty snapshot', async () => {
+  __resetSessionCaches();
+  const { car, gateway } = makeGateway([
+    { kind: 'fault', fault: 2 }, // TIMEOUT
+    { kind: 'fault', fault: 2 },
+    { kind: 'fault', fault: 2 },
+    { kind: 'fault', fault: 2 },
+  ]);
+
+  await assert.rejects(() => gateway.awakeSync(), /no vehicle data|awake/);
+  // All four reads were attempted on the one warm session before rejecting.
+  assert.equal(car.decryptedCommands.length, 4);
+});
+
+test('awakeSync: partial success (charge + climate ok, drive + location fault) returns a partial snapshot', async () => {
+  __resetSessionCaches();
+  const chargeResp = encodeMessage(Response, {
+    vehicleData: { chargeState: { batteryLevel: 55, batteryRange: 80, chargeLimitSoc: 80 } },
+  });
+  const climateResp = encodeMessage(Response, {
+    vehicleData: { climateState: { insideTempCelsius: 19, isClimateOn: false } },
+  });
+  const { car, gateway } = makeGateway([
+    { kind: 'ok', response: chargeResp },
+    { kind: 'ok', response: climateResp },
+    { kind: 'fault', fault: 2 },
+    { kind: 'fault', fault: 2 },
+  ]);
+
+  const snap = await gateway.awakeSync();
+
+  assert.equal(snap.charge?.soc, 55);
+  assert.equal(snap.climate?.insideTempC, 19);
+  assert.equal(snap.drive, undefined);
+  assert.equal(snap.location, undefined);
+  assert.equal(car.decryptedCommands.length, 4);
+});
+
 // ── wake ────────────────────────────────────────────────────────────────────
 
 test('wake: runs the VCSEC wake command', async () => {

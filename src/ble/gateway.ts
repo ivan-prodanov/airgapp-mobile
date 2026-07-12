@@ -255,9 +255,10 @@ export function createCarGateway({
       getLocationStateAction(),
     ];
     const domain: Domain = reads[0].domain;
-    const slices = await queue.enqueue(vin, () =>
+    const { out: slices, sawFault: anyFault } = await queue.enqueue(vin, () =>
       withCachedSession({ transport, vin, deviceKeys, domain }, async (session) => {
         const out: InfotainmentSnapshot[] = [];
+        let sawFault = false;
         for (const read of reads) {
           if (session.domain !== read.domain) {
             throw new Error(
@@ -270,16 +271,32 @@ export function createCarGateway({
             payloadBytes: read.bytes,
             flags: read.flags ?? 0,
           });
+          // Mirror runAction's success check: opStatus 0 (or absent) is
+          // success. A car-side fault comes back status-only — no thrown
+          // error, no decryptedPayload — so it must be detected here, not
+          // inferred from a catch block.
+          const opStatus = res.routable.signedMessageStatus?.operationStatus;
+          const succeeded = opStatus === 0 || opStatus === undefined;
           if (res.decryptedPayload) {
             const carResp = decodeMessage(Response, res.decryptedPayload);
             out.push(parseCarServerResponse(carResp));
           }
+          if (!succeeded || !res.decryptedPayload) sawFault = true;
         }
-        return out;
+        return { out, sawFault };
       }),
     );
-    // Merge the four slices into one snapshot (each read populates its own
-    // sub-message; later slices never clobber earlier populated ones).
+    if (slices.length === 0 && anyFault) {
+      // All four reads faulted (or came back status-only with no payload) —
+      // most commonly because the car is asleep/unreachable. Surface this as
+      // a failure instead of a silent empty snapshot so the caller can tell
+      // "car unreachable" apart from "car has no data".
+      throw new Error('awakeSync: no vehicle data — is the car awake? (all reads faulted)');
+    }
+    // Merge the populated slices into one snapshot. This is safe (no
+    // clobbering) only because each read writes a DISTINCT sub-key
+    // (charge/climate/drive/location) — the merge itself enforces no
+    // ordering guarantee beyond that disjointness.
     return slices.reduce<InfotainmentSnapshot>((acc, s) => ({ ...acc, ...s }), {});
   }
 
