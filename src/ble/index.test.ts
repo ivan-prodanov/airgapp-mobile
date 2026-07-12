@@ -52,6 +52,12 @@ test('the public façade exports the gateway + keystore + config surface as func
   assert.equal(typeof ble.isCarLinkEnabled, 'function');
 });
 
+test('the façade re-exports the telemetry patch reducers (pure mappers, no policy bypass)', () => {
+  assert.equal(typeof ble.vcsecStatusToPatch, 'function');
+  assert.equal(typeof ble.infotainmentToPatch, 'function');
+  assert.equal(typeof ble.CLOSURE_INTENT_GRACE_MS, 'number');
+});
+
 test('the façade does not leak internal session engine guts', () => {
   assert.equal((ble as Record<string, unknown>).withCachedSession, undefined);
   assert.equal((ble as Record<string, unknown>).deriveSessionKey, undefined);

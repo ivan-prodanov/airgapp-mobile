@@ -59,6 +59,19 @@ test('isTransportDeadError matches the Pi-side dead-link strings', () => {
   assert.equal(isTransportDeadError(null), false);
 });
 
+test('isTransportDeadError matches the TYPED TransportError kind, not just message substrings', () => {
+  // A real Pi 404 whose JSON error body text doesn't match any of the
+  // substring fallbacks above (e.g. "no active session for vin") must still
+  // be recognized as transport-dead via its `kind`.
+  assert.equal(isTransportDeadError({ kind: 'session-gone', message: 'no active session for vin' }), true);
+  // A Pi 502 (BLE error on the Pi) also means the link is dead.
+  assert.equal(isTransportDeadError({ kind: 'ble', message: 'BLE error on the Pi' }), true);
+  // Other typed kinds are NOT transport-dead (auth/timeout/http/network are
+  // handled elsewhere in the retry policy).
+  assert.equal(isTransportDeadError({ kind: 'auth', message: 'unauthorized' }), false);
+  assert.equal(isTransportDeadError({ kind: 'timeout', message: 'Pi did not respond' }), false);
+});
+
 test('isStaleFrameError matches stale response / stale frame only', () => {
   assert.equal(isStaleFrameError(new Error('Pi returned stale response: sent uuid=…')), true);
   assert.equal(isStaleFrameError(new Error('Pi returned stale frame: expected from domain=3')), true);

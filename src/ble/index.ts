@@ -2,11 +2,14 @@
 //
 // Everything the app/screens should import from the BLE stack goes through
 // here. Internal engine guts (session.ts's handshake internals, crypto.ts's
-// raw AES-GCM/AAD primitives, queue.ts, telemetry.ts's patch reducers, proto
-// wire types) are deliberately NOT re-exported — they're implementation
-// detail of gateway.ts's runCommand/readVcsecStatus/awakeSync loop, and
-// leaking them here would let app code bypass the retry/fault-recovery
-// policy those modules exist to enforce.
+// raw AES-GCM/AAD primitives, queue.ts, proto wire types) are deliberately
+// NOT re-exported — they're implementation detail of gateway.ts's
+// runCommand/readVcsecStatus/awakeSync loop, and leaking them here would let
+// app code bypass the retry/fault-recovery policy those modules exist to
+// enforce. telemetry.ts's patch reducers (vcsecStatusToPatch/
+// infotainmentToPatch/CLOSURE_INTENT_GRACE_MS) ARE re-exported below — they
+// are pure stateless mappers with no session/crypto/retry involvement, so
+// exposing them doesn't bypass any policy.
 
 export { createCarGateway } from './gateway';
 export type { CarGateway, CommandOutcome, CreateCarGatewayArgs } from './gateway';
@@ -22,6 +25,13 @@ export { loadOrCreateDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFin
 export { loadPiConfig, savePiConfig, clearPiConfig, parseEnrolUrl, isValidVin } from './config';
 
 export type { PiConfig, DeviceKeys, SecretStore, PiTransport } from './types';
+
+// The telemetry patch reducers are pure stateless mappers (decoded snapshot
+// -> Partial<VehicleViewState>, no session/crypto/retry involved) that
+// useCarLink needs to turn gateway reads into view-state patches. Exposing
+// them does NOT bypass any policy — see telemetry.ts's header comment for
+// why the rest of the engine's guts stay unexported.
+export { vcsecStatusToPatch, infotainmentToPatch, CLOSURE_INTENT_GRACE_MS } from './telemetry';
 export type { VcsecStatus, InfotainmentSnapshot } from './telemetry';
 
 // isCarLinkEnabled is the D7 kill switch: the whole BLE/CarLink surface is

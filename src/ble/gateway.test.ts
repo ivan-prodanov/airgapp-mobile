@@ -114,6 +114,27 @@ test('runCommand: a transport-dead error evicts and cold-reconnects then succeed
   assert.equal(car.openCount, 2);
 });
 
+// Fix 1 regression test: a real Pi 404 is tagged `TransportError('session-gone',
+// <Pi JSON body message>, 404)` — the Pi's body text won't necessarily match
+// any of isTransportDeadError's message substrings, so recovery MUST be
+// driven by the typed `kind`, not the message. Before the fix this fell
+// through to a terminal {ok:false,kind:'unreachable'}.
+test('runCommand: a typed session-gone TransportError (Pi 404, non-matching body) evicts and cold-reconnects then succeeds', async () => {
+  __resetSessionCaches();
+  const { car, gateway } = makeGateway([
+    { kind: 'throw', error: new TransportError('session-gone', 'no active session for vin', 404) },
+    { kind: 'ok' },
+  ]);
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.deepEqual(outcome, { ok: true, attempts: 2 });
+  // Cold re-handshake: the Pi opened a fresh session on the second attempt
+  // (evict tore the first one down) — proves the typed-kind path drove
+  // recovery, not a message-substring match.
+  assert.equal(car.openCount, 2);
+});
+
 // ── runCommand: stale-frame → retry ─────────────────────────────────────────
 
 test('runCommand: a stale-frame (mismatched uuid) is retried then succeeds', async () => {

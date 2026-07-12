@@ -357,7 +357,25 @@ export async function openDirectSession({
 // isTransportDeadError detects Pi-side errors meaning "the BLE link backing
 // this session is gone." Caller evicts + retries with a full handshake on a
 // fresh Pi-side session.
+//
+// Primary signal: the TYPED error kind from transport.ts's TransportError —
+// 'session-gone' (Pi 404: it doesn't know this session id, e.g. after the
+// Pi's idle reaper drops it) or 'ble' (Pi 502: the radio/car errored, the
+// link is dead). This is checked structurally (`(e as {kind}).kind`) rather
+// than via `e instanceof TransportError` / a static import of transport.ts,
+// so session.ts stays free of a hard dependency on transport.ts (avoiding a
+// module cycle risk) while still catching a Pi 404 whose JSON error body
+// text doesn't happen to match one of the substring fallbacks below. No
+// `any` escapes this function — the narrowing is local.
+//
+// Fallback: message substring matches for reference-style/engine errors
+// (FakeCar 'throw' programs in tests, and any transport that isn't
+// PiClient) that don't carry a `kind`.
 export function isTransportDeadError(e: unknown): boolean {
+  if (e && typeof e === 'object') {
+    const kind = (e as { kind?: unknown }).kind;
+    if (typeof kind === 'string' && (kind === 'session-gone' || kind === 'ble')) return true;
+  }
   const msg = errMsg(e).toLowerCase();
   return (
     msg.includes('closed pipe') ||
