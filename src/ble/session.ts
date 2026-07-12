@@ -1,0 +1,786 @@
+// session.ts — Tesla BLE session engine, ported from the browser reference
+// (rpi-webclient/client/session.js, lines ~68–1155) to pure-sync TypeScript.
+//
+// This is the protocol state machine that drives a command from the client
+// to the car without the Pi ever seeing plaintext or a session key. The Pi's
+// role (behind the PiTransport interface) is reduced to "forward these opaque
+// bytes over BLE and bring the response back."
+//
+// The flow for one command:
+//
+//   1. transport.openSession(vin)                          → open BLE link
+//   2. RoutableMessage{ sessionInfoRequest{ pub, } , uuid=challenge }
+//      → transport.exchange → car returns SessionInfo + HMAC tag
+//   3. car_eph_pub = SessionInfo.publicKey
+//      session_key = SHA1(ECDH(our_priv, car_eph_pub))[:16]
+//      counter / epoch / clockTime seeded from SessionInfo
+//   4. Encrypt inner Action → RoutableMessage{ ciphertext, AES_GCM sig }
+//      → transport.exchange → car returns status and/or encrypted payload
+//   5. transport.closeSession(id) when the last domain releases.
+//
+// Ported substitutions from the browser reference:
+//   • airgap.loadProto() (async) removed — proto codec is sync (./proto).
+//   • crypto.subtle.importKey removed — noble crypto is sync and takes the
+//     raw 16-byte key; session.sessionKey IS the raw Uint8Array (no CryptoKey).
+//   • crypto.getRandomValues → randomBytes (@noble/hashes/utils).
+//   • the `api` object → the typed PiTransport (openSession/exchange/closeSession).
+//   • IndexedDB persistence (_persistSessionMetadata / _hydrateSessionFromIdb)
+//     dropped for v1 — in-memory only; a fresh handshake on launch is correct
+//     and safe (deferred as P5.T1). _persistSessionMetadata is a no-op.
+
+import { randomBytes } from '@noble/hashes/utils';
+
+import {
+  deriveSessionKeyMaterial,
+  importPeerPubkey,
+  hmacSubkey,
+  buildAesGcmMetadata,
+  buildAesGcmResponseMetadata,
+  makeRequestHash,
+  aesGcmEncrypt,
+  aesGcmDecrypt,
+  MetadataBlockBuilder,
+  TAG,
+  SIGNATURE_TYPE,
+  bytesToHex,
+} from './crypto';
+import {
+  RoutableMessage,
+  SessionInfo,
+  Action,
+  VCSECUnsignedMessage,
+  encodeMessage,
+  decodeMessage,
+} from './proto';
+import { bytesToBase64, base64ToBytes } from './bytes';
+import type { Domain, DeviceKeys, PiTransport, Session, SessionParams } from './types';
+
+// DEBUG gates the non-security-critical success chatter. Kept false: RN
+// Hermes Release doesn't surface console.log to device syslog anyway, and
+// the security-critical warn/error paths (HMAC mismatch, stale frame) log
+// unconditionally.
+const DEBUG = false;
+function debug(...args: unknown[]): void {
+  if (DEBUG) console.log(...args);
+}
+
+// --- Tesla protocol constants ----------------------------------------------
+//   COMMAND_LIFETIME_SEC: how far in the future the AAD's EXPIRES_AT lands.
+//     The car rejects commands stamped past their lifetime → tight replay
+//     window even if the bearer leaks.
+//   ROUTING_ADDRESS_BYTES: 16 random bytes per session so the car routes
+//     responses back to this client. BLE is point-to-point so mostly
+//     symbolic, but we follow the SDK's shape.
+const COMMAND_LIFETIME_SEC = 5;
+const ROUTING_ADDRESS_BYTES = 16;
+const SESSION_INFO_TIMEOUT_MS = 4000;
+const COMMAND_TIMEOUT_MS = 6000;
+
+// Retry policy constants (Tesla Android nb0/C24292a.java): 10 attempts,
+// 100ms delay for transients. Semantic faults aren't retried.
+export const MAX_BLE_ATTEMPTS = 10;
+export const TRANSIENT_DELAY_MS = 100;
+
+export const DOMAIN_INFOTAINMENT: Domain = 3;
+export const DOMAIN_VEHICLE_SECURITY: Domain = 2;
+
+// FLAG_ENCRYPT_RESPONSE — bit-position 1 on the RoutableMessage.flags
+// bitfield (value 1 << 1 = 2). Set on state-read requests; the car
+// otherwise refuses to send the response in the clear. The flag MUST appear
+// in both the wire RoutableMessage AND the AAD metadata so the digests match.
+export const FLAG_ENCRYPT_RESPONSE_BIT = 1 << 1;
+
+export type FaultCategory = 'session-stale' | 'transient' | 'semantic';
+export interface FaultVerdict {
+  category: FaultCategory;
+  retryable: boolean;
+  delayMs: number;
+}
+
+// evaluateFault classifies a car-side fault into a retry policy. Mirrors
+// Tesla Android's nb0/C24292a.java table:
+//   session-stale: INVALID_SIGNATURE(5), INVALID_TOKEN_OR_COUNTER(6),
+//     INCORRECT_EPOCH(15), INACTIVE_KEY(4), TIME_EXPIRED(17) — refresh
+//     SessionInfo on the same BLE link, then retry (delay 0).
+//   transient: BUSY(1), TIMEOUT(2), INTERNAL(11) — retry with a short
+//     delay, no session action.
+//   semantic: everything else — no retry, surface to user.
+export function evaluateFault(fault: number): FaultVerdict {
+  if (fault === 4 || fault === 5 || fault === 6 || fault === 15 || fault === 17) {
+    return { category: 'session-stale', retryable: true, delayMs: 0 };
+  }
+  if (fault === 1 || fault === 2 || fault === 11) {
+    return { category: 'transient', retryable: true, delayMs: TRANSIENT_DELAY_MS };
+  }
+  return { category: 'semantic', retryable: false, delayMs: 0 };
+}
+
+// --- Pi-session refcount cache ---------------------------------------------
+//
+// Both domains share ONE Pi-side BLE sessionId per VIN (the Pi is a single
+// BLE session per VIN; opening a second would block on its per-VIN mutex).
+// Refcount = number of in-memory cached domain sessions referencing that
+// sessionId. The Pi-side closeSession only fires when the LAST reference
+// releases. Safe now that the Pi demuxes responses by request_uuid.
+const _piSessionRefcounts = new Map<string, number>();
+
+function _piSessionAcquire(sessionId: string): number {
+  const rc = (_piSessionRefcounts.get(sessionId) || 0) + 1;
+  _piSessionRefcounts.set(sessionId, rc);
+  return rc;
+}
+
+async function _piSessionRelease(transport: PiTransport, sessionId: string): Promise<boolean> {
+  const rc = (_piSessionRefcounts.get(sessionId) || 1) - 1;
+  if (rc > 0) {
+    _piSessionRefcounts.set(sessionId, rc);
+    return false; // another domain still holds this Pi session
+  }
+  _piSessionRefcounts.delete(sessionId);
+  try {
+    await transport.closeSession(sessionId);
+  } catch (e) {
+    console.warn('[ble] Pi closeSession failed:', errMsg(e));
+  }
+  return true;
+}
+
+// _findOrOpenPiSession returns the Pi-side sessionId for the given VIN.
+// Reuses any in-memory _domainCache session on the same VIN; otherwise
+// opens a fresh Pi-side BLE link. (IDB-persisted lookup dropped for v1.)
+async function _findOrOpenPiSession(transport: PiTransport, vin: string): Promise<string> {
+  for (const entry of _domainCache.values()) {
+    if (entry.session.vin === vin && entry.session.sessionId) {
+      debug('[ble] reusing in-memory Pi session for vin', vin.slice(-6));
+      return entry.session.sessionId;
+    }
+  }
+  debug('[ble] opening fresh Pi-side BLE session for vin', vin.slice(-6));
+  return transport.openSession(vin);
+}
+
+async function _bindPiSession(transport: PiTransport, vin: string): Promise<string> {
+  const sessionId = await _findOrOpenPiSession(transport, vin);
+  _piSessionAcquire(sessionId);
+  return sessionId;
+}
+
+// errMsg extracts a lowercase-safe message from an unknown thrown value.
+function errMsg(e: unknown): string {
+  if (e && typeof e === 'object' && 'message' in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === 'string') return m;
+  }
+  return String(e);
+}
+
+// _persistSessionMetadata is a NO-OP in v1 (IDB persistence dropped). Kept as
+// a call site so the reference's persist points stay visible; counter/epoch
+// live only in memory and a fresh handshake on launch is correct and safe.
+function _persistSessionMetadata(_session: Session): void {
+  /* intentionally empty — deferred P5.T1 */
+}
+
+const MAX_SESSION_INFO_ATTEMPTS = 4;
+
+// _requestSessionInfo runs the bounded SessionInfoRequest retry loop against
+// an existing Pi sessionId and returns the decoded RoutableMessage carrying a
+// SessionInfo from the expected domain. Shared by openDirectSession and
+// refetchSessionInfo. The BLE link is shared across domains, so the car may
+// push an unsolicited VCSEC notification ahead of the actual SessionInfo
+// reply; the Pi's pre-send drain tosses the stale frame on the next exchange
+// and the car re-replies. Bounded retry until we win the race.
+async function _requestSessionInfo(
+  transport: PiTransport,
+  sessionId: string,
+  domain: number,
+  routingAddress: Uint8Array,
+  myPubRaw: Uint8Array,
+  challenge: Uint8Array,
+): Promise<{ respMsg: ReturnType<typeof RoutableMessage.decode>; sessionInfoBytes: Uint8Array }> {
+  const reqBytes = encodeMessage(RoutableMessage, {
+    toDestination: { domain },
+    fromDestination: { routingAddress },
+    sessionInfoRequest: { publicKey: myPubRaw },
+    uuid: challenge, // ← doubles as the HMAC challenge
+  });
+
+  let lastNonMatchSummary: string | null = null;
+  for (let attempt = 1; attempt <= MAX_SESSION_INFO_ATTEMPTS; attempt++) {
+    const respB64 = await transport.exchange(sessionId, bytesToBase64(reqBytes), SESSION_INFO_TIMEOUT_MS);
+    const candidate = decodeMessage(RoutableMessage, base64ToBytes(respB64));
+
+    const candidateDomain = candidate.fromDestination?.domain;
+    const hasSessionInfo = candidate.sessionInfo != null && candidate.sessionInfo.length > 0;
+    if (hasSessionInfo && candidateDomain === domain) {
+      if (attempt > 1) debug('[ble] SessionInfo handshake succeeded on attempt', attempt, 'domain', domain);
+      return { respMsg: candidate, sessionInfoBytes: new Uint8Array(candidate.sessionInfo) };
+    }
+    lastNonMatchSummary = `attempt=${attempt} fromDomain=${candidateDomain}`;
+    console.warn('[ble] SessionInfo handshake got non-matching frame:', lastNonMatchSummary);
+  }
+  throw new Error(
+    `expected session_info in response after ${MAX_SESSION_INFO_ATTEMPTS} attempts; last: ${lastNonMatchSummary}`,
+  );
+}
+
+// _verifySessionInfoHmac verifies the car's SessionInfo HMAC tag — the
+// anti-MITM check. The car HMAC'd the SessionInfo bytes with
+// subkey("session info"), derived from the shared secret only the car and
+// we can compute. A tag match proves the SessionInfo came from the car (not
+// a MITM byte-forwarder), our pubkey is in the car's keychain, and both
+// sides derived the same session key.
+//
+// This check is MANDATORY and load-bearing. Without it a compromised Pi could
+// substitute its own ephemeral pubkey plus a matching HMAC under a key it
+// knows, and decrypt every subsequent command. It is never bypassable: a
+// missing tag, a length mismatch, or any byte difference throws.
+function _verifySessionInfoHmac(
+  keyBytes: Uint8Array,
+  vin: string,
+  challenge: Uint8Array,
+  sessionInfoBytes: Uint8Array,
+  respMsg: ReturnType<typeof RoutableMessage.decode>,
+): void {
+  const rawTag = respMsg.signatureData?.sessionInfoTag?.tag;
+  if (!rawTag || rawTag.length === 0) {
+    throw new Error('SessionInfo response missing signatureData.sessionInfoTag.tag — cannot verify');
+  }
+  const receivedTag = new Uint8Array(rawTag);
+  const subkey = hmacSubkey(keyBytes, 'session info');
+  const verifyMeta = new MetadataBlockBuilder();
+  verifyMeta.add(TAG.SIGNATURE_TYPE, new Uint8Array([SIGNATURE_TYPE.HMAC]));
+  verifyMeta.add(TAG.PERSONALIZATION, new TextEncoder().encode(vin));
+  verifyMeta.add(TAG.CHALLENGE, challenge);
+  const expectedTag = verifyMeta.hmac(subkey, sessionInfoBytes);
+
+  if (expectedTag.length !== receivedTag.length) {
+    throw new Error(
+      `SessionInfo HMAC length mismatch: expected ${expectedTag.length}, received ${receivedTag.length}`,
+    );
+  }
+  // Branch-free comparison — both sides are 32 bytes of HMAC output.
+  let diff = 0;
+  for (let i = 0; i < expectedTag.length; i++) diff |= expectedTag[i] ^ receivedTag[i];
+  if (diff !== 0) {
+    console.error('[ble] HMAC mismatch — expected:', bytesToHex(expectedTag));
+    console.error('[ble] HMAC mismatch — received:', bytesToHex(receivedTag));
+    throw new Error('SessionInfo HMAC verification FAILED — possible MITM, refusing to continue');
+  }
+  debug('[ble] SessionInfo HMAC ✓ (car authenticated)');
+}
+
+// openDirectSession does the full handshake against `domain` over a fresh (or
+// shared) BLE session. Returns a Session holding the raw session key, counter,
+// epoch and clock baseline. The caller must call session.close() when done.
+export async function openDirectSession({
+  transport,
+  vin,
+  deviceKeys,
+  domain,
+}: SessionParams): Promise<Session> {
+  if (!vin) throw new Error('openDirectSession: vin required');
+  if (!deviceKeys?.publicKeyRaw || !deviceKeys?.privateScalar) {
+    throw new Error('openDirectSession: deviceKeys must hold both halves');
+  }
+
+  const myPubRaw = deviceKeys.publicKeyRaw;
+
+  // 1. Get or create the Pi-side BLE session for this VIN. Both domains
+  //    share the same Pi sessionId; _bindPiSession bumps the refcount, and
+  //    close()/the error path call _piSessionRelease which only tears down
+  //    the Pi session when the last domain releases.
+  const sessionId = await _bindPiSession(transport, vin);
+  const localBaselineMs = Date.now();
+
+  try {
+    // 2. SessionInfoRequest wrapped in a RoutableMessage. The HMAC challenge
+    //    is the RoutableMessage `uuid` field (the car copies it into
+    //    request_uuid AND uses it as the HMAC challenge — same bytes on both
+    //    sides for verification to pass).
+    const routingAddress = randomBytes(ROUTING_ADDRESS_BYTES);
+    const challenge = randomBytes(16);
+
+    const { respMsg, sessionInfoBytes } = await _requestSessionInfo(
+      transport,
+      sessionId,
+      domain,
+      routingAddress,
+      myPubRaw,
+      challenge,
+    );
+    const sessionInfo = decodeMessage(SessionInfo, sessionInfoBytes);
+
+    if (!sessionInfo.publicKey || sessionInfo.publicKey.length !== 65) {
+      throw new Error(`car returned malformed pubkey (len ${sessionInfo.publicKey?.length})`);
+    }
+    if (!sessionInfo.epoch || sessionInfo.epoch.length !== 16) {
+      throw new Error(`car returned malformed epoch (len ${sessionInfo.epoch?.length})`);
+    }
+
+    // 3. Derive the AES-GCM session key. The raw bytes ARE the key (no
+    //    CryptoKey in the noble port) and are also used for the HMAC subkey.
+    const carEphPub = importPeerPubkey(new Uint8Array(sessionInfo.publicKey));
+    const keyBytes = deriveSessionKeyMaterial(deviceKeys.privateScalar, carEphPub);
+
+    // 4. Verify the SessionInfo HMAC (anti-MITM). Mandatory.
+    _verifySessionInfoHmac(keyBytes, vin, challenge, sessionInfoBytes, respMsg);
+
+    const session: Session = {
+      sessionId,
+      domain,
+      vin,
+      routingAddress,
+      sessionKey: keyBytes, // raw key — no CryptoKey wrapping
+      keyBytes,
+      myPubRaw,
+      vehiclePubRaw: new Uint8Array(sessionInfo.publicKey),
+      epoch: new Uint8Array(sessionInfo.epoch),
+      counter: sessionInfo.counter || 0,
+      clockBase: sessionInfo.clockTime || 0,
+      localBaselineMs,
+      close: async () => {
+        await _piSessionRelease(transport, sessionId);
+      },
+    };
+
+    _persistSessionMetadata(session);
+    return session;
+  } catch (e) {
+    // Best-effort refcounted cleanup so we don't tear down a Pi session
+    // another domain still holds.
+    await _piSessionRelease(transport, sessionId).catch(() => {});
+    throw e;
+  }
+}
+
+// isTransportDeadError detects Pi-side errors meaning "the BLE link backing
+// this session is gone." Caller evicts + retries with a full handshake on a
+// fresh Pi-side session.
+export function isTransportDeadError(e: unknown): boolean {
+  const msg = errMsg(e).toLowerCase();
+  return (
+    msg.includes('closed pipe') ||
+    msg.includes('ble send') ||
+    msg.includes('ble connection closed') ||
+    msg.includes('ble-session') ||
+    msg.includes('session not found') ||
+    msg.includes('no peripherals') ||
+    msg.includes('not connected')
+  );
+}
+
+// isStaleFrameError detects the "Pi returned stale response/frame" errors —
+// the BLE link is fine, we just need to retry the command (a buffered frame
+// from an earlier command or an unsolicited notification was returned).
+export function isStaleFrameError(e: unknown): boolean {
+  const msg = errMsg(e).toLowerCase();
+  return msg.includes('stale response') || msg.includes('stale frame');
+}
+
+// _bytesEqual is a constant-time-ish equality check. Used by
+// refetchSessionInfo to detect epoch changes.
+function _bytesEqual(a: Uint8Array | null | undefined, b: Uint8Array | null | undefined): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+// refetchSessionInfo does an in-place session-info refresh on an already-open
+// BLE session (Tesla Android xe0/C32376j.java). On INVALID_SIGNATURE /
+// INVALID_TOKEN_OR_COUNTER / INCORRECT_EPOCH / INACTIVE_KEY the app sends a
+// fresh SessionInfoRequest on the same BLE connection, re-derives the AES key,
+// and retries — no teardown, no full handshake. We swap the new sessionKey /
+// vehiclePubRaw / counter / epoch / clockBase IN PLACE on the same Session,
+// keeping sessionId / routingAddress / myPubRaw.
+export async function refetchSessionInfo({
+  transport,
+  deviceKeys,
+  session,
+}: {
+  transport: PiTransport;
+  deviceKeys: DeviceKeys;
+  session: Session;
+}): Promise<Session> {
+  const challenge = randomBytes(16);
+  const { respMsg, sessionInfoBytes } = await _requestSessionInfo(
+    transport,
+    session.sessionId,
+    session.domain,
+    session.routingAddress,
+    session.myPubRaw,
+    challenge,
+  );
+  const sessionInfo = decodeMessage(SessionInfo, sessionInfoBytes);
+
+  if (!sessionInfo.publicKey || sessionInfo.publicKey.length !== 65) {
+    throw new Error(`refetchSessionInfo: malformed car pubkey (len ${sessionInfo.publicKey?.length})`);
+  }
+  if (!sessionInfo.epoch || sessionInfo.epoch.length !== 16) {
+    throw new Error(`refetchSessionInfo: malformed epoch (len ${sessionInfo.epoch?.length})`);
+  }
+
+  const carEphPub = importPeerPubkey(new Uint8Array(sessionInfo.publicKey));
+  const keyBytes = deriveSessionKeyMaterial(deviceKeys.privateScalar, carEphPub);
+
+  // Verify HMAC over the new SessionInfo (same anti-MITM logic).
+  _verifySessionInfoHmac(keyBytes, session.vin, challenge, sessionInfoBytes, respMsg);
+
+  // Swap the new keying material IN PLACE. Counter/epoch merge follows
+  // Tesla's de0/C15009g.java:303-319 pattern:
+  //   • epoch changed → take the new state wholesale.
+  //   • epoch same → keep the HIGHER counter (another client may have sent
+  //     commands on this session).
+  //   • bump localBaselineMs only if the new clockTime isn't a regression.
+  const epochChanged = !_bytesEqual(session.epoch, new Uint8Array(sessionInfo.epoch));
+  const newCounter = sessionInfo.counter || 0;
+  const newClockTime = sessionInfo.clockTime || 0;
+
+  session.sessionKey = keyBytes;
+  session.keyBytes = keyBytes;
+  session.vehiclePubRaw = new Uint8Array(sessionInfo.publicKey);
+  session.epoch = new Uint8Array(sessionInfo.epoch);
+  session.counter = epochChanged ? newCounter : Math.max(session.counter, newCounter);
+  if (epochChanged || newClockTime >= session.clockBase) {
+    session.localBaselineMs = Date.now();
+  }
+  session.clockBase = newClockTime;
+
+  _persistSessionMetadata(session);
+  debug('[ble] in-place SessionInfo refetch ✓ domain=' + session.domain, 'counter=' + session.counter);
+  return session;
+}
+
+export interface CommandResult {
+  routable: ReturnType<typeof RoutableMessage.decode>;
+  decryptedPayload: Uint8Array | null;
+}
+
+// sendCommand ships a pre-encoded inner payload through the byte forwarder.
+// The caller supplies the encoded bytes (VCSEC and Infotainment use different
+// proto wrappers inside the ciphertext, so this path is domain-agnostic once
+// the bytes are built). Renamed from the reference's sendDirectCommandWithApi.
+export async function sendCommand({
+  transport,
+  session,
+  payloadBytes,
+  flags,
+  timeoutMs,
+}: {
+  transport: PiTransport;
+  session: Session;
+  payloadBytes: Uint8Array;
+  flags?: number;
+  timeoutMs?: number;
+}): Promise<CommandResult> {
+  // flags is a bitfield on the RoutableMessage; the only bit we use is
+  // FLAG_ENCRYPT_RESPONSE (value 2). It MUST appear in BOTH the wire
+  // RoutableMessage AND the AAD metadata so the digests match on both sides.
+  const wireFlags = flags || 0;
+
+  // Counter is per-message monotonic from the SessionInfo seed. 0xFFFFFFFE is
+  // the SDK's rollover guard.
+  if (session.counter >= 0xfffffffe) {
+    throw new Error('session counter rolled over — close and re-open');
+  }
+  session.counter += 1;
+  const counter = session.counter;
+
+  // Wall-clock-anchored expiry; the car checks against its own monotonic
+  // clock derived from the same SessionInfo.clockTime.
+  const elapsedSec = Math.floor((Date.now() - session.localBaselineMs) / 1000);
+  const expiresAt = (session.clockBase + elapsedSec + COMMAND_LIFETIME_SEC) >>> 0;
+
+  const aadDigest = buildAesGcmMetadata({
+    domain: session.domain,
+    verifierName: session.vin,
+    epoch: session.epoch,
+    expiresAt,
+    counter,
+    flags: wireFlags,
+  });
+
+  const env = aesGcmEncrypt(session.sessionKey, payloadBytes, aadDigest);
+
+  const requestUuid = randomBytes(16);
+  const cmdRoutable = encodeMessage(RoutableMessage, {
+    toDestination: { domain: session.domain },
+    fromDestination: { routingAddress: session.routingAddress },
+    protobufMessageAsBytes: env.ciphertext,
+    signatureData: {
+      // signer_identity tells the car which keychain key signed this command
+      // (raw SEC1 pubkey). Without it the car can't look us up.
+      signerIdentity: { publicKey: session.myPubRaw },
+      AES_GCM_PersonalizedData: {
+        epoch: session.epoch,
+        nonce: env.nonce,
+        counter,
+        expiresAt,
+        tag: env.tag,
+      },
+    },
+    uuid: requestUuid,
+    flags: wireFlags,
+  });
+
+  const respB64 = await transport.exchange(
+    session.sessionId,
+    bytesToBase64(cmdRoutable),
+    timeoutMs || COMMAND_TIMEOUT_MS,
+  );
+  const respMsg = decodeMessage(RoutableMessage, base64ToBytes(respB64));
+
+  // The car echoes our uuid back as request_uuid on the matching response.
+  // A mismatch means we received the response to a DIFFERENT request (the Pi
+  // returned a buffered stale frame). Surface it loudly instead of letting
+  // it masquerade as an opaque AES decrypt error.
+  if (respMsg.requestUuid && respMsg.requestUuid.length > 0) {
+    let matches = respMsg.requestUuid.length === requestUuid.length;
+    if (matches) {
+      for (let i = 0; i < requestUuid.length; i++) {
+        if (respMsg.requestUuid[i] !== requestUuid[i]) {
+          matches = false;
+          break;
+        }
+      }
+    }
+    if (!matches) {
+      const sent = bytesToHex(requestUuid).slice(0, 16);
+      const got = bytesToHex(new Uint8Array(respMsg.requestUuid)).slice(0, 16);
+      throw new Error(
+        `Pi returned stale response: sent uuid=${sent}… got request_uuid=${got}… (Pi-side BLE channel has buffered a previous response)`,
+      );
+    }
+  }
+
+  // Stale-frame detection for unsolicited car broadcasts that carry NO
+  // request_uuid: (1) from-domain mismatch, or (2) we requested encrypted-
+  // response but got an unencrypted payload with no status.
+  const respFromDomain = respMsg.fromDestination?.domain;
+  if (respFromDomain != null && respFromDomain !== session.domain) {
+    throw new Error(
+      `Pi returned stale frame: expected from domain=${session.domain}, got from domain=${respFromDomain}`,
+    );
+  }
+  const isEncryptedRequest = (wireFlags & FLAG_ENCRYPT_RESPONSE_BIT) !== 0;
+  const hasAesGcm = !!respMsg.signatureData?.AES_GCM_ResponseData;
+  const hasPayload = respMsg.protobufMessageAsBytes != null && respMsg.protobufMessageAsBytes.length > 0;
+  const hasStatus = !!respMsg.signedMessageStatus;
+  if (isEncryptedRequest && hasPayload && !hasAesGcm && !hasStatus) {
+    throw new Error(
+      'Pi returned stale frame: requested encrypted response but got unencrypted payload with no status (unsolicited car broadcast)',
+    );
+  }
+
+  // Decrypt the payload if present. The car wraps command responses in an
+  // AES-GCM ciphertext under the session key, with AAD that includes
+  // REQUEST_HASH (a hash of OUR request's GCM tag) — so a response can't be
+  // replayed against a different request.
+  let decryptedPayload: Uint8Array | null = null;
+  const gcmResp = respMsg.signatureData?.AES_GCM_ResponseData;
+  const payloadBytesOut = respMsg.protobufMessageAsBytes;
+  if (gcmResp && gcmResp.nonce && gcmResp.tag && payloadBytesOut && payloadBytesOut.length > 0) {
+    const requestHash = makeRequestHash(env.tag);
+    const responseDomain = respMsg.fromDestination?.domain ?? session.domain;
+    const responseFlags = respMsg.flags || 0;
+    const fault = respMsg.signedMessageStatus?.signedMessageFault || 0;
+
+    const respAad = buildAesGcmResponseMetadata({
+      domain: responseDomain,
+      verifierName: session.vin,
+      counter: gcmResp.counter || 0,
+      flags: responseFlags,
+      requestHash,
+      fault,
+    });
+    try {
+      decryptedPayload = aesGcmDecrypt(
+        session.sessionKey,
+        new Uint8Array(gcmResp.nonce),
+        new Uint8Array(payloadBytesOut),
+        new Uint8Array(gcmResp.tag),
+        respAad,
+      );
+    } catch (e) {
+      // A decrypt failure on a structurally valid response means the car
+      // AAD'd it against a DIFFERENT request — the same stale-frame race,
+      // expressed via the crypto layer. Treat as stale-frame ONLY when we
+      // actually requested an encrypted response (otherwise the car may
+      // legitimately reply status-only with an AES tag we can't decrypt and
+      // the caller doesn't need the payload).
+      const wasEncryptedRequest = (wireFlags & FLAG_ENCRYPT_RESPONSE_BIT) !== 0;
+      console.warn('[ble] response decrypt failed:', errMsg(e));
+      if (wasEncryptedRequest) {
+        throw new Error(
+          `Pi returned stale frame: decrypt failed against this request's AAD (counter=${gcmResp.counter}, requestHash mismatch — channel had a buffered response to a different request)`,
+        );
+      }
+    }
+  }
+
+  _persistSessionMetadata(session);
+  return { routable: respMsg, decryptedPayload };
+}
+
+// --- Domain session cache --------------------------------------------------
+//
+// The SessionInfo handshake costs a BLE round-trip; cache the open session
+// per domain and reuse it. NO idle TTL (Tesla Android keeps the shared-secret
+// cache until account change). Invalidation is reactive: on a session-stale
+// fault the caller calls refreshCachedSession (in-place refetch) or
+// evictSession (full re-handshake next time).
+interface CacheEntry {
+  session: Session;
+}
+const _domainCache = new Map<number, CacheEntry>();
+
+export async function withCachedSession<T>(
+  { transport, vin, deviceKeys, domain }: SessionParams,
+  body: (session: Session, cached: boolean) => Promise<T> | T,
+): Promise<T> {
+  // 1. In-memory cache — instant reuse.
+  const entry = _domainCache.get(domain);
+  if (entry) {
+    try {
+      return await body(entry.session, true);
+    } catch (e) {
+      // Transport-dead (Pi-side BLE link gone) → drop the bad session and
+      // fall through to a fresh handshake. Any OTHER error bubbles up.
+      if (isTransportDeadError(e)) {
+        console.warn('[ble] cached session transport dead — evicting + opening fresh:', errMsg(e));
+        await evictSession(vin, domain);
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  // 2. Cold start — full BLE handshake. openDirectSession may (in the fetch
+  //    transport) hit a stale Pi sessionId; catch transport-dead, evict, and
+  //    retry the cold start exactly once.
+  let session: Session;
+  try {
+    session = await openDirectSession({ transport, vin, deviceKeys, domain });
+  } catch (e) {
+    if (!isTransportDeadError(e)) throw e;
+    console.warn('[ble] cold-start hit stale Pi sessionId — evict + retry:', errMsg(e));
+    await evictSession(vin, domain);
+    session = await openDirectSession({ transport, vin, deviceKeys, domain });
+  }
+  _domainCache.set(domain, { session });
+  try {
+    return await body(session, false);
+  } catch (e) {
+    // Fresh handshake but the first command failed — evict and re-raise.
+    _evict(domain);
+    throw e;
+  }
+}
+
+// refreshCachedSession is the reactive-invalidation entry point for
+// session-stale faults. Tesla Android does NOT tear down the BLE link in these
+// cases — it sends a fresh SessionInfoRequest on the existing session, gets
+// new keying material, and retries. On failure (link genuinely dead) it falls
+// back to evictSession so the next attempt does a full handshake.
+export async function refreshCachedSession({
+  transport,
+  vin,
+  domain,
+  deviceKeys,
+}: SessionParams): Promise<boolean> {
+  const entry = _domainCache.get(domain);
+  if (!entry) return false; // nothing to refresh — next withCachedSession handshakes
+  try {
+    await refetchSessionInfo({ transport, deviceKeys, session: entry.session });
+    return true;
+  } catch (e) {
+    console.warn('[ble] in-place refresh failed, falling back to full evict:', errMsg(e));
+    await evictSession(vin, domain);
+    return false;
+  }
+}
+
+// evictSession is the fallback for "session is genuinely dead, need a full
+// handshake." The unit of liveness is (VIN, BLE link), NOT (VIN, domain):
+// both domains share one Pi sessionId, so a transport-dead error from any one
+// domain means the BLE link is dead for the whole VIN. We therefore tear down
+// EVERY cached domain session for this VIN. (IDB row wipe dropped for v1.)
+export async function evictSession(vin: string, domain: Domain): Promise<void> {
+  const victims: { d: number; sessionId: string }[] = [];
+  for (const [d, e] of _domainCache.entries()) {
+    if (e.session.vin === vin) victims.push({ d, sessionId: e.session.sessionId });
+  }
+  // _evict triggers session.close() which decrements the refcount.
+  for (const v of victims) _evict(v.d);
+  // Zero any leftover refcounts for this VIN's sessionIds so the next
+  // _bindPiSession opens fresh instead of pretending a session is still live.
+  for (const v of victims) _piSessionRefcounts.delete(v.sessionId);
+
+  console.warn(
+    '[ble] evicted all sessions for vin',
+    vin.slice(-6),
+    '· dropped domains:',
+    victims.map((v) => v.d).join(',') || '(none cached)',
+    '· trigger=' + domain,
+  );
+}
+
+function _evict(domain: number): void {
+  const entry = _domainCache.get(domain);
+  if (!entry) return;
+  _domainCache.delete(domain);
+  // Best-effort BLE close; don't wait.
+  entry.session.close().catch(() => {});
+}
+
+// closeAllCachedSessions drops every domain's cached in-memory session.
+export function closeAllCachedSessions(): void {
+  for (const domain of [..._domainCache.keys()]) _evict(domain);
+}
+
+// __resetSessionCaches clears ALL module-level session state. Test-only: the
+// caches are module singletons, so tests reset them for isolation.
+export function __resetSessionCaches(): void {
+  _domainCache.clear();
+  _piSessionRefcounts.clear();
+}
+
+// --- Shared encode helpers (consumed by P1d builders) ----------------------
+
+// encodeInfotainmentAction wraps a VehicleAction sub-message into a
+// CarServer.Action and encodes it.
+export function encodeInfotainmentAction(vehicleAction: object): Uint8Array {
+  return encodeMessage(Action, { vehicleAction });
+}
+
+// encodeVCSECMessage wraps a sub_message into VCSEC.UnsignedMessage and
+// encodes it. The fields object's single key picks the oneof case.
+export function encodeVCSECMessage(subFields: object): Uint8Array {
+  return encodeMessage(VCSECUnsignedMessage, subFields);
+}
+
+// ActionPayload is what an action builder returns: the wire bytes ready to be
+// AES-GCM-encrypted, the BLE domain they target, and optional flags.
+export interface ActionPayload {
+  domain: Domain;
+  bytes: Uint8Array;
+  flags?: number;
+}
+
+// honkAction — the Infotainment "honk horn" command (the engine's own test
+// vehicle; P1d ports the rest of the builder family).
+export function honkAction(): ActionPayload {
+  return { domain: DOMAIN_INFOTAINMENT, bytes: encodeInfotainmentAction({ vehicleControlHonkHornAction: {} }) };
+}
+
+// vcsecGetStatusAction — the VCSEC "give me current state" poll. Wraps an
+// InformationRequest (type GET_STATUS = 0) and sets FLAG_ENCRYPT_RESPONSE so
+// the car returns its FromVCSECMessage.vehicleStatus encrypted.
+export function vcsecGetStatusAction(): ActionPayload {
+  return {
+    domain: DOMAIN_VEHICLE_SECURITY,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeVCSECMessage({ InformationRequest: { informationRequestType: 0 } }),
+  };
+}
