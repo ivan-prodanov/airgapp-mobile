@@ -1,0 +1,4940 @@
+{
+  "models": {
+    "Model S": {
+      "generations": [
+        {
+          "generation": "Model S \u2014 Classic (nosecone, S1)",
+          "routing": {
+            "car_type": "models",
+            "fascia_type": "(ignored \u2014 get_vehicle_node_path routes Model S by car_type alone; fascia_type never read)",
+            "chassis_type": "(ignored \u2014 never read for Model S)"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (default; absent-field default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black (aliases Black, MetallicBlack/Obsidian)",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic (aliases Grey, SteelGrey)",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Silver Metallic \u2014 legacy (alias Silver; byte-identical to fallback)",
+                  "value": "SilverMetallic",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Titanium Metallic \u2014 legacy warm grey/copper (alias Titanium)",
+                  "value": "TitaniumCopper",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ocean/Metallic Blue \u2014 legacy",
+                  "value": "Blue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Blue (2012 Signature series)",
+                  "value": "SignatureBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat (alias Red)",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Red",
+                  "value": "SigRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid White \u2014 legacy non-pearl",
+                  "value": "White",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Pearl \u2014 low-metallic white variant",
+                  "value": "Pearl",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Green \u2014 legacy special-order (Sequoia/British Racing)",
+                  "value": "Green",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Brown \u2014 legacy special-order metallic",
+                  "value": "Brown",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "Tempest19SonicSilver",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Tempest Sonic Silver 19\" (DEFAULT; WheelType.TempestSilver)",
+                  "value": "Tempest19SonicSilver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Aero 19\" (classic base aero; WheelType.Aero)",
+                  "value": "Aero19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Base Silver 19\" (WheelType.BaseSilver)",
+                  "value": "Base19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Turbine Silver (WheelType.TurbineSilver; aliases Silver21/Silver21Euro/Super21Silver/Turbine19/Turbine22)",
+                  "value": "Turbine19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Turbine Onyx Black (WheelType.TurbineBlack; aliases Charcoal21/Charcoal21Euro/Super21Gray/Turbine19Dark/Turbine22Dark)",
+                  "value": "Turbine19Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Silver (WheelType.SlipstreamSilver; alias AeroTurbine19/AeroTurbine20)",
+                  "value": "AeroTurbine19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Sonic Carbon (WheelType.SlipstreamCarbon; aliases AeroTurbine19Black/Slipstream19Carbon/Slipstream20Carbon)",
+                  "value": "Slipstream19Carbon",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Two-Tone/Dark (WheelType.SlipstreamDark; aliases AeroTurbine20Dark/Slipstream20Dark)",
+                  "value": "AeroTurbine20Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cyclone Sonic Carbon 19\" (WheelType.CycloneCarbon; wireKey Cyclone19Dark)",
+                  "value": "Cyclone19Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix Silver 20\" (WheelType.Helix)",
+                  "value": "Helix20",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Silver 21\" (WheelType.ArachnidSilver)",
+                  "value": "Arachnid21Silver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Armor Black 21\" (WheelType.ArachnidBlack)",
+                  "value": "Arachnid21Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Sonic Carbon 21\" (WheelType.ArachnidCarbon; wireKey Arachnid21Grey)",
+                  "value": "Arachnid21Grey",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Twin Turbine Silver 21\" (WheelType.TwinTurbineSilver)",
+                  "value": "TwinTurbine21Silver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Twin Turbine Sonic Carbon 21\" (WheelType.TwinTurbineCarbon)",
+                  "value": "TwinTurbine21Carbon",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color/trim",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (default; aliases AllBlack, EbonyBlack)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White (aliases BlackAndWhite, WalnutWhite)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream (alias WalnutCream)",
+                  "value": "Cream",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "rear_seat_type",
+              "question": "Rear seat configuration (Standard vs Executive)",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard rear (default; BASE=0; also RECARO/FOLD_FLAT render identically)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Executive rear seats (EXECUTIVE=2 -> Interior_Executive mesh)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "exterior_trim_override",
+              "question": "Window/pillar trim finish",
+              "default": "",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome / bright trim (ExteriorTrim.Original)",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black trim (ExteriorTrim.Black)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Unset \u2014 keep scene default trim (empty string, early-return)",
+                  "value": "",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "spoiler_type",
+              "question": "Rear spoiler",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (default)",
+                  "value": "None",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Carbon Fiber spoiler",
+                  "value": "CarbonFiber",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "rhd",
+              "question": "Steering side (left/right-hand drive)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard factory tint (default 0,0,0,153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Custom RGBA CSV (e.g. 0,0,0,190)",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "paint_color_override",
+              "question": "Custom paint override (advanced \u2014 replaces named color)",
+              "default": "",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None \u2014 use named color from Q1 (default empty)",
+                  "value": "",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Custom 5-float CSV (R,G,B,metallic,roughness)",
+                  "value": "255,0,0,0.8,0.05",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "charge_port_type",
+              "question": "Charge port / region cable",
+              "default": "US",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US (default; Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB / GB_AC / GB_DC (IEC)",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2_V3)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model S \u2014 Classic (facelift, S2)",
+          "routing": {
+            "car_type": "models2",
+            "fascia_type": "ignored \u2014 not read for Model S (ProductManager.gd match on car_type returns Ego/S/Model_S.tscn regardless of fascia_type)",
+            "chassis_type": "ignored \u2014 not read for Model S"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite (wire/config default when field absent, VehicleData.gd; unrecognized key silently renders FALLBACK medium silver == SilverMetallic)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Silver Metallic (early facelift, discontinued ~2019; bytes == FALLBACK)",
+                  "value": "SilverMetallic",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Obsidian/Metallic Black (legacy classic; == SolidBlack bytes)",
+                  "value": "MetallicBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Titanium Metallic (legacy classic warm grey/copper)",
+                  "value": "TitaniumCopper",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Steel Grey (legacy classic; == MidnightSilver bytes)",
+                  "value": "SteelGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ocean/Metallic Blue (legacy classic)",
+                  "value": "Blue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Red (early Signature-series classic)",
+                  "value": "SigRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Blue (2012 Signature-series classic)",
+                  "value": "SignatureBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Green (early classic special-order)",
+                  "value": "Green",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Brown (early classic special-order)",
+                  "value": "Brown",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid White (early classic non-pearl)",
+                  "value": "White",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "Tempest19SonicSilver (resolves WheelType.TempestSilver; the models2 per-car default)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Tempest Sonic Silver 19\" (default)",
+                  "value": "Tempest19SonicSilver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Aero 19\" (classic base aero)",
+                  "value": "Aero19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Base Silver 19\"",
+                  "value": "Base19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Silver (aero-turbine)",
+                  "value": "AeroTurbine19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Sonic Carbon",
+                  "value": "Slipstream19Carbon",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Two-Tone / Dark",
+                  "value": "AeroTurbine20Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cyclone Sonic Carbon 19\"",
+                  "value": "Cyclone19Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix Silver 20\"",
+                  "value": "Helix20",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Turbine Silver 21\"",
+                  "value": "Silver21",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Turbine Onyx Black 21\"",
+                  "value": "Charcoal21",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Twin Turbine Silver 21\"",
+                  "value": "TwinTurbine21Silver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Twin Turbine Sonic Carbon 21\"",
+                  "value": "TwinTurbine21Carbon",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Silver 21\" (classic Arachnid)",
+                  "value": "Arachnid21Silver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Armor Black 21\"",
+                  "value": "Arachnid21Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Sonic Carbon 21\"",
+                  "value": "Arachnid21Grey",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color",
+              "default": "Black (VehicleData default 'Black'; unknown key -> InteriorConfig.Black)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (default)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream (S/X-only offering; Model S ships Interior_Cream)",
+                  "value": "Cream",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "exterior_trim_override",
+              "question": "Exterior trim (chrome delete)",
+              "default": "\"\" (empty = no override; scene's exported exterior_trim default retained)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome (Original bright trim)",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black (blacked-out trim)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "rear_seat_type",
+              "question": "Rear seats (Executive)",
+              "default": "0 (BASE \u2014 standard rear interior; raw int, no string map, VehicleData.gd:63)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard rear seats (default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Executive rear seats",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "spoiler_type",
+              "question": "Spoiler",
+              "default": "None (no spoiler)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (default)",
+                  "value": "None",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Carbon Fiber spoiler",
+                  "value": "CarbonFiber",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false (standard calipers)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "rhd",
+              "question": "Steering side (RHD/LHD)",
+              "default": "false (left-hand drive)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "eu_vehicle",
+              "question": "License plate region",
+              "default": "US plate (has_us_plate true / has_eu_plate false)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model S \u2014 Refresh / Plaid (Palladium)",
+          "routing": {
+            "car_type": "lychee",
+            "fascia_type": "ignored-for-scene (routes by car_type alone); but Palladium.gd DOES read vehicle_config.fascia_type at runtime to swap the P3/Plaid fascia group \u2014 values 'p3s'\u2192P3ModelSBase, 'p3splaid'\u2192P3ModelSPlaid, 'p3x'\u2192no-op(early return), anything else incl 'original'\u2192Original. Dev sample sends 'original'.",
+            "chassis_type": "ignored (never read for Model S; dev sample sends 'model_s')"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (default; field default when absent)",
+                  "value": "PearlWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver (2023+ Palladium)",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red (2023+ Palladium)",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Cherry Red (Plaid era 2023+)",
+                  "value": "MidnightCherryRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Garnet Red (dev fixture assigns this to lychee)",
+                  "value": "GarnetRed",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "paint_color_override",
+              "question": "Custom paint override (advanced \u2014 replaces the named color)",
+              "default": "",
+              "showIf": "always (optional; empty string = use named color from Q1)",
+              "options": [
+                {
+                  "label": "None \u2014 use named color",
+                  "value": "",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Custom 5-float CSV e.g. '200,0,0,0.8,0.05'",
+                  "value": "<R,G,B,metallic,roughness>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "Tempest19SonicSilver",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Tempest 19\" Sonic Silver (default \u2192 WheelType.TempestSilver)",
+                  "value": "Tempest19SonicSilver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid 21\" (Plaid signature \u2192 WheelType.Arachnid, Wheels_Palladium)",
+                  "value": "Arachnid21",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "New Turbine 22\" Black (WheelType.NewTurbine22Black, Wheels_Palladium)",
+                  "value": "NewTurbine22Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cardenio 19\" (refresh S base \u2192 WheelType.Cardenio, Wheels_Palladium)",
+                  "value": "Cardenio19",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "interior_trim_type",
+              "question": "Interior color & decor",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Black (default) \u2014 Sport seats + Wood Ebony",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White \u2014 Sport seats + Wood Walnut",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream \u2014 Sport seats + Wood Walnut",
+                  "value": "Cream",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black + Carbon Fiber decor",
+                  "value": "CarbonBlack",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White + Carbon Fiber decor",
+                  "value": "CarbonWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream + Carbon Fiber decor",
+                  "value": "CarbonCream",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "steering_wheel_type",
+              "question": "Steering wheel",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Round wheel (Standard, default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Yoke",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "fascia_type",
+              "question": "Front/rear fascia styling (Plaid vs standard)",
+              "default": "original",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard / Original fascia (default)",
+                  "value": "original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Plaid fascia (P3ModelSPlaid \u2014 p3 fascia group + P3SPlaid skins)",
+                  "value": "p3splaid",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "P3 S Base (P3ModelSBase \u2014 enum only, no group swap)",
+                  "value": "p3s",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "drivetrain_type",
+              "question": "Drivetrain (drives the Plaid badge)",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "RWD (wire 0, default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "AWD Dual Motor (wire 1)",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Plaid \u2014 AWD Tri-Motor (wire 2 \u2192 shows Plaid badge)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "car_special_type",
+              "question": "Special badging series",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Foundation Series (renders same as None)",
+                  "value": "1",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Launch Series (renders same as None)",
+                  "value": "2",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Series (signature group + brakes + Plaid badge variant)",
+                  "value": "3",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "red_brake_calipers",
+              "question": "Red performance brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard calipers (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "headlamp_type",
+              "question": "Headlamp style",
+              "default": "Premium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Premium (default; renders Original geometry)",
+                  "value": "Premium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Original (same geometry as Premium)",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global (global front headlamp geometry)",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "rearlight_type",
+              "question": "Rear light style",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Original (default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global (global rear + relocated charge port; enables badge/wordmark)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "has_tesla_badge",
+              "question": "Show rear Tesla T badge",
+              "default": "true",
+              "showIf": "rearlight_type == Global (2)",
+              "options": [
+                {
+                  "label": "Show T badge (default)",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Hide T badge",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 13,
+              "field": "has_tesla_word_mark",
+              "question": "Show rear 'TESLA' wordmark",
+              "default": "true",
+              "showIf": "rearlight_type == Global (2)",
+              "options": [
+                {
+                  "label": "Show wordmark (default)",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Hide wordmark",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 14,
+              "field": "spoiler_type",
+              "question": "Rear spoiler",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (default)",
+                  "value": "None",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Carbon Fiber spoiler",
+                  "value": "CarbonFiber",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 15,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint (0,0,0,153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Lighter (0,0,0,128)",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Darker (0,0,0,190)",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 16,
+              "field": "badging_material_type",
+              "question": "Badging material finish",
+              "default": "-1",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Auto from badge_version (default, -1)",
+                  "value": "-1",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Chrome / Silver",
+                  "value": "0",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Black Matte",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 17,
+              "field": "charge_port_type",
+              "question": "Charge port / cable region",
+              "default": "US",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US (default)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 18,
+              "field": "rhd",
+              "question": "Right-hand drive",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "LHD (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "RHD",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 19,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Model 3": {
+      "generations": [
+        {
+          "generation": "Model 3 \u2014 Legacy (pre-Highland)",
+          "routing": {
+            "car_type": "model3",
+            "fascia_type": "original",
+            "chassis_type": "(ignored for Model 3 \u2014 any value; default 'model_3'). Only car_type+fascia_type route Model 3; fascia_type must be NOT in {basePoppyseed,performancePoppyseed,d50Poppyseed} to land on 3_High."
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (renderer default when field absent)",
+                  "value": "PearlWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Solid Black (alias: Black)",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic (aliases: Grey, SteelGrey)",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat (alias: Red)",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Custom paint override (5-float CSV R,G,B,metallic,roughness \u2014 arbitrary color, wins over named)",
+                  "value": "<paint_color_override>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheel",
+              "default": "Pinwheel18",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pinwheel 18\" aero (Model 3 base, with cover) \u2014 model3 default wheel",
+                  "value": "Pinwheel18",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Pinwheel Refresh 18\" aero",
+                  "value": "PinwheelRefresh18",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Pinwheel 18\" cap removed (bare face)",
+                  "value": "Pinwheel18CapKit",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stiletto 19\" silver",
+                  "value": "Stiletto19",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stiletto 20\" silver",
+                  "value": "Stiletto20",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stiletto 20\" dark",
+                  "value": "Stiletto20DarkSquare",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stiletto Refresh 19\"",
+                  "value": "StilettoRefresh19",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Uberturbine 20\" gunpowder (Model 3 Performance)",
+                  "value": "UberTurbine20Gunpowder",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Zero-G 19\" gunpowder",
+                  "value": "ZeroG19Gunpowder",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Zero-G 20\" gunpowder",
+                  "value": "ZeroG20Gunpowder",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Apollo 19\" (aero-cap kit)",
+                  "value": "Apollo19CapKit",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Apollo 19\" Metallic Shadow",
+                  "value": "Apollo19MetallicShadow",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior trim",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black \u2014 original console (Interior_Seats_Black + Wood_Walnut decor)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White \u2014 original console (Interior_Seats_White + Decor_White)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "All Black \u2014 2021 refresh console (Center_Console_2_0)",
+                  "value": "Black2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White \u2014 2021 refresh console (Center_Console_2_0)",
+                  "value": "White2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream \u2014 accepted but renders generic (no bespoke cream material in 3_High; Model_3 has no Cream branch)",
+                  "value": "Cream",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "exterior_trim",
+              "question": "Exterior trim finish",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Black (blackout trim \u2014 Exterior_Hydroxide.material)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Chrome (Exterior.material)",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "headlamp_type",
+              "question": "Headlamp / front-end + charge-cap geometry",
+              "default": "Original",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Original front-end (also the render for 'Premium' and any non-Global value)",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global (swaps Headlights/Lights_Trunk/Charge_Cap to _GLOBAL nodes)",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "spoiler_type",
+              "question": "Rear spoiler",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (no spoiler)",
+                  "value": "None",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Carbon Fiber spoiler (Spoiler1 shown)",
+                  "value": "CarbonFiber",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "aux_park_lamps",
+              "question": "Fog / aux park lamps",
+              "default": "NaPremium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Fog lamps present \u2014 cover hidden (any non-'None' value, e.g. default 'NaPremium')",
+                  "value": "NaPremium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "None \u2014 Foglights_Cover shown (no fog lamps)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "rhd",
+              "question": "Steering side (RHD/LHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "LHD (left-hand drive)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "RHD (right-hand drive)",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint (0,0,0,153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Lighter (0,0,0,128)",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Darker (0,0,0,190)",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "charge_port_type",
+              "question": "Charge port / cable region (only visible while charging)",
+              "default": "US",
+              "showIf": "charger connected (Vehicle.update_charge_state adds cable only when isChargerConnected)",
+              "options": [
+                {
+                  "label": "US (NACS/Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC/Type 2)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB / GB_AC / GB_DC (IEC)",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2_V3)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model 3 \u2014 Highland Base (Poppyseed)",
+          "routing": {
+            "car_type": "model3",
+            "fascia_type": "basePoppyseed",
+            "chassis_type": "<ignored for Model 3 \u2014 not read by get_vehicle_node_path; any value routes the same>"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (SOURCE default value)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stealth Grey (Highland signature grey)",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black (later Highland/refresh)",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (dev-sample color for Model 3)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Lunar Silver (region/newer, low-confidence)",
+                  "value": "LunarSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Frost Blue (region/newer, low-confidence)",
+                  "value": "FrostBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Silk Road Silver (China-market)",
+                  "value": "SilkroadSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Marine Blue (region/newer, low-confidence)",
+                  "value": "MarineBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Custom paint override (r,g,b,metallic,roughness \u2014 replaces named color; renderer accepts arbitrary color)",
+                  "value": "paint_color_override:<5-float CSV>",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Any other ExteriorColorValue key (renderer paints it; not a Highland real-world color)",
+                  "value": "<any of the 32 global keys>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel",
+              "question": "Wheels",
+              "default": "Pinwheel18",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Glider 18\" aero (Highland base aero \u2014 Ego/v2023/Wheels/Glider.tscn)",
+                  "value": "Glider18",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix 19\" (Highland \u2014 Ego/v2023/Wheels/Helix_19.tscn; distinct from S/X Helix)",
+                  "value": "Helix19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Wishbone 19\" (Highland \u2014 Ego/v2023/Wheels/Wishbone_19.tscn)",
+                  "value": "Wishbone19Staggered",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Wishbone 20\" (Highland Performance wheel \u2014 Ego/v2023/Wheels/Wishbone_20.tscn)",
+                  "value": "Wishbone20Staggered",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "D50 / Photon 18\" (Highland base wheel; MESH ANOMALY \u2014 lives in shared Ego/Wheels/Wheel_D50.tscn, not v2023)",
+                  "value": "D5018",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Pinwheel 18\" (renderer default for car_type=model3; legacy pre-Highland aero)",
+                  "value": "Pinwheel18",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Any other MobileWheelTypeEnumMap key (renders on model3; not Highland fitment)",
+                  "value": "<any global wheel key>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (Decor_Black + Interior_Seats_Black)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White (Decor_White + Interior_Seats_White)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black2 alias \u2014 renders identically to Black (refresh-console toggle inert on Poppyseed)",
+                  "value": "Black2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White2 alias \u2014 renders identically to White",
+                  "value": "White2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "AllBlack / EbonyBlack aliases -> Black; BlackAndWhite / WalnutWhite aliases -> White",
+                  "value": "AllBlack|EbonyBlack|BlackAndWhite|WalnutWhite",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Cream / *CarbonFiber / TacticalGrey (accepted by map but UNHANDLED on Poppyseed -> no-op)",
+                  "value": "Cream|CarbonBlack|CarbonWhite|CarbonCream|TacticalGrey",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "exterior_trim (or exterior_trim_override, which takes precedence when non-empty)",
+              "question": "Body-trim finish (window surrounds / brightwork)",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome / bright (applies Exterior.material)",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black (maps to Exterior_Hydroxide.material which does not exist -> no-op, keeps authored trim)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "aux_park_lamps",
+              "question": "Fog / auxiliary park lamps",
+              "default": "NaPremium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Has fog lamps (any value != 'None'; cover hidden)",
+                  "value": "NaPremium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "No fog lamps (blanking cover shown)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "spoiler_type",
+              "question": "Rear spoiler",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (base fascia has no spoiler)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "CarbonFiber (base Vehicle would show it, but POPPYSEED_BASE forces spoiler off via set_is_performance(false))",
+                  "value": "CarbonFiber",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "has_stalk",
+              "question": "Turn-signal stalk (vs stalkless)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Stalkless (Highland default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "With turn stalk (shows Stalk or Stalk_RHD per handedness)",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "has_front_fascia_camera",
+              "question": "Front fascia camera",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "No front fascia camera",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Front fascia camera present (shows Fascia_Cam_D50)",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "rhd",
+              "question": "Steering side (LHD / RHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "headlamp_type",
+              "question": "Headlamp / market lighting variant",
+              "default": "Original",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Original / domestic (default; hasGlobalHeadlamp false)",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global market (switches fog/reverse lamps to *_global nodes)",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "badging_material_type",
+              "question": "Badge finish",
+              "default": "CHROME_SILVER",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome / silver badges (Poppyseed default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black matte badges",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard calipers",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 13,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint (0,0,0,153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Custom 'r,g,b,a' (must be exactly 4 values)",
+                  "value": "<r,g,b,a>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 14,
+              "field": "charge_port_type",
+              "question": "Charge port / cable standard",
+              "default": "US",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US (Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB / GB_AC / GB_DC (IEC)",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2_V3)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 15,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model 3 \u2014 Highland Performance",
+          "routing": {
+            "car_type": "model3",
+            "fascia_type": "performancePoppyseed",
+            "chassis_type": "IGNORED for Model 3 routing (get_vehicle_node_path sub-branches Model 3 on fascia_type only); dev sample sends 'model_3'. Resolves to res://Ego/v2023/Poppyseed/Poppyseed.tscn (Poppyseed.gd)"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (renderer default when field absent)",
+                  "value": "PearlWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Stealth Grey (signature Highland grey)",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black (later/refresh + regional)",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (later/regional; dev fixture color for Model 3)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Lunar Silver (low-confidence / regional)",
+                  "value": "LunarSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Frost Blue (low-confidence / regional)",
+                  "value": "FrostBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Silk Road Silver (China-market)",
+                  "value": "SilkroadSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Marine Blue (low-confidence / China-market)",
+                  "value": "MarineBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Custom paint (5-float 'R,G,B,metallic,roughness' via paint_color_override)",
+                  "value": "<paint_color_override CSV>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel (mobile wireKey -> VehicleOptions.MobileWheelTypeEnumMap)",
+              "question": "Wheel",
+              "default": "Wishbone20Staggered",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Wishbone 20\" (Performance wheel; Ego/v2023/Wheels/Wishbone_20)",
+                  "value": "Wishbone20Staggered",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Wishbone 19\" (Ego/v2023/Wheels/Wishbone_19)",
+                  "value": "Wishbone19Staggered",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix 19\" (Ego/v2023/Wheels/Helix_19)",
+                  "value": "Helix19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Glider 18\" aero (Highland base; Ego/v2023/Wheels/Glider)",
+                  "value": "Glider18",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "D50 18\" (Highland base wheel; mesh in shared Ego/Wheels/Wheel_D50, not v2023)",
+                  "value": "D5018",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Pinwheel 18\" (legacy Model 3 default / renderer fallback for model3)",
+                  "value": "Pinwheel18",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (Perf black seats + Decor_Black)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White (Perf white seats + Decor_White)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black2 (alias -> renders identical to Black; no refresh-console geometry on Poppyseed)",
+                  "value": "Black2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White2 (alias -> renders identical to White)",
+                  "value": "White2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "exterior_trim (or exterior_trim_override, which takes precedence when non-empty)",
+              "question": "Exterior trim finish",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Black / Hydroxide trim (Highland spec)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Chrome / body trim (Exterior.material; off-spec for Highland)",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "aux_park_lamps",
+              "question": "Front fog / auxiliary park lamps",
+              "default": "NaPremium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Has fog lamps (cover hidden) \u2014 any value != 'None', e.g. NaPremium",
+                  "value": "NaPremium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "No fog lamps (blanking cover shown)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "has_stalk",
+              "question": "Turn-signal stalk fitted",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Stalk fitted",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "No stalk (stalkless Highland)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "has_front_fascia_camera",
+              "question": "Front fascia camera",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Front fascia camera present",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "No front fascia camera",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "headlamp_type",
+              "question": "Headlamp / lighting market variant",
+              "default": "Premium (coerced to Original at runtime)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Original / US-spec (default)",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global / non-US lighting",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "rhd",
+              "question": "Steering side (LHD / RHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "badging_material_type",
+              "question": "Badge finish",
+              "default": "CHROME_SILVER (0) \u2014 seeded in Poppyseed._enter_tree; if field <0 it is auto-derived from badge_version (<=V1 -> chrome, else black matte)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome / silver badging",
+                  "value": "0",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Black matte badging",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Custom RGBA tint (4 values 0-255)",
+                  "value": "<r,g,b,a>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "charge_port_type",
+              "question": "Charge port / cable region",
+              "default": "US",
+              "showIf": "always (cable mesh only spawns while a charger is connected)",
+              "options": [
+                {
+                  "label": "US (NACS / Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC / CCS2)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 13,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 14,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model 3 \u2014 Highland D50",
+          "routing": {
+            "car_type": "model3",
+            "fascia_type": "d50Poppyseed",
+            "chassis_type": "model_3 (parsed but IGNORED for Model 3 routing; only Model Y reads chassis_type)"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (renderer default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stealth Grey (Highland standard)",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic (early/carryover)",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black (refresh, low-confidence)",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (low-confidence; Model 3 dev-sample color)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "paint_color_override",
+              "question": "Custom paint override (advanced) \u2014 replaces the named color",
+              "default": "",
+              "showIf": "always (optional; leave empty to keep the named exterior_color)",
+              "options": [
+                {
+                  "label": "None \u2014 use named exterior_color",
+                  "value": "",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Custom 5-float CSV e.g. 20,20,20,0.6,0.1",
+                  "value": "R,G,B,metallic,roughness",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "D5018",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "D50 / Photon 18\" (D50 namesake base wheel; mesh in shared Ego/Wheels)",
+                  "value": "D5018",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glider 18\" aero (Highland base, Ego/v2023/Wheels)",
+                  "value": "Glider18",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix 19\" (Highland, Ego/v2023/Wheels)",
+                  "value": "Helix19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Wishbone 19\" (Highland, Ego/v2023/Wheels)",
+                  "value": "Wishbone19Staggered",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Wishbone 20\" (Highland Performance wheel, Ego/v2023/Wheels)",
+                  "value": "Wishbone20Staggered",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "interior_trim_type",
+              "question": "Interior trim",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Black (renders textile on D50)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White (renders textile on D50)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black2 (refresh-console value; NO console swap on Poppyseed, renders textile)",
+                  "value": "Black2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White2 (refresh-console value; NO console swap on Poppyseed, renders textile)",
+                  "value": "White2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "exterior_trim",
+              "question": "Exterior trim finish",
+              "default": "Black",
+              "showIf": "always (overridden by exterior_trim_override when that is non-empty)",
+              "options": [
+                {
+                  "label": "Black trim (Highland default)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Chrome trim",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "rhd",
+              "question": "Right-hand drive?",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "LHD (left-hand drive)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "RHD (right-hand drive)",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "has_stalk",
+              "question": "Show turn-signal stalk?",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "No stalk (Highland stalkless)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Show stalk",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "has_front_fascia_camera",
+              "question": "Show front fascia camera?",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "No fascia camera",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Show fascia camera",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "aux_park_lamps",
+              "question": "Fog / auxiliary park lamps",
+              "default": "NaPremium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Fog lamps present (cover hidden)",
+                  "value": "NaPremium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "None \u2014 show fog-lamp cover (no fog lamps)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "headlamp_type",
+              "question": "Headlamp type",
+              "default": "Premium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Premium (renders Original geometry)",
+                  "value": "Premium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Original",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global (swaps only fog/reverse lamps to global nodes)",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "badging_material_type",
+              "question": "Badging material",
+              "default": "0 (CHROME_SILVER; Poppyseed._enter_tree seeds CHROME_SILVER)",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome / Silver",
+                  "value": "0",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Black matte",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint 0,0,0,153",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Lighter 0,0,0,128",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Darker 0,0,0,190",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 13,
+              "field": "red_brake_calipers",
+              "question": "Red / performance brake calipers?",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard brakes",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Performance / red calipers",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 14,
+              "field": "charge_port_type",
+              "question": "Charge port / cable type",
+              "default": "US",
+              "showIf": "always (cable mesh only instanced while a charger is connected)",
+              "options": [
+                {
+                  "label": "US (NACS/Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC/Type 2)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 15,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Model X": {
+      "generations": [
+        {
+          "generation": "Model X \u2014 Classic",
+          "routing": {
+            "car_type": "modelx",
+            "fascia_type": "n/a (not read for Model X)",
+            "chassis_type": "n/a (not read for Model X)"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black (aliases: Black, MetallicBlack/Obsidian)",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic (aliases: Grey, SteelGrey)",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Silver Metallic \u2014 legacy (alias: Silver; = fallback color)",
+                  "value": "SilverMetallic",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat (alias: Red)",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Titanium Metallic \u2014 legacy warm grey (alias: Titanium)",
+                  "value": "TitaniumCopper",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ocean/Metallic Blue \u2014 legacy",
+                  "value": "Blue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid White \u2014 legacy non-pearl",
+                  "value": "White",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Pearl \u2014 low-metallic white variant",
+                  "value": "Pearl",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Green \u2014 legacy special-order",
+                  "value": "Green",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Brown \u2014 legacy special-order",
+                  "value": "Brown",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Red",
+                  "value": "SigRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Signature Blue",
+                  "value": "SignatureBlue",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "AeroTurbine19",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Slipstream Silver \u2014 19/20in (classic X default; wireKey AeroTurbine20 also)",
+                  "value": "AeroTurbine19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Sonic Carbon (dark)",
+                  "value": "Slipstream19Carbon",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Slipstream Two-Tone / Dark",
+                  "value": "AeroTurbine20Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Aero \u2014 classic base aero",
+                  "value": "Aero19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Base Silver",
+                  "value": "Base19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix Silver (S/X classic Helix mesh)",
+                  "value": "Helix20",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cyclone Sonic Carbon",
+                  "value": "Cyclone19Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Tempest Sonic Silver",
+                  "value": "Tempest19SonicSilver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Turbine Silver \u2014 21/22in (aliases Silver21/Turbine19/Turbine22)",
+                  "value": "Silver21",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Turbine Onyx Black \u2014 21/22in (aliases Charcoal21/Turbine22Dark)",
+                  "value": "Charcoal21",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Twin Turbine Silver \u2014 21in",
+                  "value": "TwinTurbine21Silver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Twin Turbine Sonic Carbon \u2014 21in",
+                  "value": "TwinTurbine21Carbon",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Silver \u2014 21in (classic Arachnid mesh)",
+                  "value": "Arachnid21Silver",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Armor Black \u2014 21in",
+                  "value": "Arachnid21Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid Sonic Carbon (grey) \u2014 21in",
+                  "value": "Arachnid21Grey",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (default; aliases AllBlack, EbonyBlack)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White (aliases BlackAndWhite, WalnutWhite)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream (alias WalnutCream)",
+                  "value": "Cream",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "third_row_seats",
+              "question": "Third-row seats (does the car have a 3rd row?)",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None \u2014 5-seat (default)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Futuris Fold-Flat 3rd row",
+                  "value": "FuturisFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Futuris (no fold-flat) 3rd row",
+                  "value": "FuturisNoFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Flat-Fold 3rd row",
+                  "value": "FlatFold",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "'<invalid>' \u2014 GOTCHA: still yields a 3rd row (INVALID != NONE)",
+                  "value": "<invalid>",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "rear_seat_type",
+              "question": "Rear-seat layout (6- vs 7-seat)",
+              "default": "0",
+              "showIf": "third_row_seats != 'None' (and != any value mapping to NONE)",
+              "options": [
+                {
+                  "label": "Base \u2192 7-seat (default)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Two-Seat (captain's chairs) \u2192 6-seat",
+                  "value": "3",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Recaro \u2192 7-seat (not special-cased)",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Executive \u2192 7-seat on classic X (NOT special here)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Fold-Flat \u2192 7-seat (not special-cased)",
+                  "value": "4",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "exterior_trim_override",
+              "question": "Exterior trim finish",
+              "default": "",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default (unset \u2014 leave scene default trim)",
+                  "value": "",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Chrome (bright trim)",
+                  "value": "Chrome",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black (blacked-out trim)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "rhd",
+              "question": "Right-hand drive?",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "LHD (left-hand drive, default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "RHD (right-hand drive)",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default (~60% alpha)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Light tint",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Medium tint",
+                  "value": "0,0,0,170",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Dark tint",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "charge_port_type",
+              "question": "Charge-port / cable region",
+              "default": "US",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US (NACS/Charging_Cable, default)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (Type 2 / IEC)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model X \u2014 Refresh / Palladium (tamarind)",
+          "routing": {
+            "car_type": "tamarind",
+            "fascia_type": "(ignored for X \u2014 get_vehicle_node_path routes by car_type alone; wire default 'original', dev sample sends 'original')",
+            "chassis_type": "(ignored for X \u2014 never read; wire default 'model_y', dev sample sends 'model_x')"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (default; also the renderer parse default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver (2023+ refresh premium)",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red (2023+)",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Cherry Red (2023+ Plaid-era)",
+                  "value": "MidnightCherryRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Any of the 32 ExteriorColor keys / custom 5-float paint_color_override \u2014 renderer applies any to tamarind (not gated)",
+                  "value": "<any ExteriorColor key or R,G,B,metallic,roughness>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "Cyberstream20",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "20\" Cyberstream \u2014 X refresh base (Wheels_Palladium; tamarind default)",
+                  "value": "Cyberstream20",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "22\" New Turbine Black (Wheels_Palladium; S/X refresh)",
+                  "value": "NewTurbine22Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "21\" Arachnid (Wheels_Palladium/Arachnid21.tscn; S/X refresh \u2014 realworld chiefly S Plaid)",
+                  "value": "Arachnid21",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Any other mobile wheel wireKey also renders (e.g. Cardenio19 is the same Wheels_Palladium group but a Model S base wheel; classic Wheels_X_S / 3/Y / Juniper keys render too, not asset-tied to this generation)",
+                  "value": "<any MobileWheelTypeEnumMap key>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior trim (seat color + decor)",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Black \u2014 seats + Ebony wood decor",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White \u2014 seats + Walnut wood decor",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream \u2014 seats + Walnut wood decor",
+                  "value": "Cream",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black + Carbon Fiber decor",
+                  "value": "CarbonBlack",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White + Carbon Fiber decor",
+                  "value": "CarbonWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Cream + Carbon Fiber decor",
+                  "value": "CarbonCream",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "steering_wheel_type",
+              "question": "Steering wheel",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard round wheel",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Yoke",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "headlamp_type",
+              "question": "Headlamp / front-light market variant",
+              "default": "Premium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard front lights (Premium \u2014 default; identical render to 'Original')",
+                  "value": "Premium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global-market front lights",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "rearlight_type",
+              "question": "Rear-light / tail body variant",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Original tail/rear end",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global-market rear end (enables badge & wordmark, moves charge port)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "has_tesla_word_mark",
+              "question": "Rear TESLA wordmark",
+              "default": "true",
+              "showIf": "rearlight_type == 2 (Global)",
+              "options": [
+                {
+                  "label": "Show wordmark",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Delete (no wordmark)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "car_special_type",
+              "question": "Special badging series",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Foundation Series (renders as None)",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Launch Series (renders as None)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Signature Series (signature node group + signature plaid badge; signature brakes if red calipers on)",
+                  "value": "3",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "drivetrain_type",
+              "question": "Drivetrain (Plaid badge)",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "RWD / no plaid badge",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "AWD (Dual Motor) / no plaid badge",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Plaid (Tri-Motor) \u2014 plaid badge",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (silver) calipers",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Light tint",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Default tint",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Medium tint",
+                  "value": "0,0,0,170",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Dark tint",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "charge_port_type",
+              "question": "Charge port / cable standard",
+              "default": "US",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US (NACS/Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC/CCS2)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB AC",
+                  "value": "GB_AC",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB DC",
+                  "value": "GB_DC",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2 V3)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 13,
+              "field": "third_row_seats",
+              "question": "Third-row seats",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "None (5-seat)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Futuris fold-flat",
+                  "value": "FuturisFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Futuris no-fold-flat",
+                  "value": "FuturisNoFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Flat fold",
+                  "value": "FlatFold",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 14,
+              "field": "rear_seat_type",
+              "question": "Rear seat configuration (seat count)",
+              "default": "0",
+              "showIf": "always (EXECUTIVE forces 3 rows even when third_row_seats='None'; otherwise this only disambiguates 6 vs 7 once a 3rd row is present)",
+              "options": [
+                {
+                  "label": "Base (7-seat when 3rd row present; 5-seat otherwise)",
+                  "value": "0",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Recaro (behaves like Base -> 7-seat)",
+                  "value": "1",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Executive (forces 3 rows + 6-seat captain's chairs)",
+                  "value": "2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Two-seat / captain's chairs (6-seat when 3rd row present)",
+                  "value": "3",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Fold-flat (behaves like Base -> 7-seat)",
+                  "value": "4",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 15,
+              "field": "rhd",
+              "question": "Steering side (RHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 16,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Model Y": {
+      "generations": [
+        {
+          "generation": "Model Y \u2014 Legacy (pre-Juniper)",
+          "routing": {
+            "car_type": "modely",
+            "fascia_type": "original",
+            "chassis_type": "model_y"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (default)",
+                  "value": "PearlWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Solid Black",
+                  "value": "SolidBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Red Multi-Coat",
+                  "value": "RedMulticoat",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stealth Grey (2023+ Y)",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red (2023+ Y; dev-sample default for Model Y)",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "Gemini19Square",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Gemini 19\" (base aero, default) \u2192 Gemini mesh",
+                  "value": "Gemini19Square",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Gemini 19\" staggered (same Gemini mesh)",
+                  "value": "Gemini19Staggered",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Apollo 19\" (renders Gemini mesh)",
+                  "value": "Apollo19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Induction 20\" black (LR/Perf)",
+                  "value": "Induction20Black",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "\u00dcberturbine 21\" (Performance)",
+                  "value": "UberTurbine21Black",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior (seat color + console generation)",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black \u2014 original console (default)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White \u2014 original console",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "All Black \u2014 refresh console",
+                  "value": "Black2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White \u2014 refresh console",
+                  "value": "White2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "third_row_seats",
+              "question": "Third row / seat count",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "5-seat (no third row, default)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat \u2014 Futuris fold-flat",
+                  "value": "FuturisFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat \u2014 Futuris no-fold-flat",
+                  "value": "FuturisNoFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat \u2014 flat fold",
+                  "value": "FlatFold",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "headlamp_type",
+              "question": "Headlamp / market lighting",
+              "default": "Premium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Premium / North America (renders Original geometry, default)",
+                  "value": "Premium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Original (same as Premium)",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global (global front + rear-trunk + charge-cap geometry)",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "spoiler_type",
+              "question": "Spoiler",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "No spoiler (default)",
+                  "value": "None",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Carbon fiber spoiler",
+                  "value": "CarbonFiber",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "aux_park_lamps",
+              "question": "Fog lamps",
+              "default": "NaPremium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Fog lamps present (cover hidden, default)",
+                  "value": "NaPremium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "No fog lamps (blanking cover shown)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard calipers (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "badging_material_type",
+              "question": "Badging material",
+              "default": "0",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Chrome / silver (default)",
+                  "value": "0",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Black matte",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Light",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Medium",
+                  "value": "0,0,0,170",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Dark",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "rhd",
+              "question": "Steering side (LHD/RHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 12,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model Y \u2014 Juniper Base (Bayberry)",
+          "routing": {
+            "car_type": "modely",
+            "fascia_type": "baseBayberry",
+            "chassis_type": "model_y (any value that is NOT 'model_y_long_wheel_base'; default 'model_y'. LWB would short-circuit to BayberryE80.tscn before fascia is evaluated)"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (renderer default)",
+                  "value": "PearlWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Stealth Grey",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (new for Juniper)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "E4118",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "E41 18\" aero (Juniper base)",
+                  "value": "E4118",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Crossflow 19\" (Gemini Dark mesh)",
+                  "value": "Crossflow19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Machina 19\"",
+                  "value": "MachinaV219",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix V2 20\"",
+                  "value": "HelixV220",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix V2 20\" Dark",
+                  "value": "HelixV220Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid V2 21\" (Performance-trim wheel)",
+                  "value": "ArachnidV221",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black and White",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "third_row_seats",
+              "question": "Seating (rows)",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "5-seat (no third row)",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat (third row)",
+                  "value": "FlatFold",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "has_tesla_badge",
+              "question": "Rear Tesla badge",
+              "default": "true",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Show badge",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Hide badge (debadged)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "rhd",
+              "question": "Steering side (handedness)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint (alpha 153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Light tint (alpha 128)",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Dark tint (alpha 190)",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "badging_material_type",
+              "question": "Badging material",
+              "default": "0",
+              "showIf": "always (visible only if the scene defines a 'badging' material set)",
+              "options": [
+                {
+                  "label": "Chrome / Silver",
+                  "value": "0",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Black Matte",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "charge_port_type",
+              "question": "Charge port / cable type",
+              "default": "US",
+              "showIf": "always (cable mesh only spawns while a charger is connected)",
+              "options": [
+                {
+                  "label": "US (NACS/Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 11,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model Y \u2014 Juniper Performance",
+          "routing": {
+            "car_type": "modely",
+            "fascia_type": "performanceBayberry",
+            "chassis_type": "model_y (any value EXCEPT model_y_long_wheel_base; LWB would reroute to BayberryE80.tscn)"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (field-absent default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stealth Grey (Juniper standard)",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black (Juniper; replaced Solid Black)",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (new Juniper color)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red (dev sample assigns this to Model Y)",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Custom paint override (R,G,B,metallic,roughness \u2014 sent via paint_color_override, wins over named color)",
+                  "value": "<paint_color_override CSV>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheels",
+              "default": "ArachnidV221",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Arachnid V2 21in (Juniper Performance wheel; realworld default for this trim)",
+                  "value": "ArachnidV221",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix V2 20in",
+                  "value": "HelixV220",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix V2 20in Dark",
+                  "value": "HelixV220Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Crossflow 19in (GeminiDark mesh)",
+                  "value": "Crossflow19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Machina V2 19in",
+                  "value": "MachinaV219",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "E41 18in aero (Juniper base aero)",
+                  "value": "E4118",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Source fallback if wheel key absent/unknown: Gemini (legacy mesh)",
+                  "value": "Gemini19Square",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "interior_trim_type",
+              "question": "Interior color",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (field-absent default; Black2 renders identically here)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black and White (White2 renders identically here)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "third_row_seats",
+              "question": "Seating layout (3rd row)",
+              "default": "None",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "5-seat (no 3rd row) \u2014 realworld Performance config",
+                  "value": "None",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat, fold-flat 3rd row (renderer builds it; not a real Performance config)",
+                  "value": "FuturisFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat, no-fold-flat 3rd row (same 7-seat mesh)",
+                  "value": "FuturisNoFoldFlat",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "7-seat, flat-fold 3rd row (same 7-seat mesh)",
+                  "value": "FlatFold",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "has_tesla_badge",
+              "question": "Show rear Tesla badge / wordmark",
+              "default": "true",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Show Tesla badge (default)",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Hide Tesla badge",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "rhd",
+              "question": "Steering side (RHD/LHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always (optional)",
+              "options": [
+                {
+                  "label": "Standard tint (default 0,0,0,153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Lighter tint",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Darker tint",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "badging_material_type",
+              "question": "Badging material finish",
+              "default": "0",
+              "showIf": "always (optional)",
+              "options": [
+                {
+                  "label": "Chrome / silver (Model Y default)",
+                  "value": "0",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Black matte",
+                  "value": "1",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model Y \u2014 Juniper E41",
+          "routing": {
+            "car_type": "modely",
+            "fascia_type": "e41Bayberry",
+            "chassis_type": "model_y"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (renderer default)",
+                  "value": "PearlWhite",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Stealth Grey",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (Juniper-new)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red (Model Y dev-sample color)",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic (legacy Y grey)",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Lunar Silver (low-confidence / region)",
+                  "value": "LunarSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Frost Blue (low-confidence / region)",
+                  "value": "FrostBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Silk Road Silver (China-market)",
+                  "value": "SilkroadSilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Marine Blue (low-confidence / China-market)",
+                  "value": "MarineBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Custom paint override (r,g,b,metallic,roughness)",
+                  "value": "<paint_color_override CSV>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "wheel_type",
+              "question": "Wheel",
+              "default": "E4118",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "18\" E41 aero (Juniper base)",
+                  "value": "E4118",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "19\" Crossflow (GeminiDark mesh)",
+                  "value": "Crossflow19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "19\" Machina V2",
+                  "value": "MachinaV219",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "20\" Helix V2",
+                  "value": "HelixV220",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "20\" Helix V2 Dark",
+                  "value": "HelixV220Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "21\" Arachnid V2 (Juniper Performance)",
+                  "value": "ArachnidV221",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Gemini (renderer modely absent-key fallback; legacy Y)",
+                  "value": "Gemini19Square",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "headlamp_type",
+              "question": "Headlamp / market lighting (rear turn-signal color)",
+              "default": "Premium",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Premium/US (renders Original; red rear signal)",
+                  "value": "Premium",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Original (red rear signal)",
+                  "value": "Original",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Global/EU (amber rear turn signal)",
+                  "value": "Global",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "has_tesla_badge",
+              "question": "Show rear Tesla badge",
+              "default": "true",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Badge visible",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Badge hidden (debadged)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "rhd",
+              "question": "Steering side (RHD/LHD)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "window_tint_color",
+              "question": "Window tint",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint (alpha 153)",
+                  "value": "0,0,0,153",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Light tint (alpha 128)",
+                  "value": "0,0,0,128",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Dark tint (alpha 170)",
+                  "value": "0,0,0,170",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "Limo tint (alpha 190)",
+                  "value": "0,0,0,190",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "interior_trim_type",
+              "question": "Interior trim (INERT on E41 \u2014 no visible change)",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black (inert)",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White (inert)",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black \u2014 refresh console (inert on E41)",
+                  "value": "Black2",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "White \u2014 refresh console (inert on E41)",
+                  "value": "White2",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "eu_vehicle",
+              "question": "License-plate region",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (default)",
+                  "value": "false",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard (default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "generation": "Model Y \u2014 Juniper 6-seat LWB (E80)",
+          "routing": {
+            "car_type": "modely",
+            "fascia_type": "IGNORED for routing (chassis LWB short-circuits fascia switch, ProductManager.gd:139-140); still parsed and drives Bayberry.is_performance but that is inert on E80",
+            "chassis_type": "model_y_long_wheel_base"
+          },
+          "questions": [
+            {
+              "order": 1,
+              "field": "exterior_color",
+              "question": "Exterior paint color",
+              "default": "PearlWhite",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Pearl White Multi-Coat (source default / FALLBACK color)",
+                  "value": "PearlWhite",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Stealth Grey (Juniper)",
+                  "value": "StealthGrey",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Diamond Black (Juniper \u2014 replaced Solid Black)",
+                  "value": "DiamondBlack",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Glacier Blue (Juniper new color)",
+                  "value": "GlacierBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Quicksilver (Juniper)",
+                  "value": "Quicksilver",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Ultra Red (Juniper; dev-sample color for Model Y)",
+                  "value": "UltraRed",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Deep Blue Metallic",
+                  "value": "DeepBlue",
+                  "provenance": "REALWORLD"
+                },
+                {
+                  "label": "Midnight Silver Metallic",
+                  "value": "MidnightSilver",
+                  "provenance": "REALWORLD"
+                }
+              ]
+            },
+            {
+              "order": 2,
+              "field": "paint_color_override",
+              "question": "Custom paint override (advanced; optional). CSV 'R,G,B,metallic,roughness' \u2014 RGB 0-255. Wins over exterior_color only when it splits to EXACTLY 5 floats; otherwise ignored and the named color is used.",
+              "default": "",
+              "showIf": "always (optional \u2014 leave empty to use exterior_color)",
+              "options": [
+                {
+                  "label": "None \u2014 use named exterior_color",
+                  "value": "",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Custom 5-float CSV, e.g. '20,20,20,0.6,0.05'",
+                  "value": "<R,G,B,metallic,roughness>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 3,
+              "field": "wheel_type",
+              "question": "Wheel",
+              "default": "E4118",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "E41 18\" aero (Juniper base) \u2014 WheelType.E41_18, Ego/Wheels_Bayberry/BayberryE41",
+                  "value": "E4118",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Machina V2 19\" \u2014 WheelType.MachinaV2_19, Ego/Wheels_Bayberry/Machina2",
+                  "value": "MachinaV219",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Crossflow 19\" (GeminiDark mesh) \u2014 WheelType.Crossflow_19, Ego/Wheels_Bayberry/GeminiDark",
+                  "value": "Crossflow19",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix V2 20\" \u2014 WheelType.HelixV2_20, Ego/Wheels_Bayberry/Helix2",
+                  "value": "HelixV220",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Helix V2 20\" Dark \u2014 WheelType.HelixV2_20_Dark, Ego/Wheels_Bayberry/Helix2_Dark",
+                  "value": "HelixV220Dark",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Arachnid V2 21\" (Performance) \u2014 WheelType.ArachnidV2_21, Ego/Wheels_Bayberry/Arachnid_V2",
+                  "value": "ArachnidV221",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 4,
+              "field": "interior_trim_type",
+              "question": "Interior trim",
+              "default": "Black",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "All Black",
+                  "value": "Black",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Black & White",
+                  "value": "White",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 5,
+              "field": "has_tesla_badge",
+              "question": "Rear Tesla badge",
+              "default": "true",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Badge shown",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Badge hidden (debadged)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 6,
+              "field": "rhd",
+              "question": "Steering side (handedness)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Left-hand drive",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Right-hand drive",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 7,
+              "field": "red_brake_calipers",
+              "question": "Brake calipers",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Standard calipers",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Red performance calipers",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 8,
+              "field": "eu_vehicle",
+              "question": "License plate region (drives which plate mesh shows; US and EU are mutually exclusive)",
+              "default": "false",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "US plate (scene default)",
+                  "value": "false",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "EU plate",
+                  "value": "true",
+                  "provenance": "SOURCE"
+                }
+              ]
+            },
+            {
+              "order": 9,
+              "field": "charge_port_type",
+              "question": "Charge port / charging-cable type (cable only appears while a charger is connected)",
+              "default": "US",
+              "showIf": "always (cosmetic; cable mesh conditional on charger-connected state)",
+              "options": [
+                {
+                  "label": "US (NACS/Charging_Cable)",
+                  "value": "US",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "EU (IEC)",
+                  "value": "EU",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "GB / GB_AC / GB_DC (IEC)",
+                  "value": "GB",
+                  "provenance": "GLOBAL"
+                },
+                {
+                  "label": "CCS (CCS2_V3)",
+                  "value": "CCS",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            },
+            {
+              "order": 10,
+              "field": "window_tint_color",
+              "question": "Window tint (advanced)",
+              "default": "0,0,0,153",
+              "showIf": "always",
+              "options": [
+                {
+                  "label": "Default tint (0,0,0,153)",
+                  "value": "0,0,0,153",
+                  "provenance": "SOURCE"
+                },
+                {
+                  "label": "Custom 'r,g,b,a' (0-255 each)",
+                  "value": "<r,g,b,a>",
+                  "provenance": "GLOBAL"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
