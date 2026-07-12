@@ -15,6 +15,7 @@
 // generic Error).
 
 import type { PiTransport } from './types';
+import { assertPiBaseUrl } from './teslaHostGuard';
 
 // --- Typed errors ------------------------------------------------------
 
@@ -81,47 +82,11 @@ export type PiFetch = (url: string, init: PiRequestInit) => Promise<PiResponseLi
 // The Pi's base URL is USER-CONFIGURED (LAN IP or a Tailscale Funnel
 // hostname), so there is no fixed allowlist to check it against — the guard
 // that actually holds the "never reach Tesla's real servers" line is a
-// denylist on the configured host, plus a hard require for https.
+// denylist on the configured host, plus a hard require for https. The
+// denylist + host-checking logic itself lives in ./teslaHostGuard (the one
+// file in src/ble allowed to spell Tesla hostnames out plainly — see its
+// header comment and the exclusion list in no-tesla-servers.test.ts).
 //
-// The literal Tesla-server hostname/API fragments below are deliberately
-// split across string-literal concatenations rather than written as one
-// contiguous token: this file is the one legitimate place in src/ble that
-// needs to KNOW these strings in order to refuse to ever dial them, but the
-// sibling guard test (no-tesla-servers.test.ts) greps every source file
-// under src/ble for these exact substrings (including in comments) and
-// fails the build if it finds one — a second, independent tripwire against
-// a Tesla-server literal creeping in anywhere. Do not "clean up" by
-// rejoining the halves, or by spelling one out in a comment; either defeats
-// the tripwire.
-const HOST_DENYLIST_MARKERS: string[] = [
-  'tesla' + '.com',
-  'teslamotors' + '.com',
-  'owner' + '-api',
-  'owners' + '-api',
-  'aka' + 'mai',
-];
-
-function assertSafeBaseUrl(baseUrl: string): void {
-  let url: URL;
-  try {
-    url = new URL(baseUrl);
-  } catch {
-    throw new TransportError('http', `invalid Pi base URL: ${JSON.stringify(baseUrl)}`);
-  }
-  if (url.protocol !== 'https:') {
-    throw new TransportError(
-      'http',
-      `Pi base URL must be https: (got ${url.protocol}) — a plain-http base would leak the bearer token`,
-    );
-  }
-  const host = url.hostname.toLowerCase();
-  for (const marker of HOST_DENYLIST_MARKERS) {
-    if (host.includes(marker)) {
-      throw new TransportError('http', `refusing to configure transport for a Tesla-server host: ${host}`);
-    }
-  }
-}
-
 // --- Timeouts ------------------------------------------------------------
 //
 // Matches the browser reference's per-path budget (app.js:42-53): opening a
@@ -181,7 +146,7 @@ export class PiClient implements PiTransport {
   private readonly fetchImpl: PiFetch;
 
   constructor(cfg: { baseUrl: string; token: string }, fetchImpl?: PiFetch) {
-    assertSafeBaseUrl(cfg.baseUrl);
+    assertPiBaseUrl(cfg.baseUrl);
     this.baseUrl = cfg.baseUrl.endsWith('/') ? cfg.baseUrl.slice(0, -1) : cfg.baseUrl;
     this.token = cfg.token;
     // Default to the ambient global fetch. Cast needed because the DOM lib's
