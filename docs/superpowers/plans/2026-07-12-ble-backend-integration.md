@@ -270,7 +270,11 @@ Port file-by-file, preserving function names and the retry/fault tables so futur
 
 > **STATUS: Phase 1 is DONE and merged-ready (protocol core in `src/ble/`, 168 tests). Phase 2 now builds ON it — the `PiTransport`/`DeviceKeys` interfaces are real and in `src/ble/types.ts`.**
 >
-> - [ ] **P2.T0 — HERMES POLYFILL (BLOCKER — do this FIRST, before anything else in Phase 2).** The protocol core uses noble's `randomBytes`, which needs `crypto.getRandomValues`; **Hermes does not provide it**, so the very first handshake will throw on device even though all Node unit tests pass. Add `pnpm add react-native-get-random-values` and `import 'react-native-get-random-values';` as the FIRST line of the app entry (`src/app/_layout.tsx` top, or the expo-router entry). Also verify `TextEncoder` exists in this Expo SDK 56 Hermes build (used in `crypto.ts`/`session.ts`); if a device smoke test shows it missing, add a tiny ASCII encoder or a `text-encoding` polyfill next to the getRandomValues import. This is a JS-only change (no rebuild) but is a hard on-device prerequisite — nothing in Phases 2–4 works on the car without it. Verify by deploying a trivial `randomBytes(12)` call to the device and confirming no throw.
+> - [ ] **P2.T0 — HERMES POLYFILLS (BLOCKER — do this FIRST, before anything else in Phase 2).** Three JS globals the headless stack relies on that Hermes does NOT reliably ship (all invisible to Node tests, which have them):
+>   1. **`crypto.getRandomValues`** — noble's `randomBytes` (every handshake/command nonce) throws without it. `pnpm add react-native-get-random-values` and `import 'react-native-get-random-values';` as the FIRST line of the app entry.
+>   2. **`URL`** — `src/ble/teslaHostGuard.ts` uses `new URL()` + `url.hostname` as the *sole runtime enforcement* of the "never reach Tesla servers" safety constraint. The guard is now **fail-closed** (an empty/missing hostname is rejected), so a missing/partial Hermes `URL` fails safe — but it also means WITHOUT the polyfill every base URL is rejected and nothing connects. `pnpm add react-native-url-polyfill` and `import 'react-native-url-polyfill/auto';` at the app entry (next to the getRandomValues import).
+>   3. **`TextEncoder`** — used in `crypto.ts`/`session.ts` (VIN/label encoding). Recent Hermes ships it; verify on-device, and if missing add a tiny ASCII encoder or `text-encoding` polyfill at entry.
+>   These are JS-only (no rebuild) but a hard on-device prerequisite. Verify by deploying a screen that calls `randomBytes(12)` and `new PiClient({baseUrl:'https://192.168.4.1:8443', token:'x'})` (should construct) and `…owner-api.tesla.com…` (should throw) and confirming behavior on the device.
 > - **P2 transport must EXTEND, not redefine, the core interface:** `src/ble/types.ts` already exports `PiTransport = { openSession, exchange, closeSession }`. The concrete fetch client should implement a superset (`interface PiClient extends PiTransport { pairInfo(); enrollPublicKey(); tokenInfo(); revokeToken(); }`) — one name, no collision. Keep the plan's P1.T6-style runtime host-allowlist guard IN `transport.ts` (the grep guard alone won't catch a `baseUrl` from config).
 
 - [ ] **P2.T1** `transport.ts` — `PiTransport` over `fetch`: bearer header, per-call timeouts via `AbortController` (sessions open 45 s, exchange = `timeout_ms`+5 s, others 15 s — mirror `app.js:52`), error mapping per Part 4. Jest tests with mocked fetch for each error code.
@@ -287,7 +291,7 @@ Port file-by-file, preserving function names and the retry/fault tables so futur
 - [ ] **P3.T3** `telemetry.ts` — map `VcsecStatus`/`InfotainmentSnapshot` → `Partial<VehicleViewState>`, with the 30 s closure-intent grace (suppress telemetry that contradicts a <30 s-old optimistic closure change). Table-driven jest tests (esp. enum→boolean edges: `ajar`, `selective_unlocked`, `unknown` = no-patch).
 - [ ] **P3.T4** `gateway.ts` — port `_directDo` retry loop (max 10 attempts, fault classes → refetch/delay/evict per Phase-1 table) over `transport`+`session`+`queue`; tests with a scripted fake transport (reuse the `FakeCar` harness from `src/ble/session.test.ts`): stale-session→`refreshCachedSession` then success; transport-dead→cold re-handshake; semantic fault surfaces once. **Three carry-forward requirements from the Phase-1 final review:** (1) the decrypt-fail-as-"stale frame" path (`session.ts` ~line 605) MUST classify as **retryable**, not semantic — otherwise transient response races become user-facing errors; add a test. (2) Assert `session.domain === built.domain` before `sendCommand` (a cheap guard turns a car signature-fault into a clear local error). (3) Close the Phase-1 coverage gaps here: add live tests for `refetchSessionInfo`/`refreshCachedSession`, the counter-rollover throw, and a `FLAG_ENCRYPT_RESPONSE` round-trip (`vcsecGetStatus`/a state read through `sendCommand`).
 - [ ] **P3.T4b — RESPONSE ORACLE (gate before trusting any on-car read).** The response-side AAD path (`buildAesGcmResponseMetadata`, `makeRequestHash`, the decrypt branch) is currently proven only self-consistently by `FakeCar` — no independent oracle. All telemetry depends on it. Capture a **Go-emitted** `RoutableMessage` carrying `AES_GCM_ResponseData` (e.g. from the `rpi-webclient` Go SDK / a real exchange logged on the Pi) and add it to `goVectors.json`; write a test that decrypts it with the real session key and asserts the plaintext `CarServer.Response`. Until this passes, treat on-car reads as unverified.
-- [ ] **P3.T5** `useCarLink.ts` — owns gateway per active live vehicle: foreground-only 20 s VCSEC poll (AppState-aware; stop on background — the Pi's 5-min reaper cleans up), `dispatch(cmd, rollback)` (optimistic patch already applied by caller; on `!ok` run rollback + error haptic/toast), `refresh()` = wake→awakeSync→applyTelemetry (replaces `HomeScreen.tsx:93` fake delay). Wire into `VehicleProvider`.
+- [ ] **P3.T5** `useCarLink.ts` — owns gateway per active live vehicle: foreground-only 20 s VCSEC poll (AppState-aware; stop on background — the Pi's 5-min reaper cleans up), `dispatch(cmd, rollback)` (optimistic patch already applied by caller; on `!ok` run rollback + error haptic/toast), `refresh()` = wake→awakeSync→applyTelemetry (replaces `HomeScreen.tsx:93` fake delay). Wire into `VehicleProvider`. **Build the gateway once via `createCarGateway`** from `src/ble` (`index.ts` façade — includes `vcsecStatusToPatch`/`infotainmentToPatch`/`CLOSURE_INTENT_GRACE_MS` for the read path; you own the `closureIntent` map threaded across polls + calling `applyTelemetry`). **CRITICAL single-gateway invariant:** `session.ts`'s `_domainCache` is a module-global keyed on domain only (no VIN check on cache *hits* — safe for v1's one live car, but two VINs would silently share sessions). So: exactly ONE active live gateway at a time, and **call `closeAllCachedSessions()` whenever the active vehicle changes or on re-enrollment**; never construct a gateway per render. `startForegroundPoll` was intentionally NOT put on `CarGateway` (Part 4 sketch listed it) — the 20 s AppState-aware loop + `DELETE`-session-on-background live HERE in the React layer. Asleep handling: if `readVcsecStatus()` shows `asleep`, call `wake()` before `awakeSync()`; treat a partial snapshot as "some slices stale," and note `awakeSync` rejects only if ALL four reads fault.
 - [ ] **P3.T6** First end-to-end wiring: `CONTROL_ACTIONS.lock` dispatches `{type:'lock'|'unlock'}` for live vehicles. Hardware gate test happens here.
 
 ### Phase 4 — Action wiring sweep (parallelizable per screen) (2–3 days)
@@ -342,3 +346,37 @@ Port file-by-file, preserving function names and the retry/fault tables so futur
 4. Demo cars are pixel-identical to today; `EXPO_PUBLIC_CAR_LINK` unset ⇒ zero behavior change anywhere.
 5. `npx jest` fully green, including Go-fixture crypto vectors and the no-Tesla-servers guard.
 6. Web client and mobile can coexist against one Pi (serialized, no corruption) — tested once explicitly.
+
+---
+
+## Part 10 — Cross-cutting infrastructure (added 2026-07-16, after direct-BLE + useCarLink landed)
+
+The original plan focused on the protocol/transport/command path. Real on-car use surfaced a layer of cross-cutting *infra* (not features, not the enrollment UX) that the app needs to feel trustworthy. Direct-BLE (BLE-1/2/3), the transport selector, and `useCarLink`+reconciler (real Home lock) are DONE and hardware-validated; these buckets are what's left on the infra side.
+
+### A — Action-feedback loop (the "failed operation" toast + pending state)
+Today `useCarLink.dispatch` only rolls the optimistic state back + fires a heavy haptic on `{ok:false}` — no message, no in-flight indication (the control *looks* instantly done, then reverts). The official Tesla app shows a pending state, then a bottom "failed operation" message on timeout (~30s). Build:
+- **A1. Error→message taxonomy** (pure, testable): map `CommandOutcome` (`unreachable`/`timeout`/`auth`/`fault`+faultName/`exhausted`) → human text ("Car out of range", "Car asleep", "Not paired — re-enrol", "Car declined the request").
+- **A2. Toast/snackbar host** (global, one instance): a bottom transient message surface. Wire `useCarLink` failures to it via A1.
+- **A3. Per-command status**: `pending → confirmed → failed` on each dispatched control (spinner/dim while in-flight, not just optimistic-then-maybe-rollback). Success confirmation (a light selection haptic) when the car ACKs.
+- **Prereq for the Phase-4 command sweep** — wire A before sweeping controls so each inherits trustworthy feedback.
+
+### B — Connection & liveness (build alongside telemetry #1)
+- **B1. Telemetry write path**: `useCarLink.applyTelemetry(patch)` patches the active linked car via the PLAIN `applyActive` (NOT the reconciler — no command loop), honoring the closure-intent grace (thread a `closureIntent` map: a dispatched lock/closure records `field→now+30s`, and `vcsecStatusToPatch` suppresses contradicting telemetry within the window).
+- **B2. Foreground VCSEC poll**: AppState-aware ~20 s loop calling `readVcsecStatus` → `parseVcsecStatus` → `vcsecStatusToPatch` → `applyTelemetry` (lock/awake/closures — works asleep, keeps Home live). Stop on background (Pi reaper cleans up).
+- **B3. Connection status**: `useCarLink` exposes `status` (offline / connecting / online-BLE / online-Pi / asleep) + which transport, derived from poll + command success and the selector's choice. Surface a small indicator on Home.
+- **B4. Data freshness**: track `lastUpdatedAt` per read; expose "updated Xs ago" / stale badge (replaces the mock `getMockLastUpdated`).
+
+### C — Resilience
+- **C1. Unpaired/token-revoked detection**: an `auth` or `UNKNOWN_KEY_ID`(fault 3) outcome → surface "this phone isn't paired — re-enrol" + route to enrollment, instead of a generic failure.
+- **C2. Rapid-input coalescing**: debounce/coalesce double-taps on a control so the two commands + rollbacks don't race (reviewer-flagged double-tap edge).
+- **C3. In-flight cancellation**: allow aborting a command that's retrying (AbortController through the transport).
+- **C4. Proactive BLE switch-back**: a BLE-state listener that re-selects BLE when it returns while pinned to Pi (deferred from M3a — the selector only re-selects on failure today).
+
+### D — Observability
+- **D1. Field logging / activity history**: a persistent ring-buffer log of commands + outcomes (Hermes Release `console.log` doesn't reach device syslog — memory), viewable in a debug screen. Mirrors the Pi's activity-log.
+
+### E — Delivery
+- **E1. CI**: run the `node --import tsx --test` suite on push.
+- **E2. Merge `feat/ble-carlink` → main** once the v1 surface (telemetry + core commands + A/B infra) is in.
+
+**Recommended order:** A (feedback) → B (liveness/telemetry) alongside feature #1/#2, then C/D as hardening, E to land. (User chose to build B first — 2026-07-16.)
