@@ -28,7 +28,7 @@
 //         keyRole (4) = Keys.Role.ROLE_DRIVER (3)
 //       }
 //       metadataForKey (6) = VCSEC.KeyMetadata {
-//         keyFormFactor (1) = VCSEC.KeyFormFactor.KEY_FORM_FACTOR_CLOUD_KEY (9)
+//         keyFormFactor (1) = VCSEC.KeyFormFactor.KEY_FORM_FACTOR_IOS_DEVICE (6)
 //       }
 //     }
 //   }
@@ -64,7 +64,13 @@ export function buildAddKeyMessage(publicKeyRaw: Uint8Array): Uint8Array {
         keyRole: pb.Keys.Role.ROLE_DRIVER,
       },
       metadataForKey: {
-        keyFormFactor: pb.VCSEC.KeyFormFactor.KEY_FORM_FACTOR_CLOUD_KEY,
+        // IOS_DEVICE (not CLOUD_KEY): a phone paired directly over BLE IS an
+        // iOS device key, and this drives the car's default label — CLOUD_KEY
+        // shows as "unknown key", IOS_DEVICE as a phone key. There is no
+        // free-text name field in the BLE add-key protocol (Tesla only names
+        // keys at the account/cloud level, which we never touch); the owner
+        // renames it in the vehicle UX.
+        keyFormFactor: pb.VCSEC.KeyFormFactor.KEY_FORM_FACTOR_IOS_DEVICE,
       },
     },
   });

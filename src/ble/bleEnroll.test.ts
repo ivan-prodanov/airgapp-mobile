@@ -16,7 +16,7 @@ function fakePublicKeyRaw(): Uint8Array {
   return bytes;
 }
 
-test('buildAddKeyMessage round-trips PublicKeyRaw, ROLE_DRIVER, CLOUD_KEY, PRESENT_KEY through decode', () => {
+test('buildAddKeyMessage round-trips PublicKeyRaw, ROLE_DRIVER, IOS_DEVICE, PRESENT_KEY through decode', () => {
   const pub = fakePublicKeyRaw();
   const encoded = buildAddKeyMessage(pub);
 
@@ -47,8 +47,8 @@ test('buildAddKeyMessage round-trips PublicKeyRaw, ROLE_DRIVER, CLOUD_KEY, PRESE
 
   const metadata = op.metadataForKey;
   assert.ok(metadata, 'WhitelistOperation.metadataForKey must be set');
-  assert.equal(metadata.keyFormFactor, pb.VCSEC.KeyFormFactor.KEY_FORM_FACTOR_CLOUD_KEY);
-  assert.equal(metadata.keyFormFactor, 9);
+  assert.equal(metadata.keyFormFactor, pb.VCSEC.KeyFormFactor.KEY_FORM_FACTOR_IOS_DEVICE);
+  assert.equal(metadata.keyFormFactor, 6);
 });
 
 test('buildAddKeyMessage throws on a wrong-length pubkey', () => {

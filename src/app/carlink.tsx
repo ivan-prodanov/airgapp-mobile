@@ -366,7 +366,17 @@ export default function CarLinkScreen() {
   const handleForgetKey = async () => {
     try {
       await deleteDeviceKeys(store);
-      append('device key deleted');
+      // A key change invalidates EVERY cached session — they carry the OLD
+      // key's ECDH-derived session key + counter. Reusing one after the old
+      // key is gone from the car throws UNKNOWN_KEY_ID (fault 3). Close all
+      // sessions (Pi in-memory + persisted orphan id + the warm BLE link) so
+      // the next command does a FRESH handshake with the newly-enrolled key.
+      closeAllCachedSessions();
+      await store.removeItem(LAST_SESSION_KEY).catch(() => {});
+      const ble = bleTransportRef.current;
+      bleTransportRef.current = null;
+      if (ble) await ble.closeSession('').catch(() => {});
+      append('device key deleted + all sessions closed (Pi + BLE) — re-enrol, then commands use the new key');
     } catch (err) {
       append(`ERROR forget device key: ${errMsg(err)}`);
     }
