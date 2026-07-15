@@ -138,12 +138,12 @@ export function useCarLink(): CarLink {
           const outcome = await gw.runCommand(cmd);
           if (!outcome.ok) {
             rollback();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
             console.warn('[useCarLink] command failed', cmd.type, outcome);
           }
         } catch (err) {
           rollback();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
           console.warn('[useCarLink] command threw', cmd.type, err);
         }
       })();
