@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -21,8 +21,13 @@ import {
   isCarLinkEnabled,
   type CarCommand,
   type PiConfig,
+  type CarTransport,
 } from '@/ble';
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
+// DirectBleTransport imports react-native-ble-plx (RN-only) — imported
+// directly here, NOT via the src/ble façade, same isolation rule as the
+// secure-store adapter above (see directBleTransport.ts's header comment).
+import { DirectBleTransport } from '@/ble/directBleTransport';
 
 // carlink.tsx — HARDWARE BRING-UP HARNESS, not polished UX.
 //
@@ -71,6 +76,14 @@ export default function CarLinkScreen() {
   const [vin, setVin] = useState('');
   const [enrolLink, setEnrolLink] = useState('');
   const [log, setLog] = useState<string[]>([]);
+  // transport: which CarTransport lock/unlock/read/wake route through.
+  // 'ble' needs no baseUrl/token — DirectBleTransport scans by VIN alone.
+  const [transport, setTransport] = useState<'pi' | 'ble'>('pi');
+  // ONE DirectBleTransport instance reused across button presses so the BLE
+  // connection stays warm (reconnecting per command is slow) — see
+  // directBleTransport.ts's header comment on why only one connection is
+  // ever live at a time. Reset to null when the toggle flips back to Pi.
+  const bleTransportRef = useRef<DirectBleTransport | null>(null);
 
   const append = (line: string) => {
     const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
@@ -158,6 +171,53 @@ export default function CarLinkScreen() {
     }
   };
 
+  // handleTransportChange flips the selected CarTransport. Switching back to
+  // Pi drops the cached DirectBleTransport (best-effort disconnect) so a
+  // later switch to BLE starts a clean scan+connect rather than reusing a
+  // possibly-stale link.
+  const handleTransportChange = (next: 'pi' | 'ble') => {
+    if (next === transport) return;
+    setTransport(next);
+    append(`transport -> ${next === 'ble' ? 'Direct BLE' : 'Pi (Funnel)'}`);
+    if (next === 'pi' && bleTransportRef.current) {
+      bleTransportRef.current.closeSession('').catch(() => {});
+      bleTransportRef.current = null;
+    }
+  };
+
+  // getBleTransport returns the cached instance, creating it on first use.
+  const getBleTransport = (): DirectBleTransport => {
+    if (!bleTransportRef.current) {
+      bleTransportRef.current = new DirectBleTransport();
+    }
+    return bleTransportRef.current;
+  };
+
+  // handleBleScanTest exercises scan+connect (and the MTU negotiation) in
+  // isolation from a full command, so a hardware failure narrows to "can't
+  // even find/connect to the car" vs. "connected fine, protocol issue."
+  // Uses its OWN throwaway transport (not the cached one) so it never
+  // disturbs a connection the toggle is relying on.
+  const handleBleScanTest = async () => {
+    if (!isValidVin(vin)) {
+      append(`ERROR BLE scan test: "${vin}" is not a valid 17-char VIN`);
+      return;
+    }
+    const probe = new DirectBleTransport();
+    append(`BLE scan test: scanning for VIN …${vin.slice(-6)}`);
+    try {
+      const sessionId = await probe.openSession(vin);
+      const info = probe.getDebugInfo();
+      append(
+        `BLE scan test: connected ✓ device=${info.deviceName ?? '(no local name)'} blockLength=${info.blockLength} sessionId=${sessionId}`,
+      );
+      await probe.closeSession(sessionId);
+      append('BLE scan test: disconnected');
+    } catch (err) {
+      append(`ERROR BLE scan test: ${errMsg(err)}`);
+    }
+  };
+
   const handleEnrolLinkChange = (text: string) => {
     setEnrolLink(text);
     const parsed = parseEnrolUrl(text);
@@ -219,15 +279,25 @@ export default function CarLinkScreen() {
 
   // makeGateway reads the persisted keys + config fresh on every call — this
   // is a bring-up harness, not a long-lived screen, so no gateway/queue is
-  // cached across button presses. The transport is WRAPPED so every opened Pi
-  // session id is persisted (and cleared on close): that persisted id is what
-  // the mount-time orphan recovery DELETEs after a force-kill.
+  // cached across button presses. Which CarTransport backs the gateway
+  // depends on the toggle:
+  //   'ble' — the cached DirectBleTransport (no baseUrl/token needed; BLE
+  //     scans by VIN). Reused across calls so the connection stays warm.
+  //   'pi'  — the existing wrapped PiClient, which persists every opened
+  //     session id so the mount-time orphan recovery can DELETE it after a
+  //     force-kill.
   const makeGateway = async () => {
     const keys = await loadOrCreateDeviceKeys(store);
     const cfg = await loadPiConfig(store);
     if (!cfg) throw new Error('no config saved — tap "Save config" first');
+    if (!cfg.vin) throw new Error('no VIN saved — set VIN and tap "Save config" first');
+
+    if (transport === 'ble') {
+      return createCarGateway({ transport: getBleTransport(), vin: cfg.vin, deviceKeys: keys });
+    }
+
     const pi = new PiClient({ baseUrl: cfg.baseUrl, token: cfg.token });
-    const transport = {
+    const wrapped: CarTransport = {
       openSession: async (vin: string) => {
         const id = await pi.openSession(vin);
         await store.setItem(LAST_SESSION_KEY, id).catch(() => {});
@@ -239,7 +309,7 @@ export default function CarLinkScreen() {
         await store.removeItem(LAST_SESSION_KEY).catch(() => {});
       },
     };
-    return createCarGateway({ transport, vin: cfg.vin!, deviceKeys: keys });
+    return createCarGateway({ transport: wrapped, vin: cfg.vin, deviceKeys: keys });
   };
 
   const runCarCommand = async (label: string, cmd: CarCommand) => {
@@ -330,10 +400,29 @@ export default function CarLinkScreen() {
               theme={theme}
             />
 
+            <View style={styles.field}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Transport</Text>
+              <View style={styles.transportRow}>
+                <TransportPill
+                  label="Pi (Funnel)"
+                  active={transport === 'pi'}
+                  onPress={() => handleTransportChange('pi')}
+                  theme={theme}
+                />
+                <TransportPill
+                  label="Direct BLE"
+                  active={transport === 'ble'}
+                  onPress={() => handleTransportChange('ble')}
+                  theme={theme}
+                />
+              </View>
+            </View>
+
             <View style={styles.buttonGrid}>
               <ActionButton label="Save config" onPress={handleSaveConfig} theme={theme} />
               <ActionButton label="Check Pi" onPress={handleCheckPi} theme={theme} />
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
+              <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
@@ -402,6 +491,31 @@ function Field({
   );
 }
 
+function TransportPill({
+  label,
+  active,
+  onPress,
+  theme,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  theme: Theme;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.transportPill,
+        { backgroundColor: active ? theme.backgroundSelected : theme.backgroundElement, opacity: pressed ? 0.7 : 1 },
+      ]}>
+      <Text style={[styles.transportPillLabel, { color: theme.text, fontWeight: active ? '700' : '500' }]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function ActionButton({ label, onPress, theme }: { label: string; onPress: () => void; theme: Theme }) {
   return (
     <Pressable
@@ -466,6 +580,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+  },
+  transportRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  transportPill: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  transportPillLabel: {
+    fontSize: 14,
   },
   buttonGrid: {
     flexDirection: 'row',
