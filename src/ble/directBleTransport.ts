@@ -36,7 +36,7 @@ import type { CarTransport } from './types';
 
 // GATT UUIDs — spec §1.
 const SERVICE_UUID = '00000211-b2d1-43f0-9b88-960cebf8b91e';
-const TX_UUID = '00000212-b2d1-43f0-9b88-960cebf8b91e'; // phone -> car, WRITE (no response)
+const TX_UUID = '00000212-b2d1-43f0-9b88-960cebf8b91e'; // phone -> car, WRITE (with response)
 const RX_UUID = '00000213-b2d1-43f0-9b88-960cebf8b91e'; // car -> phone, NOTIFY
 
 // MTU negotiation — spec §3/§8. ble-plx's documented un-negotiated default
@@ -178,7 +178,11 @@ export class DirectBleTransport implements CarTransport {
     const chunks = frameForWrite(req, this.blockLength);
     try {
       for (const chunk of chunks) {
-        await device.writeCharacteristicWithoutResponseForService(SERVICE_UUID, TX_UUID, bytesToBase64(chunk));
+        // WITH response — the Go connector writes each chunk with noRsp=false
+        // (ble.go:121), i.e. an ATT Write Request the car ACKs; the Tesla TX
+        // characteristic ignores Write-Without-Response commands (they leave
+        // the car silent → our exchange times out as a "stale frame").
+        await device.writeCharacteristicWithResponseForService(SERVICE_UUID, TX_UUID, bytesToBase64(chunk));
       }
     } catch (e) {
       // Any write failure on a connection we believed was live almost
