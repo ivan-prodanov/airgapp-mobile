@@ -9,6 +9,7 @@ import { useTheme } from '@/hooks/use-theme';
 import {
   createCarGateway,
   PiClient,
+  closeAllCachedSessions,
   loadOrCreateDeviceKeys,
   deleteDeviceKeys,
   publicKeyBase64,
@@ -19,6 +20,7 @@ import {
   isValidVin,
   isCarLinkEnabled,
   type CarCommand,
+  type PiConfig,
 } from '@/ble';
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 
@@ -40,6 +42,14 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 type Theme = ReturnType<typeof useTheme>;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// The Pi allows exactly ONE BLE session at a time (bleMu, ~5-min idle reaper).
+// A force-kill can't run cleanup, so the last session is orphaned and blocks
+// the next cold-start openSession until the reaper fires. We persist the open
+// session id here (secure-store — verified to survive kills) and best-effort
+// DELETE it on the next launch so a force-kill recovers instantly instead of
+// waiting 5 minutes. (Productization moves this into useCarLink — plan P3.T5.)
+const LAST_SESSION_KEY = 'ble.lastSessionId';
 
 // errMsg formats an unknown thrown value verbatim for the log: the message,
 // plus the TransportError `kind` tag when present (session-gone/timeout/
@@ -68,11 +78,27 @@ export default function CarLinkScreen() {
   };
 
   // Prefill from whatever is already persisted (Keychain-backed store — see
-  // secureStoreSecretStore.ts's header comment).
+  // secureStoreSecretStore.ts's header comment). ALSO probe the raw storage
+  // boundary on mount so a force-kill+relaunch tells us definitively whether
+  // expo-secure-store persists anything across launches (diagnosing the
+  // device-key-not-saved bug): reads the exact keys keystore.ts/config.ts use
+  // plus a dedicated self-test marker written by the "Storage self-test" button.
   useEffect(() => {
     (async () => {
       try {
-        const cfg = await loadPiConfig(store);
+        const dk = await store.getItem('ble.deviceKey.v1');
+        const pc = await store.getItem('ble.piConfig.v1');
+        const st = await store.getItem('ble.selftest.v1');
+        append(
+          `STORAGE PROBE on mount: deviceKey=${dk ? `PRESENT(${dk.length})` : 'null'} ` +
+            `piConfig=${pc ? 'PRESENT' : 'null'} selftest=${st ?? 'null'}`,
+        );
+      } catch (err) {
+        append(`STORAGE PROBE error: ${errMsg(err)}`);
+      }
+      let cfg: PiConfig | null = null;
+      try {
+        cfg = await loadPiConfig(store);
         if (cfg) {
           setBaseUrl(cfg.baseUrl);
           setToken(cfg.token);
@@ -82,10 +108,55 @@ export default function CarLinkScreen() {
       } catch (err) {
         append(`ERROR load config: ${errMsg(err)}`);
       }
+      // Orphaned-session recovery: a prior force-kill can leave the Pi holding
+      // its single BLE session (bleMu) for ~5 min, blocking our first command.
+      // Best-effort DELETE the persisted last session id to free it now.
+      if (cfg) {
+        try {
+          const stale = await store.getItem(LAST_SESSION_KEY);
+          if (stale) {
+            await new PiClient({ baseUrl: cfg.baseUrl, token: cfg.token }).closeSession(stale);
+            append(`recovered orphaned Pi session ${stale.slice(0, 8)}… (freed before first command)`);
+          }
+        } catch (err) {
+          // 404 (already reaped) / transient — the id is single-use either way.
+          append(`orphan cleanup (best-effort): ${errMsg(err)}`);
+        } finally {
+          await store.removeItem(LAST_SESSION_KEY).catch(() => {});
+        }
+      }
     })();
+    // On unmount (navigate away), free the Pi session so it isn't orphaned.
+    return () => {
+      closeAllCachedSessions();
+    };
     // Mount-only: intentionally not re-running when append's closure changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // handleSelfTest writes a timestamp to a dedicated key through the SAME store
+  // keystore.ts uses and reads it straight back (proves in-session round-trip).
+  // Persistence across a force-kill is confirmed by the STORAGE PROBE line on
+  // the next mount showing this timestamp (or 'null' if it didn't survive).
+  // handleCloseSession frees the Pi's BLE session now (in-memory cached
+  // session → DELETE via the wrapped transport, which also clears the
+  // persisted last-session id). Use before a deliberate kill during testing.
+  const handleCloseSession = async () => {
+    closeAllCachedSessions();
+    await store.removeItem(LAST_SESSION_KEY).catch(() => {});
+    append('closed cached Pi session(s) + cleared last-session id');
+  };
+
+  const handleSelfTest = async () => {
+    const marker = new Date().toISOString();
+    try {
+      await store.setItem('ble.selftest.v1', marker);
+      const back = await store.getItem('ble.selftest.v1');
+      append(`SELF-TEST wrote "${marker}" read back "${back ?? 'null'}" — now force-kill + relaunch and read the STORAGE PROBE line`);
+    } catch (err) {
+      append(`SELF-TEST error: ${errMsg(err)}`);
+    }
+  };
 
   const handleEnrolLinkChange = (text: string) => {
     setEnrolLink(text);
@@ -148,16 +219,27 @@ export default function CarLinkScreen() {
 
   // makeGateway reads the persisted keys + config fresh on every call — this
   // is a bring-up harness, not a long-lived screen, so no gateway/queue is
-  // cached across button presses.
+  // cached across button presses. The transport is WRAPPED so every opened Pi
+  // session id is persisted (and cleared on close): that persisted id is what
+  // the mount-time orphan recovery DELETEs after a force-kill.
   const makeGateway = async () => {
     const keys = await loadOrCreateDeviceKeys(store);
     const cfg = await loadPiConfig(store);
     if (!cfg) throw new Error('no config saved — tap "Save config" first');
-    return createCarGateway({
-      transport: new PiClient({ baseUrl: cfg.baseUrl, token: cfg.token }),
-      vin: cfg.vin!,
-      deviceKeys: keys,
-    });
+    const pi = new PiClient({ baseUrl: cfg.baseUrl, token: cfg.token });
+    const transport = {
+      openSession: async (vin: string) => {
+        const id = await pi.openSession(vin);
+        await store.setItem(LAST_SESSION_KEY, id).catch(() => {});
+        return id;
+      },
+      exchange: (id: string, payloadB64: string, timeoutMs: number) => pi.exchange(id, payloadB64, timeoutMs),
+      closeSession: async (id: string) => {
+        await pi.closeSession(id);
+        await store.removeItem(LAST_SESSION_KEY).catch(() => {});
+      },
+    };
+    return createCarGateway({ transport, vin: cfg.vin!, deviceKeys: keys });
   };
 
   const runCarCommand = async (label: string, cmd: CarCommand) => {
@@ -256,7 +338,9 @@ export default function CarLinkScreen() {
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
+              <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
+              <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />
             </View>
 
             <View style={styles.logHeader}>
