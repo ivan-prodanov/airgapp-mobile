@@ -298,7 +298,10 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
 
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') startPolling();
-      else {
+      else if (next === 'background') {
+        // Only a true background stops the poll (the session is torn down too).
+        // iOS emits a transient 'inactive' for the app switcher / control center
+        // / incoming call — ignore it so the status doesn't flash "Offline".
         stopPolling();
         setConnection('offline');
       }
