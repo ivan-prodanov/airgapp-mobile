@@ -19,6 +19,14 @@ export interface PiTransport {
   closeSession(sessionId: string): Promise<void>;
 }
 
+// CarTransport is the transport-agnostic alias for PiTransport. PiTransport
+// is the legacy name (it was written against the Pi-forwarder-only design);
+// CarTransport is the name new code should reach for once a direct-BLE
+// transport (talking to the car without a Pi forwarder in between) lands
+// alongside PiClient as a second implementation of this same shape. Purely
+// additive — PiTransport itself and its consumers are untouched.
+export type CarTransport = PiTransport;
+
 // DeviceKeys is the client's long-term P-256 identity. privateScalar is the
 // 32-byte big-endian scalar (JWK `d`); publicKeyRaw is the 65-byte SEC1
 // uncompressed point (0x04 || X || Y) the car uses as our keychain lookup id.

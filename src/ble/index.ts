@@ -24,7 +24,7 @@ export { loadOrCreateDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFin
 
 export { loadPiConfig, savePiConfig, clearPiConfig, parseEnrolUrl, isValidVin } from './config';
 
-export type { PiConfig, DeviceKeys, SecretStore, PiTransport } from './types';
+export type { PiConfig, DeviceKeys, SecretStore, PiTransport, CarTransport } from './types';
 
 // The telemetry patch reducers are pure stateless mappers (decoded snapshot
 // -> Partial<VehicleViewState>, no session/crypto/retry involved) that

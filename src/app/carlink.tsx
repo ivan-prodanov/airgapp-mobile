@@ -20,7 +20,7 @@ import {
   isCarLinkEnabled,
   type CarCommand,
 } from '@/ble';
-import { asyncStorageSecretStore as store } from '@/ble/asyncStorageSecretStore';
+import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 
 // carlink.tsx — HARDWARE BRING-UP HARNESS, not polished UX.
 //
@@ -67,9 +67,8 @@ export default function CarLinkScreen() {
     setLog((prev) => [`[${ts}] ${line}`, ...prev]);
   };
 
-  // Prefill from whatever is already persisted (bring-up store — see
-  // asyncStorageSecretStore.ts's header comment on why AsyncStorage is
-  // acceptable here and nowhere else).
+  // Prefill from whatever is already persisted (Keychain-backed store — see
+  // secureStoreSecretStore.ts's header comment).
   useEffect(() => {
     (async () => {
       try {
