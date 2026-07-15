@@ -14,7 +14,8 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
-import { useFleet, usePreferences } from '@/state/VehicleProvider';
+import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
+import type { CarLinkStatus } from '@/state/useCarLink';
 import { CONTROL_ACTIONS } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
@@ -41,6 +42,16 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const fleet = useFleet();
   const router = useRouter();
   const { favorites } = usePreferences();
+  const carLink = useCarLinkStatus();
+  // Re-render every 5s while linked so "updated Xs ago" ticks up between the
+  // 20s polls (the poll itself re-renders on each successful read). No-op when
+  // unlinked, so demo cars pay nothing.
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    if (!carLink.linked) return;
+    const id = setInterval(() => setNow((n) => n + 1), 5_000);
+    return () => clearInterval(id);
+  }, [carLink.linked]);
   // Geographic bearing to the active car (mock = its stable offset bearing; real coords arrive via BLE).
   // Drives the compass arrow on the Location row.
   const activeVehicle = fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0];
@@ -217,7 +228,14 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             <View style={[styles.batteryFill, { width: `${state.batteryLevel}%` }]} />
           </View>
           <Text style={styles.statusPct}>{state.batteryLevel}%</Text>
-          <Text style={styles.statusText}>{state.awake ? 'Parked' : 'Last seen 3 days ago'}</Text>
+          <Text style={styles.statusText}>
+            {carLink.linked
+              ? carLinkFreshness(carLink)
+              : state.awake
+                ? 'Parked'
+                : 'Last seen 3 days ago'}
+          </Text>
+          {carLink.linked ? <LinkIndicator status={carLink} /> : null}
         </View>
         {fleet.vehicles.length > 1 ? (
           <View style={styles.dots}>
@@ -231,6 +249,34 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         ) : null}
         </Animated.View>
       </SafeAreaView>
+    </View>
+  );
+}
+
+// carLinkFreshness renders the linked car's real data age from lastUpdatedAt.
+// Before the first successful read it reflects the connection phase instead.
+function carLinkFreshness(status: CarLinkStatus): string {
+  if (status.lastUpdatedAt === null) {
+    return status.connection === 'connecting' ? 'Connecting…' : 'Waiting for car';
+  }
+  const secs = Math.max(0, Math.round((Date.now() - status.lastUpdatedAt) / 1000));
+  if (secs < 5) return 'Updated just now';
+  if (secs < 60) return `Updated ${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `Updated ${mins}m ago`;
+  return `Updated ${Math.round(mins / 60)}h ago`;
+}
+
+// LinkIndicator: a small dot + BLE/Pi/Offline label, shown only when linked.
+function LinkIndicator({ status }: { status: CarLinkStatus }) {
+  const online = status.connection === 'online';
+  const connecting = status.connection === 'connecting';
+  const label = online ? (status.transport === 'pi' ? 'Pi' : 'BLE') : connecting ? '···' : 'Offline';
+  const dotColor = online ? '#34C759' : connecting ? '#FFD60A' : 'rgba(255,255,255,0.35)';
+  return (
+    <View style={styles.linkBadge}>
+      <View style={[styles.linkDot, { backgroundColor: dotColor }]} />
+      <Text style={styles.linkLabel}>{label}</Text>
     </View>
   );
 }
@@ -382,6 +428,22 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 15,
     color: 'rgba(255,255,255,0.45)',
+  },
+  linkBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginLeft: 2,
+  },
+  linkDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  linkLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.6)',
   },
   iconRow: {
     flexDirection: 'row',
