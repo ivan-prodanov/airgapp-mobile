@@ -21,6 +21,9 @@ export { closeAllCachedSessions } from './session';
 export { PiClient, TransportError } from './transport';
 export type { TransportErrorKind } from './transport';
 
+export { createSelectingTransport } from './transportSelector';
+export type { TransportCandidate } from './transportSelector';
+
 export { buildCommand } from './commands';
 export type { CarCommand, BuiltCommand } from './commands';
 

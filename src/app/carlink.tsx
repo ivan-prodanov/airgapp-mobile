@@ -8,6 +8,7 @@ import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { useTheme } from '@/hooks/use-theme';
 import {
   createCarGateway,
+  createSelectingTransport,
   PiClient,
   closeAllCachedSessions,
   loadOrCreateDeviceKeys,
@@ -22,6 +23,7 @@ import {
   type CarCommand,
   type PiConfig,
   type CarTransport,
+  type TransportCandidate,
 } from '@/ble';
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // DirectBleTransport imports react-native-ble-plx (RN-only) — imported
@@ -56,6 +58,12 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 // waiting 5 minutes. (Productization moves this into useCarLink — plan P3.T5.)
 const LAST_SESSION_KEY = 'ble.lastSessionId';
 
+// AUTO_BLE_SCAN_TIMEOUT_MS is the short scan budget the 'auto' transport
+// mode gives DirectBleTransport (vs. the module's own 20s default) so that
+// when the car isn't in BLE range, createSelectingTransport falls back to
+// the Pi in ~6s instead of making every command wait out a full scan first.
+const AUTO_BLE_SCAN_TIMEOUT_MS = 6000;
+
 // errMsg formats an unknown thrown value verbatim for the log: the message,
 // plus the TransportError `kind` tag when present (session-gone/timeout/
 // ble/auth/http/network) — that tag is exactly what we need to diagnose a
@@ -64,6 +72,27 @@ function errMsg(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   const kind = (err as { kind?: unknown } | null)?.kind;
   return kind !== undefined ? `${message} (kind=${String(kind)})` : message;
+}
+
+// wrapPiClient wraps a PiClient in the CarTransport shape that also persists
+// the opened session id (LAST_SESSION_KEY) so mount-time orphan recovery can
+// DELETE it after a force-kill — the same wrapping the manual 'pi' mode has
+// always used, factored out so the 'auto' mode's pi candidate gets identical
+// orphan-recovery behavior instead of a second, divergent copy.
+function wrapPiClient(cfg: { baseUrl: string; token: string }): CarTransport {
+  const pi = new PiClient(cfg);
+  return {
+    openSession: async (vin: string) => {
+      const id = await pi.openSession(vin);
+      await store.setItem(LAST_SESSION_KEY, id).catch(() => {});
+      return id;
+    },
+    exchange: (id: string, payloadB64: string, timeoutMs: number) => pi.exchange(id, payloadB64, timeoutMs),
+    closeSession: async (id: string) => {
+      await pi.closeSession(id);
+      await store.removeItem(LAST_SESSION_KEY).catch(() => {});
+    },
+  };
 }
 
 export default function CarLinkScreen() {
@@ -78,7 +107,10 @@ export default function CarLinkScreen() {
   const [log, setLog] = useState<string[]>([]);
   // transport: which CarTransport lock/unlock/read/wake route through.
   // 'ble' needs no baseUrl/token — DirectBleTransport scans by VIN alone.
-  const [transport, setTransport] = useState<'pi' | 'ble'>('pi');
+  // 'auto' (default) tries direct BLE first and falls back to the Pi via
+  // createSelectingTransport — matching the official Tesla app's
+  // BLE-primary behavior.
+  const [transport, setTransport] = useState<'auto' | 'pi' | 'ble'>('auto');
   // ONE DirectBleTransport instance reused across button presses so the BLE
   // connection stays warm (reconnecting per command is slow) — see
   // directBleTransport.ts's header comment on why only one connection is
@@ -171,15 +203,19 @@ export default function CarLinkScreen() {
     }
   };
 
-  // handleTransportChange flips the selected CarTransport. Switching back to
-  // Pi drops the cached DirectBleTransport (best-effort disconnect) so a
-  // later switch to BLE starts a clean scan+connect rather than reusing a
-  // possibly-stale link.
-  const handleTransportChange = (next: 'pi' | 'ble') => {
+  // handleTransportChange flips the selected CarTransport. Switching away
+  // from manual 'ble' drops the cached DirectBleTransport (best-effort
+  // disconnect) so a later switch back to BLE starts a clean scan+connect
+  // rather than reusing a possibly-stale link. 'auto' never uses
+  // bleTransportRef (createSelectingTransport mints its own fresh
+  // DirectBleTransport per session — see makeGateway), so it's dropped the
+  // same as switching to 'pi'.
+  const handleTransportChange = (next: 'auto' | 'pi' | 'ble') => {
     if (next === transport) return;
     setTransport(next);
-    append(`transport -> ${next === 'ble' ? 'Direct BLE' : 'Pi (Funnel)'}`);
-    if (next === 'pi' && bleTransportRef.current) {
+    const label = next === 'ble' ? 'Direct BLE' : next === 'pi' ? 'Pi (Funnel)' : 'Auto (BLE→Pi)';
+    append(`transport -> ${label}`);
+    if (next !== 'ble' && bleTransportRef.current) {
       bleTransportRef.current.closeSession('').catch(() => {});
       bleTransportRef.current = null;
     }
@@ -302,11 +338,18 @@ export default function CarLinkScreen() {
   // is a bring-up harness, not a long-lived screen, so no gateway/queue is
   // cached across button presses. Which CarTransport backs the gateway
   // depends on the toggle:
-  //   'ble' — the cached DirectBleTransport (no baseUrl/token needed; BLE
+  //   'ble'  — the cached DirectBleTransport (no baseUrl/token needed; BLE
   //     scans by VIN). Reused across calls so the connection stays warm.
-  //   'pi'  — the existing wrapped PiClient, which persists every opened
-  //     session id so the mount-time orphan recovery can DELETE it after a
-  //     force-kill.
+  //   'pi'   — the wrapped PiClient (wrapPiClient), which persists every
+  //     opened session id so the mount-time orphan recovery can DELETE it
+  //     after a force-kill.
+  //   'auto' — createSelectingTransport tries a fresh DirectBleTransport
+  //     (short scan timeout — see AUTO_BLE_SCAN_TIMEOUT_MS) first, falling
+  //     back to a fresh wrapped PiClient if BLE isn't configured/available.
+  //     The selector mints a NEW transport per openSession, but the gateway
+  //     opens one session and reuses it for the lifetime of this call's
+  //     session cache, so the BLE connection still stays warm across the
+  //     runCommand calls within one makeGateway()'s session.
   const makeGateway = async () => {
     const keys = await loadOrCreateDeviceKeys(store);
     const cfg = await loadPiConfig(store);
@@ -317,20 +360,26 @@ export default function CarLinkScreen() {
       return createCarGateway({ transport: getBleTransport(), vin: cfg.vin, deviceKeys: keys });
     }
 
-    const pi = new PiClient({ baseUrl: cfg.baseUrl, token: cfg.token });
-    const wrapped: CarTransport = {
-      openSession: async (vin: string) => {
-        const id = await pi.openSession(vin);
-        await store.setItem(LAST_SESSION_KEY, id).catch(() => {});
-        return id;
-      },
-      exchange: (id: string, payloadB64: string, timeoutMs: number) => pi.exchange(id, payloadB64, timeoutMs),
-      closeSession: async (id: string) => {
-        await pi.closeSession(id);
-        await store.removeItem(LAST_SESSION_KEY).catch(() => {});
-      },
-    };
-    return createCarGateway({ transport: wrapped, vin: cfg.vin, deviceKeys: keys });
+    if (transport === 'auto') {
+      const candidates: TransportCandidate[] = [];
+      if (cfg.vin) {
+        candidates.push({
+          name: 'ble',
+          make: () => new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
+        });
+      }
+      if (cfg.baseUrl && cfg.token) {
+        candidates.push({ name: 'pi', make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }) });
+      }
+      const selecting = createSelectingTransport(candidates, (name) => append(`transport selected: ${name}`));
+      return createCarGateway({ transport: selecting, vin: cfg.vin, deviceKeys: keys });
+    }
+
+    return createCarGateway({
+      transport: wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }),
+      vin: cfg.vin,
+      deviceKeys: keys,
+    });
   };
 
   const runCarCommand = async (label: string, cmd: CarCommand) => {
@@ -434,6 +483,12 @@ export default function CarLinkScreen() {
             <View style={styles.field}>
               <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Transport</Text>
               <View style={styles.transportRow}>
+                <TransportPill
+                  label="Auto (BLE→Pi)"
+                  active={transport === 'auto'}
+                  onPress={() => handleTransportChange('auto')}
+                  theme={theme}
+                />
                 <TransportPill
                   label="Pi (Funnel)"
                   active={transport === 'pi'}

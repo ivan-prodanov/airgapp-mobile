@@ -50,6 +50,7 @@ test('the public façade exports the gateway + keystore + config surface as func
   assert.equal(typeof ble.isValidVin, 'function');
   assert.equal(typeof ble.buildCommand, 'function');
   assert.equal(typeof ble.isCarLinkEnabled, 'function');
+  assert.equal(typeof ble.createSelectingTransport, 'function');
 });
 
 test('the façade re-exports the telemetry patch reducers (pure mappers, no policy bypass)', () => {

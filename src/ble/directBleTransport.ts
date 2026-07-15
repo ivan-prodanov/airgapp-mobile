@@ -54,6 +54,7 @@ const BLUETOOTH_GRACE_MS = 3000;
 // How long to scan for the vehicle's advertisement before giving up —
 // spec §5 step 1. The car only advertises while its BLE radio is awake
 // (VCSEC domain never sleeps, so this should find an in-range car quickly).
+// Default for the constructor's scanTimeoutMs option (see the class).
 const SCAN_TIMEOUT_MS = 20000;
 
 // Spec §6: exchange() timeouts are caller-supplied (session.ts's
@@ -114,6 +115,16 @@ export class DirectBleTransport implements CarTransport {
   // overlap per the concurrency note above, but a waiter can still wake on a
   // frame meant to be discarded as a stale broadcast).
   private waiters: Array<() => void> = [];
+  // How long scanForVehicle waits before giving up — defaults to
+  // SCAN_TIMEOUT_MS (today's behavior). The selector (transportSelector.ts)
+  // overrides this to a short budget so BLE-primary/Pi-fallback gives up on
+  // an out-of-range car quickly instead of holding up the fallback for the
+  // full 20s.
+  private readonly scanTimeoutMs: number;
+
+  constructor(opts?: { scanTimeoutMs?: number }) {
+    this.scanTimeoutMs = opts?.scanTimeoutMs ?? SCAN_TIMEOUT_MS;
+  }
 
   // openSession scans for, connects to, and subscribes on the car's BLE
   // GATT server (spec §5). Returns the connected device's id as the
@@ -354,10 +365,10 @@ export class DirectBleTransport implements CarTransport {
         this.manager.stopDeviceScan().catch(() => {});
         reject(
           new Error(
-            `car not found (asleep or out of BLE range?) — no advertisement matching ${targetName} within ${SCAN_TIMEOUT_MS}ms`,
+            `car not found (asleep or out of BLE range?) — no advertisement matching ${targetName} within ${this.scanTimeoutMs}ms`,
           ),
         );
-      }, SCAN_TIMEOUT_MS);
+      }, this.scanTimeoutMs);
 
       this.manager
         .startDeviceScan(null, { allowDuplicates: false }, (error, device) => {
