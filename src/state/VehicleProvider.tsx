@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import { useFleetState, type Fleet } from './useFleetState';
+import type { CarLinkStatus } from './useCarLink';
 import { usePersistedReducer } from './usePersistedReducer';
 import { memoryBackend } from './persistence';
 import { defaultPreferences, preferencesReducer } from './preferences';
@@ -19,6 +20,7 @@ const VehicleContext = createContext<VehicleContextValue | null>(null);
 const ActiveIdContext = createContext<string | null>(null);
 const FleetContext = createContext<Fleet | null>(null);
 const PreferencesContext = createContext<PreferencesApi | null>(null);
+const CarLinkStatusContext = createContext<CarLinkStatus | null>(null);
 
 // One shared fleet for the whole app. `useVehicle()` returns the ACTIVE car's [state, actions] so
 // existing screens are unchanged; `useFleet()` exposes the list + add/remove/select; the Godot
@@ -26,7 +28,7 @@ const PreferencesContext = createContext<PreferencesApi | null>(null);
 // exposes app-global UI preferences (the customizable favorites bar), persisted via the persistence
 // layer (in-memory by default).
 export function VehicleProvider({ children }: { children: ReactNode }) {
-  const { active, activeId, fleet } = useFleetState();
+  const { active, activeId, fleet, carLinkStatus } = useFleetState();
   const [prefs, dispatch] = usePersistedReducer(
     memoryBackend,
     'prefs.v1',
@@ -45,9 +47,11 @@ export function VehicleProvider({ children }: { children: ReactNode }) {
   return (
     <FleetContext.Provider value={fleet}>
       <ActiveIdContext.Provider value={activeId}>
-        <PreferencesContext.Provider value={preferences}>
-          <VehicleContext.Provider value={active}>{children}</VehicleContext.Provider>
-        </PreferencesContext.Provider>
+        <CarLinkStatusContext.Provider value={carLinkStatus}>
+          <PreferencesContext.Provider value={preferences}>
+            <VehicleContext.Provider value={active}>{children}</VehicleContext.Provider>
+          </PreferencesContext.Provider>
+        </CarLinkStatusContext.Provider>
       </ActiveIdContext.Provider>
     </FleetContext.Provider>
   );
@@ -81,6 +85,16 @@ export function usePreferences(): PreferencesApi {
   const ctx = useContext(PreferencesContext);
   if (!ctx) {
     throw new Error('usePreferences must be used inside <VehicleProvider>');
+  }
+  return ctx;
+}
+
+// Live connection/transport/freshness for the linked car. Read by Home to show
+// a minimal indicator (BLE/Pi/Offline + "updated Xs ago") only when linked.
+export function useCarLinkStatus(): CarLinkStatus {
+  const ctx = useContext(CarLinkStatusContext);
+  if (!ctx) {
+    throw new Error('useCarLinkStatus must be used inside <VehicleProvider>');
   }
   return ctx;
 }

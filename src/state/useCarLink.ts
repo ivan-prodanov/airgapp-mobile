@@ -2,11 +2,15 @@
 //
 // Owns ONE stable selector-backed CarGateway for the linked car (the enrolled
 // VIN in PiConfig, when EXPO_PUBLIC_CAR_LINK=1 and device keys exist). The
-// hook is the USER-ACTION → real-command path only: useFleetState calls
-// dispatch(cmd, rollback) when the active car is linked and a lock/unlock diff
-// is produced; on a car-side failure the rollback reverts the optimistic UI.
-// Telemetry (M3b-2) will NOT come through here — it mutates state with no
-// dispatch, so it never loops back into a command.
+// hook is BOTH the USER-ACTION → real-command path AND the telemetry-in path:
+//   • dispatch(cmd, rollback, affectedKeys): useFleetState calls this when the
+//     active car is linked and a lock/unlock diff is produced; on a car-side
+//     failure the rollback reverts the optimistic UI. affectedKeys stamp a
+//     grace window so an in-flight/lagging poll can't revert the change.
+//   • a foreground 20s VCSEC poll reads the car's real lock/awake/closures and
+//     applies them via opts.applyTelemetry — the PLAIN (non-reconciling) apply,
+//     so telemetry NEVER loops back into a command. The optimistic-intent grace
+//     (intentGrace.ts) strips any field the user just changed from the patch.
 //
 // RN-only (imports DirectBleTransport → ble-plx, and the secure-store adapter),
 // so this file is deliberately NOT node-tested and never added to the `test`
@@ -42,21 +46,48 @@ import {
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
+import { vcsecStatusToPatch } from '@/ble/telemetry';
+import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
+import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // Short scan budget for the 'auto' selector's BLE candidate so that when the
 // car isn't in range we fall back to the Pi in ~6s instead of waiting out
 // DirectBleTransport's full default scan. Matches carlink.tsx.
 const AUTO_BLE_SCAN_TIMEOUT_MS = 6000;
 
-export interface CarLink {
+// Foreground VCSEC poll cadence. readVcsecStatus works while the car sleeps
+// (VCSEC stays awake) so it's cheap and never wakes the car; 20s is frequent
+// enough for a live lock/awake/closures indicator without spamming the link.
+const POLL_MS = 20_000;
+
+// CarLinkStatus is the read-only connection surface consumers render from.
+export interface CarLinkStatus {
   // enabled + config + device keys + a VIN to bind to.
   linked: boolean;
-  // Fire-and-reconcile: dispatch the command; on car-side failure call
-  // rollback (revert the optimistic UI). Never throws into the caller.
-  dispatch: (cmd: CarCommand, rollback: () => void) => void;
+  // 'offline' = no successful contact yet / last poll failed / backgrounded.
+  // 'connecting' = first contact in flight. 'online' = last read succeeded.
+  connection: 'offline' | 'connecting' | 'online';
+  // Which transport the selector used on the last successful read.
+  transport: 'ble' | 'pi' | null;
+  // Date.now() of the last successful read (null until the first one lands).
+  lastUpdatedAt: number | null;
 }
 
-export function useCarLink(): CarLink {
+export interface CarLink extends CarLinkStatus {
+  // Fire-and-reconcile: dispatch the command; on car-side failure call
+  // rollback (revert the optimistic UI). Never throws into the caller.
+  // affectedKeys are the VehicleStateKeys the user just changed — each is
+  // stamped with a GRACE_MS intent window so the poll won't revert them.
+  dispatch: (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => void;
+}
+
+export interface UseCarLinkOptions {
+  // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
+  // poll-derived patch through here must never loop back into a command.
+  applyTelemetry: (patch: Partial<VehicleViewState>) => void;
+}
+
+export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   const enabled = isCarLinkEnabled();
 
   const cfgRef = useRef<PiConfig | null>(null);
@@ -65,8 +96,21 @@ export function useCarLink(): CarLink {
   // lazily on first dispatch and torn down on background/unmount.
   const selectorRef = useRef<CarTransport | null>(null);
   const gatewayRef = useRef<CarGateway | null>(null);
+  // Which candidate the selector last chose (recorded via its onSelect). Read
+  // into `transport` state on a successful poll tick.
+  const selectedTransportRef = useRef<'ble' | 'pi' | null>(null);
+  // Optimistic-intent map: VehicleStateKey → grace expiry (Date.now()+GRACE_MS).
+  // Stamped by dispatch, consumed (and pruned) by the poll's strip filter.
+  const intentRef = useRef<Map<VehicleStateKey, number>>(new Map());
+  // Keep the latest applyTelemetry without restarting the poll effect: its
+  // identity can change per render, but the poll must not tear down/rebuild.
+  const applyTelemetryRef = useRef(applyTelemetry);
+  applyTelemetryRef.current = applyTelemetry;
 
   const [linked, setLinked] = useState(false);
+  const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
+  const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   // Load config + device keys once on mount (only when the feature is on).
   useEffect(() => {
@@ -116,7 +160,11 @@ export function useCarLink(): CarLink {
             make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store),
           });
         }
-        selectorRef.current = createSelectingTransport(candidates);
+        // onSelect records which transport connected so a successful poll tick
+        // can surface it as `transport`. Names are 'ble' | 'pi' (see candidates).
+        selectorRef.current = createSelectingTransport(candidates, (name) => {
+          selectedTransportRef.current = name === 'pi' ? 'pi' : 'ble';
+        });
       }
       gatewayRef.current = createCarGateway({
         transport: selectorRef.current,
@@ -128,7 +176,15 @@ export function useCarLink(): CarLink {
   }, []);
 
   const dispatch = useCallback(
-    (cmd: CarCommand, rollback: () => void) => {
+    (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => {
+      // Stamp the just-changed keys with a grace window BEFORE issuing the
+      // command so a poll that fires mid-flight (or on a lagging sensor after)
+      // can't revert the optimistic value. Recorded even if the gateway isn't
+      // ready — harmless, and it keeps the UI honest until the car catches up.
+      if (affectedKeys && affectedKeys.length) {
+        const expiry = Date.now() + GRACE_MS;
+        for (const key of affectedKeys) intentRef.current.set(key, expiry);
+      }
       const gw = getGateway();
       if (!gw) return; // not linked / not ready → no-op (demo cars stay pure-optimistic)
       // Fire-and-forget: the gateway's per-VIN queue serializes commands. We
@@ -171,5 +227,96 @@ export function useCarLink(): CarLink {
     };
   }, [teardown]);
 
-  return useMemo<CarLink>(() => ({ linked, dispatch }), [linked, dispatch]);
+  // ── Foreground VCSEC poll ────────────────────────────────────────────────
+  // While linked AND foregrounded, read the car's real lock/awake/closures
+  // every POLL_MS and apply the (intent-filtered) patch through the PLAIN
+  // telemetry path. First tick fires immediately on becoming linked/foreground
+  // (connection 'connecting' → 'online'/'offline'). Single in-flight; stops on
+  // background (which also tears the session down) and resumes on foreground.
+  useEffect(() => {
+    if (!linked) {
+      setConnection('offline');
+      return;
+    }
+
+    let stopped = false; // effect torn down (unlink/unmount)
+    let paused = false; // app not foregrounded
+    let inFlight = false; // a tick is awaiting the car
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      if (stopped || paused || inFlight) return;
+      const gw = getGateway();
+      if (!gw) {
+        // Linked but the gateway isn't ready yet (config/keys still loading).
+        // Leave connection as-is; the next tick retries once it's built.
+        return;
+      }
+      inFlight = true;
+      try {
+        const st = await gw.readVcsecStatus();
+        // Empty closureIntent — the grace is applied uniformly HERE, keyed by
+        // VehicleStateKey, so telemetry.ts's closure-only keying is bypassed.
+        const { patch } = vcsecStatusToPatch(st, {}, Date.now());
+        const filtered = filterPatchUnderIntent(patch, intentRef.current, Date.now());
+        if (stopped || paused) return; // backgrounded/unlinked while awaiting
+        if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
+        setLastUpdatedAt(Date.now());
+        setConnection('online');
+        if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
+      } catch {
+        // A failed read means no clean contact this tick — drop to offline
+        // (do NOT keep a stale 'online'). The loop keeps retrying every POLL_MS.
+        if (!stopped && !paused) setConnection('offline');
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const scheduleNext = () => {
+      if (stopped || paused) return;
+      timer = setTimeout(loop, POLL_MS);
+    };
+    const loop = async () => {
+      await tick();
+      scheduleNext();
+    };
+
+    const startPolling = () => {
+      paused = false;
+      if (timer || inFlight) return; // already running
+      setConnection((prev) => (prev === 'online' ? prev : 'connecting'));
+      void loop();
+    };
+    const stopPolling = () => {
+      paused = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') startPolling();
+      else {
+        stopPolling();
+        setConnection('offline');
+      }
+    });
+
+    // Kick off now if already foregrounded (the common case on becoming linked).
+    if (AppState.currentState === 'active') startPolling();
+
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      sub.remove();
+    };
+  }, [linked, getGateway]);
+
+  return useMemo<CarLink>(
+    () => ({ linked, connection, transport, lastUpdatedAt, dispatch }),
+    [linked, connection, transport, lastUpdatedAt, dispatch],
+  );
 }
