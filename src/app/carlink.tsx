@@ -218,6 +218,27 @@ export default function CarLinkScreen() {
     }
   };
 
+  // handleEnrolOverBle enrolls the phone's device key directly over BLE —
+  // no Pi involved. Opens (or reuses) the cached DirectBleTransport
+  // connection and writes the add-key message (spec §7); the operator must
+  // still tap an existing NFC key card on the console to approve, since the
+  // car doesn't confirm this over BLE. Verify success afterward with
+  // Lock/Read.
+  const handleEnrolOverBle = async () => {
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      append(`device key fingerprint: ${deviceKeyFingerprint(keys)}`);
+      const cfg = await loadPiConfig(store);
+      if (!cfg?.vin) throw new Error('no VIN saved — set VIN and tap "Save config" first');
+      const t = getBleTransport();
+      await t.openSession(cfg.vin);
+      await t.sendAddKey(publicKeyBase64(keys));
+      append('add-key sent over BLE — TAP YOUR NFC KEY CARD on the console now, then tap Lock/Read to verify');
+    } catch (err) {
+      append(`ERROR enrol over BLE: ${errMsg(err)}`);
+    }
+  };
+
   const handleEnrolLinkChange = (text: string) => {
     setEnrolLink(text);
     const parsed = parseEnrolUrl(text);
@@ -423,6 +444,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Check Pi" onPress={handleCheckPi} theme={theme} />
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
+              <ActionButton label="Enrol over BLE" onPress={handleEnrolOverBle} theme={theme} />
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />

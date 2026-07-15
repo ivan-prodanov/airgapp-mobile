@@ -31,6 +31,7 @@ import type { Device, Subscription } from 'react-native-ble-plx';
 import { vehicleLocalName } from './bleScanName';
 import { BleReassembler, frameForWrite, MAX_BLE_MESSAGE_SIZE } from './bleFraming';
 import { outgoingCorrelators, frameAnswersRequest, type Correlators } from './bleCorrelation';
+import { buildAddKeyMessage } from './bleEnroll';
 import { bytesToBase64, base64ToBytes } from './bytes';
 import type { CarTransport } from './types';
 
@@ -197,6 +198,38 @@ export class DirectBleTransport implements CarTransport {
     const clampedTimeout = Math.min(Math.max(timeoutMs, 0), MAX_EXCHANGE_TIMEOUT_MS);
     const matched = await this.awaitMatchingFrame(want, clampedTimeout);
     return bytesToBase64(matched);
+  }
+
+  // sendAddKey writes the VCSEC add-key enrollment message (spec §7) on the
+  // already-open connection — NOT part of the CarTransport contract, an
+  // enrollment extra parallel to PiClient.enrollPublicKey. Unlike
+  // exchange(), this is unauthenticated, has no session/correlator, and is
+  // NOT a RoutableMessage — but it rides the exact same TX characteristic
+  // and 2-byte-length write framing/chunking as every other write. It does
+  // NOT await a reply: the car doesn't confirm over BLE, the operator taps
+  // an existing NFC key card on the console to approve, and success is
+  // detected afterward by running a normal command (a working lock/read
+  // means the key is on the car).
+  async sendAddKey(publicKeyB64: string): Promise<void> {
+    if (!this.device) {
+      throw new Error('BLE connection closed — no active connection: call openSession(vin) first');
+    }
+    const device = this.device;
+
+    const pub = base64ToBytes(publicKeyB64);
+    const payload = buildAddKeyMessage(pub);
+    const chunks = frameForWrite(payload, this.blockLength);
+    try {
+      for (const chunk of chunks) {
+        // Same write path as exchange() — with response (see exchange()'s
+        // comment: the Tesla TX characteristic ignores
+        // Write-Without-Response commands).
+        await device.writeCharacteristicWithResponseForService(SERVICE_UUID, TX_UUID, bytesToBase64(chunk));
+      }
+    } catch (e) {
+      const detail = isConnectionLostError(e) ? errMsg(e) : `unexpected write error: ${errMsg(e)}`;
+      throw new Error(`BLE connection closed — write failed: ${detail}`);
+    }
   }
 
   // closeSession disconnects and clears all per-connection state. Never
