@@ -16,7 +16,7 @@ import type { GestureResponderHandlers } from 'react-native';
 
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
 import type { CarLinkStatus } from '@/state/useCarLink';
-import { CONTROL_ACTIONS } from '@/state/controlActions';
+import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
@@ -147,12 +147,16 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
           <Pressable onLongPress={openCustomize} delayLongPress={300} style={styles.iconRow}>
             {favorites.map((id) => {
               const action = CONTROL_ACTIONS[id];
+              // In-flight while any of this control's real command keys are
+              // pending. Empty for demo/unlinked cars (pending never populates).
+              const pending = CONTROL_AFFECTED_KEYS[id].some((key) => carLink.pending.has(key));
               return (
                 <QuickIcon
                   key={id}
                   symbol={action.symbol(state)}
                   active={action.isActive(state)}
                   spin={action.spinning?.(state) ?? false}
+                  pending={pending}
                   onPress={() => {
                     controlHaptic();
                     action.run(state, actions);
@@ -285,23 +289,46 @@ function QuickIcon({
   symbol,
   active,
   spin,
+  pending,
   onPress,
   onLongPress,
 }: {
   symbol: SFSymbol;
   active: boolean;
   spin?: boolean;
+  // A real command for this control is in flight (dispatched, unconfirmed).
+  // Shown as a subtle opacity pulse over the icon until the car confirms/fails.
+  pending?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
+  // Loop a gentle dim while pending; snap back to solid when it clears.
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!pending) {
+      pulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.35, duration: 550, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 550, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pending, pulse]);
+
   return (
     <Pressable style={styles.quickIcon} onPress={onPress} onLongPress={onLongPress} delayLongPress={300} hitSlop={8}>
-      <SpinningSymbol
-        name={symbol}
-        tintColor={active ? 'white' : 'rgba(255,255,255,0.45)'}
-        size={28}
-        spin={spin}
-      />
+      <Animated.View style={pending ? { opacity: pulse } : undefined}>
+        <SpinningSymbol
+          name={symbol}
+          tintColor={active ? 'white' : 'rgba(255,255,255,0.45)'}
+          size={28}
+          spin={spin}
+        />
+      </Animated.View>
     </Pressable>
   );
 }

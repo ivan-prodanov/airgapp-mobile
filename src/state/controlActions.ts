@@ -1,6 +1,6 @@
 import type { SFSymbol } from 'expo-symbols';
 
-import type { VehicleViewState } from '../types/vehicleTypes';
+import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import type { VehicleActions } from './useVehicleState';
 
 export type ControlActionId =
@@ -211,3 +211,29 @@ export const CONTROL_ACTION_ORDER: ControlActionId[] = [
 ];
 
 export const DEFAULT_FAVORITES: ControlActionId[] = ['lock', 'climate', 'charging', 'frunk', 'vent'];
+
+// The VehicleStateKeys a control's real command puts in flight — used to render
+// a pending affordance on the favorites bar (a key is "pending" while its
+// command is dispatched but unconfirmed; see useCarLink.dispatch). Only lock is
+// a live BLE command today; everything else is [] and never shows pending until
+// the command sweep wires it (add the key(s) here when it does). Empty arrays
+// keep demo/unlinked cars unaffected regardless.
+export const CONTROL_AFFECTED_KEYS: Record<ControlActionId, VehicleStateKey[]> = {
+  lock: ['locked'],
+  climate: [],
+  charging: [],
+  frunk: [],
+  trunk: [],
+  vent: [],
+  flash: [],
+  honk: [],
+  lightShow: [],
+  lowPower: [],
+  start: [],
+  sentry: [],
+  summon: [],
+  unlatchDoor: [],
+  bioweapon: [],
+  homelink: [],
+  fart: [],
+};
