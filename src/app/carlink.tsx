@@ -30,6 +30,9 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // directly here, NOT via the src/ble façade, same isolation rule as the
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
+// The Pi single-session orphan-recovery helpers are shared with useCarLink so
+// the 'auto'/'pi' modes here and the productized hook stay in lockstep.
+import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 
 // carlink.tsx — HARDWARE BRING-UP HARNESS, not polished UX.
 //
@@ -50,14 +53,6 @@ type Theme = ReturnType<typeof useTheme>;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// The Pi allows exactly ONE BLE session at a time (bleMu, ~5-min idle reaper).
-// A force-kill can't run cleanup, so the last session is orphaned and blocks
-// the next cold-start openSession until the reaper fires. We persist the open
-// session id here (secure-store — verified to survive kills) and best-effort
-// DELETE it on the next launch so a force-kill recovers instantly instead of
-// waiting 5 minutes. (Productization moves this into useCarLink — plan P3.T5.)
-const LAST_SESSION_KEY = 'ble.lastSessionId';
-
 // AUTO_BLE_SCAN_TIMEOUT_MS is the short scan budget the 'auto' transport
 // mode gives DirectBleTransport (vs. the module's own 20s default) so that
 // when the car isn't in BLE range, createSelectingTransport falls back to
@@ -72,27 +67,6 @@ function errMsg(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   const kind = (err as { kind?: unknown } | null)?.kind;
   return kind !== undefined ? `${message} (kind=${String(kind)})` : message;
-}
-
-// wrapPiClient wraps a PiClient in the CarTransport shape that also persists
-// the opened session id (LAST_SESSION_KEY) so mount-time orphan recovery can
-// DELETE it after a force-kill — the same wrapping the manual 'pi' mode has
-// always used, factored out so the 'auto' mode's pi candidate gets identical
-// orphan-recovery behavior instead of a second, divergent copy.
-function wrapPiClient(cfg: { baseUrl: string; token: string }): CarTransport {
-  const pi = new PiClient(cfg);
-  return {
-    openSession: async (vin: string) => {
-      const id = await pi.openSession(vin);
-      await store.setItem(LAST_SESSION_KEY, id).catch(() => {});
-      return id;
-    },
-    exchange: (id: string, payloadB64: string, timeoutMs: number) => pi.exchange(id, payloadB64, timeoutMs),
-    closeSession: async (id: string) => {
-      await pi.closeSession(id);
-      await store.removeItem(LAST_SESSION_KEY).catch(() => {});
-    },
-  };
 }
 
 export default function CarLinkScreen() {
@@ -165,18 +139,7 @@ export default function CarLinkScreen() {
       // its single BLE session (bleMu) for ~5 min, blocking our first command.
       // Best-effort DELETE the persisted last session id to free it now.
       if (cfg) {
-        try {
-          const stale = await store.getItem(LAST_SESSION_KEY);
-          if (stale) {
-            await new PiClient({ baseUrl: cfg.baseUrl, token: cfg.token }).closeSession(stale);
-            append(`recovered orphaned Pi session ${stale.slice(0, 8)}… (freed before first command)`);
-          }
-        } catch (err) {
-          // 404 (already reaped) / transient — the id is single-use either way.
-          append(`orphan cleanup (best-effort): ${errMsg(err)}`);
-        } finally {
-          await store.removeItem(LAST_SESSION_KEY).catch(() => {});
-        }
+        await recoverOrphanedSession({ baseUrl: cfg.baseUrl, token: cfg.token }, store, append);
       }
     })();
     // On unmount (navigate away), free the Pi session so it isn't orphaned.
@@ -184,7 +147,6 @@ export default function CarLinkScreen() {
       closeAllCachedSessions();
     };
     // Mount-only: intentionally not re-running when append's closure changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // handleSelfTest writes a timestamp to a dedicated key through the SAME store
@@ -392,7 +354,7 @@ export default function CarLinkScreen() {
           });
         }
         if (cfg.baseUrl && cfg.token) {
-          candidates.push({ name: 'pi', make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }) });
+          candidates.push({ name: 'pi', make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store) });
         }
         selectorRef.current = createSelectingTransport(candidates, (name) => append(`transport selected: ${name}`));
       }
@@ -400,7 +362,7 @@ export default function CarLinkScreen() {
     }
 
     return createCarGateway({
-      transport: wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }),
+      transport: wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store),
       vin: cfg.vin,
       deviceKeys: keys,
     });
