@@ -232,6 +232,19 @@ export default function ExploreScreen() {
           theme={theme}
         />
       </Section>
+
+      <Section title="Developer">
+        <Pressable
+          onPress={() => router.navigate('/carlink')}
+          style={({ pressed }) => [
+            styles.row,
+            { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
+          ]}>
+          <SymbolView name="wifi" tintColor={ACCENT} size={22} />
+          <Text style={[styles.rowLabel, { color: theme.text }]}>Car Link (BLE bring-up)</Text>
+          <SymbolView name="chevron.right" tintColor={theme.textSecondary} size={16} weight="semibold" />
+        </Pressable>
+      </Section>
     </ScrollView>
   );
 }

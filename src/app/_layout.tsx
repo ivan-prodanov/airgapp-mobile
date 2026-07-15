@@ -1,3 +1,10 @@
+// Hermes polyfills — MUST be the very first imports so they load before any
+// BLE code (crypto.getRandomValues for @noble/*, WHATWG URL for
+// teslaHostGuard's `new URL`) is ever touched. See docs/superpowers/plans/
+// 2026-07-12-ble-backend-integration.md.
+import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
+
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -38,6 +45,10 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="schedules"
+              options={{ animation: 'slide_from_right', gestureEnabled: false }}
+            />
+            <Stack.Screen
+              name="carlink"
               options={{ animation: 'slide_from_right', gestureEnabled: false }}
             />
           </Stack>
