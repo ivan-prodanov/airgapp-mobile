@@ -116,6 +116,14 @@ export default function CarLinkScreen() {
   // directBleTransport.ts's header comment on why only one connection is
   // ever live at a time. Reset to null when the toggle flips back to Pi.
   const bleTransportRef = useRef<DirectBleTransport | null>(null);
+  // The 'auto' selector is STATEFUL (createSelectingTransport remembers which
+  // candidate it chose in openSession and routes exchange/closeSession there).
+  // It MUST be a stable instance across button presses: the module-global
+  // session cache reuses a session across gateway instances and calls
+  // exchange WITHOUT re-calling openSession on a cache hit, so a freshly-minted
+  // selector would have no `active` transport and throw "no active transport".
+  // Reset (like bleTransportRef) whenever the mode or config changes.
+  const selectorRef = useRef<CarTransport | null>(null);
 
   const append = (line: string) => {
     const ts = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
@@ -219,6 +227,12 @@ export default function CarLinkScreen() {
       bleTransportRef.current.closeSession('').catch(() => {});
       bleTransportRef.current = null;
     }
+    // Leaving 'auto' drops the cached selector (it holds a live BLE/Pi session);
+    // it's rebuilt fresh on the next switch back to 'auto'.
+    if (next !== 'auto' && selectorRef.current) {
+      selectorRef.current.closeSession('').catch(() => {});
+      selectorRef.current = null;
+    }
   };
 
   // getBleTransport returns the cached instance, creating it on first use.
@@ -292,6 +306,12 @@ export default function CarLinkScreen() {
     }
     try {
       await savePiConfig(store, { baseUrl, token, vin });
+      // Config changed — the cached selector captured the old baseUrl/token/vin
+      // in its candidate factories; drop it so the next command rebuilds it.
+      if (selectorRef.current) {
+        selectorRef.current.closeSession('').catch(() => {});
+        selectorRef.current = null;
+      }
       append('saved');
     } catch (err) {
       append(`ERROR save config: ${errMsg(err)}`);
@@ -361,18 +381,22 @@ export default function CarLinkScreen() {
     }
 
     if (transport === 'auto') {
-      const candidates: TransportCandidate[] = [];
-      if (cfg.vin) {
-        candidates.push({
-          name: 'ble',
-          make: () => new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
-        });
+      // Reuse the cached selector so its chosen-transport state survives across
+      // commands that hit the session cache (see selectorRef's comment).
+      if (!selectorRef.current) {
+        const candidates: TransportCandidate[] = [];
+        if (cfg.vin) {
+          candidates.push({
+            name: 'ble',
+            make: () => new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
+          });
+        }
+        if (cfg.baseUrl && cfg.token) {
+          candidates.push({ name: 'pi', make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }) });
+        }
+        selectorRef.current = createSelectingTransport(candidates, (name) => append(`transport selected: ${name}`));
       }
-      if (cfg.baseUrl && cfg.token) {
-        candidates.push({ name: 'pi', make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }) });
-      }
-      const selecting = createSelectingTransport(candidates, (name) => append(`transport selected: ${name}`));
-      return createCarGateway({ transport: selecting, vin: cfg.vin, deviceKeys: keys });
+      return createCarGateway({ transport: selectorRef.current, vin: cfg.vin, deviceKeys: keys });
     }
 
     return createCarGateway({
@@ -425,7 +449,10 @@ export default function CarLinkScreen() {
       const ble = bleTransportRef.current;
       bleTransportRef.current = null;
       if (ble) await ble.closeSession('').catch(() => {});
-      append('device key deleted + all sessions closed (Pi + BLE) — re-enrol, then commands use the new key');
+      const sel = selectorRef.current;
+      selectorRef.current = null;
+      if (sel) await sel.closeSession('').catch(() => {});
+      append('device key deleted + all sessions closed (Pi + BLE + auto) — re-enrol, then commands use the new key');
     } catch (err) {
       append(`ERROR forget device key: ${errMsg(err)}`);
     }

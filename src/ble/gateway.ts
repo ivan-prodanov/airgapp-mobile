@@ -144,6 +144,13 @@ export function createCarGateway({
   async function runAction(action: ActionPayload, label: string): Promise<{ outcome: CommandOutcome; result: CommandResult | null }> {
     const flags = action.flags ?? 0;
     let lastResult: CommandResult | null = null;
+    // Bounds how many times an "unreachable/timeout" failure evicts + retries
+    // (re-handshake, which re-selects the transport under a SelectingTransport).
+    // Enough to fall over to the other transport once or twice, but capped so
+    // "everything down" fails in bounded time rather than spinning MAX attempts
+    // through full scan/HTTP timeouts on both transports.
+    let unreachableEvicts = 0;
+    const MAX_UNREACHABLE_EVICTS = 2;
 
     for (let attempt = 1; attempt <= MAX_BLE_ATTEMPTS; attempt++) {
       let result: CommandResult;
@@ -178,9 +185,25 @@ export function createCarGateway({
           await sleep(TRANSIENT_DELAY_MS);
           continue;
         }
-        // Anything else (true transport failure, bad bearer, exhausted stale
-        // loop) is terminal — classify and return.
+        // A transport that can't reach the car (network unreachable / timeout —
+        // e.g. the Pi went down, or the car drifted out of BLE range) means the
+        // current session's transport is no longer viable. Evict + retry: the
+        // re-opened session cold-handshakes, and under a SelectingTransport that
+        // RE-SELECTS (BLE-first), so a dead Pi falls over to BLE (and vice
+        // versa). Capped so "everything down" exhausts quickly. Auth failures
+        // (bad/revoked bearer) are NOT retried — a re-handshake can't fix them.
         const kind = classifyTransportError(e);
+        if (
+          (kind === 'unreachable' || kind === 'timeout') &&
+          unreachableEvicts < MAX_UNREACHABLE_EVICTS &&
+          attempt < MAX_BLE_ATTEMPTS
+        ) {
+          unreachableEvicts += 1;
+          await evictSession(vin, action.domain).catch(() => {});
+          await sleep(TRANSIENT_DELAY_MS);
+          continue;
+        }
+        // Anything else (auth, or unreachable past the cap) is terminal.
         return { outcome: { ok: false, kind, message: `[${label}] ${kind}: ${errMsg(e)}` }, result: lastResult };
       }
 

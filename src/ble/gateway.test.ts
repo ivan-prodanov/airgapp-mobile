@@ -179,9 +179,29 @@ test('runCommand: an auth TransportError classifies as kind=auth', async () => {
   assert.equal(outcome.ok === false && outcome.kind, 'auth');
 });
 
-test('runCommand: a timeout TransportError classifies as kind=timeout', async () => {
+test('runCommand: a timeout evicts + re-handshakes then succeeds (transport fallback)', async () => {
   __resetSessionCaches();
-  const { gateway } = makeGateway([
+  // A transport that can't reach the car (timeout) must not be terminal — it
+  // evicts + re-opens (which re-selects the transport under a SelectingTransport,
+  // e.g. a dead Pi falling over to BLE). Here the re-open just succeeds.
+  const { car, gateway } = makeGateway([
+    { kind: 'throw', error: new TransportError('timeout', 'Pi did not respond', 504) },
+    { kind: 'ok' },
+  ]);
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.deepEqual(outcome, { ok: true, attempts: 2 });
+  assert.equal(car.openCount, 2); // cold re-handshake on the retry
+});
+
+test('runCommand: a persistent timeout classifies terminal kind=timeout after the evict cap', async () => {
+  __resetSessionCaches();
+  // Both transports down: the unreachable-evict cap (2) bounds the retries so it
+  // fails in bounded time instead of spinning MAX attempts through full timeouts.
+  const { car, gateway } = makeGateway([
+    { kind: 'throw', error: new TransportError('timeout', 'Pi did not respond', 504) },
+    { kind: 'throw', error: new TransportError('timeout', 'Pi did not respond', 504) },
     { kind: 'throw', error: new TransportError('timeout', 'Pi did not respond', 504) },
   ]);
 
@@ -189,6 +209,23 @@ test('runCommand: a timeout TransportError classifies as kind=timeout', async ()
 
   assert.equal(outcome.ok, false);
   assert.equal(outcome.ok === false && outcome.kind, 'timeout');
+  // 1 initial attempt + 2 capped evict-retries = 3 handshakes, then terminal.
+  assert.equal(car.openCount, 3);
+});
+
+test('runCommand: an auth TransportError is terminal immediately (no retry)', async () => {
+  __resetSessionCaches();
+  // Auth failures (bad/revoked bearer) must NOT evict+retry — a re-handshake
+  // can't fix them; surface immediately.
+  const { car, gateway } = makeGateway([
+    { kind: 'throw', error: new TransportError('auth', 'unauthorized — token revoked', 401) },
+  ]);
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok === false && outcome.kind, 'auth');
+  assert.equal(car.openCount, 1); // no re-handshake
 });
 
 // ── Domain lockstep ─────────────────────────────────────────────────────────
