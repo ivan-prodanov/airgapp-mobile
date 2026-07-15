@@ -39,6 +39,7 @@ import {
   type CarCommand,
   type CarGateway,
   type CarTransport,
+  type CommandOutcome,
   type PiConfig,
   type DeviceKeys,
   type TransportCandidate,
@@ -48,6 +49,8 @@ import { DirectBleTransport } from '@/ble/directBleTransport';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { vcsecStatusToPatch } from '@/ble/telemetry';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
+import { commandActionLabel, commandFailureMessage } from '@/ble/commandMessages';
+import { useToast } from '@/components/ToastHost';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // Short scan budget for the 'auto' selector's BLE candidate so that when the
@@ -71,6 +74,10 @@ export interface CarLinkStatus {
   transport: 'ble' | 'pi' | null;
   // Date.now() of the last successful read (null until the first one lands).
   lastUpdatedAt: number | null;
+  // VehicleStateKeys with a real command in flight (dispatched, not yet
+  // confirmed/failed). Controls read this to show a pending affordance;
+  // demo/unlinked cars never populate it (dispatch no-ops before adding).
+  pending: ReadonlySet<VehicleStateKey>;
 }
 
 export interface CarLink extends CarLinkStatus {
@@ -111,6 +118,17 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  // Fields with an in-flight command. Never carries a stale key: every dispatch
+  // that adds keys removes exactly those on completion (ok, fail, or throw).
+  const [pending, setPending] = useState<ReadonlySet<VehicleStateKey>>(() => new Set());
+
+  // Toast surface for command failures. Held in a ref so dispatch's identity
+  // (and the memoized CarLink) doesn't churn on every provider render. The
+  // provider sits above the fleet, so this is always the real host in-app; the
+  // no-op fallback keeps headless/tests safe.
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   // Load config + device keys once on mount (only when the feature is on).
   useEffect(() => {
@@ -187,19 +205,54 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       }
       const gw = getGateway();
       if (!gw) return; // not linked / not ready → no-op (demo cars stay pure-optimistic)
+
+      // Mark the affected fields pending only now that we're truly dispatching
+      // (past the demo/unlinked guard), so demo cars never show a pending
+      // affordance. Cleared on every terminal path below.
+      const keys = affectedKeys && affectedKeys.length ? affectedKeys : null;
+      const clearPending = () => {
+        if (!keys) return;
+        setPending((prev) => {
+          const next = new Set(prev);
+          for (const key of keys) next.delete(key);
+          return next;
+        });
+      };
+      if (keys) {
+        setPending((prev) => {
+          const next = new Set(prev);
+          for (const key of keys) next.add(key);
+          return next;
+        });
+      }
+      const failToast = (outcome: Extract<CommandOutcome, { ok: false }>) => {
+        toastRef.current.show(commandFailureMessage(commandActionLabel(cmd.type), outcome), 'error');
+      };
+
       // Fire-and-forget: the gateway's per-VIN queue serializes commands. We
-      // never surface the promise to the caller — a failure rolls the UI back.
+      // never surface the promise to the caller — a failure rolls the UI back,
+      // toasts why, and heavy-haptics; success clears pending + light-haptics.
       void (async () => {
         try {
           const outcome = await gw.runCommand(cmd);
-          if (!outcome.ok) {
+          clearPending();
+          if (outcome.ok) {
+            // Light confirmation — matches the app's impact/selection-only
+            // haptic vocabulary (no notification feedback).
+            Haptics.selectionAsync().catch(() => {});
+          } else {
             rollback();
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+            failToast(outcome);
             console.warn('[useCarLink] command failed', cmd.type, outcome);
           }
         } catch (err) {
+          clearPending();
           rollback();
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+          // A throw (unexpected — runCommand normally returns an outcome) has no
+          // structured outcome; surface it as an unreachable-style failure.
+          failToast({ ok: false, kind: 'unreachable', message: String(err) });
           console.warn('[useCarLink] command threw', cmd.type, err);
         }
       })();
@@ -319,7 +372,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   }, [linked, getGateway]);
 
   return useMemo<CarLink>(
-    () => ({ linked, connection, transport, lastUpdatedAt, dispatch }),
-    [linked, connection, transport, lastUpdatedAt, dispatch],
+    () => ({ linked, connection, transport, lastUpdatedAt, pending, dispatch }),
+    [linked, connection, transport, lastUpdatedAt, pending, dispatch],
   );
 }

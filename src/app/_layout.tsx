@@ -10,6 +10,7 @@ import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { ToastProvider } from '@/components/ToastHost';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
 import { VehicleProvider } from '@/state/VehicleProvider';
 
@@ -23,6 +24,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <ToastProvider>
         <VehicleProvider>
           <AnimatedSplashOverlay />
           <Stack screenOptions={{ headerShown: false }}>
@@ -53,6 +55,7 @@ export default function RootLayout() {
             />
           </Stack>
         </VehicleProvider>
+        </ToastProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

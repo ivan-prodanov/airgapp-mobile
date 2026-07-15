@@ -131,8 +131,9 @@ export function useFleetState(): {
       connection: carLink.connection,
       transport: carLink.transport,
       lastUpdatedAt: carLink.lastUpdatedAt,
+      pending: carLink.pending,
     }),
-    [carLink.linked, carLink.connection, carLink.transport, carLink.lastUpdatedAt],
+    [carLink.linked, carLink.connection, carLink.transport, carLink.lastUpdatedAt, carLink.pending],
   );
 
   return { active, activeId: fleet.activeId, fleet: fleetApi, carLinkStatus };
