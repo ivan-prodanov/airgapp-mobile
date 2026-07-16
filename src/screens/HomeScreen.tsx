@@ -124,6 +124,8 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     return () => scrollY.removeListener(id);
   }, [scrollY, fadeStart, fadeEnd]);
 
+  // ONE refresh for all three entry points — the pull, the status tap and the
+  // battery-% tap — so they cannot drift apart.
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -262,6 +264,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
               rangeKm={state.rangeKm}
               charging={state.charging}
               stale={status.stale}
+              onRefresh={onRefresh}
             />
           </View>
           <View style={styles.headerIcons}>
@@ -271,7 +274,9 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             <SymbolView name="line.3.horizontal" tintColor="white" size={24} />
           </View>
         </View>
-        <VehicleStatusText text={status.text} spinner={status.spinner} />
+        {/* findings §C1: the whole status row is a TouchableOpacity ->
+            vehicleWakeUp(vin, TAP_STATUS_TEXT). Same path as the pull. */}
+        <VehicleStatusText text={status.text} spinner={status.spinner} onPress={onRefresh} />
         {fleet.vehicles.length > 1 ? (
           <View style={styles.dots}>
             {fleet.vehicles.map((vehicle, index) => (

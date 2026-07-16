@@ -18,11 +18,16 @@ export function ChargeStatus({
   charging,
   // Data older than 2 minutes — dims the whole row (findings §C3).
   stale,
+  // Tapping the % also refreshes, like a pull-down. (The official app's tap
+  // sends `energyDisplayFormat` to the car, which counts as a userInitiatedCommand
+  // and so lights the same wake/spinner path — see findings §C4/§A.)
+  onRefresh,
 }: {
   batteryLevel: number;
   rangeKm: number | null;
   charging: boolean;
   stale: boolean;
+  onRefresh?: () => void;
 }) {
   // findings §C4: tapping the % text toggles % <-> distance. In the official app
   // the tap ALSO sends `energyDisplayFormat` to the car so the choice persists
@@ -50,7 +55,10 @@ export function ChargeStatus({
       <MiniBatteryView pct={batteryLevel} charging={charging} />
       <Pressable
         hitSlop={8}
-        onPress={() => setMode((m) => (m === 'percent' ? 'distance' : 'percent'))}
+        onPress={() => {
+          setMode((m) => (m === 'percent' ? 'distance' : 'percent'));
+          onRefresh?.();
+        }}
       >
         <Text style={[styles.text, { color: batteryTextColor(charging) }]}>
           {batteryLabel(mode, batteryLevel, rangeKm, 'km')}

@@ -478,7 +478,16 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       if (next === 'active') {
         deferredTeardownRef.current = false;
         prunePending();
-      } else if (next === 'background') teardownWhenIdle();
+      } else if (next === 'background') {
+        // Backgrounding CANCELS a user-requested wake, exactly as the official
+        // app's `cancelAllDataRequests()` does on APP_BACKGROUND (findings §3).
+        // Without this the spinner survives the round trip: iOS suspends JS
+        // mid-refresh, so the wake's promise never settles and its `finally`
+        // never runs — you come back to a still-spinning header. The session is
+        // being torn down here anyway, so the in-flight read is already doomed.
+        setWakeInFlight(false);
+        teardownWhenIdle();
+      }
     });
     return () => {
       sub.remove();
