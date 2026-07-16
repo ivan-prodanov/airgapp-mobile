@@ -274,11 +274,16 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       // so the UI is honest whenever the user does come back.
       const onFailure = (outcome: Extract<CommandOutcome, { ok: false }>) => {
         rollback();
-        if (AppState.currentState === 'active') {
+        // Only a true 'background' means the user can't see us. iOS also emits a
+        // transient 'inactive' for the app switcher / control center / a call
+        // banner while the app is still on screen — notifying then would fire a
+        // banner at someone who is looking right at the app. Same reasoning the
+        // poll uses for ignoring transient 'inactive' (see bed492f).
+        if (AppState.currentState === 'background') {
+          void notifyCommandFailure();
+        } else {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
           toastRef.current.show(commandFailureText(commandActionLabel(cmd.type), outcome));
-        } else {
-          void notifyCommandFailure();
         }
       };
 
@@ -292,7 +297,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
           if (outcome.ok) {
             // Light confirmation — matches the app's impact/selection-only
             // haptic vocabulary (no notification feedback).
-            if (AppState.currentState === 'active') Haptics.selectionAsync().catch(() => {});
+            if (AppState.currentState !== 'background') Haptics.selectionAsync().catch(() => {});
           } else {
             onFailure(outcome);
             console.warn('[useCarLink] command failed', cmd.type, outcome);
