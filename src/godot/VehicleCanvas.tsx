@@ -73,7 +73,11 @@ const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; t
 // viewport; we send points and our scene multiplies by pixel_ratio itself.
 const GODOT_VIEW_SIZE = 355;
 // Their Climate rect: statusBarOffset .. SCREEN_HEIGHT - statusBarOffset - 240.
+// Round 7 §2b: the 240 is NOT a sheet height — it's two inline literals
+// (-320 +80), a fixed net inset. Copy it as-is.
 const CLIMATE_BOTTOM_INSET = 240;
+// Their Controls rect: SCREEN_HEIGHT - 20 (Round 7 §1a).
+const CONTROLS_BOTTOM_INSET = 20;
 
 function buildFrame(
   width: number,
@@ -97,24 +101,29 @@ function buildFrame(
       // Their Climate rect (R5 §3c): top = statusBarOffset,
       // height = SCREEN_HEIGHT - statusBarOffset - 240.
       //
-      // ⚠️ STILL WRONG ON DEVICE: with this rect AND their byte-identical pose
-      // (offset [0,6,0.6] fov 40) our car shows noticeably MORE HOOD than the
-      // real app. So one of the three inputs isn't what we assume — either
-      // `statusBarOffset` != insets.top, or `240` means something we haven't
-      // resolved (their sheet height?), or their `SCREEN_HEIGHT` isn't the full
-      // window. Brief #7 asks for all three as literals. Don't tune this by eye.
+      // Round 7 §2b resolved all three inputs and they match what we pass:
+      //   statusBarOffset = statusBarHeight = 59 on a Dynamic-Island phone
+      //                     (== the insets.top we already use)
+      //   240             = a fixed literal inset, not a sheet height
+      //   SCREEN_HEIGHT   = Dimensions.get('window').height = the FULL window
+      //                     (852) — which is what useWindowDimensions gives us.
+      // So this should now be exact: height 553, scale 0.6491, center_y 335.5pt
+      // (their §4 calibration). If it still mis-frames, the residual is NOT in
+      // these numbers — measure before touching them.
       top = statusBarHeight;
       h = screenHeight - statusBarHeight - CLIMATE_BOTTOM_INSET;
       break;
     case 'TOP_DOWN':
-      // ⚠️ GUESS, NOT A RECOVERED VALUE. The POSE is theirs (see
-      // cameraPresets.TOP_DOWN); this frame is me solving scale ~= 1.0 backwards
-      // from screenshot pixels, and on-device it renders slightly BIGGER than the
-      // real app — so the scalar is wrong and needs their literal. R5 §5 left
-      // Controls' `sheetHeight`/`top_margin` UNRESOLVED; brief #7 asks for them.
-      // Do not treat this as parity until it's replaced.
+      // Their Controls rect, RESOLVED (Round 7 §1a, iOS fn #98623):
+      //   top_margin = 0                       (non-Cybertruck iOS)
+      //   height     = SCREEN_HEIGHT - 20      (the `sheetHeight` R5 §5 left
+      //                                         unresolved is a static literal
+      //                                         20 = r4(2) x Gutter(10), NOT a
+      //                                         draggable sheet)
+      // -> scale 832/852 = 0.9765 on the reference phone. My earlier full-screen
+      // guess gave scale 1.0, i.e. +2.4% — the "now actually bigger" the user saw.
       top = 0;
-      h = screenHeight;
+      h = screenHeight - CONTROLS_BOTTOM_INSET;
       break;
     default: {
       // No recovered rect for these (their Controls reuses the PARKED pose
