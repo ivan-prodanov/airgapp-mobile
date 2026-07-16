@@ -9,6 +9,7 @@ const RENDERER_DIM_MS = 500;
 import { ExpoGodotView } from '../../modules/expo-godot-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CAMERA_ANIM } from './cameraPresets';
 import { isVehicleDataUnreliable } from '@/ble/vehicleStatusText';
 import { useCarLinkStatus } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -64,6 +65,8 @@ const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; t
 // portable now. The DPR cancels in the ratio: they send pixels against a pixel
 // viewport; we send points and our scene multiplies by pixel_ratio itself.
 const GODOT_VIEW_SIZE = 355;
+// Their Climate rect: statusBarOffset .. SCREEN_HEIGHT - statusBarOffset - 240.
+const CLIMATE_BOTTOM_INSET = 240;
 
 function buildFrame(
   width: number,
@@ -73,20 +76,52 @@ function buildFrame(
   statusBarHeight: number,
 ): FrameData {
   const cfg = VIEW_FRAME[mode];
-  // Only PARKED is on the recovered rect. The other views' poses/frames were
-  // tuned against KEEP_WIDTH and their Controls reuses the PARKED pose rather
-  // than our top-down one, so there's no recovered frame to copy — porting them
-  // blind would break four screens at once. They keep their tuned zoom until
-  // each is done deliberately (their Controls height needs a sheetHeight the RE
-  // left UNRESOLVED anyway).
-  const top = mode === 'PARKED' ? statusBarHeight + 60 : cfg.topMarginPt;
-  const h = mode === 'PARKED' ? GODOT_VIEW_SIZE : height * cfg.heightFrac;
+  let top: number;
+  let h: number;
+  switch (mode) {
+    case 'PARKED':
+      top = statusBarHeight + 60;
+      h = GODOT_VIEW_SIZE;
+      break;
+    case 'CLIMATE':
+      // Their Climate rect (R5 §3c). Reassuringly it lands within ~8% of what
+      // our hand-tuned 1.3 knob produced once the aspect factor is accounted
+      // for — the old tuning had converged near theirs by eye.
+      top = statusBarHeight;
+      h = height - statusBarHeight - CLIMATE_BOTTOM_INSET;
+      break;
+    default: {
+      // No recovered rect for these (their Controls reuses the PARKED pose
+      // rather than our top-down one, and R5 §5 left the Controls sheetHeight
+      // UNRESOLVED). But their keep_aspect must still be uniform, or the fov
+      // axis flips mid-navigation and the car collapses on the way to the
+      // screen. So: preserve each view's CURRENT look exactly while moving it
+      // onto KEEP_HEIGHT.
+      //
+      // Under KEEP_WIDTH the car rendered at `aspect` (= W/H) of its
+      // KEEP_HEIGHT size, so an equal-looking KEEP_HEIGHT zoom is
+      //     frac x aspect = frac x (W/H),
+      // and the frame height that yields it is
+      //     H x frac x (W/H) = frac x W.
+      // Hence `heightFrac * width` — algebraically identical to today's render,
+      // just expressed on the axis Tesla uses.
+      top = cfg.topMarginPt;
+      h = cfg.heightFrac * width;
+      break;
+    }
+  }
   return {
     top_margin: Math.round(top),
     left_margin: 0,
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(h)),
     animated,
+    // findings §3a: the frame travels on the same 0.5s QUART/OUT curve as the
+    // camera and the lighting. Omitting these left our scene on its own 0.75s
+    // EASE_IN_OUT default, so the zoom lagged behind the pose.
+    duration: CAMERA_ANIM.duration,
+    transition_type: CAMERA_ANIM.transition_type,
+    ease_type: CAMERA_ANIM.ease_type,
     scroll_fraction: 1,
   };
 }

@@ -1,6 +1,6 @@
 import { PixelRatio } from 'react-native';
 
-import { cameraPresets } from './cameraPresets';
+import { CAMERA_ANIM, cameraPresets } from './cameraPresets';
 import type { FrameData, GodotMessage } from '../types/rendererMessages';
 import { modelYProductConfig, vehicleConfigs, type CameraMode, type CarModel, type LightingMode, type ThemeMode, type VehicleViewState } from '../types/vehicleTypes';
 
@@ -80,7 +80,9 @@ export function createMoveCameraMessages(mode: CameraMode, animated: boolean, li
         env_energy: envEnergy,
         amb_energy: ambEnergy,
         animated,
-        duration: 0.75,
+        duration: CAMERA_ANIM.duration,
+        transition_type: CAMERA_ANIM.transition_type,
+        ease_type: CAMERA_ANIM.ease_type,
       },
     },
     {
@@ -91,7 +93,9 @@ export function createMoveCameraMessages(mode: CameraMode, animated: boolean, li
         cam_fov: preset.moveCamera.cam_fov,
         keep_aspect: preset.moveCamera.keep_aspect,
         animated,
-        duration: 0.75,
+        duration: CAMERA_ANIM.duration,
+        transition_type: CAMERA_ANIM.transition_type,
+        ease_type: CAMERA_ANIM.ease_type,
         animation_id: preset.animationId,
       },
     },

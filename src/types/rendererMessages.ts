@@ -36,6 +36,12 @@ export interface FrameData {
   width: number;
   height: number;
   animated: boolean;
+  // Godot Tween params. Omitting them lets the scene fall back to its own
+  // defaults (0.75s / EASE_IN_OUT), which do NOT match the official app's
+  // 0.5s / TRANS_QUART(3) / EASE_OUT(1) — see CAMERA_ANIM.
+  duration?: number;
+  transition_type?: number;
+  ease_type?: number;
   scroll_fraction: number;
 }
 

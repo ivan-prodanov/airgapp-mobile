@@ -20,6 +20,22 @@ export interface CameraPreset {
   fadeRoof: boolean;
 }
 
+// The official app's camera/frame/env animation, VERBATIM
+// (tesla-renderer-and-battery-FINDINGS §3a: defaultCameraAnimationDuration /
+// Transition / Ease). Sent on ALL THREE messages — MOVE_CAMERA, SET_ENV_PARAMS
+// and UPDATE_MAIN_VIEW_FRAME — so the pose, the lighting and the zoom travel
+// together on one curve.
+//
+// We were sending duration 0.75 and no easing, so our scene fell back to its own
+// defaults (0.75s, EASE_IN_OUT) — 50% too slow AND the wrong curve, which is why
+// screen transitions felt sluggish next to theirs. Godot 3 enum values:
+// Tween.TRANS_QUART = 3, Tween.EASE_OUT = 1.
+export const CAMERA_ANIM = {
+  duration: 0.5,
+  transition_type: 3,
+  ease_type: 1,
+} as const;
+
 export const cameraPresets: Record<CameraMode, CameraPreset> = {
   PARKED: {
     mode: 'PARKED',
@@ -59,7 +75,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [0, 0, 0],
       offset: [0, 10, 0],
       cam_fov: 20,
-      keep_aspect: 'WIDTH',
+      keep_aspect: 'HEIGHT',
     },
     environment: {
       // EXACT Tesla TOP_DOWN env (Round 5 §3b); ours was the dev injector's
@@ -84,7 +100,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       cam_fov: 40,
       // WIDTH keeps the WHOLE car in frame (height-fit cut the frunk off). The Tesla-vs-ours zoom is
       // carried by the render FRAME scale (VIEW_FRAME.CLIMATE.heightFrac), not the camera — see there.
-      keep_aspect: 'WIDTH',
+      keep_aspect: 'HEIGHT',
     },
     environment: {
       // EXACT Tesla CLIMATE env (Round 5 §3b). Ours was the dev injector's
@@ -106,7 +122,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [74, -38, 0],
       offset: [0, 6.55, 0],
       cam_fov: 40,
-      keep_aspect: 'WIDTH',
+      keep_aspect: 'HEIGHT',
     },
     environment: {
       rotation: [-20, 53, 30],
@@ -123,7 +139,7 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [62.654, -139.64, 0],
       offset: [-0.086, 4.7, 0],
       cam_fov: 58,
-      keep_aspect: 'WIDTH',
+      keep_aspect: 'HEIGHT',
     },
     environment: {
       rotation: [0, 45, 0],
