@@ -89,8 +89,9 @@ export function usePreferences(): PreferencesApi {
   return ctx;
 }
 
-// Live connection/transport/freshness for the linked car. Read by Home to show
-// a minimal indicator (BLE/Pi/Offline + "updated Xs ago") only when linked.
+// Live connection/transport/freshness for the linked car. Read by Home to pick
+// the one-line status ("Connecting" / "Parked" / "Asleep 5 minutes" / "Last
+// seen 2 hours ago") the official app shows under the car name.
 export function useCarLinkStatus(): CarLinkStatus {
   const ctx = useContext(CarLinkStatusContext);
   if (!ctx) {
