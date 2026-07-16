@@ -1,0 +1,7 @@
+<!-- Tesla battery positive-terminal nub. react-native-svg component `battery_nipple` (module 2845).
+     Verbatim from iOS main.decompiled.js:1489641 / Android bundle.hasm:1742340.
+     Rendered by <Icon name="battery_nipple" height={16} width={4} color={borderColor}/> ⇒ drawn into a 4×16 box,
+     art viewBox is 3×16 (preserveAspectRatio xMidYMid meet ⇒ scale 1, centered). fill=currentColor(=#2D2F34 dark). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="3" height="16" viewBox="0 0 3 16" fill="none">
+  <path d="M1 5a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2V5Z" fill="currentColor"/>
+</svg>

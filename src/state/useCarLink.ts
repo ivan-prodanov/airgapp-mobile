@@ -91,7 +91,10 @@ const PENDING_TICK_MS = 1000;
 // Stable empty Set so the common (nothing pending) case never churns identity.
 const EMPTY_PENDING: ReadonlySet<VehicleStateKey> = new Set();
 
-// CarLinkStatus is the read-only connection surface consumers render from.
+// CarLinkStatus is the car-link surface consumers render from: read-only state
+// plus refresh(), the one user-initiated action a screen can take against the
+// link itself. Commands still go through dispatch (CarLink), which is
+// deliberately NOT exposed here.
 export interface CarLinkStatus {
   // enabled + config + device keys + a VIN to bind to.
   linked: boolean;
@@ -106,6 +109,13 @@ export interface CarLinkStatus {
   // survives app restarts. Home renders the status line from this (it is what
   // ages into "Last seen 2 hours ago"); null only for a never-fetched car.
   lastVehicleDataAt: number | null;
+  // A user-requested wake/refresh is in flight — our analogue of their
+  // `canWake` ("a wake was REQUESTED"). Drives the header spinner, and ONLY
+  // this does: an automatic poll must never spin.
+  wakeInFlight: boolean;
+  // Pull-to-refresh / tap-status: really wake the car and re-read it, like
+  // their vehicleWakeUp(vin, PULL_DOWN_REFRESH). No-op for a demo/unlinked car.
+  refresh: () => void;
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
   // Controls read this to show a pending affordance; demo/unlinked cars never
@@ -165,6 +175,10 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   // rehydrated from disk so a cold start never shows "Connecting" for a car we
   // have seen before (findings §B).
   const [lastVehicleDataAt, setLastVehicleDataAt] = useState<number | null>(null);
+  const [wakeInFlight, setWakeInFlight] = useState(false);
+  // The poll's tick, republished each effect run so refresh() can reuse it
+  // (same read + intent-filter + stamp path) instead of duplicating it.
+  const tickRef = useRef<(() => Promise<void>) | null>(null);
   // Latest cacheable telemetry, mirrored so the debounced saver can persist a
   // whole snapshot on each awake read without re-rendering.
   const cacheRef = useRef<CarLinkCache | null>(null);
@@ -475,6 +489,58 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     };
   }, [teardown, teardownWhenIdle, prunePending]);
 
+  // stampRead records a successful contact with the car.
+  //
+  // lastVehicleDataAt is our analogue of their vehicle_data timestamp, and it
+  // must NOT advance while the car sleeps — VCSEC answers when asleep, so
+  // stamping unconditionally would pin the status to a live "Parked" forever
+  // and "Asleep {age}" could never appear. But only a KNOWN-asleep read may
+  // block the stamp: `awake` is absent from the patch whenever the car reports
+  // sleepStatus 'unknown' (a proto enum defaulting to 0), and treating that as
+  // "no vehicle data" made the age grow forever while reads were succeeding —
+  // the "Last seen 3 minutes ago while parked next to the car" bug.
+  const stampRead = useCallback((patch: Partial<VehicleViewState>, at: number) => {
+    setLastUpdatedAt(at);
+    if (patch.awake === false) {
+      // Reachable but asleep: keep the age growing, only record the state.
+      if (cacheRef.current) {
+        const next: CarLinkCache = { ...cacheRef.current, awake: false };
+        cacheRef.current = next;
+        saveCacheRef.current?.(next);
+      }
+      return;
+    }
+    setLastVehicleDataAt(at);
+    const next: CarLinkCache = {
+      ...(cacheRef.current ?? { batteryLevel: null, rangeKm: null, charging: null, awake: null }),
+      lastVehicleDataAt: at,
+      awake: true,
+    };
+    cacheRef.current = next;
+    saveCacheRef.current?.(next);
+  }, []);
+
+  // refresh: the real pull-to-refresh. Wakes the car, then re-reads it — the
+  // spinner runs for the whole round trip. Replaces a demo stub that only set
+  // `awake: true` on a 1.4s timer and never contacted the car, which is why the
+  // age never moved (and why an asleep car misreported as "Last seen …").
+  const refresh = useCallback(() => {
+    const gw = getGateway();
+    if (!gw) return; // demo/unlinked, or keys still loading
+    setWakeInFlight(true);
+    void (async () => {
+      try {
+        // Tolerate a failed/timed-out wake: the read below is what refreshes
+        // the UI, and an already-awake car makes this a no-op anyway. The
+        // gateway's own deadline bounds this, so the spinner can't hang.
+        await gw.wake().catch(() => {});
+        await tickRef.current?.();
+      } finally {
+        setWakeInFlight(false);
+      }
+    })();
+  }, [getGateway]);
+
   // ── Foreground VCSEC poll ────────────────────────────────────────────────
   // While linked AND foregrounded, read the car's real lock/awake/closures
   // every POLL_MS and apply the (intent-filtered) patch through the PLAIN
@@ -509,26 +575,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         const filtered = filterPatchUnderIntent(patch, intentRef.current, Date.now());
         if (stopped || paused) return; // backgrounded/unlinked while awaiting
         if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
-        const at = Date.now();
-        setLastUpdatedAt(at);
-        // Only an AWAKE read counts as vehicle data. VCSEC answers while the
-        // car sleeps, so stamping every successful read would keep the status
-        // permanently fresh and we'd show "Parked" for a sleeping car forever
-        // (findings §A/§B — their vehicle_data simply stops when it sleeps).
-        if (patch.awake === true) {
-          setLastVehicleDataAt(at);
-          const next: CarLinkCache = {
-            ...(cacheRef.current ?? { batteryLevel: null, rangeKm: null, charging: null, awake: null }),
-            lastVehicleDataAt: at,
-            awake: true,
-          };
-          cacheRef.current = next;
-          saveCacheRef.current?.(next);
-        } else if (patch.awake === false && cacheRef.current) {
-          const next: CarLinkCache = { ...cacheRef.current, awake: false };
-          cacheRef.current = next;
-          saveCacheRef.current?.(next);
-        }
+        stampRead(patch, Date.now());
         setConnection('online');
         if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
       } catch {
@@ -539,6 +586,8 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         inFlight = false;
       }
     };
+
+    tickRef.current = tick;
 
     const scheduleNext = () => {
       if (stopped || paused) return;
@@ -586,7 +635,17 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   }, [linked, getGateway]);
 
   return useMemo<CarLink>(
-    () => ({ linked, connection, transport, lastUpdatedAt, lastVehicleDataAt, pending, dispatch }),
-    [linked, connection, transport, lastUpdatedAt, lastVehicleDataAt, pending, dispatch],
+    () => ({
+      linked,
+      connection,
+      transport,
+      lastUpdatedAt,
+      lastVehicleDataAt,
+      wakeInFlight,
+      pending,
+      dispatch,
+      refresh,
+    }),
+    [linked, connection, transport, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, dispatch, refresh],
   );
 }

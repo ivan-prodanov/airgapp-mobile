@@ -132,6 +132,8 @@ export function useFleetState(): {
       transport: carLink.transport,
       lastUpdatedAt: carLink.lastUpdatedAt,
       lastVehicleDataAt: carLink.lastVehicleDataAt,
+      wakeInFlight: carLink.wakeInFlight,
+      refresh: carLink.refresh,
       pending: carLink.pending,
     }),
     [
@@ -140,6 +142,8 @@ export function useFleetState(): {
       carLink.transport,
       carLink.lastUpdatedAt,
       carLink.lastVehicleDataAt,
+      carLink.wakeInFlight,
+      carLink.refresh,
       carLink.pending,
     ],
   );

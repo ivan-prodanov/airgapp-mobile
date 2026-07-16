@@ -69,10 +69,11 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setCustomizing(true);
   };
-  // A user-requested wake is in flight (pull-to-refresh). This drives the header
-  // spinner — NOT RefreshControl, which the official app keeps permanently
-  // `refreshing={false}` so the pull shows only their BusyIcon (findings §3).
-  const [wakeInFlight, setWakeInFlight] = useState(false);
+  // A demo car's fake wake. A real car's wake lives in carLink.wakeInFlight.
+  // Either way it drives the header spinner — NOT RefreshControl, which the
+  // official app keeps permanently `refreshing={false}` so the pull shows only
+  // their BusyIcon (findings §3).
+  const [demoWaking, setDemoWaking] = useState(false);
 
   // One derived status for the whole header: the text/spinner for the status
   // line AND the `stale` flag that dims the battery row (findings §C3).
@@ -80,7 +81,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     linked: carLink.linked,
     lastVehicleDataAt: carLink.lastVehicleDataAt,
     awake: state.awake,
-    wakeInFlight,
+    wakeInFlight: carLink.linked ? carLink.wakeInFlight : demoWaking,
     now: Date.now(),
   });
 
@@ -126,9 +127,16 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setWakeInFlight(true);
+    if (carLink.linked) {
+      // Really wake + re-read the car; carLink.wakeInFlight drives the spinner
+      // for the whole round trip.
+      carLink.refresh();
+      return;
+    }
+    // Demo car: no car to reach, so keep the showroom animation.
+    setDemoWaking(true);
     setTimeout(() => {
-      setWakeInFlight(false);
+      setDemoWaking(false);
       actions.patch({ awake: true });
     }, 1400);
   };

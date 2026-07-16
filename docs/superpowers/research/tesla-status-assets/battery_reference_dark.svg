@@ -1,0 +1,8 @@
+<!-- CORRECTED reference of the standard dark-theme MiniBattery (default props), ~75% charge.
+     Body 35x16 radius3 filled #2D2F34 (bg+border same). Fill height 12 (=16-(2*1+2)) at left:1, color #8A8B8C.
+     Nub battery_nipple 4x16 (art 3x16) #2D2F34 abutting body (0 gap). Full footprint 39x16. Scaled 4x for viewing. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="156" height="64" viewBox="0 0 39 16">
+  <rect x="0" y="0" width="35" height="16" rx="3" fill="#2D2F34" stroke="#2D2F34" stroke-width="1"/>
+  <rect x="1" y="2" width="24" height="12" rx="1" fill="#8A8B8C"/>
+  <g transform="translate(35.5,0)"><path d="M1 5a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2V5Z" fill="#2D2F34"/></g>
+</svg>
