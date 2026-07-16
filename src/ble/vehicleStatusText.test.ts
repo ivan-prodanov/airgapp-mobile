@@ -13,6 +13,7 @@ const base: VehicleStatusInput = {
   linked: true,
   lastVehicleDataAt: NOW,
   awake: true,
+  wakeInFlight: false,
   now: NOW,
 };
 
@@ -88,36 +89,62 @@ describe('vehicleStatusText — live states (findings §A priorities 1-6)', () =
   });
 });
 
+describe('vehicleStatusText — the spinner gate (device-verified)', () => {
+  // The gate is the wake, NOT staleness. This car is airgapped, so the official
+  // app is permanently stale for it — if staleness drove the spinner it would
+  // spin forever, and on the real app it does not.
+  it('does NOT spin at rest, however stale the data', () => {
+    for (const age of [DATA_STALE_MS, 10 * M, 5 * H, 30 * D]) {
+      assert.equal(vehicleStatusText(staleAt(age)).spinner, false, `age=${age} must not spin at rest`);
+    }
+  });
+
+  it('does NOT spin on a cold start — the bug the user reported', () => {
+    // Opening the app is not a wake request: "Last seen 3 hours ago", no spinner.
+    const status = vehicleStatusText(staleAt(3 * H));
+    assert.deepEqual(status, { text: 'Last seen 3 hours ago', spinner: false, stale: true });
+  });
+
+  it('spins while a user-requested wake is in flight', () => {
+    const status = vehicleStatusText({ ...staleAt(3 * H), wakeInFlight: true });
+    assert.deepEqual(status, { text: 'Last seen 3 hours ago', spinner: true, stale: true });
+  });
+
+  it('spins alongside a LIVE state too — the spinner is a sibling of the text', () => {
+    // findings §1's tree gates the spinner independently of the status string,
+    // so a pull-to-refresh on a fresh car spins next to "Parked".
+    assert.deepEqual(vehicleStatusText({ ...base, wakeInFlight: true }), {
+      text: 'Parked',
+      spinner: true,
+      stale: false,
+    });
+  });
+
+  it('never spins for a demo car — there is nothing to wait for', () => {
+    assert.equal(vehicleStatusText({ ...base, linked: false, wakeInFlight: true }).spinner, false);
+  });
+});
+
 describe('vehicleStatusText — the stale branch (findings §A priority 7)', () => {
   it('flips to the freshness string exactly AT the 2-minute threshold', () => {
     const status = vehicleStatusText(staleAt(DATA_STALE_MS));
-    assert.deepEqual(status, { text: 'Last seen 2 minutes ago', spinner: true, stale: true });
+    assert.deepEqual(status, { text: 'Last seen 2 minutes ago', spinner: false, stale: true });
   });
 
-  it('spins WITH "Last seen {age} ago" — the Round-2 bug this replaces', () => {
-    // Round 2's prose claimed the spinner rendered only alongside "Connecting".
-    // The device proved otherwise: the spinner accompanies the freshness string.
+  it('renders the freshness string, not "Connecting" — the Round-2 bug this replaces', () => {
     const status = vehicleStatusText(staleAt(2 * H));
-    assert.deepEqual(status, { text: 'Last seen 2 hours ago', spinner: true, stale: true });
+    assert.equal(status.text, 'Last seen 2 hours ago');
   });
 
-  it('spins WITH "Asleep {age}" and drops the "ago" suffix', () => {
+  it('shows "Asleep {age}" and drops the "ago" suffix', () => {
     const status = vehicleStatusText({ ...staleAt(5 * M), awake: false });
-    assert.deepEqual(status, { text: 'Asleep 5 minutes', spinner: true, stale: true });
-  });
-
-  it('spins CONTINUOUSLY while stale, however old the data', () => {
-    // findings §A: the stale branch is entered on the same 2-min threshold that
-    // makes !fetchedDataRecently true, so the spinner never stops while stale.
-    for (const age of [DATA_STALE_MS, 10 * M, 5 * H, 30 * D]) {
-      assert.equal(vehicleStatusText(staleAt(age)).spinner, true, `age=${age} must spin`);
-    }
+    assert.deepEqual(status, { text: 'Asleep 5 minutes', spinner: false, stale: true });
   });
 
   it('reaches "Connecting" ONLY for a never-fetched vehicle', () => {
     assert.deepEqual(vehicleStatusText({ ...base, lastVehicleDataAt: null }), {
       text: 'Connecting',
-      spinner: true,
+      spinner: false,
       stale: true,
     });
   });
@@ -143,5 +170,7 @@ describe('vehicleStatusText — demo vehicles', () => {
       spinner: false,
       stale: false,
     });
+    // The battery row must not dim for a demo car either.
+    assert.equal(vehicleStatusText({ ...base, linked: false }).stale, false);
   });
 });

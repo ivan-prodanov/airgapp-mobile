@@ -7,17 +7,28 @@
 //
 //  1. The freshness string is the PRIMARY text, not a fallback. "Connecting"
 //     shows ONLY for a vehicle that has never been fetched.
-//  2. The spinner co-renders WITH "Last seen/Asleep {{age}}" — it is not
-//     exclusive to "Connecting", and it spins continuously the whole time the
-//     data is stale, not just during an explicit refresh gesture.
+//  2. The spinner is not exclusive to "Connecting" — it co-renders with
+//     whatever status is showing, including "Last seen/Asleep {{age}}".
+//     (When it is on is a separate question — see THE SPINNER GATE below.)
 //
 // Their render dispatch (findings §A), first match wins: live states (Parked /
 // Mobile Access Disabled / In Service / Charging / …) take priority; the LAST
-// branch is `isDataStale`, whose text is the freshness string and whose spinner
-// is `canWake || !fetchedDataRecently`. Since the stale branch is entered on
-// exactly the same 2-minute threshold that makes `fetchedDataRecently` false,
-// that OR is always true inside it — so for us `spinner === stale`, and
-// `canWake` never needs modelling.
+// branch is `isDataStale`, whose text is the freshness string.
+//
+// THE SPINNER GATE — device-verified, and it does NOT match findings §A's
+// prose. §A reads the gate as `canWake || !fetchedDataRecently` and concludes
+// the spinner "shows continuously the whole time the status reads Last
+// seen/Asleep". That cannot be right: this car is airgapped, so the official
+// app never receives fresh vehicle_data for it and sits permanently in the
+// stale branch — under that reading it would spin forever. On the real app it
+// does not. It spins on pull-to-refresh and on tapping the status, and is
+// otherwise still (including at cold start, beside "Last seen {age} ago").
+//
+// That is exactly `canWake`, which §A itself defines as "a wake was REQUESTED"
+// (userForcedWakes / screensEnteredRequiringWake / userInitiatedCommands /
+// overrideAutoWakes) — not "the car is wakeable". So the `!fetchedDataRecently`
+// term is either an `&&` misread as `||`, or absent; for an always-stale car
+// both readings collapse to the same behaviour. We gate on the wake alone.
 
 // TimeInMs.TWO_MINUTES — the one threshold behind both `isVehicleDataStale`
 // (#30694) and `fetchedDataRecently` (#30697). Findings §A.
@@ -38,13 +49,18 @@ export interface VehicleStatusInput {
   // reproduces their behaviour on our transport.
   lastVehicleDataAt: number | null;
   awake: boolean;
+  // Our `canWake`: a user-requested wake/refresh is in flight (pull-to-refresh,
+  // tapping the status line). This ALONE drives the spinner — an automatic
+  // poll, a cold start, or merely-stale data must never spin. See the gate note
+  // in the header.
+  wakeInFlight: boolean;
   now: number;
 }
 
 export interface VehicleStatus {
   // null = render nothing at all (findings §A priority 1: empty text).
   text: string | null;
-  // The inline BusyIcon before the text.
+  // The inline BusyIcon before the text — on only while a wake is in flight.
   spinner: boolean;
   // Data older than DATA_STALE_MS. Also drives the battery row's 50% dim
   // (findings §C3), which is why it's exposed rather than kept internal.
@@ -88,7 +104,12 @@ export function relativeAge(ms: number, withSuffix: boolean): string {
 }
 
 export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
-  const { linked, lastVehicleDataAt, awake, now } = input;
+  const { linked, lastVehicleDataAt, awake, wakeInFlight, now } = input;
+
+  // The spinner is a structural SIBLING of the text (findings §1 tree), so it
+  // is gated independently of which status string renders — it can accompany
+  // "Parked" just as readily as "Last seen 2 hours ago".
+  const spinner = wakeInFlight;
 
   // Demo/unlinked vehicles have no real telemetry: keep the showroom copy, and
   // never spin (there is nothing to wait for).
@@ -99,18 +120,15 @@ export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
   const fetchedRecently = lastVehicleDataAt !== null && now - lastVehicleDataAt < DATA_STALE_MS;
 
   // A live state wins over the stale branch (findings §A priorities 1-6).
-  if (fetchedRecently) return { text: 'Parked', spinner: false, stale: false };
+  if (fetchedRecently) return { text: 'Parked', spinner, stale: false };
 
-  // The stale branch (priority 7). The spinner is ALWAYS on here — see the
-  // header note. This is what makes cold start read "Last seen 2 hours ago"
-  // beside a spinner rather than a bare "Connecting".
   if (lastVehicleDataAt === null) {
     // Never fetched (fresh install / newly linked car) — the ONLY route to
     // "Connecting" (findings §B).
-    return { text: 'Connecting', spinner: true, stale: true };
+    return { text: 'Connecting', spinner, stale: true };
   }
 
   const age = now - lastVehicleDataAt;
   const text = awake ? `Last seen ${relativeAge(age, true)}` : `Asleep ${relativeAge(age, false)}`;
-  return { text, spinner: true, stale: true };
+  return { text, spinner, stale: true };
 }

@@ -69,12 +69,18 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setCustomizing(true);
   };
+  // A user-requested wake is in flight (pull-to-refresh). This drives the header
+  // spinner — NOT RefreshControl, which the official app keeps permanently
+  // `refreshing={false}` so the pull shows only their BusyIcon (findings §3).
+  const [wakeInFlight, setWakeInFlight] = useState(false);
+
   // One derived status for the whole header: the text/spinner for the status
   // line AND the `stale` flag that dims the battery row (findings §C3).
   const status = vehicleStatusText({
     linked: carLink.linked,
     lastVehicleDataAt: carLink.lastVehicleDataAt,
     awake: state.awake,
+    wakeInFlight,
     now: Date.now(),
   });
 
@@ -82,7 +88,6 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
   const scrollY = useRef(new Animated.Value(0)).current;
-  const [refreshing, setRefreshing] = useState(false);
 
   const scrimOpacity = scrollY.interpolate({
     inputRange: [0, EXPAND],
@@ -121,9 +126,9 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setRefreshing(true);
+    setWakeInFlight(true);
     setTimeout(() => {
-      setRefreshing(false);
+      setWakeInFlight(false);
       actions.patch({ awake: true });
     }, 1400);
   };
@@ -146,7 +151,10 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            // Always false, as the official app does (findings §3): the pull
+            // fires the wake and the header BusyIcon is the only feedback, so
+            // we don't stack RN's control spinner on top of theirs.
+            refreshing={false}
             onRefresh={onRefresh}
             tintColor="rgba(255,255,255,0.6)"
             // Drop the spinner below the Face ID notch so it lands next to the "Red Velvet" header.

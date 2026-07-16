@@ -51,9 +51,32 @@ The user measured our status text against theirs: **identical pixel height, but 
 3. Confirm **verbatim** the resolved text style at the status line's render site on iOS: `fontSize`, `fontWeight`, `fontFamily`, `letterSpacing`, `lineHeight` — including any platform `select`/override that changes them from the Android values.
 4. Is any **`allowFontScaling` / `maxFontSizeMultiplier` / transform** applied that would alter advance widths?
 
-## §3. Resume behaviour — "it refreshes every time I open the app"
+## §3. Resume behaviour — and a CORRECTION to Round 3's spinner gate
 
-The user reports our app visibly refreshes on every open, and the official app does not. We need their resume contract:
+### §3.0 Round 3 §A's spinner gate is wrong — please settle it from the opcodes
+
+The user clarified what "it refreshes on open" meant: **our spinner shows on startup, and the official app's does not.** That contradicts Round 3 §A, which reads the gate as:
+
+```
+showLoadingSpinner = canWake || !fetchedDataRecently
+```
+
+and concludes *"the spinner shows continuously the whole time the status reads 'Last seen/Asleep {{age}}'… not only during an explicit refresh gesture."*
+
+**That cannot be right, and here is the disproof:** this user's car is **airgapped** — the official app never receives fresh `vehicle_data` for it, so `fetchedDataRecently` is *permanently* false and the app sits *permanently* in the stale branch showing "Last seen {x} ago". Under §A's reading the spinner would spin **forever, always**. On his device it does not: it is still at rest (including at cold start, beside "Last seen {x} ago") and appears **only on pull-to-refresh or on tapping the status**.
+
+Note that §A's own definition of `canWake` — *"true when a wake is **actively tracked** — `userForcedWakes`, `screensEnteredRequiringWake`, `userInitiatedCommands`, `overrideAutoWakes`… it means 'a wake was requested'"* — predicts the observed behaviour exactly (pull → forced wake; tap-status → forced wake). So the likely error is the **operator**: `&&` misread as `||`, or the `!fetchedDataRecently` term belongs to something else entirely.
+
+**We have shipped `spinner = canWake` (wake-in-flight only), matching the device.** Please confirm or correct from the bytecode:
+1. The **verbatim** computation of `showLoadingSpinner` (Reg14) — the actual opcodes, including which `Jmp`/`JmpFalse` implements the conjunction/disjunction, not a paraphrase.
+2. Is `!fetchedDataRecently` really a term of that expression, and with which operator?
+3. Does anything else feed the gate that §A missed?
+4. Given `canWake` is "a wake was requested" — **what clears it** (a response? a timeout? how long does the spinner run if the car never answers)? That's the piece we most need for an airgapped car, where no wake ever succeeds: our spinner must not hang forever.
+5. Does a **user command** (`userInitiatedCommands`) also spin the *header* status, not just the pressed button?
+
+### §3.1 The resume contract
+
+We need their resume contract:
 
 1. **On foreground/resume, what does the official app actually do?** Does it re-fetch `vehicle_data` immediately, wait for the next poll tick, or rely on a push? Cite the AppState/lifecycle handler.
 2. **What does the user SEE on resume** — does the spinner appear? does the status text change? is any part of the UI re-mounted or re-loaded? Specifically: does the 3D/Godot renderer reload or re-animate on resume, or is it kept alive in the background?
