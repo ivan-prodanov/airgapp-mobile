@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 
 import { batteryLabel, batteryTextColor } from '@/ble/batteryDisplay';
+import { TeslaFonts } from '@/constants/fonts';
 import { MiniBatteryView } from './MiniBatteryView';
 
 // The battery row: glyph + "75%" / "312 km". Sits on its OWN row directly under
@@ -66,10 +67,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 5,
   },
-  // findings §C4: batteryText overrides the BodyLabel category — 16px bold.
+  // findings §1a batteryText, VERBATIM:
+  //   { fontSize:16, fontWeight:'bold', marginHorizontal: Specifications.iconMargin }
+  // iconMargin = 10 — Round 3 reported 5 here, which is why the % sat too close
+  // to the glyph. The `fontWeight:'bold'` override resolves to the Bold cut, so
+  // we name that face directly rather than risk a synthesized bold.
   text: {
+    fontFamily: TeslaFonts.bold,
     fontSize: 16,
-    fontWeight: 'bold',
-    marginHorizontal: 5,
+    marginHorizontal: 10,
   },
 });

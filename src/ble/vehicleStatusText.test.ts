@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DATA_STALE_MS, relativeAge, vehicleStatusText, type VehicleStatusInput } from './vehicleStatusText.ts';
+import {
+  DATA_STALE_MS,
+  isVehicleDataUnreliable,
+  relativeAge,
+  vehicleStatusText,
+  type VehicleStatusInput,
+} from './vehicleStatusText.ts';
 
 const S = 1000;
 const M = 60 * S;
@@ -110,12 +116,12 @@ describe('vehicleStatusText — the spinner gate (device-verified)', () => {
     assert.deepEqual(status, { text: 'Last seen 3 hours ago', spinner: true, stale: true });
   });
 
-  it('spins alongside a LIVE state too — the spinner is a sibling of the text', () => {
-    // findings §1's tree gates the spinner independently of the status string,
-    // so a pull-to-refresh on a fresh car spins next to "Parked".
+  it('does NOT spin on a wake when the data is FRESH — staleness is a term of the gate', () => {
+    // Round 4 settled the operator from the opcodes: `!fetchedDataRecently AND
+    // (canWake || error)`. A refetch still runs; it just isn't shown.
     assert.deepEqual(vehicleStatusText({ ...base, wakeInFlight: true }), {
       text: 'Parked',
-      spinner: true,
+      spinner: false,
       stale: false,
     });
   });
@@ -172,5 +178,29 @@ describe('vehicleStatusText — demo vehicles', () => {
     });
     // The battery row must not dim for a demo car either.
     assert.equal(vehicleStatusText({ ...base, linked: false }).stale, false);
+  });
+});
+
+describe('isVehicleDataUnreliable (findings §4 — drives the renderer dim)', () => {
+  it('is false while the data is inside the 2-minute window', () => {
+    assert.equal(isVehicleDataUnreliable(NOW, NOW), false);
+    assert.equal(isVehicleDataUnreliable(NOW - (DATA_STALE_MS - 1), NOW), false);
+  });
+
+  it('is true at and past the 2-minute window', () => {
+    assert.equal(isVehicleDataUnreliable(NOW - DATA_STALE_MS, NOW), true);
+    assert.equal(isVehicleDataUnreliable(NOW - 5 * H, NOW), true);
+  });
+
+  it('is true for a never-fetched car (their NO_DATA)', () => {
+    assert.equal(isVehicleDataUnreliable(null, NOW), true);
+  });
+
+  it('agrees with the status line’s own stale flag', () => {
+    // Both derive from the same window, so the dim and the "Last seen" copy can
+    // never disagree about whether the data is trustworthy.
+    for (const age of [0, 60 * S, DATA_STALE_MS, 5 * H]) {
+      assert.equal(isVehicleDataUnreliable(NOW - age, NOW), vehicleStatusText(staleAt(age)).stale);
+    }
   });
 });

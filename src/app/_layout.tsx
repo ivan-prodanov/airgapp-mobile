@@ -7,10 +7,12 @@ import 'react-native-url-polyfill/auto';
 
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
+import { useFonts } from 'expo-font';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { ToastProvider } from '@/components/ToastHost';
+import { TESLA_FONT_MAP } from '@/constants/fonts';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
 import { VehicleProvider } from '@/state/VehicleProvider';
 
@@ -20,6 +22,10 @@ import { VehicleProvider } from '@/state/VehicleProvider';
 // the core PanResponder system, so no GestureHandlerRootView is needed.
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  // Tesla's real typeface (see constants/fonts.ts). Deliberately NOT gated on:
+  // rendering waits for nothing, and the header restyles when the faces land —
+  // blocking here would hold up the Godot scene for a font.
+  useFonts(TESLA_FONT_MAP);
   useSharedLocationIntake();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

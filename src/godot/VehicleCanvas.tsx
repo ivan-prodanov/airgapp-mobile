@@ -1,8 +1,14 @@
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
-import { Animated as RNAnimated, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated as RNAnimated, Easing, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+
+// findings §4: alpha 0.5 (not 0.6), tweened over 0.5s LINEAR (not instant).
+const RENDERER_DIM_ALPHA = 0.5;
+const RENDERER_DIM_MS = 500;
 
 import { ExpoGodotView } from '../../modules/expo-godot-view';
+import { isVehicleDataUnreliable } from '@/ble/vehicleStatusText';
+import { useCarLinkStatus } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData } from '../types/rendererMessages';
 import type { VehicleViewState } from '../types/vehicleTypes';
@@ -60,6 +66,7 @@ interface VehicleCanvasProps {
 // intentionally omitted for the Phase 3 wiring PoC.
 export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
+  const carLink = useCarLinkStatus();
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
@@ -67,6 +74,40 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   // RN swap: web subscribed to the renderer iframe via attachFrame(); here we subscribe to the
   // native module's onGodotMessage stream.
   useEffect(() => bridge.attach(), [bridge]);
+
+  // ── Renderer dim ─────────────────────────────────────────────────────────
+  // Findings §4 (docs/superpowers/research/tesla-status-polish-FINDINGS.md):
+  // the official app dims the CAR — not the screen — via a Godot overlay quad
+  // (`SET_SCREEN_OVERLAY_COLOR`), at the theme background colour, alpha 0.5,
+  // tweened over 0.5s LINEAR. We have no such bridge message, but our dim view
+  // sits under the UI overlay and over the renderer, so it covers the same
+  // pixels; only the colour/alpha/curve had to be corrected (was an instant
+  // rgba(0,0,0,0.6) blackout).
+  //
+  // The TRIGGER is the real correction: theirs is `isVehicleDataUnreliable`,
+  // NOT ConnectionState.ASLEEP. A demo car has no telemetry to be unreliable,
+  // so its Explore sleep toggle stands in for the same idea.
+  const unreliable = carLink.linked
+    ? isVehicleDataUnreliable(carLink.lastVehicleDataAt, Date.now())
+    : !state.awake;
+  const dim = useRef(new RNAnimated.Value(0)).current;
+  useEffect(() => {
+    RNAnimated.timing(dim, {
+      toValue: unreliable ? RENDERER_DIM_ALPHA : 0,
+      duration: RENDERER_DIM_MS,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start();
+  }, [unreliable, dim]);
+
+  // Re-evaluate `unreliable` as the 2-minute window elapses: nothing else
+  // re-renders this component once the link goes quiet.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!carLink.linked) return;
+    const id = setInterval(() => setTick((n) => n + 1), 5_000);
+    return () => clearInterval(id);
+  }, [carLink.linked]);
 
   // RN swap: web measured the host div with a ResizeObserver; onLayout gives us the frame size.
   const onLayout = (event: LayoutChangeEvent) => {
@@ -117,10 +158,10 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
           pointerEvents="none">
           <ExpoGodotView sceneName="mobile" orbitEnabled={false} style={StyleSheet.absoluteFill} />
         </RNAnimated.View>
-        {/* Asleep: dim the 3D car (applies to every screen). UI panels render on top, undimmed. */}
-        {!state.awake ? (
-          <View style={styles.asleepDim} pointerEvents="none" />
-        ) : null}
+        {/* Dim the 3D car when the car's data is unreliable (applies to every
+            screen). UI panels render on top, undimmed — matching the official
+            app, whose dim covers the renderer surface only. */}
+        <RNAnimated.View style={[styles.rendererDim, { opacity: dim }]} pointerEvents="none" />
         <View style={styles.overlay} pointerEvents="box-none">
           {children}
         </View>
@@ -144,12 +185,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'flex-end',
   },
-  asleepDim: {
+  rendererDim: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    // findings §4: their overlay's colour is ThemeContext.v5BackgroundColor —
+    // the THEME BACKGROUND, not hard black. The RE did not resolve that token to
+    // a hex (§8 gap), so we use the renderer's own background grey, which is
+    // what the car should fade toward. Alpha lives in the animated `opacity`.
+    backgroundColor: '#161718',
   },
 });

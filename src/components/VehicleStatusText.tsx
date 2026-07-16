@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { TEXT_COLOR_LIGHT_DARK } from '@/ble/batteryDisplay';
+import { TeslaFonts } from '@/constants/fonts';
 import { BusyIcon } from './BusyIcon';
 
 // The Home status line, painted to the official app's recovered geometry.
@@ -57,13 +58,15 @@ const styles = StyleSheet.create({
   spinner: {
     marginRight: 5,
   },
-  // findings §C2/§E: TextCategory.BodyLabel = 14/20/'500'/0.1, coloured by
-  // appearance:Light = theme.textColorLight = #8A8B8B on the dark header. The
-  // muting is baked into the token — no extra opacity on top.
+  // findings §2a, the resolved iOS style VERBATIM:
+  //   { fontFamily:'UniversalSansText-Medium', fontSize:14, lineHeight:20,
+  //     letterSpacing:0.1 }   <- note: NO fontWeight (see constants/fonts.ts)
+  // plus color = theme.textColorLight = #8A8B8B on the dark header (the muting
+  // is baked into the token — no extra opacity on top).
   text: {
+    fontFamily: TeslaFonts.medium,
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '500',
     letterSpacing: 0.1,
     color: TEXT_COLOR_LIGHT_DARK,
   },

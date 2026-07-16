@@ -60,10 +60,10 @@ describe('battery fill geometry (findings §C3)', () => {
     assert.equal(batteryFillFraction(120), 1);
   });
 
-  it('maps to a rounded pixel width across the 33px inner box', () => {
-    assert.equal(batteryFillWidth(100), 33);
-    assert.equal(batteryFillWidth(50), 17); // round(33 * 0.5) = 17
-    assert.equal(batteryFillWidth(0), 3); // the 10% floor: round(33 * 0.1)
+  it('maps to a rounded pixel width across the 31px inner box (35 - the 4px inset)', () => {
+    assert.equal(batteryFillWidth(100), 31);
+    assert.equal(batteryFillWidth(50), 16); // round(31 * 0.5) = 16
+    assert.equal(batteryFillWidth(0), 3); // the 10% floor: round(31 * 0.1)
   });
 });
 

@@ -310,8 +310,10 @@ function QuickIcon({
 
   return (
     <Pressable style={styles.quickIcon} onPress={onPress} onLongPress={onLongPress} delayLongPress={300} hitSlop={8}>
-      {/* Fixed ICON_SIZE box so swapping icon↔spinner never shifts the row. */}
-      <View style={styles.quickIconGlyph}>
+      {/* Fixed ICON_SIZE box so swapping icon↔spinner never shifts the row.
+          findings §5: a BUSY control button also fades to iconButtonBusyOpacity
+          (0.5) ON TOP of the icon→spinner swap. */}
+      <View style={[styles.quickIconGlyph, pending ? styles.quickIconBusy : null]}>
         {pending ? (
           // The SAME spinner as the header — the official app's own
           // mini_spinner.png at BusyIcon's default size (20; the header is the
@@ -444,6 +446,10 @@ const styles = StyleSheet.create({
     height: ICON_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // findings §5: Specifications.iconButtonBusyOpacity.
+  quickIconBusy: {
+    opacity: 0.5,
   },
   mediaBar: {
     flexDirection: 'row',

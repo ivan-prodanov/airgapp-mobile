@@ -9,13 +9,19 @@
 // colors.xml one; the two differ by ~1 unit (#00E286 vs #00e185, #ffc107 vs
 // #ffc106) and this file uses the RN values (findings §C5).
 
-// Battery glyph geometry (findings §C3 prop defaults).
+// Battery glyph geometry — Round 4 §1 dumped the verbatim literals and CORRECTED
+// two of Round 3's numbers (the fill inset, and the body being filled).
 export const BATTERY_WIDTH = 35;
 export const BATTERY_HEIGHT = 16;
 export const BATTERY_BORDER_WIDTH = 1;
 export const BATTERY_BORDER_RADIUS = 3;
 export const BATTERY_FILL_RADIUS = 1;
-// The terminal nub (their `battery_nipple` icon-font glyph).
+// findings §1c: the fill is inset by `borderWidth*2 + 2` = 4 on BOTH axes — so
+// height is 16-4 = 12 (Round 3 said 14, i.e. flush) and the width budget is
+// 35-4 = 31. This inset is what gives the fill its visible margin.
+export const BATTERY_FILL_INSET = BATTERY_BORDER_WIDTH * 2 + 2;
+export const BATTERY_FILL_HEIGHT = BATTERY_HEIGHT - BATTERY_FILL_INSET;
+// findings §1d: the nub is drawn into a 4x16 box, abutting the body with no gap.
 export const BATTERY_NUB_WIDTH = 4;
 
 // findings §C5: the fill turns amber at or below 20%, red at or below 7%.
@@ -23,6 +29,9 @@ export const BATTERY_WARNING_PCT = 20;
 export const BATTERY_CRITICAL_PCT = 7;
 
 // findings §C5 + §E. Dark-mode values: Tesla's home screen is dark.
+// findings §1b: `pillBackgroundColor` is BOTH the body's backgroundColor AND its
+// borderColor on the non-Cybertruck path — the body is a SOLID rounded rect,
+// not a stroke around a transparent interior. It also colours the nub.
 export const BatteryColors = {
   charging: '#00E286',
   critical: '#ff0000',
@@ -54,17 +63,16 @@ export function batteryTextColor(charging: boolean): string {
   return charging ? BatteryColors.charging : TEXT_COLOR_LIGHT_DARK;
 }
 
-// findings §C3 `getFillPercentage`: the fill never drops below 10% of the inner
+// findings §1c `getFillPercentage`: the fill never drops below 10% of the inner
 // width, so an empty battery still reads as a battery rather than a hairline.
 export function batteryFillFraction(pct: number): number {
   const x = pct / 100;
   return x >= 0.1 ? Math.min(1, x) : 0.1;
 }
 
-// findings §C3: width = round((35 - 2*border) * fill).
+// findings §1c, verbatim: width = round((measuredWidth - 4) * fill).
 export function batteryFillWidth(pct: number): number {
-  const inner = BATTERY_WIDTH - BATTERY_BORDER_WIDTH * 2;
-  return Math.round(inner * batteryFillFraction(pct));
+  return Math.round((BATTERY_WIDTH - BATTERY_FILL_INSET) * batteryFillFraction(pct));
 }
 
 // findings §C4: percent mode renders the integer + '%' with NO space ("75%");

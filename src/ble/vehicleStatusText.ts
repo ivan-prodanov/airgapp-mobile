@@ -26,9 +26,13 @@
 //
 // That is exactly `canWake`, which §A itself defines as "a wake was REQUESTED"
 // (userForcedWakes / screensEnteredRequiringWake / userInitiatedCommands /
-// overrideAutoWakes) — not "the car is wakeable". So the `!fetchedDataRecently`
-// term is either an `&&` misread as `||`, or absent; for an always-stale car
-// both readings collapse to the same behaviour. We gate on the wake alone.
+// overrideAutoWakes) — not "the car is wakeable".
+//
+// Round 4 SETTLED it from the opcodes and the device was right: the gate is an
+// AND, and §A had misread the operator — "shown only when the data is NOT
+// fetched-recently (and can-wake / error conditions)". So a pull-to-refresh on a
+// car with <2-minute-old data shows NO spinner, even though a refetch does run.
+// We gate on BOTH: a wake must be in flight AND the data must be stale.
 
 // TimeInMs.TWO_MINUTES — the one threshold behind both `isVehicleDataStale`
 // (#30694) and `fetchedDataRecently` (#30697). Findings §A.
@@ -103,13 +107,18 @@ export function relativeAge(ms: number, withSuffix: boolean): string {
   return withSuffix ? `${phrase} ago` : phrase;
 }
 
+// isVehicleDataUnreliable is their `isVehicleDataUnreliable(getVehicleDataQuality)`
+// — true for quality in {CACHED_UNRELIABLE, UNABLE_TO_FETCH, NO_DATA} — reduced
+// to the two we can observe: data older than the 2-minute window, or never
+// fetched at all. Findings §4: this, NOT a raw asleep/ConnectionState, is what
+// drives the renderer dim. Asleep reaches it only transitively (asleep -> no
+// fresh data -> quality degrades -> dim).
+export function isVehicleDataUnreliable(lastVehicleDataAt: number | null, now: number): boolean {
+  return lastVehicleDataAt === null || now - lastVehicleDataAt >= DATA_STALE_MS;
+}
+
 export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
   const { linked, lastVehicleDataAt, awake, wakeInFlight, now } = input;
-
-  // The spinner is a structural SIBLING of the text (findings §1 tree), so it
-  // is gated independently of which status string renders — it can accompany
-  // "Parked" just as readily as "Last seen 2 hours ago".
-  const spinner = wakeInFlight;
 
   // Demo/unlinked vehicles have no real telemetry: keep the showroom copy, and
   // never spin (there is nothing to wait for).
@@ -118,9 +127,14 @@ export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
   }
 
   const fetchedRecently = lastVehicleDataAt !== null && now - lastVehicleDataAt < DATA_STALE_MS;
+  // The gate, per Round 4: a wake in flight AND stale data. The spinner is still
+  // a structural SIBLING of the text (findings §1 tree) — it is not owned by any
+  // one status string — but staleness is a term of the gate, so a fresh car
+  // never spins however hard you pull.
+  const spinner = wakeInFlight && !fetchedRecently;
 
   // A live state wins over the stale branch (findings §A priorities 1-6).
-  if (fetchedRecently) return { text: 'Parked', spinner, stale: false };
+  if (fetchedRecently) return { text: 'Parked', spinner: false, stale: false };
 
   if (lastVehicleDataAt === null) {
     // Never fetched (fresh install / newly linked car) — the ONLY route to
