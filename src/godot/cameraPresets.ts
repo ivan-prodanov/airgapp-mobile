@@ -54,10 +54,11 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       keep_aspect: 'WIDTH',
     },
     environment: {
-      // Matches dev injector _send_top_down_view env.
-      rotation: [-10, -10, 0],
-      env_energy: 6,
-      amb_energy: 2.5,
+      // EXACT Tesla TOP_DOWN env (Round 5 §3b); ours was the dev injector's
+      // [-10,-10,0] 6/2.5.
+      rotation: [0, -3, 87],
+      env_energy: 4.5,
+      amb_energy: 4,
     },
     fadeRoof: false,
   },
@@ -78,8 +79,12 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       keep_aspect: 'WIDTH',
     },
     environment: {
-      // Matches dev injector _send_climate_view env.
-      rotation: [0, -7, 83],
+      // EXACT Tesla CLIMATE env (Round 5 §3b). Ours was the dev injector's
+      // rotation [0,-7,83] — a completely different sky orientation. The energies
+      // happened to match; the rotation did not, and since the mobile ground
+      // material is SHADED (§3d) the sky orientation moves the car's shadow and
+      // reflections. This is a direct cause of the Climate-vs-Tesla shadow delta.
+      rotation: [0, 40, 0],
       env_energy: 4,
       amb_energy: 4,
     },

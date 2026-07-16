@@ -14,7 +14,7 @@ const RESTORE_MS = 500;
 
 export function ChargeStatus({
   batteryLevel,
-  rangeKm,
+  rangeMiles,
   charging,
   // Data older than 2 minutes — dims the whole row (findings §C3).
   stale,
@@ -24,7 +24,7 @@ export function ChargeStatus({
   onRefresh,
 }: {
   batteryLevel: number;
-  rangeKm: number | null;
+  rangeMiles: number | null;
   charging: boolean;
   stale: boolean;
   onRefresh?: () => void;
@@ -61,7 +61,7 @@ export function ChargeStatus({
         }}
       >
         <Text style={[styles.text, { color: batteryTextColor(charging) }]}>
-          {batteryLabel(mode, batteryLevel, rangeKm, 'km')}
+          {batteryLabel(mode, batteryLevel, rangeMiles, 'km')}
         </Text>
       </Pressable>
     </Animated.View>
@@ -75,14 +75,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 5,
   },
-  // findings §1a batteryText, VERBATIM:
-  //   { fontSize:16, fontWeight:'bold', marginHorizontal: Specifications.iconMargin }
-  // iconMargin = 10 — Round 3 reported 5 here, which is why the % sat too close
-  // to the glyph. The `fontWeight:'bold'` override resolves to the Bold cut, so
-  // we name that face directly rather than risk a synthesized bold.
+  // findings (Round 5) §1a/§1b — BOTH of Round 4's answers here were wrong:
+  //
+  //  - marginHorizontal is 5 (0.5 x Gutter), not 10. There are TWO `batteryText`
+  //    entries in two modules; R4 quoted the MiniBatteryStatus one
+  //    (Specifications.iconMargin = 10), but the % text uses the HEADER module's.
+  //    Round 3's original 5 was right. The real nub->"7" gap is 5.0pt.
+  //
+  //  - The face is MEDIUM, not Bold. Their `fontWeight:'bold'` is a NO-OP on
+  //    iOS: the category supplies fontFamily 'UniversalSansText-Medium', and the
+  //    foundry's name table puts Medium in its own single-face family — so the
+  //    Bold cut (which lives in a DIFFERENT family) is unreachable and iOS does
+  //    not synthesize faux-bold. Shipping a real Bold-700 made our % heavier
+  //    than the official Medium-500. So: same face as the 14px status line,
+  //    differing only in size.
   text: {
-    fontFamily: TeslaFonts.bold,
+    fontFamily: TeslaFonts.medium,
     fontSize: 16,
-    marginHorizontal: 10,
+    marginHorizontal: 5,
   },
 });

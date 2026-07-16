@@ -266,7 +266,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
             setLastVehicleDataAt(cached.lastVehicleDataAt);
             const patch: Partial<VehicleViewState> = {};
             if (cached.batteryLevel !== null) patch.batteryLevel = cached.batteryLevel;
-            if (cached.rangeKm !== null) patch.rangeKm = cached.rangeKm;
+            if (cached.rangeMiles !== null) patch.rangeMiles = cached.rangeMiles;
             if (cached.charging !== null) patch.charging = cached.charging;
             if (cached.awake !== null) patch.awake = cached.awake;
             if (Object.keys(patch).length) applyTelemetryRef.current(patch);
@@ -521,7 +521,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     }
     setLastVehicleDataAt(at);
     const next: CarLinkCache = {
-      ...(cacheRef.current ?? { batteryLevel: null, rangeKm: null, charging: null, awake: null }),
+      ...(cacheRef.current ?? { batteryLevel: null, rangeMiles: null, charging: null, awake: null }),
       lastVehicleDataAt: at,
       awake: true,
     };

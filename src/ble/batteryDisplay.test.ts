@@ -67,21 +67,33 @@ describe('battery fill geometry (findings §C3)', () => {
   });
 });
 
-describe('batteryLabel (findings §C4)', () => {
+describe('batteryLabel (findings §C4 / Round 5 §2a — rangeMiles is the RAW field)', () => {
   it('renders percent as an integer with NO space', () => {
-    assert.equal(batteryLabel('percent', 75, 312, 'km'), '75%');
-    assert.equal(batteryLabel('percent', 74.6, 312, 'km'), '75%');
+    assert.equal(batteryLabel('percent', 75, 200, 'km'), '75%');
+    assert.equal(batteryLabel('percent', 74.6, 200, 'km'), '75%');
   });
 
-  it('renders distance as range + unit', () => {
-    assert.equal(batteryLabel('distance', 75, 312, 'km'), '312 km');
+  it('converts miles -> km with their exact factor and rounds to 0 decimals', () => {
+    // 200 mi * 1.609344 = 321.8688 -> "322 km"
+    assert.equal(batteryLabel('distance', 75, 200, 'km'), '322 km');
   });
 
-  it('converts to miles when that is the vehicle preference', () => {
-    assert.equal(batteryLabel('distance', 75, 161, 'mi'), '100 mi');
+  it('applies NO factor on the miles path — the field is already miles', () => {
+    assert.equal(batteryLabel('distance', 75, 200.4, 'mi'), '200 mi');
   });
 
-  it('falls back to percent when no range is known (never renders "null km")', () => {
-    assert.equal(batteryLabel('distance', 75, null, 'km'), '75%');
+  it('separates value and unit with a single ASCII space', () => {
+    assert.equal(batteryLabel('distance', 75, 200, 'km'), '322 km');
+    assert.match(batteryLabel('distance', 75, 200, 'km')!, /^\d+ (km|mi)$/);
+  });
+
+  it('renders NOTHING in distance mode with no range — it does NOT fall back to %', () => {
+    // Round 5 §2b: their string builder returns undefined and the Text renders
+    // nothing. Falling back to % (what we used to do) is visibly non-Tesla.
+    assert.equal(batteryLabel('distance', 75, null, 'km'), null);
+  });
+
+  it('still renders percent with no range, since % needs no range', () => {
+    assert.equal(batteryLabel('percent', 75, null, 'km'), '75%');
   });
 });

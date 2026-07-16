@@ -18,14 +18,15 @@
 // The files are the real ones, extracted from the IPA (see tesla-status-assets/).
 export const TeslaFonts = {
   // TextCategory.BodyLabel -> getFontStyle({type:'Medium', prefix:'UniversalSansText-'}).
+  // This is the ONLY face the header uses: the status line (14px) and the
+  // battery % (16px) are both Medium. The % LOOKS bolder only because it's
+  // bigger — their `fontWeight:'bold'` on it is a no-op (see Round 5 §1b), so
+  // shipping a real Bold cut here renders heavier than the official app.
   medium: 'UniversalSansText-Medium',
-  // The battery %'s `fontWeight: 'bold'` override resolves to the Bold cut.
-  bold: 'UniversalSansText-Bold',
 } as const;
 
 // The map passed to expo-font's useFonts. The KEY is the family name RN will
 // resolve, so it must equal the PostScript name above.
 export const TESLA_FONT_MAP = {
   [TeslaFonts.medium]: require('@/assets/fonts/UniversalSans-Text-Medium-540.ttf'),
-  [TeslaFonts.bold]: require('@/assets/fonts/UniversalSans-Text-Bold-680.ttf'),
 };

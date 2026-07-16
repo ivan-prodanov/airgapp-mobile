@@ -10,6 +10,9 @@
 
 **Extracted files in `tesla-status-assets/`:** `battery_nipple.svg` (the nub), `battery_reference_dark.svg` (corrected battery mockup), `fonts/ios/UniversalSans-*.ttf` + `fonts/android/UniversalSans*.ttf` (real font files).
 
+> ### ⚠️ Two battery-% details here were corrected by Round 5 (`tesla-renderer-and-battery-FINDINGS.md`)
+> This doc discussed the battery **glyph**; for the battery **% text** note two on-device corrections from R5: (1) its `marginHorizontal` is **5**, not the `iconMargin=10` implied here — the % `<Text>` uses the *header* module's `batteryText` (`Gutter×0.5=5`), not the MiniBattery module's (10). (2) The % renders in **`UniversalSansText-Medium` (500)**, not a real Bold — `fontWeight:'bold'` is a no-op on iOS (Medium is a single-face family). Ship Medium at 16px, `marginHorizontal:5`, drop the weight. See Round-5 §1.
+
 ---
 
 ## §1. Battery glyph — VERBATIM, and the three deltas fixed

@@ -20,7 +20,7 @@ export interface CarLinkCache {
   // mapping note in src/ble/vehicleStatusText.ts.
   lastVehicleDataAt: number;
   batteryLevel: number | null;
-  rangeKm: number | null;
+  rangeMiles: number | null;
   charging: boolean | null;
   awake: boolean | null;
 }

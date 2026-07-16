@@ -95,9 +95,10 @@ export interface VehicleViewState {
   // Per-car battery percentage shown in the Home header (0–100). Stubbed until BLE; each vehicle
   // carries its own so switching cars shows a different value.
   batteryLevel: number;
-  // Remaining range in km, from the car's charge state (null until a read supplies it). Tapping the
-  // Home battery % swaps the label to this, like the official app.
-  rangeKm: number | null;
+  // Remaining range in MILES — the raw `battery_range` field, which is the source the official app
+  // reads (it converts at display time, so we keep it unconverted; see batteryDisplay.ts). null until
+  // a read supplies it. Tapping the Home battery % swaps the label to this.
+  rangeMiles: number | null;
   // Live cabin + ambient temperatures (°C), shown on the climate view and the Home Climate row.
   // Mock for now; maps to BLE ClimateState.inside_temp / outside_temp per vehicle.
   interiorTempC: number;
@@ -151,7 +152,7 @@ export const initialVehicleState: VehicleViewState = {
   cameraMode: 'PARKED',
   theme: 'dark',
   batteryLevel: 48,
-  rangeKm: null,
+  rangeMiles: null,
   interiorTempC: 21,
   exteriorTempC: 18,
 };

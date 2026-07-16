@@ -217,14 +217,16 @@ test(CLOSURE_INTENT_GRACE_MS + 'ms is the documented closure-intent grace window
 
 // ── parseCarServerResponse + infotainmentToPatch ─────────────────────────
 
-test('charge: soc -> batteryLevel, rangeKm computed (batteryRange 100 -> 161)', () => {
+test('charge: soc -> batteryLevel, batteryRange kept RAW in miles (no conversion at ingest)', () => {
   const snap = parseCarServerResponse({
     vehicleData: {
       chargeState: { batteryLevel: 72, batteryRange: 100, chargingState: { Charging: {} }, chargeLimitSoc: 90 },
     },
   });
   assert.equal(snap.charge?.soc, 72);
-  assert.equal(snap.charge?.rangeKm, 161);
+  // Round 5 §2a: `battery_range` IS miles and the official app converts at
+  // display time. Converting+rounding here would compound error on a mi display.
+  assert.equal(snap.charge?.rangeMiles, 100);
   assert.equal(snap.charge?.chargingState, 'Charging');
   assert.equal(snap.charge?.chargeLimitSoc, 90);
 
@@ -324,9 +326,9 @@ test('parseCarServerResponse: top-level chargeState (no vehicleData wrapper) is 
   assert.equal(snap.charge?.soc, 40);
 });
 
-test('parseCarServerResponse: batteryRange absent -> rangeKm null', () => {
+test('parseCarServerResponse: batteryRange absent -> rangeMiles null', () => {
   const snap = parseCarServerResponse({ chargeState: { batteryLevel: 40 } });
-  assert.equal(snap.charge?.rangeKm, null);
+  assert.equal(snap.charge?.rangeMiles, null);
 });
 
 // ── oneof robustness: handles both {CaseName:{}} objects and plain strings ─

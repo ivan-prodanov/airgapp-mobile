@@ -37,7 +37,7 @@ export interface VcsecStatus {
 export interface InfotainmentSnapshot {
   charge?: {
     soc: number | undefined;
-    rangeKm: number | null;
+    rangeMiles: number | null;
     chargingState: string | undefined;
     chargeLimitSoc: number | undefined;
   };
@@ -193,7 +193,9 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     const batteryRange = num(cs.batteryRange);
     snap.charge = {
       soc: num(cs.batteryLevel),
-      rangeKm: batteryRange !== undefined ? Math.round(batteryRange * 1.60934) : null,
+      // RAW miles: `battery_range` is already in miles and the official app converts
+      // at display time (Round 5 §2a). Rounding to km here would compound error.
+      rangeMiles: batteryRange ?? null,
       chargingState: oneofName(cs.chargingState),
       chargeLimitSoc: num(cs.chargeLimitSoc),
     };
@@ -341,7 +343,7 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     // unknown. Only emit when the underlying field was actually present — 0 is still emitted when
     // it's a genuinely reported value (soc !== undefined includes soc === 0).
     if (snap.charge.soc !== undefined) patch.batteryLevel = snap.charge.soc;
-    if (snap.charge.rangeKm !== null) patch.rangeKm = snap.charge.rangeKm;
+    if (snap.charge.rangeMiles !== null) patch.rangeMiles = snap.charge.rangeMiles;
     if (snap.charge.chargingState !== undefined) {
       patch.charging = snap.charge.chargingState.toLowerCase() === 'charging';
     }

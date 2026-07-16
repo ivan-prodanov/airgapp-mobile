@@ -75,15 +75,30 @@ export function batteryFillWidth(pct: number): number {
   return Math.round((BATTERY_WIDTH - BATTERY_FILL_INSET) * batteryFillFraction(pct));
 }
 
-// findings §C4: percent mode renders the integer + '%' with NO space ("75%");
-// distance mode renders the preformatted range + unit ("312 km").
+// Their exact miles->km factor (Round 5 §2a). Applied ONLY on the km path; the
+// miles path uses the raw field, which is already in miles.
+export const KM_PER_MILES = 1.609344;
+
+// findings §C4/§2a. Percent mode: the integer + '%', NO space ("75%"). Distance
+// mode: `getRemainingBatteryRangeDistance() + ' ' + unit` — a plain ASCII space,
+// Math.round to 0 decimals ("312 km").
+//
+// `rangeMiles` is the RAW `battery_range` field (their default source; they read
+// ideal_battery_range only when the car's RangeDisplay is IDEAL, and never touch
+// est_battery_range). Keeping it in miles and converting here matters: rounding
+// to km at ingest and converting back for a miles display would compound error.
+//
+// Returns null for "render nothing" — see the no-data note below.
 export function batteryLabel(
   mode: 'percent' | 'distance',
   pct: number,
-  rangeKm: number | null,
+  rangeMiles: number | null,
   unit: 'km' | 'mi',
-): string {
-  if (mode === 'percent' || rangeKm === null) return `${Math.round(pct)}%`;
-  const value = unit === 'mi' ? rangeKm / 1.60934 : rangeKm;
+): string | null {
+  if (mode === 'percent') return `${Math.round(pct)}%`;
+  // findings §2b: in distance mode with no range, their string builder returns
+  // undefined and the Text renders NOTHING. It does NOT fall back to percent.
+  if (rangeMiles === null) return null;
+  const value = unit === 'km' ? rangeMiles * KM_PER_MILES : rangeMiles;
   return `${Math.round(value)} ${unit}`;
 }

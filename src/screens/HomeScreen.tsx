@@ -261,7 +261,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             </Pressable>
             <ChargeStatus
               batteryLevel={state.batteryLevel}
-              rangeKm={state.rangeKm}
+              rangeMiles={state.rangeMiles}
               charging={state.charging}
               stale={status.stale}
               onRefresh={onRefresh}

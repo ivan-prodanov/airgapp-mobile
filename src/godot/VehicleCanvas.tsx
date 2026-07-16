@@ -7,6 +7,8 @@ const RENDERER_DIM_ALPHA = 0.5;
 const RENDERER_DIM_MS = 500;
 
 import { ExpoGodotView } from '../../modules/expo-godot-view';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { isVehicleDataUnreliable } from '@/ble/vehicleStatusText';
 import { useCarLinkStatus } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -20,30 +22,57 @@ import { GodotRendererBridge } from './GodotRendererBridge';
 //  - topMarginPt < 0 raises the car (hero angled views sit up off the bottom panel).
 // CLIMATE 0.93 = whole top-down car centred high (matched to the reference); it pairs with the short
 // climate controls panel so the full car sits above them, like the real app.
-const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; topMarginPt: number }> = {
-  // PARKED = home screen: car sits in the upper band (header above, controls sheet below).
-  PARKED: { heightFrac: 0.76, topMarginPt: -66 },
-  CHARGING: { heightFrac: 1, topMarginPt: -64 },
-  CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
-  // Climate uses Tesla's exact camera (offset[0,6,0.6] fov40, WIDTH-fit). At screen-size the whole car
-  // renders small; Tesla shows it larger, so we scale the render frame up (>1) and lift it with a
-  // negative top margin to re-centre. heightFrac is the climate ZOOM knob; topMargin keeps it framed.
-  CLIMATE: { heightFrac: 1.3, topMarginPt: -300 },
-  TOP_DOWN: { heightFrac: 1, topMarginPt: 0 },
-};
+// The on-screen rectangle the car composites into (their UPDATE_MAIN_VIEW_FRAME).
+//
+// Source: docs/superpowers/research/tesla-renderer-and-battery-FINDINGS.md §3c.
+// The camera POSE is not viewport-dependent in the official app — every
+// cam_fov/offset/rotation is a hard-coded literal (our PARKED already matches
+// theirs exactly). The car's apparent size and position therefore come from THIS
+// rectangle, which is why the poses looked right but the framing didn't.
+//
+// Their Home frame is an ABSOLUTE 355pt band starting statusBarHeight+60 below
+// the top — not a fraction of the screen. What was here before were hand-tuned
+// fudge factors (a 0.76 height fraction, a -66 top margin, and a Climate
+// "zoom knob" of 1.3 with a -300 lift) that approximated the look per-device.
+// Replaced with their literals.
+const GODOT_VIEW_SIZE = 355; // their GODOT_VIEW_SIZE (iOS :4068110)
+// Their Climate frame: statusBarOffset .. SCREEN_HEIGHT - statusBarOffset - 240.
+const CLIMATE_BOTTOM_INSET = 240;
 
 function buildFrame(
   width: number,
   height: number,
   mode: VehicleViewState['cameraMode'],
   animated: boolean,
+  // The status-bar height their frames are measured from (insets.top).
+  statusBarHeight: number,
 ): FrameData {
-  const cfg = VIEW_FRAME[mode];
+  const w = Math.max(1, Math.round(width));
+  let top: number;
+  let h: number;
+  switch (mode) {
+    case 'PARKED':
+      top = statusBarHeight + 60;
+      h = GODOT_VIEW_SIZE;
+      break;
+    case 'CLIMATE':
+      top = statusBarHeight;
+      h = height - statusBarHeight - CLIMATE_BOTTOM_INSET;
+      break;
+    default:
+      // CHARGING / CLOSURE_OPEN / TOP_DOWN keep our framing: their Controls
+      // screen reuses the PARKED pose rather than a top-down one (§3b), so
+      // there's no recovered frame to copy for these. See the note in
+      // cameraPresets.ts.
+      top = 0;
+      h = height;
+      break;
+  }
   return {
-    top_margin: cfg.topMarginPt,
+    top_margin: Math.round(top),
     left_margin: 0,
-    width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height * cfg.heightFrac)),
+    width: w,
+    height: Math.max(1, Math.round(h)),
     animated,
     scroll_fraction: 1,
   };
@@ -67,6 +96,7 @@ interface VehicleCanvasProps {
 export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const carLink = useCarLinkStatus();
+  const insets = useSafeAreaInsets();
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
@@ -113,7 +143,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     layout.current = { width, height };
-    const frame = buildFrame(width, height, state.cameraMode, false);
+    const frame = buildFrame(width, height, state.cameraMode, false, insets.top);
 
     if (!booted.current) {
       bridge.boot(state, frame);
@@ -128,7 +158,9 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   // with the camera move.
   useEffect(() => {
     if (booted.current && layout.current) {
-      bridge.updateFrame(buildFrame(layout.current.width, layout.current.height, state.cameraMode, true));
+      bridge.updateFrame(
+        buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, insets.top),
+      );
     }
   }, [bridge, state.cameraMode]);
 

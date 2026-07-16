@@ -1,0 +1,16 @@
+[gd_resource type="Environment" load_steps=3 format=2]
+
+[ext_resource path="res://shared_misc_textures/New_Studio.png" type="Texture" id=1]
+
+[sub_resource type="PanoramaSky" id=1]
+radiance_size = 4
+panorama = ExtResource( 1 )
+
+[resource]
+background_mode = 3
+background_sky = SubResource( 1 )
+background_sky_orientation = Basis( 0.11963, -0.97431, -0.190809, 0.992546, 0.121869, 0, 0.0232538, -0.189387, 0.981627 )
+background_energy = 6.0
+ambient_light_energy = 2.6
+fog_depth_begin = 0.0
+fog_depth_end = 35.5
