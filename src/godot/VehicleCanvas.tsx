@@ -93,20 +93,24 @@ function buildFrame(
     default: {
       // No recovered rect for these (their Controls reuses the PARKED pose
       // rather than our top-down one, and R5 §5 left the Controls sheetHeight
-      // UNRESOLVED). But their keep_aspect must still be uniform, or the fov
+      // UNRESOLVED). But keep_aspect must be uniform across views, or the fov
       // axis flips mid-navigation and the car collapses on the way to the
-      // screen. So: preserve each view's CURRENT look exactly while moving it
-      // onto KEEP_HEIGHT.
+      // screen. So: reproduce each view's PRE-KEEP_HEIGHT look exactly — both
+      // its size AND its position — on the new axis.
       //
-      // Under KEEP_WIDTH the car rendered at `aspect` (= W/H) of its
-      // KEEP_HEIGHT size, so an equal-looking KEEP_HEIGHT zoom is
-      //     frac x aspect = frac x (W/H),
-      // and the frame height that yields it is
-      //     H x frac x (W/H) = frac x W.
-      // Hence `heightFrac * width` — algebraically identical to today's render,
-      // just expressed on the axis Tesla uses.
-      top = cfg.topMarginPt;
+      // SIZE: under KEEP_WIDTH the car rendered at `aspect` (= W/H) of its
+      // KEEP_HEIGHT size, so an equal-looking zoom is frac x (W/H), which a
+      // frame height of `frac x W` yields (H x frac x W/H).
+      //
+      // POSITION: the scene's centre is `top + H/2 * scale` (MainViewContainer),
+      // so changing the zoom MOVES the car unless top moves with it. Solving
+      // `top_new + H/2*scale_new == top_old + H/2*scale_old` gives
+      //     top_new = top_old + (H/2) * frac * (1 - W/H).
+      // Forgetting this is what threw Controls ~230pt up the screen: its
+      // topMargin of 0 was tuned for scale 1.0 and means something else at 0.461.
+      const aspect = width / height;
       h = cfg.heightFrac * width;
+      top = cfg.topMarginPt + (height / 2) * cfg.heightFrac * (1 - aspect);
       break;
     }
   }
