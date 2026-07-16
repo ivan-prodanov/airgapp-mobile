@@ -49,7 +49,7 @@ import { DirectBleTransport } from '@/ble/directBleTransport';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { vcsecStatusToPatch } from '@/ble/telemetry';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
-import { commandActionLabel, commandFailureMessage } from '@/ble/commandMessages';
+import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { useToast } from '@/components/ToastHost';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
@@ -226,7 +226,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         });
       }
       const failToast = (outcome: Extract<CommandOutcome, { ok: false }>) => {
-        toastRef.current.show(commandFailureMessage(commandActionLabel(cmd.type), outcome), 'error');
+        toastRef.current.show(commandFailureText(commandActionLabel(cmd.type), outcome));
       };
 
       // Fire-and-forget: the gateway's per-VIN queue serializes commands. We

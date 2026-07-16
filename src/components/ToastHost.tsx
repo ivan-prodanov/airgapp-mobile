@@ -1,8 +1,11 @@
 // ToastHost.tsx — the app-global bottom toast (Tesla-app "failed operation"
-// style). A single transient card, safe-area-aware, absolutely overlaid above
-// all app content. `useToast().show(msg, tone)` replaces whatever is showing,
-// re-animates it in, and auto-dismisses after AUTO_DISMISS_MS; tapping it
-// dismisses early.
+// style): a two-line card — BOLD title + muted body — on a surface slightly
+// lighter than the background, full-width minus side margins, sitting at the
+// very bottom above the home indicator. No accent bar, no icon (matches the
+// official app, verified side-by-side). A single transient card, safe-area-
+// aware, absolutely overlaid above all app content. `useToast().show(text)`
+// replaces whatever is showing, re-animates it in, and auto-dismisses after
+// AUTO_DISMISS_MS; tapping it dismisses early.
 //
 // RN-only (Animated + safe-area). Mounted in _layout.tsx INSIDE ThemeProvider
 // and AROUND VehicleProvider so useCarLink (inside the fleet) can surface
@@ -21,23 +24,32 @@ import {
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type ToastTone = 'error' | 'info';
+// ToastText is the card's content: a bold title and an optional muted body.
+// commandMessages.commandFailureText produces exactly this shape.
+export interface ToastText {
+  title: string;
+  body?: string;
+}
 
 interface ToastApi {
-  show: (msg: string, tone?: ToastTone) => void;
+  // Accepts a bare string (title-only card) or the two-line {title, body}.
+  show: (text: ToastText | string) => void;
 }
 
 // A monotonic id lets a repeat message (same text) still re-trigger the
-// animation + dismiss timer; null message = nothing showing.
-interface ToastState {
+// animation + dismiss timer; null = nothing showing.
+interface ToastState extends ToastText {
   id: number;
-  msg: string;
-  tone: ToastTone;
 }
 
 const AUTO_DISMISS_MS = 4000;
+
+// Gap between the card and the safe-area bottom edge — the official app sits
+// the card at the VERY bottom, just clear of the home indicator.
+const BOTTOM_GAP = Spacing.two;
 
 const noop: ToastApi = { show: () => {} };
 const ToastContext = createContext<ToastApi>(noop);
@@ -52,9 +64,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const idRef = useRef(0);
 
-  const show = useCallback((msg: string, tone: ToastTone = 'error') => {
+  const show = useCallback((text: ToastText | string) => {
     idRef.current += 1;
-    setToast({ id: idRef.current, msg, tone });
+    const next = typeof text === 'string' ? { title: text } : text;
+    setToast({ id: idRef.current, ...next });
   }, []);
 
   const dismiss = useCallback(() => setToast(null), []);
@@ -95,18 +108,20 @@ function ToastCard({ toast, onDismiss }: { toast: ToastState; onDismiss: () => v
     return () => clearTimeout(timer);
   }, [toast.id, translateY, opacity, animateOut, onDismiss]);
 
-  const accent = toast.tone === 'error' ? theme.error : theme.textSecondary;
-
   return (
-    <View style={[styles.host, { bottom: insets.bottom + 16 }]} pointerEvents="box-none">
+    <View style={[styles.host, { bottom: insets.bottom + BOTTOM_GAP }]} pointerEvents="box-none">
       <Animated.View style={{ opacity, transform: [{ translateY }], width: '100%' }}>
         <Pressable
           onPress={() => animateOut(onDismiss)}
           style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-          <View style={[styles.accent, { backgroundColor: accent }]} />
-          <Text style={[styles.text, { color: theme.text }]} numberOfLines={3}>
-            {toast.msg}
+          <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
+            {toast.title}
           </Text>
+          {toast.body ? (
+            <Text style={[styles.body, { color: theme.textSecondary }]} numberOfLines={3}>
+              {toast.body}
+            </Text>
+          ) : null}
         </Pressable>
       </Animated.View>
     </View>
@@ -116,18 +131,15 @@ function ToastCard({ toast, onDismiss }: { toast: ToastState; onDismiss: () => v
 const styles = StyleSheet.create({
   host: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    left: Spacing.three,
+    right: Spacing.three,
     alignItems: 'center',
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
     width: '100%',
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    gap: 12,
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.three,
     // Subtle elevation, matching the app's sheets/cards.
     shadowColor: '#000',
     shadowOpacity: 0.3,
@@ -135,15 +147,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
   },
-  accent: {
-    width: 3,
-    alignSelf: 'stretch',
-    borderRadius: 2,
+  title: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 22,
   },
-  text: {
-    flex: 1,
+  body: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '400',
     lineHeight: 20,
+    marginTop: Spacing.half,
   },
 });

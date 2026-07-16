@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { commandFailureMessage, commandActionLabel } from './commandMessages';
+import { commandFailureText, commandActionLabel } from './commandMessages';
 import type { CommandOutcome } from './gateway';
 
 type Fail = Extract<CommandOutcome, { ok: false }>;
@@ -20,45 +20,68 @@ const faultInsufficient: Fail = {
 };
 const faultOther: Fail = { ok: false, kind: 'fault', fault: 9, faultName: 'INVALID_COMMAND', message: '[lock] fault 9' };
 
-test('unreachable → out of range / asleep, lowercased action', () => {
-  const msg = commandFailureMessage('Lock', unreachable);
-  assert.equal(msg, "Couldn't lock — car out of range or asleep");
-  assert.ok(msg.includes('lock'));
+// ── title: always "<Action> failed" (Tesla's bold first line) ────────────────
+
+test('title is the action label + " failed", verbatim (not lowercased)', () => {
+  assert.equal(commandFailureText('Lock', timeout).title, 'Lock failed');
+  assert.equal(commandFailureText('Unlock', timeout).title, 'Unlock failed');
+  assert.equal(commandFailureText('Open frunk', timeout).title, 'Open frunk failed');
 });
 
-test('exhausted maps to the same out-of-range message', () => {
-  assert.equal(commandFailureMessage('Lock', exhausted), "Couldn't lock — car out of range or asleep");
+test('title is independent of the failure kind', () => {
+  for (const outcome of [unreachable, exhausted, timeout, auth, faultUnknownKey, faultInsufficient, faultOther]) {
+    assert.equal(commandFailureText('Lock', outcome).title, 'Lock failed');
+  }
 });
 
-test('timeout → the car didn\'t respond', () => {
-  const msg = commandFailureMessage('Unlock', timeout);
-  assert.equal(msg, "Couldn't unlock — the car didn't respond");
-  assert.ok(msg.includes('unlock'));
+// ── body: the reason line (Tesla's muted second line) ───────────────────────
+
+test('timeout → command timeout body', () => {
+  assert.deepEqual(commandFailureText('Lock', timeout), {
+    title: 'Lock failed',
+    body: 'Command timeout, please try again.',
+  });
 });
 
-test('auth → not paired / re-enrol', () => {
-  const msg = commandFailureMessage('Lock', auth);
-  assert.equal(msg, "Couldn't lock — this phone isn't paired. Re-enrol it.");
-  assert.ok(msg.includes('lock'));
+test('unreachable → out of range / asleep body', () => {
+  assert.deepEqual(commandFailureText('Lock', unreachable), {
+    title: 'Lock failed',
+    body: 'Car out of range or asleep, please try again.',
+  });
 });
 
-test('fault UNKNOWN_KEY_ID → same not-paired / re-enrol message', () => {
-  const msg = commandFailureMessage('Lock', faultUnknownKey);
-  assert.equal(msg, "Couldn't lock — this phone isn't paired. Re-enrol it.");
-  assert.ok(msg.includes('lock'));
+test('exhausted maps to the same out-of-range body', () => {
+  assert.equal(commandFailureText('Lock', exhausted).body, 'Car out of range or asleep, please try again.');
 });
 
-test('fault INSUFFICIENT_PRIVILEGES → not allowed for this key', () => {
-  const msg = commandFailureMessage('Lock', faultInsufficient);
-  assert.equal(msg, "Couldn't lock — not allowed for this key");
-  assert.ok(msg.includes('lock'));
+test('auth → not paired / re-enrol body', () => {
+  assert.deepEqual(commandFailureText('Unlock', auth), {
+    title: 'Unlock failed',
+    body: "This phone isn't paired with the car. Re-enrol it.",
+  });
+});
+
+test('fault UNKNOWN_KEY_ID → the same not-paired / re-enrol body', () => {
+  assert.equal(commandFailureText('Lock', faultUnknownKey).body, "This phone isn't paired with the car. Re-enrol it.");
+});
+
+test('fault INSUFFICIENT_PRIVILEGES → key not allowed body', () => {
+  assert.equal(commandFailureText('Lock', faultInsufficient).body, "This key isn't allowed to do that.");
 });
 
 test('fault (other) → the car declined the request', () => {
-  const msg = commandFailureMessage('Lock', faultOther);
-  assert.equal(msg, "Couldn't lock — the car declined the request");
-  assert.ok(msg.includes('lock'));
+  assert.equal(commandFailureText('Lock', faultOther).body, 'The car declined the request.');
 });
+
+test('every branch ends in a period and starts capitalized (Tesla tone)', () => {
+  for (const outcome of [unreachable, exhausted, timeout, auth, faultUnknownKey, faultInsufficient, faultOther]) {
+    const { body } = commandFailureText('Lock', outcome);
+    assert.ok(body.endsWith('.'), `body should end with a period: ${body}`);
+    assert.equal(body[0], body[0].toUpperCase(), `body should start capitalized: ${body}`);
+  }
+});
+
+// ── commandActionLabel (unchanged) ──────────────────────────────────────────
 
 test('commandActionLabel maps known commands and title-cases the rest', () => {
   assert.equal(commandActionLabel('lock'), 'Lock');

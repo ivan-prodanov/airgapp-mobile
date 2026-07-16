@@ -1,9 +1,9 @@
 // commandMessages.ts — the error→message taxonomy for a FAILED command.
 //
 // PURE (types-only imports): given a human action label and a failed
-// CommandOutcome, returns the short, friendly, action-prefixed line the toast
-// host shows (mirrors the Tesla app's "failed operation" strings, but with a
-// reason). Kept here — not in gateway.ts — so it stays node-testable and free
+// CommandOutcome, returns the {title, body} the toast host renders as the
+// app's two-line failure card ("Lock failed" / "Command timeout, please try
+// again."). Kept here — not in gateway.ts — so it stays node-testable and free
 // of any RN/Expo/network surface; useCarLink (RN-only) consumes it.
 //
 // Extensible: as the command sweep lands new controls, add a COMMAND_LABELS
@@ -47,25 +47,38 @@ export function commandActionLabel(type: CarCommand['type']): string {
   return COMMAND_LABELS[type] ?? titleCase(type);
 }
 
-// commandFailureMessage renders the toast line for a failed command. actionLabel
-// is a display verb like "Lock"; it is lowercased into the sentence.
-export function commandFailureMessage(actionLabel: string, outcome: FailureOutcome): string {
-  const action = actionLabel.toLowerCase();
+// CommandFailureText is the two-line toast card the official app shows on a
+// failed command: a BOLD title naming what failed, and a muted body giving the
+// reason. Mirrors Tesla's copy — short, sentence-case, ends with a period.
+export interface CommandFailureText {
+  title: string;
+  body: string;
+}
+
+// commandFailureText renders the two-line failure card for a failed command.
+// actionLabel is a display verb like "Lock" and is used VERBATIM in the title
+// ("Lock failed"), matching the app's capitalization.
+export function commandFailureText(actionLabel: string, outcome: FailureOutcome): CommandFailureText {
+  return { title: `${actionLabel} failed`, body: failureBody(outcome) };
+}
+
+// failureBody is the reason line — the only part that varies by failure kind.
+function failureBody(outcome: FailureOutcome): string {
   switch (outcome.kind) {
+    case 'timeout':
+      return 'Command timeout, please try again.';
     case 'unreachable':
     case 'exhausted':
-      return `Couldn't ${action} — car out of range or asleep`;
-    case 'timeout':
-      return `Couldn't ${action} — the car didn't respond`;
+      return 'Car out of range or asleep, please try again.';
     case 'auth':
-      return `Couldn't ${action} — this phone isn't paired. Re-enrol it.`;
+      return "This phone isn't paired with the car. Re-enrol it.";
     case 'fault':
       if (outcome.faultName === 'UNKNOWN_KEY_ID') {
-        return `Couldn't ${action} — this phone isn't paired. Re-enrol it.`;
+        return "This phone isn't paired with the car. Re-enrol it.";
       }
       if (outcome.faultName === 'INSUFFICIENT_PRIVILEGES') {
-        return `Couldn't ${action} — not allowed for this key`;
+        return "This key isn't allowed to do that.";
       }
-      return `Couldn't ${action} — the car declined the request`;
+      return 'The car declined the request.';
   }
 }
