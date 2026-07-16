@@ -1,0 +1,158 @@
+[gd_scene load_steps=25 format=2]
+
+[ext_resource path="res://env/mobile.tres" type="Environment" id=1]
+[ext_resource path="res://mobile/scripts/MobileComm.gd" type="Script" id=2]
+[ext_resource path="res://mobile/scripts/Testing.gd" type="Script" id=3]
+[ext_resource path="res://mobile/scripts/CameraManager.gd" type="Script" id=4]
+[ext_resource path="res://mobile/scripts/ProductSwitcher.gd" type="Script" id=5]
+[ext_resource path="res://mobile/scripts/PoolManager.gd" type="Script" id=6]
+[ext_resource path="res://mobile/scripts/MobileDebug.gd" type="Script" id=7]
+[ext_resource path="res://mobile/scripts/VehicleManager.gd" type="Script" id=8]
+[ext_resource path="res://mobile/scripts/log.gd" type="Script" id=9]
+[ext_resource path="res://mobile/scripts/SnapshotManager.gd" type="Script" id=10]
+[ext_resource path="res://mobile/scripts/data/ProductManager.gd" type="Script" id=11]
+[ext_resource path="res://mobile/scripts/SceneManager.gd" type="Script" id=12]
+[ext_resource path="res://mobile/scripts/ThemeManager.gd" type="Script" id=13]
+[ext_resource path="res://mobile/scripts/EnvironmentManager.gd" type="Script" id=14]
+[ext_resource path="res://shared_misc_textures/New_Studio.png" type="Texture" id=15]
+[ext_resource path="res://mobile/scripts/MainViewContainer.gd" type="Script" id=16]
+[ext_resource path="res://Energy/Environment/VehicleGarageUpdated.png" type="Texture" id=17]
+[ext_resource path="res://mobile/scripts/AppConfigManager.gd" type="Script" id=18]
+[ext_resource path="res://mobile/scripts/SyntheticInputEventReceiver.gd" type="Script" id=19]
+[ext_resource path="res://mobile/scripts/ScreenOverlay.gd" type="Script" id=20]
+[ext_resource path="res://Ego/Cybertruck/Skin/Environment.png" type="Texture" id=21]
+
+[sub_resource type="World" id=1]
+
+[sub_resource type="PlaneMesh" id=2]
+
+[sub_resource type="SpatialMaterial" id=3]
+flags_unshaded = true
+albedo_color = Color( 0.0862745, 0.0901961, 0.0941176, 1 )
+
+[node name="Mobile" type="Spatial"]
+script = ExtResource( 12 )
+
+[node name="Testing" type="Node" parent="."]
+script = ExtResource( 3 )
+
+[node name="ProductManager" type="Node" parent="."]
+script = ExtResource( 11 )
+
+[node name="VehicleManager" type="Node" parent="."]
+script = ExtResource( 8 )
+
+[node name="Tween" type="Tween" parent="VehicleManager"]
+
+[node name="PoolManager" type="Node" parent="."]
+script = ExtResource( 6 )
+
+[node name="MobileComm" type="Node" parent="."]
+script = ExtResource( 2 )
+
+[node name="ThemeManager" type="Node" parent="."]
+script = ExtResource( 13 )
+app_theme = 1
+
+[node name="AppConfigManager" type="Node" parent="."]
+script = ExtResource( 18 )
+
+[node name="SnapshotManager" type="Node" parent="."]
+script = ExtResource( 10 )
+
+[node name="Log" type="Node" parent="."]
+script = ExtResource( 9 )
+
+[node name="MainViewContainer" type="ViewportContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+stretch = true
+script = ExtResource( 16 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Viewport" type="Viewport" parent="MainViewContainer"]
+size = Vector2( 790, 875 )
+size_override_stretch = true
+own_world = true
+world = SubResource( 1 )
+transparent_bg = true
+handle_input_locally = false
+msaa = 2
+render_target_update_mode = 3
+script = ExtResource( 19 )
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="MainViewContainer/Viewport"]
+environment = ExtResource( 1 )
+script = ExtResource( 14 )
+light_skybox_vehicle = ExtResource( 15 )
+dark_skybox_vehicle = ExtResource( 15 )
+cyber_skybox_vehicle = ExtResource( 21 )
+light_skybox_energy = ExtResource( 17 )
+dark_skybox_energy = ExtResource( 17 )
+
+[node name="Tween" type="Tween" parent="MainViewContainer/Viewport/WorldEnvironment"]
+
+[node name="root" type="Spatial" parent="MainViewContainer/Viewport"]
+
+[node name="ProductSwitcher" type="Spatial" parent="MainViewContainer/Viewport/root"]
+script = ExtResource( 5 )
+
+[node name="Slot" type="Spatial" parent="MainViewContainer/Viewport/root/ProductSwitcher"]
+
+[node name="CameraManager" type="Spatial" parent="MainViewContainer/Viewport"]
+script = ExtResource( 4 )
+
+[node name="CameraPivot" type="Spatial" parent="MainViewContainer/Viewport/CameraManager"]
+
+[node name="Camera" type="Camera" parent="MainViewContainer/Viewport/CameraManager/CameraPivot"]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 13, 0 )
+current = true
+fov = 40.0
+far = 150.0
+__meta__ = {
+"_editor_description_": ""
+}
+
+[node name="Background" type="MeshInstance" parent="MainViewContainer/Viewport/CameraManager/CameraPivot/Camera"]
+transform = Transform( 75, 0, 0, 0, -1.22191e-05, -75, 0, 75, -1.22191e-05, 0, 0, -149 )
+visible = false
+mesh = SubResource( 2 )
+material/0 = SubResource( 3 )
+
+[node name="Tween" type="Tween" parent="MainViewContainer/Viewport/CameraManager"]
+
+[node name="Tween" type="Tween" parent="MainViewContainer"]
+
+[node name="FPS" type="Label" parent="."]
+visible = false
+anchor_left = 0.1
+anchor_top = 0.15
+anchor_right = 100.0
+anchor_bottom = 100.0
+margin_right = 40.0
+margin_bottom = 14.0
+rect_scale = Vector2( 4, 4 )
+custom_colors/font_color = Color( 0.482353, 0.482353, 0.482353, 1 )
+text = "FPS:"
+script = ExtResource( 7 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="ScreenOverlay" type="ColorRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color( 0, 0, 0, 0 )
+script = ExtResource( 20 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[node name="Tween" type="Tween" parent="ScreenOverlay"]
+[connection signal="on_show_product" from="ProductManager" to="MainViewContainer/Viewport/root/ProductSwitcher" method="_on_ProductManager_on_show_product"]
+[connection signal="on_update_product" from="ProductManager" to="MainViewContainer/Viewport/root/ProductSwitcher" method="_on_ProductManager_on_update_product"]
+[connection signal="on_vehicle_update" from="VehicleManager" to="MainViewContainer/Viewport/WorldEnvironment" method="_on_VehicleManager_on_vehicle_update"]
+[connection signal="on_show_product_node" from="MainViewContainer/Viewport/root/ProductSwitcher" to="VehicleManager" method="_on_ProductSwitcher_on_show_product_node"]
+[connection signal="on_show_product_node" from="MainViewContainer/Viewport/root/ProductSwitcher" to="MainViewContainer/Viewport/WorldEnvironment" method="_on_ProductSwitcher_on_show_product_node"]

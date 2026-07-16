@@ -31,7 +31,15 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
       rotation: [68.6, -138, 0],
       offset: [-0.06, 6.7, 0],
       cam_fov: 40,
-      keep_aspect: 'WIDTH',
+      // HEIGHT = Godot's default, which is what the official app relies on:
+      // their CameraManager NEVER sets keep_aspect, so cam_fov 40 is a VERTICAL
+      // fov (tesla-renderer-frame-FINDINGS §3/§4). Our CameraManager._ready
+      // force-sets KEEP_WIDTH on portrait "because the default over-zooms on
+      // tall aspects" — but that over-zoom IS the Tesla look. Under KEEP_WIDTH
+      // the same fov 40 becomes horizontal and the car renders at only ~0.461x
+      // on a 393x852 phone. Sending HEIGHT here overrides that default per
+      // message (CameraManager.gd:61), which is why this needs no .pck rebuild.
+      keep_aspect: 'HEIGHT',
     },
     environment: {
       rotation: [0, -11, 83],

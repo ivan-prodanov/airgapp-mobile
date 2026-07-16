@@ -7,6 +7,8 @@ const RENDERER_DIM_ALPHA = 0.5;
 const RENDERER_DIM_MS = 500;
 
 import { ExpoGodotView } from '../../modules/expo-godot-view';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { isVehicleDataUnreliable } from '@/ble/vehicleStatusText';
 import { useCarLinkStatus } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -44,7 +46,7 @@ import { GodotRendererBridge } from './GodotRendererBridge';
 // app; topMarginPt shifts the band. Our PARKED *pose* already matches theirs
 // exactly (cameraPresets.ts), so framing is all that differs.
 const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; topMarginPt: number }> = {
-  // PARKED = home screen: car sits in the upper band (header above, controls sheet below).
+  // PARKED: superseded by the absolute Tesla rect below — see buildFrame.
   PARKED: { heightFrac: 0.76, topMarginPt: -66 },
   CHARGING: { heightFrac: 1, topMarginPt: -64 },
   CLOSURE_OPEN: { heightFrac: 1, topMarginPt: -64 },
@@ -55,18 +57,35 @@ const VIEW_FRAME: Record<VehicleViewState['cameraMode'], { heightFrac: number; t
   TOP_DOWN: { heightFrac: 1, topMarginPt: 0 },
 };
 
+// Their Home rect (tesla-renderer-frame-FINDINGS §2, R5 §3c): an absolute 355pt
+// band starting statusBarHeight+60 below the top. Round 6 decompiled their scene
+// and their frame handler is byte-for-byte ours — `height/screen_height` scene
+// zoom and all — so with keep_aspect finally matching (HEIGHT), their numbers ARE
+// portable now. The DPR cancels in the ratio: they send pixels against a pixel
+// viewport; we send points and our scene multiplies by pixel_ratio itself.
+const GODOT_VIEW_SIZE = 355;
+
 function buildFrame(
   width: number,
   height: number,
   mode: VehicleViewState['cameraMode'],
   animated: boolean,
+  statusBarHeight: number,
 ): FrameData {
   const cfg = VIEW_FRAME[mode];
+  // Only PARKED is on the recovered rect. The other views' poses/frames were
+  // tuned against KEEP_WIDTH and their Controls reuses the PARKED pose rather
+  // than our top-down one, so there's no recovered frame to copy — porting them
+  // blind would break four screens at once. They keep their tuned zoom until
+  // each is done deliberately (their Controls height needs a sheetHeight the RE
+  // left UNRESOLVED anyway).
+  const top = mode === 'PARKED' ? statusBarHeight + 60 : cfg.topMarginPt;
+  const h = mode === 'PARKED' ? GODOT_VIEW_SIZE : height * cfg.heightFrac;
   return {
-    top_margin: cfg.topMarginPt,
+    top_margin: Math.round(top),
     left_margin: 0,
     width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height * cfg.heightFrac)),
+    height: Math.max(1, Math.round(h)),
     animated,
     scroll_fraction: 1,
   };
@@ -90,6 +109,7 @@ interface VehicleCanvasProps {
 export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: VehicleCanvasProps) {
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const carLink = useCarLinkStatus();
+  const insets = useSafeAreaInsets();
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
@@ -136,7 +156,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     layout.current = { width, height };
-    const frame = buildFrame(width, height, state.cameraMode, false);
+    const frame = buildFrame(width, height, state.cameraMode, false, insets.top);
 
     if (!booted.current) {
       bridge.boot(state, frame);
@@ -151,7 +171,9 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   // with the camera move.
   useEffect(() => {
     if (booted.current && layout.current) {
-      bridge.updateFrame(buildFrame(layout.current.width, layout.current.height, state.cameraMode, true));
+      bridge.updateFrame(
+        buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, insets.top),
+      );
     }
   }, [bridge, state.cameraMode]);
 
