@@ -45,7 +45,9 @@ interface ToastState extends ToastText {
   id: number;
 }
 
-const AUTO_DISMISS_MS = 4000;
+// The official app's failure card auto-dismisses after ERROR_CARD_TIMEOUT =
+// 7000 ms (findings §3.4, hasm:1516214–1516228). Ours matches it.
+const AUTO_DISMISS_MS = 7000;
 
 // Gap between the card and the safe-area bottom edge — the official app sits
 // the card at the VERY bottom, just clear of the home indicator.
