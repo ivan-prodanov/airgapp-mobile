@@ -69,12 +69,20 @@ export const cameraPresets: Record<CameraMode, CameraPreset> = {
     label: 'Top',
     animationId: 'shell-camera-top-down',
     moveCamera: {
-      // Controls screen: whole car centred, top-down. Telephoto (far + narrow fov) keeps it nearly
-      // orthographic (true proportions, no perspective stretch). offset.y 10 / fov 18 fills ~the
-      // reference width with the full car frunk-to-trunk.
+      // EXACT Tesla TOP_DOWN pose (Round 5 §3b: rotation [0,0,0], offset [0,10,0],
+      // cam_fov 40). Device evidence overturns Round 5 §3b's OTHER claim that
+      // "Controls IS the PARKED view": the official app's Controls screen is
+      // plainly top-down in a side-by-side, so this pose is what it uses and our
+      // top-down screen was structurally right all along.
+      //
+      // We ran fov 20 here (telephoto, "nearly orthographic") and compensated
+      // with a small frame. With keep_aspect finally on their axis, their fov 40
+      // + a full-screen frame (scale 1.0) reproduces the real app: it matches
+      // both the measured size ratio and the car's exact mid-screen centre
+      // (center_y = 0 + H/2 * 1.0 = H/2).
       rotation: [0, 0, 0],
       offset: [0, 10, 0],
-      cam_fov: 20,
+      cam_fov: 40,
       keep_aspect: 'HEIGHT',
     },
     environment: {

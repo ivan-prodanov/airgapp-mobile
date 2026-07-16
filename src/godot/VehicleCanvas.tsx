@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated as RNAnimated, Easing, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import {
+  Animated as RNAnimated,
+  Easing,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 // findings §4: alpha 0.5 (not 0.6), tweened over 0.5s LINEAR (not instant).
 const RENDERER_DIM_ALPHA = 0.5;
@@ -74,6 +81,9 @@ function buildFrame(
   mode: VehicleViewState['cameraMode'],
   animated: boolean,
   statusBarHeight: number,
+  // The FULL window height. Their frames are measured off SCREEN_HEIGHT, which
+  // is not necessarily our canvas's laid-out height.
+  screenHeight: number,
 ): FrameData {
   const cfg = VIEW_FRAME[mode];
   let top: number;
@@ -84,11 +94,19 @@ function buildFrame(
       h = GODOT_VIEW_SIZE;
       break;
     case 'CLIMATE':
-      // Their Climate rect (R5 §3c). Reassuringly it lands within ~8% of what
-      // our hand-tuned 1.3 knob produced once the aspect factor is accounted
-      // for — the old tuning had converged near theirs by eye.
+      // Their Climate rect (R5 §3c). NOTE it is measured off SCREEN_HEIGHT, not
+      // off our canvas's laid-out height — if the canvas is even slightly short
+      // of the full screen, `height` under-shoots and the car renders a few %
+      // small. (Home is immune because 355 is absolute, which is exactly why
+      // Home matched while Climate read "a bit zoomed out".)
       top = statusBarHeight;
-      h = height - statusBarHeight - CLIMATE_BOTTOM_INSET;
+      h = screenHeight - statusBarHeight - CLIMATE_BOTTOM_INSET;
+      break;
+    case 'TOP_DOWN':
+      // Their TOP_DOWN pose at a full-screen frame -> scale 1.0, centring the
+      // car at exactly H/2 (see cameraPresets.TOP_DOWN).
+      top = 0;
+      h = screenHeight;
       break;
     default: {
       // No recovered rect for these (their Controls reuses the PARKED pose
@@ -149,6 +167,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const carLink = useCarLinkStatus();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
@@ -195,7 +214,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     layout.current = { width, height };
-    const frame = buildFrame(width, height, state.cameraMode, false, insets.top);
+    const frame = buildFrame(width, height, state.cameraMode, false, insets.top, screenHeight);
 
     if (!booted.current) {
       bridge.boot(state, frame);
@@ -211,7 +230,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   useEffect(() => {
     if (booted.current && layout.current) {
       bridge.updateFrame(
-        buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, insets.top),
+        buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, insets.top, screenHeight),
       );
     }
   }, [bridge, state.cameraMode]);
