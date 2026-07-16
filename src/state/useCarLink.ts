@@ -50,6 +50,7 @@ import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { vcsecStatusToPatch } from '@/ble/telemetry';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
+import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
@@ -109,6 +110,12 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   // Optimistic-intent map: VehicleStateKey → grace expiry (Date.now()+GRACE_MS).
   // Stamped by dispatch, consumed (and pruned) by the poll's strip filter.
   const intentRef = useRef<Map<VehicleStateKey, number>>(new Map());
+  // How many dispatched commands are still in flight, and whether a background
+  // teardown is waiting on them. Counts EVERY command — including one with no
+  // affectedKeys (no pending affordance) — because finishing the command, not
+  // showing a spinner, is what the deferral protects. See teardown below.
+  const inFlightRef = useRef(0);
+  const deferredTeardownRef = useRef(false);
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
   const applyTelemetryRef = useRef(applyTelemetry);
@@ -193,6 +200,41 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     return gatewayRef.current;
   }, []);
 
+  // teardown frees the Pi's single session + drops the BLE link and resets the
+  // gateway/selector refs so the next dispatch rebuilds a fresh gateway.
+  const teardown = useCallback(() => {
+    deferredTeardownRef.current = false;
+    closeAllCachedSessions();
+    const sel = selectorRef.current;
+    selectorRef.current = null;
+    gatewayRef.current = null;
+    if (sel) sel.closeSession('').catch(() => {});
+  }, []);
+
+  // teardownWhenIdle is the background path: tearing the transport down under
+  // an in-flight command is exactly what killed it (and left the control
+  // spinning). If anything is in flight, DEFER — settleInFlight runs it once
+  // the last command lands. The gateway's 25s deadline bounds that wait, which
+  // fits inside iOS's background grace window.
+  const teardownWhenIdle = useCallback(() => {
+    if (inFlightRef.current > 0) {
+      deferredTeardownRef.current = true;
+      return;
+    }
+    teardown();
+  }, [teardown]);
+
+  // settleInFlight retires one command and, if it was the last one a
+  // backgrounded teardown was waiting on, runs that teardown now — unless the
+  // user came back to the app in the meantime, in which case the session stays
+  // up (the poll wants it).
+  const settleInFlight = useCallback(() => {
+    inFlightRef.current = Math.max(0, inFlightRef.current - 1);
+    if (inFlightRef.current > 0 || !deferredTeardownRef.current) return;
+    deferredTeardownRef.current = false;
+    if (AppState.currentState !== 'active') teardown();
+  }, [teardown]);
+
   const dispatch = useCallback(
     (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => {
       // Stamp the just-changed keys with a grace window BEFORE issuing the
@@ -225,60 +267,69 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
           return next;
         });
       }
-      const failToast = (outcome: Extract<CommandOutcome, { ok: false }>) => {
-        toastRef.current.show(commandFailureText(commandActionLabel(cmd.type), outcome));
+      // onFailure is the single failure surface for BOTH terminal paths below.
+      // On screen: roll back, heavy-haptic, toast. Off screen: a toast nobody
+      // would see and a haptic nobody would feel are pointless — post the local
+      // notification instead (what the official app does), and still roll back
+      // so the UI is honest whenever the user does come back.
+      const onFailure = (outcome: Extract<CommandOutcome, { ok: false }>) => {
+        rollback();
+        if (AppState.currentState === 'active') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+          toastRef.current.show(commandFailureText(commandActionLabel(cmd.type), outcome));
+        } else {
+          void notifyCommandFailure();
+        }
       };
 
       // Fire-and-forget: the gateway's per-VIN queue serializes commands. We
-      // never surface the promise to the caller — a failure rolls the UI back,
-      // toasts why, and heavy-haptics; success clears pending + light-haptics.
+      // never surface the promise to the caller — a failure rolls the UI back
+      // and tells the user (toast or notification); success light-haptics.
+      inFlightRef.current += 1;
       void (async () => {
         try {
           const outcome = await gw.runCommand(cmd);
-          clearPending();
           if (outcome.ok) {
             // Light confirmation — matches the app's impact/selection-only
             // haptic vocabulary (no notification feedback).
-            Haptics.selectionAsync().catch(() => {});
+            if (AppState.currentState === 'active') Haptics.selectionAsync().catch(() => {});
           } else {
-            rollback();
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-            failToast(outcome);
+            onFailure(outcome);
             console.warn('[useCarLink] command failed', cmd.type, outcome);
           }
         } catch (err) {
-          clearPending();
-          rollback();
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
           // A throw (unexpected — runCommand normally returns an outcome) has no
           // structured outcome; surface it as an unreachable-style failure.
-          failToast({ ok: false, kind: 'unreachable', message: String(err) });
+          onFailure({ ok: false, kind: 'unreachable', message: String(err) });
           console.warn('[useCarLink] command threw', cmd.type, err);
+        } finally {
+          // EVERY terminal path — ok, fail, throw, deadline — lands here, so a
+          // control can never be left spinning forever (the stuck-spinner bug:
+          // a backgrounded command used to have its transport torn out from
+          // under it and never settle).
+          clearPending();
+          settleInFlight();
         }
       })();
     },
-    [getGateway],
+    [getGateway, settleInFlight],
   );
-
-  // teardown frees the Pi's single session + drops the BLE link and resets the
-  // gateway/selector refs so the next dispatch rebuilds a fresh gateway.
-  const teardown = useCallback(() => {
-    closeAllCachedSessions();
-    const sel = selectorRef.current;
-    selectorRef.current = null;
-    gatewayRef.current = null;
-    if (sel) sel.closeSession('').catch(() => {});
-  }, []);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'background') teardown();
+      // Returning to the foreground cancels a teardown that was waiting on an
+      // in-flight command — we're staying connected.
+      if (next === 'active') deferredTeardownRef.current = false;
+      else if (next === 'background') teardownWhenIdle();
     });
     return () => {
       sub.remove();
+      // Unmount is unconditional: the tree is going away, so a deferred
+      // teardown would never run and the Pi's single session would be orphaned
+      // for ~5 min.
       teardown();
     };
-  }, [teardown]);
+  }, [teardown, teardownWhenIdle]);
 
   // ── Foreground VCSEC poll ────────────────────────────────────────────────
   // While linked AND foregrounded, read the car's real lock/awake/closures
