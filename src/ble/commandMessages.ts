@@ -49,7 +49,10 @@ export function commandActionLabel(type: CarCommand['type']): string {
 
 // CommandFailureText is the two-line toast card the official app shows on a
 // failed command: a BOLD title naming what failed, and a muted body giving the
-// reason. Mirrors Tesla's copy — short, sentence-case, ends with a period.
+// reason. The bodies are Tesla's VERBATIM English, recovered from the app's
+// inline i18n catalog (findings §3.2) — do not "normalize" their casing or
+// punctuation: the inconsistency is real (findings §3.5 — full sentences end
+// with a period, short labels like "Session Expired" are Title Case with none).
 export interface CommandFailureText {
   title: string;
   body: string;
@@ -63,22 +66,28 @@ export function commandFailureText(actionLabel: string, outcome: FailureOutcome)
 }
 
 // failureBody is the reason line — the only part that varies by failure kind.
+// Every string below is Tesla's exact English for the key named in the comment
+// (findings §3.2). Note there is deliberately NO "vehicle asleep"/"offline"
+// body: the official app's command-failure path has no such key — sleep is
+// handled upstream by an auto-wake step (findings §3.2/§5.2), so inventing copy
+// for it here would be a parity regression.
 function failureBody(outcome: FailureOutcome): string {
   switch (outcome.kind) {
     case 'timeout':
-      return 'Command timeout, please try again.';
+      return 'Command timeout, please try again.'; // command_error_timeout
     case 'unreachable':
     case 'exhausted':
-      return 'Car out of range or asleep, please try again.';
+      return 'Vehicle Connection Error'; // vehicle_error_connection_error
     case 'auth':
-      return "This phone isn't paired with the car. Re-enrol it.";
+      return 'Session Expired'; // vehicle_error_unauthorized
     case 'fault':
       if (outcome.faultName === 'UNKNOWN_KEY_ID') {
-        return "This phone isn't paired with the car. Re-enrol it.";
+        // The phone key isn't enrolled on the car → vehicle_error_not_in_whitelist
+        return 'Set up Phone Key and try again.';
       }
       if (outcome.faultName === 'INSUFFICIENT_PRIVILEGES') {
-        return "This key isn't allowed to do that.";
+        return 'Unpair your phone key and pair it again to retry.'; // vehicle_error_insufficient_privileges
       }
-      return 'The car declined the request.';
+      return 'Command failed'; // command_error_GENERIC_
   }
 }

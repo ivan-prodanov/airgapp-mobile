@@ -35,50 +35,71 @@ test('title is independent of the failure kind', () => {
 });
 
 // ── body: the reason line (Tesla's muted second line) ───────────────────────
+//
+// Every expectation below is the official app's VERBATIM English, recovered
+// from its inline i18n catalog (findings §3.2). The casing/punctuation is
+// asserted exactly as recovered — the inconsistency between them is real and
+// intentional, so these are strict equality checks, never normalized.
 
-test('timeout → command timeout body', () => {
+test('timeout → command_error_timeout, verbatim', () => {
   assert.deepEqual(commandFailureText('Lock', timeout), {
     title: 'Lock failed',
     body: 'Command timeout, please try again.',
   });
 });
 
-test('unreachable → out of range / asleep body', () => {
+test('unreachable → vehicle_error_connection_error, verbatim (Title Case, no period)', () => {
   assert.deepEqual(commandFailureText('Lock', unreachable), {
     title: 'Lock failed',
-    body: 'Car out of range or asleep, please try again.',
+    body: 'Vehicle Connection Error',
   });
 });
 
-test('exhausted maps to the same out-of-range body', () => {
-  assert.equal(commandFailureText('Lock', exhausted).body, 'Car out of range or asleep, please try again.');
+test('exhausted maps to the same connection-error body', () => {
+  assert.equal(commandFailureText('Lock', exhausted).body, 'Vehicle Connection Error');
 });
 
-test('auth → not paired / re-enrol body', () => {
+test('auth → vehicle_error_unauthorized, verbatim (Title Case, no period)', () => {
   assert.deepEqual(commandFailureText('Unlock', auth), {
     title: 'Unlock failed',
-    body: "This phone isn't paired with the car. Re-enrol it.",
+    body: 'Session Expired',
   });
 });
 
-test('fault UNKNOWN_KEY_ID → the same not-paired / re-enrol body', () => {
-  assert.equal(commandFailureText('Lock', faultUnknownKey).body, "This phone isn't paired with the car. Re-enrol it.");
+test('fault UNKNOWN_KEY_ID → vehicle_error_not_in_whitelist, verbatim', () => {
+  assert.equal(commandFailureText('Lock', faultUnknownKey).body, 'Set up Phone Key and try again.');
 });
 
-test('fault INSUFFICIENT_PRIVILEGES → key not allowed body', () => {
-  assert.equal(commandFailureText('Lock', faultInsufficient).body, "This key isn't allowed to do that.");
+test('fault INSUFFICIENT_PRIVILEGES → vehicle_error_insufficient_privileges, verbatim', () => {
+  assert.equal(
+    commandFailureText('Lock', faultInsufficient).body,
+    'Unpair your phone key and pair it again to retry.',
+  );
 });
 
-test('fault (other) → the car declined the request', () => {
-  assert.equal(commandFailureText('Lock', faultOther).body, 'The car declined the request.');
+test('fault (other) → the generic command_error_GENERIC_ fallback', () => {
+  assert.equal(commandFailureText('Lock', faultOther).body, 'Command failed');
 });
 
-test('every branch ends in a period and starts capitalized (Tesla tone)', () => {
+test('no branch invents an asleep/offline body (findings §3.2: no such key exists)', () => {
+  // Sleep is handled upstream by auto-wake, never by the failure card — a body
+  // mentioning it would be copy we made up.
   for (const outcome of [unreachable, exhausted, timeout, auth, faultUnknownKey, faultInsufficient, faultOther]) {
     const { body } = commandFailureText('Lock', outcome);
-    assert.ok(body.endsWith('.'), `body should end with a period: ${body}`);
+    assert.doesNotMatch(body, /asleep|offline|sleeping/i, `invented sleep copy: ${body}`);
+  }
+});
+
+test('bodies start capitalized; trailing periods are verbatim, NOT normalized', () => {
+  for (const outcome of [unreachable, exhausted, timeout, auth, faultUnknownKey, faultInsufficient, faultOther]) {
+    const { body } = commandFailureText('Lock', outcome);
     assert.equal(body[0], body[0].toUpperCase(), `body should start capitalized: ${body}`);
   }
+  // Full sentences end with a period; short labels don't (findings §3.5).
+  assert.ok(commandFailureText('Lock', timeout).body.endsWith('.'));
+  assert.ok(!commandFailureText('Lock', unreachable).body.endsWith('.'));
+  assert.ok(!commandFailureText('Lock', auth).body.endsWith('.'));
+  assert.ok(!commandFailureText('Lock', faultOther).body.endsWith('.'));
 });
 
 // ── commandActionLabel (unchanged) ──────────────────────────────────────────
