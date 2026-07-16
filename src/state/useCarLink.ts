@@ -64,6 +64,30 @@ const AUTO_BLE_SCAN_TIMEOUT_MS = 6000;
 // enough for a live lock/awake/closures indicator without spamming the link.
 const POLL_MS = 20_000;
 
+// OPTIMISTIC_TIMEOUT_MS is the hard wall-clock cap on a pending record — the
+// official app's `OPTIMISTIC_TIMEOUT_MS = TimeInMs.THIRTY_SECONDS` (findings
+// §2.3, hasm:1435013). Their expiry selector is a PURE time comparison
+// re-evaluated on every render — `isExpired(cmd) = cmd.startTime + 30000 < now`
+// — not a setTimeout that can be dropped; the pending record is discarded and
+// the spinner clears regardless of whether any response ever arrives.
+//
+// Relationship to the gateway's 25s deadline: that deadline is the PRIMARY —
+// it settles the command and surfaces the failure toast. This 30s expiry is the
+// BACKSTOP that guarantees the UI never lies even if the promise never settles,
+// or if iOS suspended us so no JS timer could fire (a suspended app's
+// Promise.race timer does NOT run — that is exactly how a spinner survived a
+// background/foreground round-trip). Being a pure `now >= startTime + 30s`
+// comparison, it is true the moment we next render, however long we were frozen.
+export const OPTIMISTIC_TIMEOUT_MS = 30_000;
+
+// How often to re-evaluate the expiry comparison while something is pending.
+// React won't re-render on its own as wall-clock time passes, so a light 1s
+// ticker runs ONLY while the pending map is non-empty (see the prune effect).
+const PENDING_TICK_MS = 1000;
+
+// Stable empty Set so the common (nothing pending) case never churns identity.
+const EMPTY_PENDING: ReadonlySet<VehicleStateKey> = new Set();
+
 // CarLinkStatus is the read-only connection surface consumers render from.
 export interface CarLinkStatus {
   // enabled + config + device keys + a VIN to bind to.
@@ -76,8 +100,9 @@ export interface CarLinkStatus {
   // Date.now() of the last successful read (null until the first one lands).
   lastUpdatedAt: number | null;
   // VehicleStateKeys with a real command in flight (dispatched, not yet
-  // confirmed/failed). Controls read this to show a pending affordance;
-  // demo/unlinked cars never populate it (dispatch no-ops before adding).
+  // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
+  // Controls read this to show a pending affordance; demo/unlinked cars never
+  // populate it (dispatch no-ops before adding).
   pending: ReadonlySet<VehicleStateKey>;
 }
 
@@ -125,9 +150,56 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
-  // Fields with an in-flight command. Never carries a stale key: every dispatch
-  // that adds keys removes exactly those on completion (ok, fail, or throw).
-  const [pending, setPending] = useState<ReadonlySet<VehicleStateKey>>(() => new Set());
+  // Fields with an in-flight command → the Date.now() the command STARTED.
+  // Every dispatch that adds keys removes exactly those on completion (ok,
+  // fail, or throw); the startTime is what lets the exposed Set below expire an
+  // entry no completion ever came for (see OPTIMISTIC_TIMEOUT_MS).
+  const [pendingMap, setPendingMap] = useState<ReadonlyMap<VehicleStateKey, number>>(
+    () => new Map(),
+  );
+
+  // ── Render-time pending expiry (findings §2.3) ───────────────────────────
+  // The exposed Set is DERIVED here, on every render, by the pure comparison
+  // `now >= startTime + OPTIMISTIC_TIMEOUT_MS` — so an entry no completion ever
+  // came for cannot outlive 30s, even if JS was frozen the whole time and no
+  // timer ever fired. Identity is kept stable while membership is unchanged
+  // (reuse the previous Set) so consumers don't re-render on every tick.
+  const exposedPendingRef = useRef<ReadonlySet<VehicleStateKey>>(EMPTY_PENDING);
+  const live: VehicleStateKey[] = [];
+  const nowAtRender = Date.now();
+  for (const [key, startTime] of pendingMap) {
+    if (nowAtRender < startTime + OPTIMISTIC_TIMEOUT_MS) live.push(key);
+  }
+  const prevExposed = exposedPendingRef.current;
+  const unchanged = prevExposed.size === live.length && live.every((key) => prevExposed.has(key));
+  const pending: ReadonlySet<VehicleStateKey> = unchanged ? prevExposed : new Set(live);
+  exposedPendingRef.current = pending;
+
+  // prunePending drops expired entries from the map. It is the RE-RENDER
+  // TRIGGER (the comparison above only runs when React renders): the 1s ticker
+  // below and the AppState → 'active' handler call it, and a real change to the
+  // map is what schedules the render that makes the spinner disappear.
+  const prunePending = useCallback(() => {
+    const now = Date.now();
+    setPendingMap((prev) => {
+      let next: Map<VehicleStateKey, number> | null = null;
+      for (const [key, startTime] of prev) {
+        if (now >= startTime + OPTIMISTIC_TIMEOUT_MS) {
+          if (!next) next = new Map(prev);
+          next.delete(key);
+        }
+      }
+      return next ?? prev; // unchanged identity → no re-render
+    });
+  }, []);
+
+  // The ticker runs ONLY while something is pending, and only re-renders when
+  // it actually prunes something (prunePending returns the same map otherwise).
+  useEffect(() => {
+    if (pendingMap.size === 0) return;
+    const id = setInterval(prunePending, PENDING_TICK_MS);
+    return () => clearInterval(id);
+  }, [pendingMap, prunePending]);
 
   // Toast surface for command failures. Held in a ref so dispatch's identity
   // (and the memoized CarLink) doesn't churn on every provider render. The
@@ -254,16 +326,20 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       const keys = affectedKeys && affectedKeys.length ? affectedKeys : null;
       const clearPending = () => {
         if (!keys) return;
-        setPending((prev) => {
-          const next = new Set(prev);
+        setPendingMap((prev) => {
+          const next = new Map(prev);
           for (const key of keys) next.delete(key);
           return next;
         });
       };
       if (keys) {
-        setPending((prev) => {
-          const next = new Set(prev);
-          for (const key of keys) next.add(key);
+        // startTime is the deadline's anchor: the exposed Set filters this
+        // entry out once now >= startTime + OPTIMISTIC_TIMEOUT_MS, whatever
+        // happens (or doesn't) to the command.
+        const startTime = Date.now();
+        setPendingMap((prev) => {
+          const next = new Map(prev);
+          for (const key of keys) next.set(key, startTime);
           return next;
         });
       }
@@ -323,9 +399,14 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       // Returning to the foreground cancels a teardown that was waiting on an
-      // in-flight command — we're staying connected.
-      if (next === 'active') deferredTeardownRef.current = false;
-      else if (next === 'background') teardownWhenIdle();
+      // in-flight command — we're staying connected. It also re-checks the
+      // pending expiry: while iOS had us suspended no timer fired, so a spinner
+      // could be stranded well past its 30s cap — pruning here clears it the
+      // instant the user is looking at the screen again.
+      if (next === 'active') {
+        deferredTeardownRef.current = false;
+        prunePending();
+      } else if (next === 'background') teardownWhenIdle();
     });
     return () => {
       sub.remove();
@@ -334,7 +415,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       // for ~5 min.
       teardown();
     };
-  }, [teardown, teardownWhenIdle]);
+  }, [teardown, teardownWhenIdle, prunePending]);
 
   // ── Foreground VCSEC poll ────────────────────────────────────────────────
   // While linked AND foregrounded, read the car's real lock/awake/closures
