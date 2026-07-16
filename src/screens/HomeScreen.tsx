@@ -21,6 +21,7 @@ import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
+import { ChargeStatus } from '@/components/ChargeStatus';
 import { vehicleStatusText } from '@/ble/vehicleStatusText';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -68,6 +69,15 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setCustomizing(true);
   };
+  // One derived status for the whole header: the text/spinner for the status
+  // line AND the `stale` flag that dims the battery row (findings §C3).
+  const status = vehicleStatusText({
+    linked: carLink.linked,
+    lastVehicleDataAt: carLink.lastVehicleDataAt,
+    awake: state.awake,
+    now: Date.now(),
+  });
+
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
@@ -222,11 +232,22 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         <Animated.View
           style={{ opacity: headerOpacity }}
           pointerEvents={headerInteractive ? 'box-none' : 'none'}>
+        {/* Header tree per findings §C1: NAME -> BATTERY (own row) -> STATUS TEXT
+            (own full-width row). Name+battery share the left column; the icons
+            sit opposite them; the status line spans the width underneath. */}
         <View style={styles.header}>
-          <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
-            <Text style={styles.name}>{fleet.activeName}</Text>
-            <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
-          </Pressable>
+          <View style={styles.headerLeft}>
+            <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
+              <Text style={styles.name}>{fleet.activeName}</Text>
+              <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
+            </Pressable>
+            <ChargeStatus
+              batteryLevel={state.batteryLevel}
+              rangeKm={state.rangeKm}
+              charging={state.charging}
+              stale={status.stale}
+            />
+          </View>
           <View style={styles.headerIcons}>
             <Pressable hitSlop={10} onPress={() => router.push('/explore')}>
               <SymbolView name="ellipsis.message" tintColor="white" size={22} />
@@ -234,21 +255,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
             <SymbolView name="line.3.horizontal" tintColor="white" size={24} />
           </View>
         </View>
-        <View style={styles.status}>
-          <View style={styles.battery}>
-            <View style={[styles.batteryFill, { width: `${state.batteryLevel}%` }]} />
-          </View>
-          <Text style={styles.statusPct}>{state.batteryLevel}%</Text>
-          <VehicleStatusText
-            {...vehicleStatusText({
-              linked: carLink.linked,
-              connection: carLink.connection,
-              lastUpdatedAt: carLink.lastUpdatedAt,
-              awake: state.awake,
-              now: Date.now(),
-            })}
-          />
-        </View>
+        <VehicleStatusText text={status.text} spinner={status.spinner} />
         {fleet.vehicles.length > 1 ? (
           <View style={styles.dots}>
             {fleet.vehicles.map((vehicle, index) => (
@@ -373,11 +380,18 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 20,
   },
+  // findings §C2 headerFirstRow: row / align flex-start / space-between. Top
+  // alignment matters now that the left side is a two-line column.
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginTop: 4,
+  },
+  // findings §C2 headerLeftContainer: a COLUMN holding the name + battery row.
+  headerLeft: {
+    flex: 1,
+    maxWidth: 250,
   },
   nameWrap: {
     flexDirection: 'row',
@@ -393,30 +407,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 20,
-  },
-  status: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-  },
-  battery: {
-    width: 26,
-    height: 13,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.5)',
-    padding: 1.5,
-  },
-  batteryFill: {
-    height: '100%',
-    borderRadius: 1,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-  },
-  statusPct: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.85)',
   },
   iconRow: {
     flexDirection: 'row',

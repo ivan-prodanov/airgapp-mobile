@@ -53,6 +53,8 @@ import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
 import { beginBackgroundTask, endBackgroundTask } from '../../modules/expo-bg-task';
+import { appStorage } from './appStorage';
+import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // Short scan budget for the 'auto' selector's BLE candidate so that when the
@@ -100,6 +102,10 @@ export interface CarLinkStatus {
   transport: 'ble' | 'pi' | null;
   // Date.now() of the last successful read (null until the first one lands).
   lastUpdatedAt: number | null;
+  // Date.now() of the last read that found the car AWAKE and reporting —
+  // survives app restarts. Home renders the status line from this (it is what
+  // ages into "Last seen 2 hours ago"); null only for a never-fetched car.
+  lastVehicleDataAt: number | null;
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
   // Controls read this to show a pending affordance; demo/unlinked cars never
@@ -151,6 +157,18 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  // Our analogue of the official app's `last_received_vehicle_data_timestamp`:
+  // the last read that found the car AWAKE and reporting. Distinct from
+  // lastUpdatedAt (any successful contact) because VCSEC keeps answering while
+  // the car sleeps — see the mapping note in ble/vehicleStatusText.ts. This is
+  // what ages into "Asleep 5 minutes" / "Last seen 2 hours ago", and it is
+  // rehydrated from disk so a cold start never shows "Connecting" for a car we
+  // have seen before (findings §B).
+  const [lastVehicleDataAt, setLastVehicleDataAt] = useState<number | null>(null);
+  // Latest cacheable telemetry, mirrored so the debounced saver can persist a
+  // whole snapshot on each awake read without re-rendering.
+  const cacheRef = useRef<CarLinkCache | null>(null);
+  const saveCacheRef = useRef<((v: CarLinkCache) => void) | null>(null);
   // Fields with an in-flight command → the Date.now() the command STARTED.
   // Every dispatch that adds keys removes exactly those on completion (ok,
   // fail, or throw); the startTime is what lets the exposed Set below expire an
@@ -222,6 +240,24 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         cfgRef.current = cfg;
         keysRef.current = keys;
         setLinked(!!cfg?.vin);
+        // Rehydrate the cached telemetry BEFORE the first poll lands, so the
+        // header opens on "Last seen {age} ago" + cached battery rather than
+        // "Connecting" + a mock level (findings §B).
+        if (cfg?.vin) {
+          saveCacheRef.current = makeCarLinkCacheSaver(appStorage, cfg.vin);
+          const cached = await loadCarLinkCache(appStorage, cfg.vin);
+          if (cancelled) return;
+          if (cached) {
+            cacheRef.current = cached;
+            setLastVehicleDataAt(cached.lastVehicleDataAt);
+            const patch: Partial<VehicleViewState> = {};
+            if (cached.batteryLevel !== null) patch.batteryLevel = cached.batteryLevel;
+            if (cached.rangeKm !== null) patch.rangeKm = cached.rangeKm;
+            if (cached.charging !== null) patch.charging = cached.charging;
+            if (cached.awake !== null) patch.awake = cached.awake;
+            if (Object.keys(patch).length) applyTelemetryRef.current(patch);
+          }
+        }
         // Free any session a prior force-kill orphaned before the first command.
         if (cfg?.baseUrl && cfg?.token) {
           await recoverOrphanedSession({ baseUrl: cfg.baseUrl, token: cfg.token }, store);
@@ -473,7 +509,26 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         const filtered = filterPatchUnderIntent(patch, intentRef.current, Date.now());
         if (stopped || paused) return; // backgrounded/unlinked while awaiting
         if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
-        setLastUpdatedAt(Date.now());
+        const at = Date.now();
+        setLastUpdatedAt(at);
+        // Only an AWAKE read counts as vehicle data. VCSEC answers while the
+        // car sleeps, so stamping every successful read would keep the status
+        // permanently fresh and we'd show "Parked" for a sleeping car forever
+        // (findings §A/§B — their vehicle_data simply stops when it sleeps).
+        if (patch.awake === true) {
+          setLastVehicleDataAt(at);
+          const next: CarLinkCache = {
+            ...(cacheRef.current ?? { batteryLevel: null, rangeKm: null, charging: null, awake: null }),
+            lastVehicleDataAt: at,
+            awake: true,
+          };
+          cacheRef.current = next;
+          saveCacheRef.current?.(next);
+        } else if (patch.awake === false && cacheRef.current) {
+          const next: CarLinkCache = { ...cacheRef.current, awake: false };
+          cacheRef.current = next;
+          saveCacheRef.current?.(next);
+        }
         setConnection('online');
         if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
       } catch {
@@ -531,7 +586,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   }, [linked, getGateway]);
 
   return useMemo<CarLink>(
-    () => ({ linked, connection, transport, lastUpdatedAt, pending, dispatch }),
-    [linked, connection, transport, lastUpdatedAt, pending, dispatch],
+    () => ({ linked, connection, transport, lastUpdatedAt, lastVehicleDataAt, pending, dispatch }),
+    [linked, connection, transport, lastUpdatedAt, lastVehicleDataAt, pending, dispatch],
   );
 }

@@ -4,6 +4,13 @@
 
 **Citation shorthand:** `hasm:N` = line N of `/Users/ivan/Work/tesla-summon/work/bundle.hasm`; `off 0xNNN` = bytecode offset inside the named function (stable across rebuilds); `xml:N` / `res/...` = decoded APK resources; `obj:N` = extracted object literal. **Confidence:** plain = read directly from an opcode/literal; **INFERRED** = interpretation; **UNRESOLVED** = not recovered. A wrong pixel is worse than a documented gap.
 
+> ### ⚠️ SUPERSEDED IN PLACES BY ROUND 3 — see `tesla-status-assets-FINDINGS.md`
+> Round 3 corrected three things in this document (verified against the user's real device):
+> 1. **§3 spinner claim is WRONG.** The spinner does NOT appear only with "Connecting." It co-renders with the stale-data freshness text **"Last seen {{age}}" / "Asleep {{age}}"** (the `isDataStale` branch computes the spinner flag). "Connecting" is only that branch's null fallback. (Round-3 §A.)
+> 2. **§4 offline/asleep rendering is WRONG.** "Asleep/Last seen {{age}}" is rendered by `VehicleStatusText` #117231 itself (via a `lastUpdatedString`/`isDataStale` hook), NOT by a separate component / parent-swap. (Round-3 §A.)
+> 3. **§2 `statusTextContainer.marginTop` is WRONG (said 10).** Real value = **5** (`0.5×Gutter`; a `Mul` was missed). `batteryViewContainer.marginTop` is likewise 5. (Round-3 §C.)
+> Also: the status-text colour left UNRESOLVED here is resolved in Round 3 = **`#8A8B8B` (dark) / `#606060` (light)** = `theme.textColorLight`. The battery is on its OWN row ABOVE the status line. The spinner asset is a white `mini_spinner.png` 36×36 mask.
+
 ---
 
 ## 0. Headline corrections to the two field observations

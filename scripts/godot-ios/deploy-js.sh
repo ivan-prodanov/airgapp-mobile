@@ -50,12 +50,18 @@ head -c4 "$TMP/main.hbc" | xxd -p | grep -qi '^c61fbc03' || { echo "ERROR: herme
 cp "$TMP/main.hbc" "$APP/main.jsbundle"
 echo "  swapped: $(du -h "$APP/main.jsbundle" | cut -f1)"
 
-# Sync bundled assets (e.g. assets/places.db — the GeoNames gazetteer) into the .app so JS-only deploys
-# pick up new/changed assets. expo export:embed wrote them to $TMP/assets; mirror that tree into the
-# app's assets root.
-if [ -d "$TMP/assets" ]; then
-  rsync -a "$TMP/assets/" "$APP/assets/" 2>/dev/null || cp -R "$TMP/assets/." "$APP/assets/"
-  echo "  synced assets → $APP/assets"
+# Sync bundled assets (images, assets/places.db …) into the .app so JS-only deploys pick up new/changed
+# assets.
+#
+# LAYOUT GOTCHA (got a new image silently rendering blank once): metro writes each asset to
+# <assets-dest>/<httpServerLocation>/<file>, and httpServerLocation for a repo asset at
+# <repo>/assets/images/x.png is "/assets/assets/images". Xcode's own build phase passes the .app ROOT as
+# --assets-dest, so the runtime looks for <app>/assets/assets/images/x.png. We bundle to $TMP/assets, so
+# the same asset lands at $TMP/assets/assets/assets/images/x.png — one level deeper. Sync from
+# "$TMP/assets/assets/" (NOT "$TMP/assets/") so the tree mirrors Xcode's and the loader finds the file.
+if [ -d "$TMP/assets/assets" ]; then
+  rsync -a "$TMP/assets/assets/" "$APP/assets/" 2>/dev/null || cp -R "$TMP/assets/assets/." "$APP/assets/"
+  echo "  synced assets → $APP/assets (mirroring Xcode's <app>/assets/assets/… layout)"
 fi
 # GOTCHA: expo-sqlite's importDatabaseFromAssetAsync resolves the bundled gazetteer to
 # <app>/assets/assets/places.db — one level SHALLOWER than the image-loader asset layout the rsync above

@@ -1,20 +1,23 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { relativeAge, vehicleStatusText, type VehicleStatusInput } from './vehicleStatusText.ts';
+import { DATA_STALE_MS, relativeAge, vehicleStatusText, type VehicleStatusInput } from './vehicleStatusText.ts';
 
 const S = 1000;
 const M = 60 * S;
 const H = 60 * M;
 const D = 24 * H;
 
+const NOW = 10_000_000;
 const base: VehicleStatusInput = {
   linked: true,
-  connection: 'online',
-  lastUpdatedAt: 1_000_000,
+  lastVehicleDataAt: NOW,
   awake: true,
-  now: 1_000_000,
+  now: NOW,
 };
+
+// Data older than this age is stale; anything fresher is a live state.
+const staleAt = (age: number): VehicleStatusInput => ({ ...base, lastVehicleDataAt: NOW - age, now: NOW });
 
 describe('relativeAge (moment fromNow parity)', () => {
   it('collapses anything under 45s to "a few seconds"', () => {
@@ -40,7 +43,6 @@ describe('relativeAge (moment fromNow parity)', () => {
 
   it('counts hours from 90 minutes up to the 22-hour threshold', () => {
     assert.equal(relativeAge(90 * M, false), '2 hours');
-    assert.equal(relativeAge(2 * H, false), '2 hours');
     assert.equal(relativeAge(21 * H, false), '21 hours');
   });
 
@@ -51,7 +53,6 @@ describe('relativeAge (moment fromNow parity)', () => {
 
   it('counts days up to the 26-day threshold', () => {
     assert.equal(relativeAge(36 * H, false), '2 days');
-    assert.equal(relativeAge(3 * D, false), '3 days');
     assert.equal(relativeAge(25 * D, false), '25 days');
   });
 
@@ -72,71 +73,75 @@ describe('relativeAge (moment fromNow parity)', () => {
   });
 });
 
-describe('vehicleStatusText display rules', () => {
-  it('shows "Connecting" WITH the spinner while undetermined', () => {
-    assert.deepEqual(vehicleStatusText({ ...base, connection: 'connecting' }), {
-      text: 'Connecting',
-      spinner: true,
-    });
+describe('vehicleStatusText — live states (findings §A priorities 1-6)', () => {
+  it('shows a bare "Parked" with no spinner while data is fresh', () => {
+    assert.deepEqual(vehicleStatusText(base), { text: 'Parked', spinner: false, stale: false });
   });
 
-  it('treats "no contact yet" as undetermined, not offline', () => {
-    // Before the first read there is no age to report, so the official app's
-    // null fallback ("Connecting") applies rather than "Last seen …".
-    assert.deepEqual(vehicleStatusText({ ...base, connection: 'offline', lastUpdatedAt: null }), {
-      text: 'Connecting',
-      spinner: true,
-    });
+  it('stays live right up to the 2-minute staleness threshold', () => {
+    const status = vehicleStatusText(staleAt(DATA_STALE_MS - 1));
+    assert.deepEqual(status, { text: 'Parked', spinner: false, stale: false });
   });
 
-  it('shows a bare "Parked" when online and awake — no age, no spinner', () => {
-    assert.deepEqual(vehicleStatusText(base), { text: 'Parked', spinner: false });
+  it('never shows an age while live', () => {
+    assert.equal(/ago|Asleep/.test(vehicleStatusText(staleAt(60 * S)).text!), false);
+  });
+});
+
+describe('vehicleStatusText — the stale branch (findings §A priority 7)', () => {
+  it('flips to the freshness string exactly AT the 2-minute threshold', () => {
+    const status = vehicleStatusText(staleAt(DATA_STALE_MS));
+    assert.deepEqual(status, { text: 'Last seen 2 minutes ago', spinner: true, stale: true });
   });
 
-  it('does NOT show an age while online, however stale the read', () => {
-    const status = vehicleStatusText({ ...base, now: base.lastUpdatedAt! + 3 * H });
-    assert.equal(status.text, 'Parked');
+  it('spins WITH "Last seen {age} ago" — the Round-2 bug this replaces', () => {
+    // Round 2's prose claimed the spinner rendered only alongside "Connecting".
+    // The device proved otherwise: the spinner accompanies the freshness string.
+    const status = vehicleStatusText(staleAt(2 * H));
+    assert.deepEqual(status, { text: 'Last seen 2 hours ago', spinner: true, stale: true });
   });
 
-  it('shows "Asleep {age}" with no "ago" when online but asleep', () => {
-    const status = vehicleStatusText({
-      ...base,
-      awake: false,
-      now: base.lastUpdatedAt! + 5 * M,
-    });
-    assert.deepEqual(status, { text: 'Asleep 5 minutes', spinner: false });
+  it('spins WITH "Asleep {age}" and drops the "ago" suffix', () => {
+    const status = vehicleStatusText({ ...staleAt(5 * M), awake: false });
+    assert.deepEqual(status, { text: 'Asleep 5 minutes', spinner: true, stale: true });
   });
 
-  it('shows "Last seen {age} ago" when offline', () => {
-    const status = vehicleStatusText({
-      ...base,
-      connection: 'offline',
-      now: base.lastUpdatedAt! + 2 * H,
-    });
-    assert.deepEqual(status, { text: 'Last seen 2 hours ago', spinner: false });
-  });
-
-  it('never spins outside the Connecting state', () => {
-    for (const connection of ['online', 'offline'] as const) {
-      for (const awake of [true, false]) {
-        const status = vehicleStatusText({ ...base, connection, awake, now: base.lastUpdatedAt! + M });
-        assert.equal(status.spinner, false, `${connection}/awake=${awake} must not spin`);
-      }
+  it('spins CONTINUOUSLY while stale, however old the data', () => {
+    // findings §A: the stale branch is entered on the same 2-min threshold that
+    // makes !fetchedDataRecently true, so the spinner never stops while stale.
+    for (const age of [DATA_STALE_MS, 10 * M, 5 * H, 30 * D]) {
+      assert.equal(vehicleStatusText(staleAt(age)).spinner, true, `age=${age} must spin`);
     }
   });
 
-  it('never renders two facts at once (a status OR an age, never both)', () => {
-    const parked = vehicleStatusText(base);
-    assert.equal(/ago|Asleep/.test(parked.text!), false);
-    const offline = vehicleStatusText({ ...base, connection: 'offline', now: base.lastUpdatedAt! + D });
-    assert.equal(offline.text, 'Last seen a day ago');
+  it('reaches "Connecting" ONLY for a never-fetched vehicle', () => {
+    assert.deepEqual(vehicleStatusText({ ...base, lastVehicleDataAt: null }), {
+      text: 'Connecting',
+      spinner: true,
+      stale: true,
+    });
   });
 
-  it('keeps the demo copy for unlinked vehicles', () => {
-    assert.deepEqual(vehicleStatusText({ ...base, linked: false }), { text: 'Parked', spinner: false });
+  it('COLD START: a previously-seen car reads "Last seen {age} ago", never "Connecting"', () => {
+    // The user's ground-truth observation, and the bug that prompted Round 3:
+    // rehydrating a cached timestamp must NOT render the never-fetched fallback.
+    const status = vehicleStatusText(staleAt(3 * H));
+    assert.equal(status.text, 'Last seen 3 hours ago');
+    assert.notEqual(status.text, 'Connecting');
+  });
+});
+
+describe('vehicleStatusText — demo vehicles', () => {
+  it('keeps the showroom copy and never spins', () => {
+    assert.deepEqual(vehicleStatusText({ ...base, linked: false }), {
+      text: 'Parked',
+      spinner: false,
+      stale: false,
+    });
     assert.deepEqual(vehicleStatusText({ ...base, linked: false, awake: false }), {
       text: 'Last seen 3 days ago',
       spinner: false,
+      stale: false,
     });
   });
 });

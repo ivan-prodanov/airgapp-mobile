@@ -6,6 +6,9 @@
 
 **Confidence convention:** plain statements are **directly read** from code/resources with a citation. **INFERRED** marks interpretation not directly proven by an opcode/literal. Where English copy could not be recovered it is stated explicitly rather than guessed.
 
+> ### ⚠️ Rendering-structure claims here are superseded by Round 3 (`tesla-status-assets-FINDINGS.md`)
+> The **copy** in this doc is correct. But two UI-rendering notes were later corrected: (1) §1.2 line "Two lines are shown: a status line and a freshness caption" — actually there is **ONE line**; the freshness ("Last seen/Asleep {{age}}") IS the status line, rendered by `VehicleStatusText` #117231 itself (not a separate caption). (2) §1.2's "status *row* variant (hasm:8759817)" is `RoadsideCoverageBanner`, unrelated to vehicle liveness; the real home-header status tap handler is `onStatusPress` #117253 → `TAP_STATUS_TEXT`. See Round-3 §A/§C.
+
 **Citation shorthand** (all paths are how facts are auditable):
 - `hasm:N` → line N of `/Users/ivan/Work/tesla-summon/work/bundle.hasm` (the disassembly).
 - `xml:N` → line N of `res/values/strings.xml` (decoded from `base.apk` with apktool).

@@ -1,38 +1,62 @@
 // The vehicle status line shown under the car name on Home.
 //
-// Source of truth: docs/superpowers/research/tesla-status-visual-FINDINGS.md —
-// a static RE of the official Tesla app v4.58.0 (`VehicleStatusText` #117231).
-// The recovered display rules (findings §1.2/§4), verbatim:
-//   - ONE Text node, ONE line, in every state except Charging.
-//   - No per-state icon. The only glyph is the Connecting spinner.
-//   - Renders NOTHING (zero nodes, not an empty string) when no status applies.
-//   - Offline/asleep freshness IS the status line — there is no second
-//     stacked "caption" line. So we never show a status AND an age.
-// This module is the whole rule table, pure and node-tested; the RN component
-// (src/components/VehicleStatusText.tsx) only paints what it returns.
+// Source of truth: docs/superpowers/research/tesla-status-assets-FINDINGS.md
+// (Round 3) — a static RE of the official Tesla app v4.58.0
+// (`VehicleStatusText` #117231). Round 3 CORRECTED Round 2 on two points this
+// module previously got wrong, so read §A before changing anything here:
+//
+//  1. The freshness string is the PRIMARY text, not a fallback. "Connecting"
+//     shows ONLY for a vehicle that has never been fetched.
+//  2. The spinner co-renders WITH "Last seen/Asleep {{age}}" — it is not
+//     exclusive to "Connecting", and it spins continuously the whole time the
+//     data is stale, not just during an explicit refresh gesture.
+//
+// Their render dispatch (findings §A), first match wins: live states (Parked /
+// Mobile Access Disabled / In Service / Charging / …) take priority; the LAST
+// branch is `isDataStale`, whose text is the freshness string and whose spinner
+// is `canWake || !fetchedDataRecently`. Since the stale branch is entered on
+// exactly the same 2-minute threshold that makes `fetchedDataRecently` false,
+// that OR is always true inside it — so for us `spinner === stale`, and
+// `canWake` never needs modelling.
+
+// TimeInMs.TWO_MINUTES — the one threshold behind both `isVehicleDataStale`
+// (#30694) and `fetchedDataRecently` (#30697). Findings §A.
+export const DATA_STALE_MS = 120_000;
 
 export interface VehicleStatusInput {
   // A real car-link (not a demo/unlinked vehicle).
   linked: boolean;
-  connection: 'offline' | 'connecting' | 'online';
-  // Date.now() of the last successful read; null before the first one.
-  lastUpdatedAt: number | null;
+  // Our analogue of their `last_received_vehicle_data_timestamp`: the last read
+  // that found the car AWAKE and reporting; null = never fetched.
+  //
+  // NOTE ON THE MAPPING (deliberate, and the one place our transport differs):
+  // their timestamp tracks INFOTAINMENT `vehicle_data`, which simply stops
+  // arriving once the car sleeps — that's what makes their status age out into
+  // "Asleep 5 minutes". Our poll is VCSEC, which keeps answering while the car
+  // sleeps, so a raw "last successful read" would never go stale and we'd show
+  // a live "Parked" for a sleeping car forever. Stamping this only while awake
+  // reproduces their behaviour on our transport.
+  lastVehicleDataAt: number | null;
   awake: boolean;
   now: number;
 }
 
 export interface VehicleStatus {
-  // null = render nothing at all (findings §1.2: return-null, zero nodes).
+  // null = render nothing at all (findings §A priority 1: empty text).
   text: string | null;
-  // The inline BusyIcon before the text (findings §3).
+  // The inline BusyIcon before the text.
   spinner: boolean;
+  // Data older than DATA_STALE_MS. Also drives the battery row's 50% dim
+  // (findings §C3), which is why it's exposed rather than kept internal.
+  stale: boolean;
 }
 
-// relativeAge ports moment's `fromNow` — the exact function the official app
-// formats freshness with (findings §4: asleep = fromNow(true) i.e. no suffix,
-// offline = fromNow() i.e. "… ago"). Thresholds and phrasing are moment's
-// English defaults (ss:44, m:45, h:22, d:26, M:11), so "Asleep 5 minutes" and
-// "Last seen 2 hours ago" read exactly as they do in the real app.
+// relativeAge ports moment's `fromNow` — the exact formatter the official app
+// uses (findings §B: `vehicleDataLastUpdatedString` formats `now - timestamp`
+// with `.fromNow()`). Asleep passes fromNow(true) = no suffix, offline uses the
+// suffix. Thresholds/phrasing are moment's English defaults (ss:44, m:45, h:22,
+// d:26, M:11), so "Asleep 5 minutes" / "Last seen 2 hours ago" read exactly as
+// they do in the real app.
 export function relativeAge(ms: number, withSuffix: boolean): string {
   const abs = Math.max(0, ms);
   // moment computes each unit as a rounded float of the whole duration (not a
@@ -64,27 +88,29 @@ export function relativeAge(ms: number, withSuffix: boolean): string {
 }
 
 export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
-  const { linked, connection, lastUpdatedAt, awake, now } = input;
+  const { linked, lastVehicleDataAt, awake, now } = input;
 
-  // Demo/unlinked vehicles have no real telemetry: keep the showroom copy, but
-  // render it through the same one-line rules as a linked car.
+  // Demo/unlinked vehicles have no real telemetry: keep the showroom copy, and
+  // never spin (there is nothing to wait for).
   if (!linked) {
-    return { text: awake ? 'Parked' : 'Last seen 3 days ago', spinner: false };
+    return { text: awake ? 'Parked' : 'Last seen 3 days ago', spinner: false, stale: false };
   }
 
-  // "Connecting" is the undetermined/null fallback, and the ONLY state with a
-  // spinner (findings §4). No contact yet reads as undetermined, not offline.
-  if (connection === 'connecting' || lastUpdatedAt === null) {
-    return { text: 'Connecting', spinner: true };
+  const fetchedRecently = lastVehicleDataAt !== null && now - lastVehicleDataAt < DATA_STALE_MS;
+
+  // A live state wins over the stale branch (findings §A priorities 1-6).
+  if (fetchedRecently) return { text: 'Parked', spinner: false, stale: false };
+
+  // The stale branch (priority 7). The spinner is ALWAYS on here — see the
+  // header note. This is what makes cold start read "Last seen 2 hours ago"
+  // beside a spinner rather than a bare "Connecting".
+  if (lastVehicleDataAt === null) {
+    // Never fetched (fresh install / newly linked car) — the ONLY route to
+    // "Connecting" (findings §B).
+    return { text: 'Connecting', spinner: true, stale: true };
   }
 
-  const age = now - lastUpdatedAt;
-
-  if (connection === 'online') {
-    // Online + awake is simply "Parked" — no age, no "Updated Xs ago". The
-    // official app shows freshness ONLY when the car is asleep or unreachable.
-    return awake ? { text: 'Parked', spinner: false } : { text: `Asleep ${relativeAge(age, false)}`, spinner: false };
-  }
-
-  return { text: `Last seen ${relativeAge(age, true)}`, spinner: false };
+  const age = now - lastVehicleDataAt;
+  const text = awake ? `Last seen ${relativeAge(age, true)}` : `Asleep ${relativeAge(age, false)}`;
+  return { text, spinner: true, stale: true };
 }

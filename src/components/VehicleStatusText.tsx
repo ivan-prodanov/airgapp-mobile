@@ -1,30 +1,27 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { TEXT_COLOR_LIGHT_DARK } from '@/ble/batteryDisplay';
+import { BusyIcon } from './BusyIcon';
 
 // The Home status line, painted to the official app's recovered geometry.
-// Source: docs/superpowers/research/tesla-status-visual-FINDINGS.md §1–§3
+// Source: docs/superpowers/research/tesla-status-assets-FINDINGS.md §C2/§E
 // (`VehicleStatusText` #117231). Display rules live in the pure, node-tested
 // src/ble/vehicleStatusText.ts — this only renders the result.
 //
-// Deliberate deviations, both forced (findings §8):
-//  - The spinner is RN's ActivityIndicator, not Tesla's 18px mini_spinner.png
-//    rotating at 900ms/turn — we don't have their asset. Sized to their 18.
-//  - `theme.textColorLight` (their status colour) is a theme accessor whose hex
-//    the RE could not resolve, so we keep our existing muted white.
-
-// Findings §2: the status label is TextCategory.BodyLabel — 14/20/'500'/0.1.
-const TEXT_COLOR = 'rgba(255,255,255,0.45)';
-const SPINNER_SIZE = 18;
+// The spinner is a structural SIBLING of the text, not part of any one state's
+// branch (findings §A) — so it legitimately spins next to "Last seen 2 hours
+// ago". Do not re-couple it to a single status string.
 
 export function VehicleStatusText({
   text,
   spinner,
   onPress,
 }: {
-  // null renders nothing at all (findings §1.2: zero nodes, not an empty Text).
+  // null renders nothing at all (findings §A: empty text = zero nodes).
   text: string | null;
   spinner: boolean;
-  // Tapping the status line wakes the car (findings §6: onStatusPress #117253
-  // -> vehicleWakeUp(vin, TAP_STATUS_TEXT)). Omitted when there's no real link.
+  // Tapping the status line wakes the car (findings §C1: the whole row is a
+  // TouchableOpacity -> vehicleWakeUp(vin, TAP_STATUS_TEXT)).
   onPress?: () => void;
 }) {
   if (text === null) return null;
@@ -33,7 +30,7 @@ export function VehicleStatusText({
     <View style={styles.container}>
       {spinner ? (
         <View style={styles.spinner}>
-          <ActivityIndicator size="small" color={TEXT_COLOR} />
+          <BusyIcon />
         </View>
       ) : null}
       <Text style={styles.text}>{text}</Text>
@@ -49,24 +46,25 @@ export function VehicleStatusText({
 }
 
 const styles = StyleSheet.create({
-  // findings §2: statusTextContainer = row / align-center.
+  // findings §C2: statusTextContainer = row / center / marginTop 5. (Round 2
+  // said 10 — it missed a Mul by 0.5; the real value is 0.5 x Gutter.)
   container: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 5,
   },
-  // findings §2: the spinner wrapper's only style is marginRight: Gutter*0.5.
+  // findings §C2: the spinner wrapper's only style is marginRight Gutter*0.5.
   spinner: {
     marginRight: 5,
-    width: SPINNER_SIZE,
-    height: SPINNER_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
+  // findings §C2/§E: TextCategory.BodyLabel = 14/20/'500'/0.1, coloured by
+  // appearance:Light = theme.textColorLight = #8A8B8B on the dark header. The
+  // muting is baked into the token — no extra opacity on top.
   text: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '500',
     letterSpacing: 0.1,
-    color: TEXT_COLOR,
+    color: TEXT_COLOR_LIGHT_DARK,
   },
 });
