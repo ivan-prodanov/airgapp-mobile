@@ -52,6 +52,7 @@ import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
+import { beginBackgroundTask, endBackgroundTask } from '../../modules/expo-bg-task';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // Short scan budget for the 'auto' selector's BLE candidate so that when the
@@ -367,6 +368,20 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       // never surface the promise to the caller — a failure rolls the UI back
       // and tells the user (toast or notification); success light-haptics.
       inFlightRef.current += 1;
+      // Hold an iOS background-task assertion for the command's lifetime. iOS
+      // suspends the JS runtime shortly after the app is backgrounded, so a
+      // command dispatched right before a lock/home press used to freeze
+      // mid-flight: it never settled, never failed, and the failure
+      // notification only fired when the app was reopened and JS thawed. The
+      // assertion buys ~30s — more than our 25s command deadline — so the
+      // command settles and notifies while still backgrounded. Best-effort:
+      // if the assertion can't be taken we still run the command.
+      let bgId: number | null = null;
+      try {
+        bgId = beginBackgroundTask('carlink-command');
+      } catch {
+        bgId = null;
+      }
       void (async () => {
         try {
           const outcome = await gw.runCommand(cmd);
@@ -390,6 +405,13 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
           // under it and never settle).
           clearPending();
           settleInFlight();
+          if (bgId != null) {
+            try {
+              endBackgroundTask(bgId);
+            } catch {
+              // Releasing is best-effort too — never let it mask a terminal path.
+            }
+          }
         }
       })();
     },
