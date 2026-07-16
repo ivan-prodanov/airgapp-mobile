@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Pressable,
   RefreshControl,
@@ -21,6 +20,7 @@ import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
+import { BusyIcon } from '@/components/BusyIcon';
 import { ChargeStatus } from '@/components/ChargeStatus';
 import { vehicleStatusText } from '@/ble/vehicleStatusText';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
@@ -297,7 +297,10 @@ function QuickIcon({
       {/* Fixed ICON_SIZE box so swapping icon↔spinner never shifts the row. */}
       <View style={styles.quickIconGlyph}>
         {pending ? (
-          <ActivityIndicator size="small" color={tint} />
+          // The SAME spinner as the header — the official app's own
+          // mini_spinner.png at BusyIcon's default size (20; the header is the
+          // one place that overrides it to 18). Findings §D.
+          <BusyIcon size={20} />
         ) : (
           <SpinningSymbol name={symbol} tintColor={tint} size={ICON_SIZE} spin={spin} />
         )}
