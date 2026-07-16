@@ -62,12 +62,42 @@ const SCAN_TIMEOUT_MS = 20000;
 // max regardless of what's passed in.
 const MAX_EXCHANGE_TIMEOUT_MS = 30000;
 
+// How long each individual ble-plx connect step may take before we declare
+// the link wedged (spec §5). ble-plx's connect/discover/requestMTU carry NO
+// timeout of their own, and a wedged CoreBluetooth call can hang FOREVER —
+// which used to strand the gateway's whole retry loop (and the UI spinner
+// behind it) on one attempt that never returned. Each is bounded here so a
+// hung step surfaces as a dead link the gateway can evict + retry.
+const CONNECT_STEP_TIMEOUT_MS = 10000;
+
 function errMsg(e: unknown): string {
   if (e && typeof e === 'object' && 'message' in e) {
     const m = (e as { message?: unknown }).message;
     if (typeof m === 'string') return m;
   }
   return String(e);
+}
+
+// withTimeout bounds a ble-plx promise that has no timeout of its own. The
+// rejection message deliberately leads with "BLE connection closed" so
+// session.ts's isTransportDeadError matches it by substring — a wedged step
+// is treated exactly like a dropped link (evict + re-handshake), consistent
+// with how exchange()'s write failures are surfaced.
+//
+// NOTE: this does not cancel the underlying native call — nothing can. It
+// only stops US from waiting on it; the orphaned call settles into the void
+// and the next attempt cold-handshakes a fresh connection.
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`BLE connection closed — ${what} timed out after ${ms}ms (link wedged)`)),
+      ms,
+    );
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  }) as Promise<T>;
 }
 
 // isConnectionLostError recognizes ble-plx failure signatures meaning "the
@@ -138,15 +168,22 @@ export class DirectBleTransport implements CarTransport {
     await this.ensurePoweredOn();
     const scanned = await this.scanForVehicle(vin);
 
-    let dev = await scanned.connect();
-    dev = await dev.discoverAllServicesAndCharacteristics();
+    let dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
+    dev = await withTimeout(
+      dev.discoverAllServicesAndCharacteristics(),
+      CONNECT_STEP_TIMEOUT_MS,
+      'service discovery',
+    );
 
     let mtu = FALLBACK_MTU;
     try {
-      dev = await dev.requestMTU(REQUEST_MTU);
+      dev = await withTimeout(dev.requestMTU(REQUEST_MTU), CONNECT_STEP_TIMEOUT_MS, 'MTU negotiation');
       mtu = dev.mtu ?? FALLBACK_MTU;
     } catch {
-      // MTU negotiation failed — proceed on the un-negotiated default.
+      // MTU negotiation failed OR wedged past its timeout — either way proceed
+      // on the un-negotiated default rather than failing openSession. (A hung
+      // requestMTU keeps its existing fallback behavior: the catch swallows the
+      // withTimeout rejection, so a timed-out MTU is just FALLBACK_MTU.)
       mtu = FALLBACK_MTU;
     }
     this.blockLength = Math.min(mtu, MAX_BLE_MESSAGE_SIZE) - 3;

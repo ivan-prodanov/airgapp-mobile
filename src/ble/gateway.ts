@@ -158,19 +158,10 @@ export function createCarGateway({
   async function runAction(action: ActionPayload, label: string): Promise<{ outcome: CommandOutcome; result: CommandResult | null }> {
     const flags = action.flags ?? 0;
     let lastResult: CommandResult | null = null;
-    // Bounds how many times an "unreachable/timeout" failure evicts + retries
-    // (re-handshake, which re-selects the transport under a SelectingTransport).
-    // Enough to fall over to the other transport once or twice, but capped so
-    // "everything down" fails in bounded time rather than spinning MAX attempts
-    // through full scan/HTTP timeouts on both transports.
-    let unreachableEvicts = 0;
-    const MAX_UNREACHABLE_EVICTS = 2;
 
     // Overall wall-clock budget for this command. The attempt cap alone doesn't
     // bound total time — a single attempt can burn a full scan/HTTP timeout, so
-    // 10 of them can run far past what a user will wait. Checked at the TOP of
-    // every attempt (which is also the landing point of every evict/delay
-    // `continue`), so no retry can ever start past the deadline.
+    // 10 of them can run far past what a user will wait.
     const startedAt = now();
     const deadlineExceeded = () => now() - startedAt >= commandDeadlineMs;
     const timedOut = (): { outcome: CommandOutcome; result: CommandResult | null } => ({
@@ -178,97 +169,144 @@ export function createCarGateway({
       result: lastResult,
     });
 
-    for (let attempt = 1; attempt <= MAX_BLE_ATTEMPTS; attempt++) {
-      if (deadlineExceeded()) return timedOut();
-      let result: CommandResult;
-      try {
-        result = await queue.enqueue(vin, () =>
-          withCachedSession({ transport, vin, deviceKeys, domain: action.domain }, async (session) => {
-            // Domain lockstep guard (carry-forward): the cached session MUST
-            // target the same domain the command was built for. A mismatch is
-            // an engine bug that would otherwise surface as an opaque car-side
-            // signature fault — throw a clear local error instead.
-            if (session.domain !== action.domain) {
-              throw new Error(
-                `gateway domain lockstep violation: session.domain=${session.domain} built.domain=${action.domain}`,
-              );
-            }
-            return sendCommand({ transport, session, payloadBytes: action.bytes, flags });
-          }),
-        );
-      } catch (e) {
-        // Transport-dead: the cached BLE link is gone. A SessionInfoRequest on
-        // the same dead link would just re-fail, so evict (full teardown) and
-        // let the next attempt cold-handshake a fresh Pi session.
-        if (isTransportDeadError(e) && attempt < MAX_BLE_ATTEMPTS) {
-          await evictSession(vin, action.domain).catch(() => {});
-          continue;
+    // runAttempts is the retry loop itself. It is BOUNDED but not guaranteed to
+    // settle: its cheap `deadlineExceeded()` check runs at the TOP of every
+    // attempt (also the landing point of every evict/delay `continue`), so no
+    // retry can START past the deadline — but a single attempt that never
+    // settles (a wedged native BLE await) never returns to that check. That's
+    // what the Promise.race below backstops.
+    async function runAttempts(): Promise<{ outcome: CommandOutcome; result: CommandResult | null }> {
+      // Bounds how many times an "unreachable/timeout" failure evicts + retries
+      // (re-handshake, which re-selects the transport under a SelectingTransport).
+      // Enough to fall over to the other transport once or twice, but capped so
+      // "everything down" fails in bounded time rather than spinning MAX attempts
+      // through full scan/HTTP timeouts on both transports.
+      let unreachableEvicts = 0;
+      const MAX_UNREACHABLE_EVICTS = 2;
+
+      for (let attempt = 1; attempt <= MAX_BLE_ATTEMPTS; attempt++) {
+        if (deadlineExceeded()) return timedOut();
+        let result: CommandResult;
+        try {
+          result = await queue.enqueue(vin, () =>
+            withCachedSession({ transport, vin, deviceKeys, domain: action.domain }, async (session) => {
+              // Domain lockstep guard (carry-forward): the cached session MUST
+              // target the same domain the command was built for. A mismatch is
+              // an engine bug that would otherwise surface as an opaque car-side
+              // signature fault — throw a clear local error instead.
+              if (session.domain !== action.domain) {
+                throw new Error(
+                  `gateway domain lockstep violation: session.domain=${session.domain} built.domain=${action.domain}`,
+                );
+              }
+              return sendCommand({ transport, session, payloadBytes: action.bytes, flags });
+            }),
+          );
+        } catch (e) {
+          // Transport-dead: the cached BLE link is gone. A SessionInfoRequest on
+          // the same dead link would just re-fail, so evict (full teardown) and
+          // let the next attempt cold-handshake a fresh Pi session.
+          if (isTransportDeadError(e) && attempt < MAX_BLE_ATTEMPTS) {
+            await evictSession(vin, action.domain).catch(() => {});
+            continue;
+          }
+          // Stale Pi frame (or decrypt-fail-as-stale-frame): the link is fine, a
+          // buffered/foreign frame came back. Re-send with a fresh counter+uuid
+          // after a short delay. This is where the engine's decrypt-fail race
+          // (isStaleFrameError) becomes a RETRY, not a user-facing error.
+          if (isStaleFrameError(e) && attempt < MAX_BLE_ATTEMPTS) {
+            await sleep(TRANSIENT_DELAY_MS);
+            continue;
+          }
+          // A transport that can't reach the car (network unreachable / timeout —
+          // e.g. the Pi went down, or the car drifted out of BLE range) means the
+          // current session's transport is no longer viable. Evict + retry: the
+          // re-opened session cold-handshakes, and under a SelectingTransport that
+          // RE-SELECTS (BLE-first), so a dead Pi falls over to BLE (and vice
+          // versa). Capped so "everything down" exhausts quickly. Auth failures
+          // (bad/revoked bearer) are NOT retried — a re-handshake can't fix them.
+          const kind = classifyTransportError(e);
+          if (
+            (kind === 'unreachable' || kind === 'timeout') &&
+            unreachableEvicts < MAX_UNREACHABLE_EVICTS &&
+            attempt < MAX_BLE_ATTEMPTS
+          ) {
+            unreachableEvicts += 1;
+            await evictSession(vin, action.domain).catch(() => {});
+            await sleep(TRANSIENT_DELAY_MS);
+            continue;
+          }
+          // Anything else (auth, or unreachable past the cap) is terminal.
+          return { outcome: { ok: false, kind, message: `[${label}] ${kind}: ${errMsg(e)}` }, result: lastResult };
         }
-        // Stale Pi frame (or decrypt-fail-as-stale-frame): the link is fine, a
-        // buffered/foreign frame came back. Re-send with a fresh counter+uuid
-        // after a short delay. This is where the engine's decrypt-fail race
-        // (isStaleFrameError) becomes a RETRY, not a user-facing error.
-        if (isStaleFrameError(e) && attempt < MAX_BLE_ATTEMPTS) {
-          await sleep(TRANSIENT_DELAY_MS);
-          continue;
+
+        lastResult = result;
+        const status = result.routable.signedMessageStatus;
+        const opStatus = status?.operationStatus;
+        const fault = status?.signedMessageFault ?? 0;
+
+        // opStatus 0 (or absent) is success — the car ACK'd the command.
+        if (opStatus === 0 || opStatus === undefined) {
+          return { outcome: { ok: true, attempts: attempt }, result };
         }
-        // A transport that can't reach the car (network unreachable / timeout —
-        // e.g. the Pi went down, or the car drifted out of BLE range) means the
-        // current session's transport is no longer viable. Evict + retry: the
-        // re-opened session cold-handshakes, and under a SelectingTransport that
-        // RE-SELECTS (BLE-first), so a dead Pi falls over to BLE (and vice
-        // versa). Capped so "everything down" exhausts quickly. Auth failures
-        // (bad/revoked bearer) are NOT retried — a re-handshake can't fix them.
-        const kind = classifyTransportError(e);
-        if (
-          (kind === 'unreachable' || kind === 'timeout') &&
-          unreachableEvicts < MAX_UNREACHABLE_EVICTS &&
-          attempt < MAX_BLE_ATTEMPTS
-        ) {
-          unreachableEvicts += 1;
-          await evictSession(vin, action.domain).catch(() => {});
-          await sleep(TRANSIENT_DELAY_MS);
-          continue;
+
+        const policy = evaluateFault(fault);
+        if (!policy.retryable) {
+          // Semantic fault — the car rejected the command on its merits. Stop.
+          const name = faultName(fault);
+          return {
+            outcome: { ok: false, kind: 'fault', fault, faultName: name, message: `[${label}] fault ${fault} (${name})` },
+            result,
+          };
         }
-        // Anything else (auth, or unreachable past the cap) is terminal.
-        return { outcome: { ok: false, kind, message: `[${label}] ${kind}: ${errMsg(e)}` }, result: lastResult };
+
+        if (policy.category === 'session-stale') {
+          // Refresh the session key in place on the same BLE link (no teardown),
+          // then retry. Fall back to a full evict on failure (inside
+          // refreshCachedSession). Swallow — a failed refresh still retries.
+          await refreshCachedSession({ transport, vin, domain: action.domain, deviceKeys }).catch(() => false);
+        }
+        if (policy.delayMs > 0) await sleep(policy.delayMs);
+        // loop continues with another attempt
       }
 
-      lastResult = result;
-      const status = result.routable.signedMessageStatus;
-      const opStatus = status?.operationStatus;
-      const fault = status?.signedMessageFault ?? 0;
-
-      // opStatus 0 (or absent) is success — the car ACK'd the command.
-      if (opStatus === 0 || opStatus === undefined) {
-        return { outcome: { ok: true, attempts: attempt }, result };
+      // Every attempt was retryable but none succeeded.
+      return {
+        outcome: { ok: false, kind: 'exhausted', message: `[${label}] exhausted ${MAX_BLE_ATTEMPTS} attempts` },
+        result: lastResult,
+      };
       }
 
-      const policy = evaluateFault(fault);
-      if (!policy.retryable) {
-        // Semantic fault — the car rejected the command on its merits. Stop.
-        const name = faultName(fault);
-        return {
-          outcome: { ok: false, kind: 'fault', fault, faultName: name, message: `[${label}] fault ${fault} (${name})` },
-          result,
-        };
-      }
-
-      if (policy.category === 'session-stale') {
-        // Refresh the session key in place on the same BLE link (no teardown),
-        // then retry. Fall back to a full evict on failure (inside
-        // refreshCachedSession). Swallow — a failed refresh still retries.
-        await refreshCachedSession({ transport, vin, domain: action.domain, deviceKeys }).catch(() => false);
-      }
-      if (policy.delayMs > 0) await sleep(policy.delayMs);
-      // loop continues with another attempt
+    // HARD deadline. The between-attempt check above is cheap and stops work
+    // early on the normal path, but it can only fire while the loop is running.
+    // Race the WHOLE loop against a real wall-clock timer so runAction always
+    // settles within commandDeadlineMs even if one attempt wedges forever
+    // (a hung BLE connect/discover/write) — which is exactly how the UI spinner
+    // used to hang indefinitely.
+    //
+    // Deliberately a REAL setTimeout, not the injectable `sleep`: tests inject
+    // an instant no-op sleep, which would make the deadline fire immediately.
+    //
+    // The timer RESOLVES (never rejects) with the same timedOut() shape the
+    // between-attempt check returns, so callers see an identical
+    // { ok:false, kind:'timeout' } outcome from either path.
+    //
+    // NOTE: when the timer wins, the loop may still be running — we cannot
+    // cancel a hung native BLE await. DirectBleTransport bounds each of those
+    // awaits (connect/discover/MTU) so the orphan dies on its own; the
+    // user-visible guarantee here is only that the COMMAND always terminates
+    // at the deadline.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadlineTimer = new Promise<{ outcome: CommandOutcome; result: CommandResult | null }>((resolve) => {
+      timer = setTimeout(() => resolve(timedOut()), commandDeadlineMs);
+    });
+    try {
+      return await Promise.race([runAttempts(), deadlineTimer]);
+    } finally {
+      // Clear it when the loop wins, so a pending 25s timer never keeps the
+      // process/handle alive after the command is done.
+      if (timer !== undefined) clearTimeout(timer);
     }
-
-    // Every attempt was retryable but none succeeded.
-    return {
-      outcome: { ok: false, kind: 'exhausted', message: `[${label}] exhausted ${MAX_BLE_ATTEMPTS} attempts` },
-      result: lastResult,
-    };
   }
 
   async function runCommand(cmd: CarCommand): Promise<CommandOutcome> {

@@ -308,6 +308,64 @@ test('runCommand: a command that finishes inside the deadline is unaffected', as
   assert.deepEqual(outcome, { ok: true, attempts: 2 });
 });
 
+// ── Command deadline: the HARD guarantee (regression) ──────────────────────
+
+// Regression for the hung-spinner bug: the between-attempt deadline check can
+// only fire while the retry loop is RUNNING. A single attempt whose transport
+// call never settles (a wedged native BLE connect/discover/write) never
+// returns to that check, so the loop parked forever, runCommand never
+// resolved, and useCarLink's `finally` never cleared `pending` — the control's
+// spinner spun until the app was killed. runAction now races the whole loop
+// against a real wall-clock timer, so the command ALWAYS terminates.
+//
+// These use a real (tiny) commandDeadlineMs so the race timer is genuinely
+// exercised — not the injectable clock the tests above use.
+
+test('runCommand: a transport whose exchange NEVER settles still times out', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar({ script: [{ kind: 'ok' }] });
+  const transport = {
+    openSession: (vin: string) => car.openSession(vin),
+    closeSession: (id: string) => car.closeSession(id),
+    // Wedged link: the promise never resolves and never rejects.
+    exchange: () => new Promise<string>(() => {}),
+  };
+  const gateway = createCarGateway({
+    transport,
+    vin: VIN,
+    deviceKeys: makeDeviceKeys(),
+    sleep: async () => {},
+    commandDeadlineMs: 50,
+  });
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok === false && outcome.kind, 'timeout');
+});
+
+test('runCommand: a transport whose openSession NEVER settles still times out', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar({ script: [{ kind: 'ok' }] });
+  const transport = {
+    // Wedged handshake — hangs before any exchange is ever attempted.
+    openSession: () => new Promise<string>(() => {}),
+    closeSession: (id: string) => car.closeSession(id),
+    exchange: (id: string, payload: string, timeoutMs: number) => car.exchange(id, payload, timeoutMs),
+  };
+  const gateway = createCarGateway({
+    transport,
+    vin: VIN,
+    deviceKeys: makeDeviceKeys(),
+    sleep: async () => {},
+    commandDeadlineMs: 50,
+  });
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.equal(outcome.ok === false && outcome.kind, 'timeout');
+});
+
 // ── Domain lockstep ─────────────────────────────────────────────────────────
 
 test('runCommand: built.domain drives the session domain (no cross-domain)', async () => {
