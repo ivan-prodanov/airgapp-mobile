@@ -94,17 +94,25 @@ function buildFrame(
       h = GODOT_VIEW_SIZE;
       break;
     case 'CLIMATE':
-      // Their Climate rect (R5 §3c). NOTE it is measured off SCREEN_HEIGHT, not
-      // off our canvas's laid-out height — if the canvas is even slightly short
-      // of the full screen, `height` under-shoots and the car renders a few %
-      // small. (Home is immune because 355 is absolute, which is exactly why
-      // Home matched while Climate read "a bit zoomed out".)
+      // Their Climate rect (R5 §3c): top = statusBarOffset,
+      // height = SCREEN_HEIGHT - statusBarOffset - 240.
+      //
+      // ⚠️ STILL WRONG ON DEVICE: with this rect AND their byte-identical pose
+      // (offset [0,6,0.6] fov 40) our car shows noticeably MORE HOOD than the
+      // real app. So one of the three inputs isn't what we assume — either
+      // `statusBarOffset` != insets.top, or `240` means something we haven't
+      // resolved (their sheet height?), or their `SCREEN_HEIGHT` isn't the full
+      // window. Brief #7 asks for all three as literals. Don't tune this by eye.
       top = statusBarHeight;
       h = screenHeight - statusBarHeight - CLIMATE_BOTTOM_INSET;
       break;
     case 'TOP_DOWN':
-      // Their TOP_DOWN pose at a full-screen frame -> scale 1.0, centring the
-      // car at exactly H/2 (see cameraPresets.TOP_DOWN).
+      // ⚠️ GUESS, NOT A RECOVERED VALUE. The POSE is theirs (see
+      // cameraPresets.TOP_DOWN); this frame is me solving scale ~= 1.0 backwards
+      // from screenshot pixels, and on-device it renders slightly BIGGER than the
+      // real app — so the scalar is wrong and needs their literal. R5 §5 left
+      // Controls' `sheetHeight`/`top_margin` UNRESOLVED; brief #7 asks for them.
+      // Do not treat this as parity until it's replaced.
       top = 0;
       h = screenHeight;
       break;

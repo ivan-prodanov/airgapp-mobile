@@ -1,6 +1,6 @@
-# RESEARCH BRIEF #7 — Per-screen frames + the transition, for EVERY screen
+# RESEARCH BRIEF #7 — Per-screen frame constants (Controls + Climate), and a Round-5 correction
 
-**You are the research agent.** Rounds 1–6 are the base. **Round 6 (`tesla-renderer-frame-FINDINGS.md`) was outstanding** — writing a `.gdc` decompiler, validating it against the handlers R4/R5 had independently derived, and correcting my brief's premise (their frame handler is byte-for-byte ours; the lever was `keep_aspect`). That fix shipped and **Home now matches**. Method rules stay in force:
+**You are the research agent.** Rounds 1–6 are the base. **Round 6 (`tesla-renderer-frame-FINDINGS.md`) was outstanding** — you wrote a `.gdc` decompiler, validated it against handlers R4/R5 had independently derived, and corrected my premise (their frame handler is byte-for-byte ours; the lever was `keep_aspect`). That shipped and **Home now matches the real app exactly.** Method rules stay in force:
 
 - **VERBATIM dumps, not summaries.**
 - **Tag every fact `[iOS-verified]` / `[Android-only]` / `[both-match]` / `[differ]`.** We ship iOS.
@@ -9,65 +9,72 @@
 
 ---
 
-## Where we are
+## ⚠️ Round 5 §3b is WRONG about Controls — device-proven
 
-Shipped from R6: `keep_aspect = KEEP_HEIGHT` on every view (their Camera never sets it, so Godot's default applies and `cam_fov` is a **vertical** fov), Home on their absolute rect `{top: statusBarHeight+60, height: 355}`, and their `defaultCameraAnimation*` = **0.5s / TRANS_QUART(3) / EASE_OUT(1)** on `MOVE_CAMERA` + `SET_ENV_PARAMS` + `UPDATE_MAIN_VIEW_FRAME`. **Home is confirmed correct on-device.**
+R5 §3b states:
 
-User's remaining report, after that fix: navigating to **Controls / Climate** still looks *"very off"* — position and size are *"nearly"* right but not right, and the movement doesn't match. Lighting/shadow now matches.
+> *"Screen → pose (by vehicle STATE, not route): `VehicleControlsScreen → PARKED` (there is **no separate "Controls" camera** — Controls IS the Home product view at PARKED)"*
 
-The gap is that **we only have recovered frame rects for Home and Climate**. R5 §3c gave:
+**The user's side-by-side screenshots of the official app disprove this.** The official Controls screen renders a **TOP-DOWN view** of the car (roof/glass filling the screen, "Open" labels on frunk and trunk, Flash/Honk/Start/Vent along the bottom). It is emphatically not the PARKED 3/4 hero shot.
 
-| Screen | top_margin | height |
-|---|---|---|
-| Home | `statusBarHeight + 60` | `355` |
-| Home + lootbox | `+ LOOTBOX_TOP_BANNER_HEIGHT` | 355 |
-| **Controls** | **0 (or "a state const")** | **`SCREEN_HEIGHT − sheetHeight`** ← both unresolved |
-| Climate | `statusBarOffset` | `SCREEN_HEIGHT − statusBarOffset − 240` |
-
-R5 §5 listed the Controls constants as UNRESOLVED. Everything else is guesswork on our side.
+So: **their Controls screen has its own camera pose** — almost certainly the `TOP_DOWN` entry from your own R5 §3b table (`rotation [0,0,0]`, `offset [0,10,0]`, `cam_fov 40`). Please **re-derive the screen→pose mapping** rather than trusting §3b, and say what actually selects TOP_DOWN.
 
 ---
 
-## §1. The per-screen frame table — COMPLETE and verbatim `[the main ask]`
+## Why this round exists: I have been GUESSING, and the user called it
 
-For **every screen that hosts the renderer**, give the exact `UPDATE_MAIN_VIEW_FRAME` payload, verbatim, with all constants resolved to numbers (and their names):
+State honestly what we shipped and why it's not good enough:
 
-1. **Controls** — resolve `sheetHeight` (and the `top_margin` "state const"). Is the height static, or does it track a drawer/sheet position as the user drags? If it's dynamic, give the function and its inputs.
-2. **Climate** — confirm `240` and `statusBarOffset`; is `240` a named constant?
-3. **Home** — confirm `355` + `statusBarHeight + 60`, and what `LOOTBOX_TOP_BANNER_HEIGHT` is.
-4. **Every other renderer-hosting screen** the user might reach — the user's words: *"any other camera rotation I assume if exists, important to include!"* So enumerate **all** of them: Charging, Location, Summon, Security & Drivers, Set Schedules, Service, Energy/Powershare, Closure-open, Tent mode, Drive/Reverse — whatever exists. For each: **which `CameraPosition` it selects** AND **its frame rect**. If a screen doesn't host the renderer (pure RN page), say so — that's equally useful.
-5. Does any screen send a frame **without** a `MOVE_CAMERA`, or vice versa? What's the **ordering** of the two (and `SET_ENV_PARAMS`) on a navigation — same tick, sequenced, awaited?
+- We adopted your recovered `TOP_DOWN` pose (`offset [0,10,0]`, `cam_fov 40`) for Controls, then **guessed** its frame as *full-screen height* (→ `root_node.scale = 1.0`, `top_margin = 0`) by working the projection backwards from screenshot pixels. **Result: our car is now slightly BIGGER than the official app's.** The pose is right; the frame scalar is wrong, and I have no literal to anchor it to.
+- For Climate we shipped your recovered rect (`top = statusBarOffset`, `height = SCREEN_HEIGHT − statusBarOffset − 240`). **Result: the car sits wrong — noticeably more of the hood/frunk is visible than in the official app** — even though the pose (`rotation [0,0,0]`, `offset [0,6,0.6]`, `cam_fov 40`) is byte-identical to theirs. So one of the three inputs (`statusBarOffset`, `240`, or what `SCREEN_HEIGHT` means) is not what we assume.
 
-## §2. The transition itself
+**We need literals, not derivations.** R5 §5 explicitly left the Controls constants UNRESOLVED; that gap is now the blocker.
 
-The user says our movement between screens still doesn't match theirs.
+---
 
-1. **Is the 0.5s / QUART / OUT default actually used on navigation**, or do specific transitions override `duration` / `transition_type` / `ease_type`? Give any per-transition overrides verbatim.
-2. **Do camera, frame and env animate simultaneously** with identical params, or are they staggered/sequenced? (We currently fire all three together with identical params.)
-3. `MOVE_CAMERA` carries a fresh `animation_id = uuid.v4()` per call (R5 §3a). **What consumes `animation_id`** — does their scene use it to cancel/replace an in-flight tween? We send a STABLE per-preset id (e.g. `'shell-camera-parked'`) — could that be suppressing or merging tweens on rapid navigation?
-4. Is there any **`tween.stop_all()` / reset** between transitions, or do overlapping navigations blend?
-5. Does the **product/vehicle get re-shown** (`SHOW_PRODUCT`/`UPDATE_PRODUCT`) on a screen change, and could that reset the pose mid-transition?
+## §1. Controls — the exact frame `[blocker]`
 
-## §3. Our specific divergences — please confirm or correct
+1. **Resolve `sheetHeight`** (R5 §3c gave `height = SCREEN_HEIGHT − sheetHeight`, R5 §5 marked it UNRESOLVED). Give the literal, its constant name, and where it's defined. Is it static, or does it track a draggable sheet? If dynamic, give the function + inputs + its value at rest.
+2. **Resolve the `top_margin`** (R5 §3c said "0 (or a state const)"). Which is it? If a const, its name + value.
+3. Dump the **complete `UPDATE_MAIN_VIEW_FRAME` payload** the Controls screen sends, verbatim, constants resolved.
+4. **Confirm the pose** it sends (`MOVE_CAMERA`) — is it the `TOP_DOWN` preset (`offset [0,10,0]`, `cam_fov 40`)? Does anything override it per vehicle state (closures open, charging…)?
 
-State plainly whether each is right, from their code:
+## §2. Climate — which of our three assumptions is wrong `[blocker]`
 
-1. **Our Controls uses a TOP_DOWN pose** (`rotation [0,0,0]`, `offset [0,10,0]`, our `cam_fov 20`). R5 §3b says **their Controls has no separate camera — it IS the PARKED pose**. Confirm. If true, our Controls camera is our own invention and the "off" look may be structural, not a tuning error. **What does their Controls screen actually show — the same 3/4 hero view as Home, just framed differently?**
-2. Their `TOP_DOWN` pose exists in the table (`offset [0,10,0]`, `cam_fov 40`) — **which screen, if any, actually uses it?**
-3. We render the car via a `ViewportContainer`→`Viewport`→`root` tree, camera a sibling of `root` (matching R6 §3). Confirm nothing else per-screen scales/moves `root` besides the frame handler.
-4. R6 §6 flagged one thing to verify: their `Viewport` has `size = Vector2(790, 875)` + `size_override_stretch = true`. **Does the 3D camera's aspect come from the screen (via `ViewportContainer.stretch`) or from that 790×875 override?** R6 assumed screen aspect. Home matching on-device suggests screen aspect is right — **confirm**, since it changes the KEEP_HEIGHT maths everywhere else.
+Their rect per R5 §3c: `top_margin = statusBarOffset`, `height = SCREEN_HEIGHT − statusBarOffset − 240`.
 
-## §4. Calibration targets (fallback)
+1. **`statusBarOffset`** — is it the same value as `statusBarHeight` (which R5 gave as 59 on Dynamic-Island phones), or a DIFFERENT variable? Give its definition and its value on a 393×852 Dynamic-Island iPhone. We currently pass `insets.top` (= 59); if `statusBarOffset` is something else, that alone explains our error.
+2. **`240`** — is it a named constant? What does it correspond to (their climate sheet's height? a fixed inset?). Give the name and where it's defined. **If it's their sheet height, say so** — ours may be a different height, which changes whether we should copy their literal or use our own sheet's height to get the same *look*.
+3. **`SCREEN_HEIGHT`** — exactly which value is this? The full window height (852), the safe-area height, the height excluding the home indicator (~818), or something else? Name the source (`Dimensions.get('window')`? `useWindowDimensions`? a native constant?). This is a prime suspect: a ~34pt difference here shifts the car noticeably.
+4. Dump the **complete Climate `UPDATE_MAIN_VIEW_FRAME` payload**, verbatim, constants resolved, and its `MOVE_CAMERA`.
+5. Our specific symptom, for you to reconcile: **with their exact pose and (what we believe is) their exact rect, we see MORE HOOD than they do** — i.e. our car sits too high / too small in frame. Given `center_y = top_margin + screen_height/2 · scale` (R6), what `top_margin`/`height` do they actually end up with on a 393×852/59 phone?
 
-If any frame constant can't be resolved statically, give us **derived geometry** instead, for a 393×852-pt / `statusBarHeight = 59` phone: for **Controls** and **Climate**, the resulting `root_node.scale` and the car's on-screen **centre** in points (R6 §4 showed the centre is exactly derivable: `center_y = top_margin + screen_height/2 · scale`). With a target scale + centre per screen we can solve our frames directly. A documented "not recoverable" + a calibration target is a fine outcome; a guessed constant is not.
+## §3. Every OTHER renderer-hosting screen
+
+The user: *"any other camera rotation I assume if exists, important to include!"* Enumerate **all** screens that host the renderer → their `CameraPosition` + their frame payload (constants resolved): Charging, Location, Summon, Security & Drivers, Set Schedules, Service, Energy/Powershare, plus the state-driven poses (CLOSURE_OPEN, TENT_MODE, DRIVE, DRIVE_REVERSE, VEHICLE_TO_HOME). If a screen doesn't host the renderer, say so — equally useful.
+
+## §4. Calibration — the fallback that actually unblocks us
+
+If a constant genuinely won't resolve, give **derived geometry** instead, for a **393×852-pt phone with `statusBarHeight = 59`**, per screen (Controls, Climate, Home as a control):
+- the resulting **`root_node.scale`**, and
+- the car's **on-screen centre in points** (R6 §4 showed `center_y = top_margin + screen_height/2 · scale` is exact).
+
+With a target scale + centre per screen we solve our frames directly and stop guessing. **A documented "not statically recoverable" plus a calibration target is a good outcome. A guessed constant is not** — we've now shipped two bad guesses off screenshot estimates and the user has called it both times.
+
+## §5. Sanity checks on what we shipped
+
+1. R6 §6 flagged: their `Viewport` has `size = Vector2(790, 875)` + `size_override_stretch = true`. Does the 3D camera's aspect come from the **screen** (via `ViewportContainer.stretch`) or from that **790×875** override? R6 assumed screen aspect and Home now matches on-device, which supports it — **confirm**, because it changes the KEEP_HEIGHT maths on every other screen.
+2. `MOVE_CAMERA` carries a fresh `animation_id = uuid.v4()` per call (R5 §3a). What **consumes** it? We send a STABLE per-preset id — could that merge/suppress tweens on rapid navigation?
+3. Do camera, frame and env animate **simultaneously** with identical params (we fire all three at 0.5s/QUART/OUT), or are they staggered? Any per-transition overrides of `duration`/`transition_type`/`ease_type`?
 
 ---
 
 ## Output format
 
-1. **Frame table** — every renderer-hosting screen → `CameraPosition` + verbatim frame payload + resolved constants.
-2. **Transition** — params, overrides, ordering, `animation_id` semantics, cancellation.
-3. **Our divergences** (§3) — confirmed/corrected, with the Controls-camera question answered explicitly.
+1. **Controls** — resolved `sheetHeight` + `top_margin` + full payload + pose.
+2. **Climate** — `statusBarOffset` / `240` / `SCREEN_HEIGHT` defined and resolved + full payload; reconcile the "more hood" symptom.
+3. **All other screens** — pose + frame table.
 4. **Calibration** — per-screen `scale` + centre in points on a 393×852/59 phone.
-5. **Citations**; **Android-only vs iOS-verified** per fact.
-6. **Gaps**, plainly.
+5. **Sanity checks** (§5).
+6. **Citations**; **Android-only vs iOS-verified** per fact.
+7. **Gaps**, plainly. And correct R5 §3b's Controls claim in your findings so nobody trusts it again.
