@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Pressable,
   RefreshControl,
@@ -23,6 +24,10 @@ import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
+
+// The favorites-row glyph size — the SF Symbol's size and the fixed box the
+// pending spinner swaps into.
+const ICON_SIZE = 28;
 
 interface ScreenProps {
   state: VehicleViewState;
@@ -297,38 +302,24 @@ function QuickIcon({
   active: boolean;
   spin?: boolean;
   // A real command for this control is in flight (dispatched, unconfirmed).
-  // Shown as a subtle opacity pulse over the icon until the car confirms/fails.
+  // REPLACES the icon with a small circular spinner until the car
+  // confirms/fails — what the official app does (it does not pulse the icon).
   pending?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  // Loop a gentle dim while pending; snap back to solid when it clears.
-  const pulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!pending) {
-      pulse.setValue(1);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 0.35, duration: 550, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 550, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pending, pulse]);
+  const tint = active ? 'white' : 'rgba(255,255,255,0.45)';
 
   return (
     <Pressable style={styles.quickIcon} onPress={onPress} onLongPress={onLongPress} delayLongPress={300} hitSlop={8}>
-      <Animated.View style={pending ? { opacity: pulse } : undefined}>
-        <SpinningSymbol
-          name={symbol}
-          tintColor={active ? 'white' : 'rgba(255,255,255,0.45)'}
-          size={28}
-          spin={spin}
-        />
-      </Animated.View>
+      {/* Fixed ICON_SIZE box so swapping icon↔spinner never shifts the row. */}
+      <View style={styles.quickIconGlyph}>
+        {pending ? (
+          <ActivityIndicator size="small" color={tint} />
+        ) : (
+          <SpinningSymbol name={symbol} tintColor={tint} size={ICON_SIZE} spin={spin} />
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -481,6 +472,14 @@ const styles = StyleSheet.create({
   quickIcon: {
     width: 48,
     alignItems: 'center',
+  },
+  // Fixed square the icon OR the pending spinner renders into, so the swap is
+  // footprint-identical (no layout shift when a command starts/settles).
+  quickIconGlyph: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mediaBar: {
     flexDirection: 'row',
