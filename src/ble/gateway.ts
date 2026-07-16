@@ -77,7 +77,19 @@ export interface CreateCarGatewayArgs {
   // no-op recorder so the 100ms transient/stale-frame waits are instantaneous
   // yet still assertable.
   sleep?: (ms: number) => Promise<void>;
+  // Injectable clock (defaults to Date.now), so the deadline below is testable
+  // without waiting on a real one.
+  now?: () => number;
+  // Overall wall-clock budget for ONE command, across every attempt/evict/
+  // delay. See DEFAULT_COMMAND_DEADLINE_MS.
+  commandDeadlineMs?: number;
 }
+
+// The official app surfaces a failed command at exactly 25s; match it. This is
+// a REAL deadline — runAction stops retrying and returns kind:'timeout' — not a
+// UI timer, so nothing keeps talking to the car behind a failure the user has
+// already been shown.
+export const DEFAULT_COMMAND_DEADLINE_MS = 25_000;
 
 // _faultName lifts a MessageFault_E code to its name (ported verbatim from the
 // reference's _faultName so semantic faults read human-friendly in the
@@ -136,6 +148,8 @@ export function createCarGateway({
   deviceKeys,
   queue = new SessionQueue(),
   sleep = realSleep,
+  now = Date.now,
+  commandDeadlineMs = DEFAULT_COMMAND_DEADLINE_MS,
 }: CreateCarGatewayArgs): CarGateway {
   // runAction is the shared heart of the gateway: the ported _directDo retry
   // loop. It drives ONE built action through the queue + cached session with
@@ -152,7 +166,20 @@ export function createCarGateway({
     let unreachableEvicts = 0;
     const MAX_UNREACHABLE_EVICTS = 2;
 
+    // Overall wall-clock budget for this command. The attempt cap alone doesn't
+    // bound total time — a single attempt can burn a full scan/HTTP timeout, so
+    // 10 of them can run far past what a user will wait. Checked at the TOP of
+    // every attempt (which is also the landing point of every evict/delay
+    // `continue`), so no retry can ever start past the deadline.
+    const startedAt = now();
+    const deadlineExceeded = () => now() - startedAt >= commandDeadlineMs;
+    const timedOut = (): { outcome: CommandOutcome; result: CommandResult | null } => ({
+      outcome: { ok: false, kind: 'timeout', message: `[${label}] timeout: command deadline exceeded` },
+      result: lastResult,
+    });
+
     for (let attempt = 1; attempt <= MAX_BLE_ATTEMPTS; attempt++) {
+      if (deadlineExceeded()) return timedOut();
       let result: CommandResult;
       try {
         result = await queue.enqueue(vin, () =>

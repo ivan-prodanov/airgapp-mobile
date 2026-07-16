@@ -228,6 +228,86 @@ test('runCommand: an auth TransportError is terminal immediately (no retry)', as
   assert.equal(car.openCount, 1); // no re-handshake
 });
 
+// ── Command deadline (25s, matching the official app) ───────────────────────
+
+// slowCar wraps a FakeCar so every exchange "costs" perExchangeMs on an
+// injectable fake clock. Nothing sleeps for real — the clock is just a number
+// the gateway reads — so the deadline is asserted deterministically.
+function slowCar(car: FakeCar, perExchangeMs: number) {
+  let t = 0;
+  const transport = {
+    openSession: (vin: string) => car.openSession(vin),
+    closeSession: (id: string) => car.closeSession(id),
+    exchange: async (id: string, payload: string, timeoutMs: number) => {
+      t += perExchangeMs;
+      return car.exchange(id, payload, timeoutMs);
+    },
+  };
+  return { transport, now: () => t };
+}
+
+test('runCommand: stops at the command deadline with kind=timeout (before MAX attempts)', async () => {
+  __resetSessionCaches();
+  // Every attempt faults transiently (retryable → the loop would otherwise run
+  // all MAX_BLE_ATTEMPTS), and each round-trip burns 9s of the 25s budget.
+  const car = new FakeCar({ script: Array.from({ length: MAX_BLE_ATTEMPTS }, () => ({ kind: 'fault', fault: 1 }) as const) });
+  const { transport, now } = slowCar(car, 9_000);
+  const gateway = createCarGateway({
+    transport,
+    vin: VIN,
+    deviceKeys: makeDeviceKeys(),
+    sleep: async () => {},
+    now,
+    commandDeadlineMs: 25_000,
+  });
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok === false && outcome.kind, 'timeout');
+  // Every exchange costs 9s — including attempt 1's handshake. So: attempt 1
+  // burns handshake+command (t=18s), attempt 2 re-uses the cached session and
+  // burns one command (t=27s), and attempt 3 sees 27s ≥ 25s and stops. Two
+  // commands reached the car: it gave up EARLY, not after MAX_BLE_ATTEMPTS.
+  assert.equal(car.decryptedCommands.length, 2);
+  assert.ok(car.decryptedCommands.length < MAX_BLE_ATTEMPTS);
+  assert.ok(now() < 36_000, 'must not start another attempt past the deadline');
+});
+
+test('runCommand: the deadline defaults to 25s', async () => {
+  __resetSessionCaches();
+  // Same script, same 9s-per-exchange clock, but NO explicit commandDeadlineMs:
+  // the 25s default must bound it identically (2 commands, then timeout).
+  const car = new FakeCar({ script: Array.from({ length: MAX_BLE_ATTEMPTS }, () => ({ kind: 'fault', fault: 1 }) as const) });
+  const { transport, now } = slowCar(car, 9_000);
+  const gateway = createCarGateway({ transport, vin: VIN, deviceKeys: makeDeviceKeys(), sleep: async () => {}, now });
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.equal(outcome.ok === false && outcome.kind, 'timeout');
+  assert.equal(car.decryptedCommands.length, 2);
+});
+
+test('runCommand: a command that finishes inside the deadline is unaffected', async () => {
+  __resetSessionCaches();
+  // Two 9s attempts = 18s < 25s: the deadline must not fire on a slow-but-OK
+  // command (no regression on the transient-retry path).
+  const car = new FakeCar({ script: [{ kind: 'fault', fault: 1 }, { kind: 'ok' }] });
+  const { transport, now } = slowCar(car, 9_000);
+  const gateway = createCarGateway({
+    transport,
+    vin: VIN,
+    deviceKeys: makeDeviceKeys(),
+    sleep: async () => {},
+    now,
+    commandDeadlineMs: 25_000,
+  });
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.deepEqual(outcome, { ok: true, attempts: 2 });
+});
+
 // ── Domain lockstep ─────────────────────────────────────────────────────────
 
 test('runCommand: built.domain drives the session domain (no cross-domain)', async () => {
