@@ -1,8 +1,9 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
+import { CARD_SPRING } from '@/godot/cardTransition';
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
 import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
@@ -126,19 +127,55 @@ export default function Index() {
     }),
   ).current;
 
-  let panel;
-  if (mode === 'climate') {
-    panel = <ClimateScreen state={state} actions={actions} />;
-  } else if (mode === 'controls') {
-    panel = <ControlsScreen state={state} actions={actions} />;
-  } else {
-    panel = <HomeScreen state={state} actions={actions} swipeHandlers={swipe.panHandlers} />;
-  }
+  // ── The CARD layer (findings §1c) ────────────────────────────────────────
+  // We used to swap `panel` outright, which is why leaving Controls/Climate had
+  // no fade at all: the screen simply vanished. Their model is a stack —
+  //   Home = the ROOT card, always mounted, static at opacity 1;
+  //   Controls/Climate = a PUSHED card composited over it, opacity =
+  //     current.progress, on the TransitionIOSSpec spring (~479ms).
+  // Pushing runs that 0 -> 1; popping runs the SAME interpolator backwards, so
+  // the pushed card fades OUT and reveals Home beneath. `detachPreviousScreen:
+  // false` is what keeps Home mounted to composite against — so we keep it
+  // mounted too, and let it keep its scroll position while covered.
+  const pushed = mode === 'climate' ? 'climate' : mode === 'controls' ? 'controls' : null;
+  const cardProgress = useRef(new Animated.Value(0)).current;
+  // The pushed screen stays rendered until its fade-OUT finishes.
+  const [renderedPush, setRenderedPush] = useState<'climate' | 'controls' | null>(null);
+
+  useEffect(() => {
+    if (pushed) setRenderedPush(pushed);
+    Animated.spring(cardProgress, { toValue: pushed ? 1 : 0, ...CARD_SPRING }).start(({ finished }) => {
+      // Unmount only after the pop has actually finished, or we'd cut the fade.
+      if (finished && !pushed) setRenderedPush(null);
+    });
+  }, [pushed, cardProgress]);
 
   return (
     <View style={styles.root}>
       <VehicleCanvas state={state} actions={actions} vehicleId={vehicleId} carTranslateX={carTranslateX}>
-        {panel}
+        {/* Root card: always mounted, never fades (its CONTENT does — HomeScreen
+            owns that clock). Untouchable while a card covers it. */}
+        <View style={StyleSheet.absoluteFill} pointerEvents={pushed ? 'none' : 'box-none'}>
+          <HomeScreen
+            state={state}
+            actions={actions}
+            swipeHandlers={swipe.panHandlers}
+            covered={pushed !== null}
+          />
+        </View>
+
+        {/* Pushed card. */}
+        {renderedPush ? (
+          <Animated.View
+            style={[StyleSheet.absoluteFill, { opacity: cardProgress }]}
+            pointerEvents={pushed ? 'box-none' : 'none'}>
+            {renderedPush === 'climate' ? (
+              <ClimateScreen state={state} actions={actions} />
+            ) : (
+              <ControlsScreen state={state} actions={actions} />
+            )}
+          </Animated.View>
+        ) : null}
       </VehicleCanvas>
 
       {mode !== 'home' ? (

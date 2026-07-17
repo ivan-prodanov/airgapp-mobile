@@ -36,6 +36,9 @@ const ICON_SIZE = 28;
 interface ScreenProps {
   state: VehicleViewState;
   actions: VehicleActions;
+  // A pushed card (Controls/Climate) is covering us. Home stays MOUNTED under it
+  // — their `detachPreviousScreen: false` — but its content blanks. See below.
+  covered?: boolean;
   // PanResponder handlers from index.tsx, spread onto the car-band view so a horizontal drag there
   // switches vehicles (vertical drags fall through to this menu's ScrollView).
   swipeHandlers?: GestureResponderHandlers;
@@ -45,7 +48,7 @@ interface ScreenProps {
 // scroll-driven sheet sitting just below the car. Swipe up: it slides over the car (which fades to
 // black via a scrim) and snaps fully open past halfway, revealing the rest of the list. The menu is
 // TRANSPARENT (no panel) so it lands on seamless black. Pull down: refresh.
-export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
+export function HomeScreen({ state, actions, swipeHandlers, covered = false }: ScreenProps) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const fleet = useFleet();
@@ -87,18 +90,24 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     now: Date.now(),
   });
 
-  // The whole-content fade (see the note on the root element below). Home's own
-  // clock is focus-keyed rather than markers-keyed (findings R10 §1c), and since
-  // our panel mounts on entry, mount IS the focus event.
+  // Home's content clock — VERBATIM (findings R10 §1c):
+  //     duration = isFocused ? 300 : 0;
+  //     Animated.timing(fade, { easing: Easing.cubic, toValue: isFocused ? 1 : 0,
+  //                             duration, useNativeDriver: true }).start()
+  // i.e. LEAVING Home blanks the content in 0ms (instantly), and RETURNING fades
+  // it back over 300ms. The asymmetry is deliberate: the pushed card is fading
+  // in over Home at the same moment, so Home's content must be gone immediately
+  // or you'd see two screens at once. `covered` is our `!isFocused`.
+  const focused = !covered;
   const contentFade = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(contentFade, {
-      toValue: 1,
-      duration: CONTENT_FADE_MS,
+      toValue: focused ? 1 : 0,
+      duration: focused ? CONTENT_FADE_MS : 0,
       easing: Easing.cubic,
       useNativeDriver: true,
     }).start();
-  }, [contentFade]);
+  }, [contentFade, focused]);
 
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
