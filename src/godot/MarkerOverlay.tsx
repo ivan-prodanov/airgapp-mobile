@@ -5,8 +5,10 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { controlHaptic } from '../state/controlHaptic';
 import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
+import { isLightExteriorColor } from './markerPaint';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { MarkerPoint, VehicleMarkers } from '../types/markerTypes';
+import { vehicleConfigs } from '../types/vehicleTypes';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
 interface Props {
@@ -56,6 +58,7 @@ export function MarkerOverlay({ state, actions }: Props) {
           pixelRatio={pixelRatio}
           marker="frunk"
           label={state.frunkOpen ? 'Close' : 'Open'}
+          dark={isLightExteriorColor(vehicleConfigs[state.carModel]?.vehicle_config.exterior_color)}
           onPress={() => actions.toggle('frunkOpen')}
         />
       ) : null}
@@ -100,12 +103,16 @@ function TextButton({
   marker,
   label,
   onPress,
+  // findings §2c: the frunk label — and ONLY the frunk label — flips to
+  // rgba(0,0,0,0.7) on a light-painted car. Trunk and lock are hardcoded gray.
+  dark = false,
 }: {
   anchorPx: MarkerPoint;
   pixelRatio: number;
   marker: OverlayKey;
   label: string;
   onPress: () => void;
+  dark?: boolean;
 }) {
   const point = anchorToPoint(anchorPx, pixelRatio, MARKER_CALIBRATION[marker]);
   return (
@@ -119,7 +126,7 @@ function TextButton({
         controlHaptic();
         onPress();
       }}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, dark ? styles.labelDark : null]}>{label}</Text>
     </Pressable>
   );
 }
@@ -158,18 +165,35 @@ function IconButton({
   );
 }
 
+// findings §2b: Colors.transparentWhite70 / Colors.transparentBlack70.
+const TEXT_COLOR_GRAY = 'rgba(255,255,255,0.7)';
+const TEXT_COLOR_DARK = 'rgba(0,0,0,0.7)';
+
 const styles = StyleSheet.create({
   button: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // findings §2b, VERBATIM — and ours was wrong on all three counts (we had
+  // fontSize 19, fontWeight '600', alpha 0.92):
+  //   styles.textButton    = { height: 30, minHeight: 0, paddingVertical: 0 }
+  //   styles.textColorGray = { color: 'rgba(255,255,255,0.7)', fontSize: 18 }
+  //   styles.textColorDark = { color: 'rgba(0,0,0,0.7)',       fontSize: 18 }
+  //   styles.disabledStyle = { opacity: 0.4 }
+  // That is the ENTIRE literal: no fontWeight, no fontFamily, no letterSpacing,
+  // no shadow, no backdrop — weight/family come from their shared Button's
+  // defaults. The textShadow we had is our own invention; dropped.
   label: {
-    fontSize: 19,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.92)',
-    textShadowColor: 'rgba(0,0,0,0.55)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    fontSize: 18,
+    color: TEXT_COLOR_GRAY,
+  },
+  // findings §2c: ONLY the frunk label adapts to the paint. The lock glyph and
+  // the trunk label are hardcoded to textColorGray.
+  labelDark: {
+    color: TEXT_COLOR_DARK,
+  },
+  disabled: {
+    opacity: 0.4,
   },
 });

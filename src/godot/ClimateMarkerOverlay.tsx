@@ -24,14 +24,31 @@ interface Props {
 
 type ClimateKey = SeatPosition | 'steeringWheel';
 
-// Mode colors: heat = orange-red, cool = blue, auto/off = neutral white at different opacities. These
-// match the official app's seat-heater glyph (waves fill the mode color from the bottom up by level).
-const HEAT = '#FF3B30';
-const COOL = '#0A84FF';
+// Mode colours — the official app's tokens, VERBATIM
+// (tesla-transitions-markers-FINDINGS §3b). Ours were invented and all four were
+// off: HEAT was #FF3B30 (theirs #FF3A3A), COOL #0A84FF (theirs #3E6BE2), and our
+// DIM/AUTO/WHEEL greys don't exist in their palette at all.
+//
+// ⚠️ THE KEY FINDING: there is NO per-level tint and NO `buttonCoolerOff` token
+// anywhere in their bundle. Only three tokens are in play, and the two families
+// behave DIFFERENTLY:
+//   - Steering wheel: ON -> buttonHeaterOn; OFF -> buttonHeaterOff.  <- the
+//     user's "different colour when not enabled" is THIS element.
+//   - Seats: coolerOn iff cooling, else heaterOn — at EVERY level INCLUDING
+//     off. The seat glyph never uses heaterOff; off-ness is carried by the ICON
+//     ASSET (seat_climate_0..3), not the tint.
+//   - Disabled keeps its tint and dims the container to opacity 0.5.
+const HEAT = '#FF3A3A'; // buttonHeaterOn
+const COOL = '#3E6BE2'; // buttonCoolerOn
+const HEATER_OFF = '#999999'; // buttonHeaterOff (Cybertruck: #898989)
+// NOT YET APPLIED (findings §3b): a DISABLED marker keeps its tint and dims its
+// icon container to iconButtonBusyOpacity = 0.5. We have no disabled state on
+// these markers yet, so there's nothing to gate it on — wire it in when we do.
+// Retained for our wave glyph, which is NOT how they draw levels — see the note
+// on the seat colours above; replacing it needs their seat_climate_* assets.
 const DIM = 'rgba(255,255,255,0.55)';
 const AUTO_WAVE = 'rgba(255,255,255,0.9)';
-// Steering wheel body — neutral grey (the heat waves on top carry the state colour).
-const WHEEL_GREY = 'rgba(235,235,235,0.92)';
+const WHEEL_GREY = HEATER_OFF;
 
 // Control box (centered on the marker) and how far below it the Heat/Cool/Auto menu floats.
 const BOX = { w: 58, h: 60 } as const;
