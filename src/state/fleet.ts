@@ -2,6 +2,8 @@ import { createMockLocationOffset, type MockLocationOffset } from './mockLocatio
 import {
   climateCapabilitiesFor,
   initialVehicleState,
+  type CabinOverheatMode,
+  type CabinOverheatTemp,
   type CameraMode,
   type CarModel,
   type SeatClimateCapability,
@@ -247,4 +249,49 @@ export function setSteeringWheelClimateState(
         ? { mode: 'auto', level: 0 }
         : { mode: 'off', level: 0 };
   return { ...state, steeringWheelClimate: next };
+}
+
+// --- Setpoints: climate temperature, charge limit, charging current ------------------------------
+// The clamp domains live here (not in the screens) because they are properties of the CAR, not of a
+// view: the BLE command layer must clamp to exactly the same bounds before it dispatches a setpoint.
+// The screens import them only for display/disabled state.
+
+// Temperature dial domain (matches the real app): LO, 15.5, 16.0 … 27.5, HI in 0.5° steps.
+// 15.0 is the LO sentinel, 28.0 is HI; everything in between shows the number.
+export const LO_TEMP = 15;
+export const HI_TEMP = 28;
+// Charge-limit slider domain (Tesla: daily 50% up to trip 100%).
+export const LIMIT_MIN = 50;
+export const LIMIT_MAX = 100;
+// Charging current stepper domain, per spec: 5 A … 16 A.
+export const AMP_MIN = 5;
+export const AMP_MAX = 16;
+
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+export function setTargetTempState(state: VehicleViewState, tempC: number): VehicleViewState {
+  // Round to the nearest half-degree BEFORE clamping so the dial can only ever land on a real detent.
+  return { ...state, targetTempC: clamp(Math.round(tempC * 2) / 2, LO_TEMP, HI_TEMP) };
+}
+
+export function setCabinOverheatModeState(
+  state: VehicleViewState,
+  cabinOverheatMode: CabinOverheatMode,
+): VehicleViewState {
+  return { ...state, cabinOverheatMode };
+}
+
+export function setCabinOverheatTempState(
+  state: VehicleViewState,
+  cabinOverheatTemp: CabinOverheatTemp,
+): VehicleViewState {
+  return { ...state, cabinOverheatTemp };
+}
+
+export function setChargeLimitState(state: VehicleViewState, percent: number): VehicleViewState {
+  return { ...state, chargeLimitPercent: clamp(Math.round(percent), LIMIT_MIN, LIMIT_MAX) };
+}
+
+export function setChargingAmpsState(state: VehicleViewState, amps: number): VehicleViewState {
+  return { ...state, chargingAmps: clamp(Math.round(amps), AMP_MIN, AMP_MAX) };
 }

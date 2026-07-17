@@ -4,13 +4,22 @@ import assert from 'node:assert/strict';
 import {
   activeVehicle,
   addVehicle,
+  AMP_MAX,
+  AMP_MIN,
   createInitialFleet,
+  HI_TEMP,
+  LIMIT_MAX,
+  LIMIT_MIN,
+  LO_TEMP,
   nextVehicleId,
   prevVehicleId,
   removeVehicle,
   setActiveVehicle,
+  setChargeLimitState,
+  setChargingAmpsState,
   setSeatClimateState,
   setSteeringWheelClimateState,
+  setTargetTempState,
   stepSeatClimateState,
   stepSteeringWheelClimateState,
   toggleState,
@@ -221,4 +230,68 @@ test('Model S/X: all three rear seats heated (incl. centre); Model X uses the yo
   const x = climateCapabilitiesFor('modelX');
   assert.equal(x.seats.rearMiddle.heatLevels > 0, true);
   assert.equal(x.steeringWheel.type, 'yoke');
+});
+
+// --- Setpoints (lifted out of ClimateScreen/charging.tsx local useState) -------------------------
+
+// This test is the anchor for the lift being a PURE refactor: these were the screens' useState
+// defaults, so a fresh car must still render exactly what the screens used to mount with.
+test('setpoint defaults match the screen-local useState values they replaced', () => {
+  assert.equal(initialVehicleState.targetTempC, 19.5);
+  assert.equal(initialVehicleState.cabinOverheatMode, 'on');
+  assert.equal(initialVehicleState.cabinOverheatTemp, '40');
+  assert.equal(initialVehicleState.bioweaponOn, false);
+  assert.equal(initialVehicleState.campModeOn, false);
+  assert.equal(initialVehicleState.petModeOn, false);
+  assert.equal(initialVehicleState.chargeLimitPercent, 80);
+  assert.equal(initialVehicleState.chargingAmps, AMP_MAX);
+});
+
+test('setTargetTempState snaps to the 0.5° grid and clamps to the LO/HI sentinels', () => {
+  const s = initialVehicleState;
+  assert.equal(setTargetTempState(s, 19.5 + 0.5).targetTempC, 20); // the screen's +chevron
+  assert.equal(setTargetTempState(s, 19.5 - 0.5).targetTempC, 19);
+  assert.equal(setTargetTempState(s, 21.3).targetTempC, 21.5); // rounds to nearest half
+  assert.equal(setTargetTempState(s, 21.1).targetTempC, 21);
+  assert.equal(setTargetTempState(s, 99).targetTempC, HI_TEMP); // HI sentinel
+  assert.equal(setTargetTempState(s, -5).targetTempC, LO_TEMP); // LO sentinel
+  // Stepping past a bound saturates rather than wrapping, so a held chevron rests on LO/HI.
+  assert.equal(setTargetTempState(setTargetTempState(s, HI_TEMP), HI_TEMP + 0.5).targetTempC, HI_TEMP);
+});
+
+test('setChargeLimitState clamps to the 50–100% slider domain', () => {
+  const s = initialVehicleState;
+  assert.equal(setChargeLimitState(s, 90).chargeLimitPercent, 90);
+  assert.equal(setChargeLimitState(s, 0).chargeLimitPercent, LIMIT_MIN); // track spans 0–100, limit floors at 50
+  assert.equal(setChargeLimitState(s, 100).chargeLimitPercent, LIMIT_MAX);
+  assert.equal(setChargeLimitState(s, 250).chargeLimitPercent, LIMIT_MAX);
+  assert.equal(setChargeLimitState(s, 73.6).chargeLimitPercent, 74); // slider hands over a raw fraction
+});
+
+test('setChargingAmpsState clamps to the 5–16 A stepper domain', () => {
+  const s = initialVehicleState;
+  assert.equal(setChargingAmpsState(s, 12).chargingAmps, 12);
+  assert.equal(setChargingAmpsState(s, AMP_MIN - 1).chargingAmps, AMP_MIN);
+  assert.equal(setChargingAmpsState(s, AMP_MAX + 1).chargingAmps, AMP_MAX);
+});
+
+test('the comfort toggles flip via toggleState (the generic path the sheet rows use)', () => {
+  let s = initialVehicleState;
+  for (const key of ['bioweaponOn', 'campModeOn', 'petModeOn'] as const) {
+    s = toggleState(s, key);
+    assert.equal(s[key], true);
+    s = toggleState(s, key);
+    assert.equal(s[key], false);
+  }
+  // Camp and Pet are INDEPENDENT (not one keeper enum): both can be on at once.
+  const both = toggleState(toggleState(initialVehicleState, 'campModeOn'), 'petModeOn');
+  assert.equal(both.campModeOn, true);
+  assert.equal(both.petModeOn, true);
+});
+
+test('setpoints are per-vehicle: editing the active car leaves the others alone', () => {
+  const fleet = addVehicle(createInitialFleet(), 'model3'); // veh_2 active
+  const edited = updateActiveVehicleState(fleet, (s) => setChargeLimitState(s, 100));
+  assert.equal(activeVehicle(edited).state.chargeLimitPercent, 100);
+  assert.equal(edited.vehicles[0].state.chargeLimitPercent, 80); // veh_1 untouched
 });

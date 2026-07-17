@@ -1,4 +1,6 @@
 import type {
+  CabinOverheatMode,
+  CabinOverheatTemp,
   CameraMode,
   SeatClimateModeName,
   SeatPosition,
@@ -8,10 +10,15 @@ import type {
 } from '../types/vehicleTypes';
 import {
   patchState,
+  setCabinOverheatModeState,
+  setCabinOverheatTempState,
   setCameraModeState,
+  setChargeLimitState,
+  setChargingAmpsState,
   setScreenCameraModeState,
   setSeatClimateState,
   setSteeringWheelClimateState,
+  setTargetTempState,
   stepSeatClimateState,
   stepSteeringWheelClimateState,
   toggleState,
@@ -27,6 +34,13 @@ export interface VehicleActions {
   setSeatClimate: (seat: SeatPosition, mode: SeatClimateModeName) => void;
   stepSteeringWheelClimate: () => void;
   setSteeringWheelClimate: (mode: SteeringWheelClimateModeName) => void;
+  // Setpoints. Each clamps to the car's domain, so callers may pass a raw computed value
+  // (state.targetTempC + delta, a slider's pageX-derived percent) without pre-clamping.
+  setTargetTemp: (tempC: number) => void;
+  setCabinOverheatMode: (mode: CabinOverheatMode) => void;
+  setCabinOverheatTemp: (temp: CabinOverheatTemp) => void;
+  setChargeLimit: (percent: number) => void;
+  setChargingAmps: (amps: number) => void;
 }
 
 // Builds the VehicleActions object from a single "apply an update to the active car's state"
@@ -44,5 +58,10 @@ export function buildVehicleActions(
     setSeatClimate: (seat, mode) => apply((s) => setSeatClimateState(s, seat, mode)),
     stepSteeringWheelClimate: () => apply(stepSteeringWheelClimateState),
     setSteeringWheelClimate: (mode) => apply((s) => setSteeringWheelClimateState(s, mode)),
+    setTargetTemp: (tempC) => apply((s) => setTargetTempState(s, tempC)),
+    setCabinOverheatMode: (mode) => apply((s) => setCabinOverheatModeState(s, mode)),
+    setCabinOverheatTemp: (temp) => apply((s) => setCabinOverheatTempState(s, temp)),
+    setChargeLimit: (percent) => apply((s) => setChargeLimitState(s, percent)),
+    setChargingAmps: (amps) => apply((s) => setChargingAmpsState(s, amps)),
   };
 }

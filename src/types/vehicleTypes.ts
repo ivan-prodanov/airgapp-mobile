@@ -46,6 +46,12 @@ export interface SteeringWheelClimate {
 
 export type SeatClimateModes = Record<SeatPosition, SeatClimateMode>;
 
+// Cabin Overheat Protection: the three-way mode and its activation threshold. The threshold is a
+// STRING because it is a <Segmented> option key, not an arithmetic value (it is only ever compared
+// and rendered). Maps to CarServer ClimateState.cabin_overheat_protection / cop_activation_temp.
+export type CabinOverheatMode = 'off' | 'noac' | 'on';
+export type CabinOverheatTemp = '30' | '35' | '40';
+
 export interface VehicleViewState {
   frunkOpen: boolean;
   trunkOpen: boolean;
@@ -103,6 +109,25 @@ export interface VehicleViewState {
   // Mock for now; maps to BLE ClimateState.inside_temp / outside_temp per vehicle.
   interiorTempC: number;
   exteriorTempC: number;
+  // ── Climate/charging setpoints ────────────────────────────────────────────────────────────────
+  // These are the car's *requested* values (vs. the measured interior/exterior temps above). They
+  // live here rather than in the screens so a command can be dispatched for them and telemetry can
+  // populate them; none of them is renderer state (see hasVehicleVisualStateChanged's ignore list).
+  //
+  // Climate setpoint (°C), clamped to LO_TEMP..HI_TEMP in 0.5° steps — the bounds double as the
+  // LO/HI sentinels. Maps to ClimateState.driver_temp_setting.
+  targetTempC: number;
+  cabinOverheatMode: CabinOverheatMode;
+  cabinOverheatTemp: CabinOverheatTemp;
+  bioweaponOn: boolean;
+  // Camp and Pet mode are INDEPENDENT toggles in the sheet (either, both, or neither can be on),
+  // so they are two booleans rather than one keeper enum.
+  campModeOn: boolean;
+  petModeOn: boolean;
+  // Charging setpoints. Limit is a percentage clamped to LIMIT_MIN..LIMIT_MAX; amps clamp to
+  // AMP_MIN..AMP_MAX. Map to ChargeState.charge_limit_soc / charge_current_request.
+  chargeLimitPercent: number;
+  chargingAmps: number;
 }
 
 export type VehicleStateKey = keyof VehicleViewState;
@@ -155,6 +180,14 @@ export const initialVehicleState: VehicleViewState = {
   rangeMiles: null,
   interiorTempC: 21,
   exteriorTempC: 18,
+  targetTempC: 19.5,
+  cabinOverheatMode: 'on',
+  cabinOverheatTemp: '40',
+  bioweaponOn: false,
+  campModeOn: false,
+  petModeOn: false,
+  chargeLimitPercent: 80,
+  chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
 };
 
 export interface SeatClimateCapability {
