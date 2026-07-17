@@ -11,9 +11,9 @@ import {
   createThemeMessage,
   createUpdateProductMessage,
   createVehicleLightsMessage,
-  hasVehicleVisualStateChanged,
   vehicleIdForModel,
 } from './vehicleStateAdapter';
+import { hasVehicleVisualStateChanged } from './vehicleVisualState';
 import type { FrameData, GodotMessage, RendererDiagnostics, VehicleMarkersMessage } from '../types/rendererMessages';
 import type { VehicleMarkers } from '../types/markerTypes';
 import type { CameraMode, VehicleViewState } from '../types/vehicleTypes';

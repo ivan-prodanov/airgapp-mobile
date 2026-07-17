@@ -149,35 +149,6 @@ export function createGetMarkersMessage(vehicleId: string = VEHICLE_ID): GodotMe
   };
 }
 
-export function hasVehicleVisualStateChanged(previous: VehicleViewState, next: VehicleViewState): boolean {
-  const ignoredKeys = new Set<keyof VehicleViewState>([
-    'cameraMode',
-    'theme',
-    // carModel switches the whole product, so the bridge re-issues SHOW_PRODUCT for it directly
-    // rather than an UPDATE_PRODUCT (which can't change the rendered model).
-    'carModel',
-    // lights + lighting are driven by their own messages (SET_VEHICLE_LIGHTS / SET_ENV_PARAMS),
-    // not the product payload.
-    'headlightsOn',
-    'brakeLightsOn',
-    'lightingMode',
-    'seatClimateModes',
-    'steeringWheelClimate',
-    'vehicleConnected',
-    'tirePressureVisible',
-    'mediaPlaying',
-  ]);
-  for (const key of Object.keys(next) as Array<keyof VehicleViewState>) {
-    if (ignoredKeys.has(key)) {
-      continue;
-    }
-    if (previous[key] !== next[key]) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function createGodotStatePayload(state: VehicleViewState) {
   const chargeState: Record<string, unknown> = {
     charge_port_door_open: state.chargePortOpen || state.cableAttached || state.charging,
