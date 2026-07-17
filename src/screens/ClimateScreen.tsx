@@ -9,9 +9,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Device from 'expo-device';
-
-import { teslaStatusBarHeight } from '@/godot/teslaStatusBarHeight';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
@@ -54,18 +51,9 @@ type ActivationTemp = '30' | '35' | '40';
 // Climate controls — RN build of the Tesla climate sheet. The bar is a bottom-anchored panel that you
 // drag up/down BY THE PANEL ITSELF (like the real app — swiping above it, on the car, does nothing).
 // Collapsed it shows the temp row; dragging up reveals Defrost / Bioweapon / Camp / Pet / Cabin Overheat.
-// TEMPORARY diagnostic overlay. The RE proves our Climate frame/pose/keep_aspect
-// are identical to the official app's and that nothing scales the car per-view,
-// yet on-device ours renders slightly smaller — so one of the INPUTS we feed the
-// maths must not be what we assume. tesla-climate-sheet-FINDINGS §1b flagged the
-// containerHeight=852 assumption as "the thing to check first". This prints the
-// real values so we measure instead of infer. Remove once resolved.
-const SHOW_FRAME_DEBUG = true;
-
 export function ClimateScreen({ state, actions }: Props) {
-  const { width, height } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const SBH = teslaStatusBarHeight(Device.modelId ?? null, insets.top);
 
   // Collapsed peek = how much of the panel shows at rest.
   //
@@ -180,24 +168,6 @@ export function ClimateScreen({ state, actions }: Props) {
       {/* Seat + steering-wheel heater controls pinned to the Godot markers over the top-down car. */}
       <ClimateMarkerOverlay state={state} actions={actions} />
 
-      {SHOW_FRAME_DEBUG ? (
-        <View style={styles.frameDebug} pointerEvents="none">
-          <Text style={styles.frameDebugText}>
-            {`win ${Math.round(width)}x${Math.round(height)}  inset ${insets.top} -> tesla sbh ${SBH}\n` +
-              `${Device.modelId ?? '?'}\n` +
-              `frame top ${SBH} height ${Math.round(height - SBH - 240)}\n` +
-              `scale ${((height - SBH - 240) / height).toFixed(4)}  center_y ${(
-                SBH +
-                (height - SBH - 240) / 2
-              ).toFixed(1)}\n` +
-              `sheet peek ${PEEK} top ${Math.round(height - PEEK)}\n` +
-              `was (inset 68): h ${Math.round(height - insets.top - 240)} scale ${(
-                (height - insets.top - 240) /
-                height
-              ).toFixed(4)}`}
-          </Text>
-        </View>
-      ) : null}
 
       <Animated.View
         onLayout={onSheetLayout}
@@ -420,20 +390,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  frameDebug: {
-    position: 'absolute',
-    top: 90,
-    left: 8,
-    zIndex: 999,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    padding: 6,
-    borderRadius: 4,
-  },
-  frameDebugText: {
-    color: '#0f0',
-    fontSize: 10,
-    fontFamily: 'Menlo',
   },
   sheet: {
     position: 'absolute',
