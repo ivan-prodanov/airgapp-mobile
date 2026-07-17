@@ -44,11 +44,12 @@ const HEATER_OFF = '#999999'; // buttonHeaterOff (Cybertruck: #898989)
 // NOT YET APPLIED (findings §3b): a DISABLED marker keeps its tint and dims its
 // icon container to iconButtonBusyOpacity = 0.5. We have no disabled state on
 // these markers yet, so there's nothing to gate it on — wire it in when we do.
-// Retained for our wave glyph, which is NOT how they draw levels — see the note
-// on the seat colours above; replacing it needs their seat_climate_* assets.
-const DIM = 'rgba(255,255,255,0.55)';
-const AUTO_WAVE = 'rgba(255,255,255,0.9)';
-const WHEEL_GREY = HEATER_OFF;
+// The unlit waves of our (deliberately kept) wave-fill glyph. Their level ramp is
+// four discrete assets rather than a fill, so this has no counterpart in their
+// palette — it is the one colour here that stays ours by choice.
+const UNLIT = 'rgba(255,255,255,0.28)';
+
+const isWheelMarker = (marker: string) => marker === 'steeringWheel';
 
 // Control box (centered on the marker) and how far below it the Heat/Cool/Auto menu floats.
 const BOX = { w: 58, h: 60 } as const;
@@ -273,12 +274,28 @@ function Control({
   onPress: () => void;
 }) {
   const point = anchorToPoint(anchor, pixelRatio, CLIMATE_MARKER_CALIBRATION[marker] ?? { dx: 0, dy: 0 });
-  const color = mode === 'heat' ? HEAT : mode === 'cool' ? COOL : mode === 'auto' ? AUTO_WAVE : DIM;
+  // findings §3b — the two families take DIFFERENT rules, and ours had them the
+  // same. There is no per-level tint and no `buttonCoolerOff` token in their
+  // bundle at all; only heaterOn / heaterOff / coolerOn exist.
+  //
+  // SEATS: `coolerOn` iff the seat is cooling, ELSE `heaterOn` — at EVERY level
+  // INCLUDING off. The seat glyph NEVER uses heaterOff. Off-ness is carried by
+  // the icon (theirs swaps seat_climate_0..3; ours lights 0 waves) — never by
+  // the tint. So `auto` and `off` are NOT grey: they are heaterOn, same as heat.
+  // Our old AUTO_WAVE/DIM greys were inventions and are gone.
+  const isCooling = mode === 'cool';
+  const color = isWheelMarker(marker)
+    ? // WHEEL: the one element that really does go grey when off — ON ->
+      // heaterOn, OFF -> heaterOff (this is the user's "different colour when
+      // not enabled").
+      (mode === 'heat' && level >= 1 ? HEAT : HEATER_OFF)
+    : isCooling
+      ? COOL
+      : HEAT;
   // Auto has no level ramp; light every wave so the glyph reads as "on" with the Auto label below.
   const lit = mode === 'auto' ? waves : level;
-  // Steering wheel turns the S-line colour as long as ≥1 wave is actually lit red (heat, level ≥ 1).
-  const wheelColor = mode === 'heat' && lit >= 1 ? color : WHEEL_GREY;
-  const isWheel = marker === 'steeringWheel';
+  const wheelColor = color;
+  const isWheel = isWheelMarker(marker);
   // The rim shape follows VehicleConfig.steeringWheelType: round wheel vs the flat-top yoke (S/X Plaid).
   const isYoke = wheelType === 'yoke';
   const wheelUri = isYoke ? STEERING_YOKE_URI : STEERING_WHEEL_URI;
@@ -299,7 +316,7 @@ function Control({
           // INDIVIDUAL glyphs (same as the seats) so each lights by level (2→1→off), not all-or-nothing.
           // The unlit waves take the wheel's grey; the whole group pulses on press.
           <Animated.View style={[styles.wheelBox, { transform: [{ scale }] }]}>
-            <WaveGlyph waves={waves} lit={lit} color={color} dimColor={WHEEL_GREY} waveStyle={styles.wheelWave} stretch />
+            <WaveGlyph waves={waves} lit={lit} color={color} dimColor={UNLIT} waveStyle={styles.wheelWave} stretch />
             <Image source={{ uri: wheelUri }} style={[isYoke ? styles.yokeIcon : styles.wheelIcon, { tintColor: wheelColor }]} resizeMode="contain" />
           </Animated.View>
         ) : (
@@ -333,7 +350,7 @@ function WaveGlyph({
 }) {
   const items = [];
   for (let i = 0; i < waves; i += 1) {
-    const c = i < lit ? color : dimColor ?? DIM;
+    const c = i < lit ? color : (dimColor ?? UNLIT);
     items.push(
       <Image
         key={i}
@@ -377,7 +394,7 @@ const styles = StyleSheet.create({
     width: 19,
     height: 15, // matches the trimmed wheel aspect (172x132) so there's no internal whitespace
     marginTop: -2, // pull the wheel up so the waves sit right on it (no gap)
-    tintColor: WHEEL_GREY,
+    tintColor: HEATER_OFF, // overridden inline per state; this is the resting value
   },
   // The yoke rim is wider + shorter than the round wheel (trimmed 192x107 ≈ 1.79:1); keep a similar
   // visual height so the waves sit on it the same way.
@@ -385,7 +402,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 14.5,
     marginTop: -1,
-    tintColor: WHEEL_GREY,
+    tintColor: HEATER_OFF, // overridden inline per state; this is the resting value
   },
   wheelWave: {
     width: 8.5,
