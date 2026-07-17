@@ -4,29 +4,70 @@ Written 2026-07-17 after a batch of command-mapping bugs surfaced on the real ca
 The point of this doc: stop testing writes against a fantasy, and make every
 control verifiable from the pulled log (`scripts/godot-ios/pull-logs.sh`).
 
-## The core problem: the app boots from a MOCK, and most fields are never read back
+## The core problem — CORRECTED (2026-07-17): the car reports almost everything; our PARSER is a stub
 
-`initialVehicleState` is a plausible mock (battery 48, seat modes off, temp 19.5,
-camp/pet off…). Telemetry then patches SOME fields; the rest stay mock **forever**.
-A user WRITE therefore diffs `next` against a `prev` that may never have matched
-the car. That is the disease behind "Camp/Pet don't do what's intended",
-"overheat temp does nothing that I can see", etc.
+Earlier I called most climate fields "write-only / mock-only". **That was wrong,
+and wrong in the usual way — I read our parser, not the car.** The car's
+`ClimateState` message (vehicle.proto) reports ~40 fields, INCLUDING every one I'd
+written off:
 
-### State provenance (what is truth vs fiction)
+  driver_temp_setting · is_front/rear_defroster_on · defrost_mode ·
+  seat_heater_left/right/rear_*/third_row_* · seat_fan_front_left/right (cooling) ·
+  steering_wheel_heater + steering_wheel_heat_level · climate_keeper_mode ·
+  auto_seat_climate_left/right (SEAT AUTO STATE) · cop_activation_temperature ·
+  is_auto_conditioning_on · supports_fan_only_cabin_overheat_protection ·
+  cop_not_running_reason
 
-**READ back from telemetry** (VCSEC works asleep; infotainment needs awake):
-`locked, awake, driving, charging, batteryLevel, rangeMiles, interiorTempC,
-exteriorTempC, climateOn, sentryEnabled, leftFront/rightFront/leftRear/rightRear
-WindowOpen`.
+Our `infotainmentToPatch` parses **four** ClimateState fields
+(insideTemp/outsideTemp/driverTemp/isOn) and APPLIES **three** — it doesn't even
+push the `targetTempC` it already parses. So the mock isn't lying because the car
+is silent; it's lying because we map ~6 fields out of ~40 across ChargeState +
+ClimateState. **The whole "app is fiction" problem is one under-built parser.**
 
-**WRITE-ONLY / MOCK-ONLY — never read, so the app's value is always a guess:**
-`frunkOpen, trunkOpen, chargePortOpen, chargeLimitPercent, chargingAmps,
-targetTempC, frontDefrostOn, rearDefrostOn, cabinOverheatMode, cabinOverheatTemp,
-bioweaponOn, campModeOn, petModeOn, steeringWheelClimate, seatClimateModes`.
+### Provenance, corrected
 
-⇒ **Every climate setpoint and comfort toggle is in the second list.** Fixing the
-command mappings is necessary but not sufficient; until these are read back, the
-UI and the car can silently diverge.
+- **READ+WRITE (full loop possible)** — everything above, PLUS lock/charging/
+  windows/sentry we already read. Once the parser is expanded, a user WRITE is
+  confirmed (or reverted) by the next poll reading the car's real value. This is
+  the vast majority of controls.
+- **READ-ONLY** — battery, range, temps, driving, cop_not_running_reason.
+- **WRITE-ONLY (genuinely no readback)** — only the momentary actions that have no
+  state at all: honk, flash, remote-start, boombox, and open-only frunk. These are
+  the ONLY fields that can't be reconciled, so they're the ones that structurally
+  need the "waiting" UX (§ below).
+
+## THE DECISION (answering the three options)
+
+1. **Continue with the mock? NO.** It's the disease — a broken read is invisible
+   because the field already looks right, and every write diffs against fiction.
+2. **Erase defaults to prove READ? YES, FIRST — but the real work is PARSE, not
+   erase.** Erasing without expanding `infotainmentToPatch` would blank fields
+   because OUR parser is silent, not the car — conflating the two. So:
+   **expand the parser to map the full ClimateState/ChargeState, THEN boot the
+   readable fields to `unknown`, THEN confirm on the car that each loads.** A
+   field still stuck on "—" after that is a real gap (car doesn't report it, or a
+   parse bug) — now visible instead of hidden behind a mock.
+3. **WRITE-test each control? SECOND — and it becomes SELF-VERIFYING once reads
+   work.** Change a control → the log shows the command → the next poll reads the
+   car's real state back → it either CONFIRMS the optimistic value or REVERTS it.
+   No more eyeballing "did that work"; the read is the oracle.
+
+**Your gut (2 then 3) is right.** The only refinement: 2 is really
+"parse-then-erase-then-read", because the car was never the bottleneck.
+
+## The insight that unifies this with the optimistic-vs-waiting report
+
+The report you commissioned (which controls apply optimistically vs show a
+spinner) maps ONTO readability:
+- A **readable** field can safely be **optimistic** — if the command fails, the
+  next poll reconciles it back. The read is the safety net.
+- A field with **no readback** (the momentary actions) has no safety net, so it's
+  the natural candidate for **waiting** (hold the spinner until the ack).
+
+So the two workstreams converge on the same table. Where the app's actual
+behaviour DISAGREES with readability (e.g. it treats something as "waiting" that
+the car clearly reports) is itself a finding — usually that the app reads a field
+we're not parsing. Reconcile the report against the corrected provenance above.
 
 ## Methodology — two independent passes
 
