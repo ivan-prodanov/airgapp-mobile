@@ -68,6 +68,11 @@ const AUTO_BLE_SCAN_TIMEOUT_MS = 6000;
 // enough for a live lock/awake/closures indicator without spamming the link.
 const POLL_MS = 20_000;
 
+// How often the poll does the HEAVY infotainment (charge/range) read. VCSEC runs
+// every POLL_MS; this rides on top far less often. Charge state changes slowly,
+// and a cold domain-3 open is ~8s of shared-queue time — see the tick.
+const INFOTAINMENT_MS = 60_000;
+
 // OPTIMISTIC_TIMEOUT_MS is the hard wall-clock cap on a pending record — the
 // official app's `OPTIMISTIC_TIMEOUT_MS = TimeInMs.THIRTY_SECONDS` (findings
 // §2.3, hasm:1435013). Their expiry selector is a PURE time comparison
@@ -164,6 +169,9 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   // affectedKeys (no pending affordance) — because finishing the command, not
   // showing a spinner, is what the deferral protects. See teardown below.
   const inFlightRef = useRef(0);
+  // Last INFOTAINMENT (charge/range) read. Throttles the heavy domain-3 poll so
+  // it can't block interactive commands — see the poll tick.
+  const lastInfotainmentAtRef = useRef(0);
   const deferredTeardownRef = useRef(false);
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
@@ -613,6 +621,10 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         // the UI, and an already-awake car makes this a no-op anyway. The
         // gateway's own deadline bounds this, so the spinner can't hang.
         await gw.wake().catch(() => {});
+        // A user-initiated refresh must actually refresh — bypass the
+        // infotainment throttle so charge/range update NOW, not on the next
+        // 60s window.
+        lastInfotainmentAtRef.current = 0;
         await tickRef.current?.();
       } finally {
         setWakeInFlight(false);
@@ -639,6 +651,13 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
 
     const tick = async () => {
       if (stopped || paused || inFlight) return;
+      // ⚠️ Interactive commands own the BLE link; the background poll yields.
+      // Everything for the live car runs through ONE per-VIN FIFO, so a poll
+      // that's mid-flight blocks a user's Lock behind it. Cheap to skip a 20s
+      // liveness tick; expensive to make someone wait 8s for a lock because a
+      // background read got there first. A tick lands as soon as the command
+      // settles (inFlightRef hits 0).
+      if (inFlightRef.current > 0) return;
       const gw = getGateway();
       if (!gw) {
         // Linked but the gateway isn't ready yet (config/keys still loading).
@@ -668,10 +687,25 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         // reads simply fault on a sleeping one. Best-effort — a failure here
         // must not knock the connection offline, because the VCSEC read above
         // already succeeded and is what 'online' means.
-        if (patch.awake === true) {
+        // Throttled to INFOTAINMENT_MS, NOT every VCSEC tick. This read is the
+        // heavy one — domain 3, needs the car awake, and its session evicts the
+        // moment the car dozes, so an every-20s cold re-open was blocking user
+        // commands in the shared FIFO for ~8s each (the "every command took
+        // 8-10s until it suddenly went fast" report — the "fast" was the car
+        // finally staying awake so domain 3 cached). Charge/range move slowly;
+        // 60s is plenty, and it's skipped entirely while a command is in flight
+        // or one landed in the last INFOTAINMENT_MS. The VCSEC half above keeps
+        // Home live every tick regardless.
+        const now = Date.now();
+        if (
+          patch.awake === true &&
+          inFlightRef.current === 0 &&
+          now - lastInfotainmentAtRef.current >= INFOTAINMENT_MS
+        ) {
           try {
             const snap = await gw.awakeSync();
             if (stopped || paused) return;
+            lastInfotainmentAtRef.current = Date.now();
             const infoPatch = filterPatchUnderIntent(
               infotainmentToPatch(snap),
               intentRef.current,
@@ -683,7 +717,9 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
             }
           } catch {
             // Asleep mid-read, or the infotainment session faulted. The VCSEC
-            // half stands; try again next tick.
+            // half stands; retry after the throttle window (don't hammer a cold
+            // domain-3 open every tick — that WAS the bug).
+            lastInfotainmentAtRef.current = Date.now();
           }
         }
         if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
