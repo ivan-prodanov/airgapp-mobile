@@ -5,6 +5,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { controlHaptic } from '../state/controlHaptic';
 import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
+import { TeslaFonts } from '@/constants/fonts';
 import { isLightExteriorColor } from './markerPaint';
 import { useContentFade } from './useContentFade';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -197,17 +198,25 @@ const styles = StyleSheet.create({
   // fontSize 18 and alpha 0.7 are theirs (we had 19 / 0.92), and the textShadow
   // we used to draw was our own invention — dropped.
   //
-  // ⚠️ fontWeight '600' is DEVICE-VERIFIED, NOT RECOVERED. That literal carries
-  // no fontWeight because — as §2b itself notes — "weight/family come from the
-  // shared Button component's defaults", which the RE did NOT recover. Deleting
-  // the weight therefore did NOT inherit Tesla's default; it fell back to RN's
-  // regular 400, and the user reported the label was no longer bold enough while
-  // the previous '600' matched. So 600 stays until someone dumps their Button's
-  // default textStyle (asked for in brief #11 §3). Do not "correct" this to the
-  // §2b literal — the literal is silent on weight, it does not say 400.
+  // R12 §2 recovered the shared Button's default at last, and the user's read was
+  // right with the wrong lever:
+  //   Button GHOST default = { fontFamily:'UniversalSansText-Medium', fontSize:14,
+  //                            lineHeight:20, letterSpacing:0.1 }  — NO fontWeight
+  //   the marker's own textStyle then overrides color + fontSize -> 18.
+  // ⇒ resolved: { fontFamily:'UniversalSansText-Medium', fontSize:18,
+  //               lineHeight:20, letterSpacing:0.1, color:<gray|dark> }
+  //
+  // Our `fontWeight: '600'` was APPROXIMATING the Medium cut against RN's default
+  // face — which is why dropping it fell back to regular 400 and read wrong. The
+  // weight was never the lever: Medium is its own single-face family (R5 §1b), so
+  // fontWeight cannot select a cut; only the PostScript name can. A 600/SemiBold
+  // cut doesn't even exist — Universal Sans ships five (Thin/Light/Regular/
+  // Medium/Bold). So: name the family, drop the weight.
   label: {
+    fontFamily: TeslaFonts.medium,
     fontSize: 18,
-    fontWeight: '600',
+    lineHeight: 20,
+    letterSpacing: 0.1,
     color: TEXT_COLOR_GRAY,
   },
   // findings §2c: ONLY the frunk label adapts to the paint. The lock glyph and

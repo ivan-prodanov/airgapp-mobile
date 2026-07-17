@@ -99,7 +99,13 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // in over Home at the same moment, so Home's content must be gone immediately
   // or you'd see two screens at once. `covered` is our `!isFocused`.
   const focused = !covered;
-  const contentFade = useRef(new Animated.Value(0)).current;
+  // ⚠️ Seed `focused ? 1 : 0`, NOT 0 (R12 §3's trap). Theirs is
+  // `useRef(new Animated.Value(isFocused ? 1 : 0))` — Home MOUNTS ALREADY
+  // VISIBLE and its 300ms enter never plays on a cold start. That seed is
+  // correct precisely BECAUSE Home is the always-mounted card underneath, which
+  // ours now is too. Seeding 0 would fade Home in on every app launch, which the
+  // real app never does. (The pushed panels DO seed 0 — see useContentFade.)
+  const contentFade = useRef(new Animated.Value(focused ? 1 : 0)).current;
   useEffect(() => {
     Animated.timing(contentFade, {
       toValue: focused ? 1 : 0,

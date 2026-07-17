@@ -333,7 +333,13 @@ function Control({
         )}
         {/* "Auto" floats BELOW the glyph (absolute, anchored to the glyph's bottom) so switching to Auto
             doesn't shove the icon up — matches the Tesla app, where the glyph stays put. */}
-        {mode === 'auto' ? <Text style={styles.autoLabel}>Auto</Text> : null}
+        {mode === 'auto' ? (
+          // Follow THIS marker's own colour: the wheel's glyph is `wheelColor`
+          // (it greys out when off), the seats' is `color` (the wave tint). They
+          // resolve differently, so the label must pick the matching one rather
+          // than share a hardcoded white.
+          <Text style={[styles.autoLabel, { color: isWheel ? wheelColor : color }]}>Auto</Text>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -433,7 +439,10 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.82)',
+    // Colour is applied inline: "Auto" follows ITS OWN marker's colour, and the
+    // seat and the steering wheel resolve to different ones (the wheel greys out
+    // when off; the seats take the heat/cool tint). A hardcoded white made every
+    // Auto label the same regardless of which marker it sat under.
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
