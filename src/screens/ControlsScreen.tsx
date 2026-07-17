@@ -1,8 +1,9 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
 import { MarkerOverlay } from '../godot/MarkerOverlay';
+import { useContentFade } from '../godot/useContentFade';
 import { CONTROL_ACTIONS, type ControlActionId } from '../state/controlActions';
 import { controlHaptic } from '../state/controlHaptic';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -21,9 +22,15 @@ const BOTTOM_BAR_LIFT = 10;
 // Controls screen: the closure marker overlay (frunk/trunk Open · center lock · charge port) drawn
 // over the top-down car, plus the bottom action bar (Flash / Honk / Start / Vent).
 export function ControlsScreen({ state, actions }: Props) {
+  // findings R10 §1c: their Controls drives TEN opacity sites from ONE clock —
+  // the 5 markers AND these 5 bottom buttons — started on the markers response.
+  // So the buttons wait for the markers too, and the screen resolves as one
+  // object. Same hook as MarkerOverlay, same event, same frame.
+  const fade = useContentFade();
   return (
     <>
       <MarkerOverlay state={state} actions={actions} />
+      <Animated.View style={{ opacity: fade }} pointerEvents="box-none">
       <SafeAreaView edges={['bottom']} style={styles.bar}>
         {/* Same actions as the Customize Controls grid — they run identically. */}
         <Action id="flash" state={state} actions={actions} />
@@ -31,6 +38,7 @@ export function ControlsScreen({ state, actions }: Props) {
         <Action id="start" state={state} actions={actions} />
         <Action id="vent" state={state} actions={actions} />
       </SafeAreaView>
+      </Animated.View>
     </>
   );
 }

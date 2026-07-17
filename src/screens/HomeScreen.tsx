@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
+  Easing,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -23,6 +24,7 @@ import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
 import { ChargeStatus } from '@/components/ChargeStatus';
 import { vehicleStatusText } from '@/ble/vehicleStatusText';
+import { CONTENT_FADE_MS } from '@/godot/useContentFade';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
@@ -85,6 +87,19 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
     now: Date.now(),
   });
 
+  // The whole-content fade (see the note on the root element below). Home's own
+  // clock is focus-keyed rather than markers-keyed (findings R10 §1c), and since
+  // our panel mounts on entry, mount IS the focus event.
+  const contentFade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(contentFade, {
+      toValue: 1,
+      duration: CONTENT_FADE_MS,
+      easing: Easing.cubic,
+      useNativeDriver: true,
+    }).start();
+  }, [contentFade]);
+
   const carBand = height * 0.43; // spacer above the menu = header + car; keeps the rest position
   const EXPAND = height * 0.21; // scroll distance from rest to fully-open (over the car)
 
@@ -144,7 +159,15 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
   };
 
   return (
-    <View style={styles.root} pointerEvents="box-none">
+    // findings R10 §1c: VehicleHomeScreen wraps its ENTIRE content tree in one
+    // <Animated.View style={{opacity}}> — header, favourites row and menu rows
+    // all together — with `duration = isFocused ? 300 : 0`. So leaving Home
+    // blanks the content INSTANTLY (0ms) and returning fades it back over 300ms
+    // Easing.cubic. That is the user's "elements fade in on Home".
+    //
+    // Ours is an in-page panel rather than a route, so it unmounts on leave —
+    // the 0ms blank is implicit — and this only has to do the 300ms return.
+    <Animated.View style={[styles.root, { opacity: contentFade }]} pointerEvents="box-none">
       {/* pure black — fades the car in as the menu rises over it */}
       <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
 
@@ -289,7 +312,7 @@ export function HomeScreen({ state, actions, swipeHandlers }: ScreenProps) {
         ) : null}
         </Animated.View>
       </SafeAreaView>
-    </View>
+    </Animated.View>
   );
 }
 

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, PixelRatio, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageStyle, type StyleProp } from 'react-native';
+import { Animated, Image, PixelRatio, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageStyle, type StyleProp } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 import { useGodotBridge } from './bridgeContext';
+import { useContentFade } from './useContentFade';
 import { anchorToPoint, CLIMATE_MARKER_CALIBRATION, markerAnchorPx } from './markerLayout';
 import { SEAT_WAVE_URI } from './seatWaveIcon';
 import { STEERING_WHEEL_URI, STEERING_YOKE_URI } from './steeringWheelIcon';
@@ -60,9 +61,8 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
   const { width: screenW } = useWindowDimensions();
   const pixelRatio = PixelRatio.get();
   const [markers, setMarkers] = useState<VehicleMarkers | null>(null);
-  // The 300ms Easing.cubic content fade (findings R10 §3d) — see MarkerOverlay.
-  const fade = useRef(new Animated.Value(0)).current;
-  const faded = useRef(false);
+  // The 300ms Easing.cubic content fade (findings R10 §3d) — see useContentFade.
+  const fade = useContentFade();
   const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState<ClimateKey | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,21 +90,7 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
   );
 
   useEffect(() => {
-    const offMarkers = bridge.onMarkers((m) => {
-      setMarkers(m);
-      // findings R10 §3d: Climate's overlay holds its OWN Animated.Value(0) and
-      // runs the same 300ms Easing.cubic clock as Controls — and, like Controls,
-      // it fires inside the vehicle-markers callback rather than on mount.
-      // First response only; see the note in MarkerOverlay.
-      if (faded.current) return;
-      faded.current = true;
-      Animated.timing(fade, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.cubic,
-        useNativeDriver: true,
-      }).start();
-    });
+    const offMarkers = bridge.onMarkers(setMarkers);
     const offVisibility = bridge.onMarkerVisibility(setVisible);
     bridge.requestMarkers();
     return () => {

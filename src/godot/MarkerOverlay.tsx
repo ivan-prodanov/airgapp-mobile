@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, PixelRatio, Pressable, StyleSheet, Text } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { controlHaptic } from '../state/controlHaptic';
 import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
 import { isLightExteriorColor } from './markerPaint';
+import { useContentFade } from './useContentFade';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { MarkerPoint, VehicleMarkers } from '../types/markerTypes';
 import { vehicleConfigs } from '../types/vehicleTypes';
@@ -32,33 +33,13 @@ export function MarkerOverlay({ state, actions }: Props) {
   const [visible, setVisible] = useState(false);
   const pixelRatio = PixelRatio.get();
 
-  // findings (R10 §1c): the official app fades its Controls content in over
-  // 300ms Easing.cubic, native-driven — and crucially the clock starts INSIDE
-  // the vehicle-markers callback (getVehicleMarkers -> setMarkers -> .start()),
-  // NOT on mount or focus. So if the markers are slow, the screen is already
-  // there while they're still at opacity 0. One shared value drives all of them
-  // (10 opacity sites over there: 5 markers + 5 bottom buttons).
-  //
-  // We had no fade at all — everything appeared at full opacity the instant the
-  // panel mounted, which is the user's "all elements are suddenly shown".
-  const fade = useRef(new Animated.Value(0)).current;
-  const faded = useRef(false);
+  // The screen's content fade — see useContentFade. ControlsScreen runs the same
+  // hook for the bottom buttons, so both start on the same markers event and the
+  // screen resolves as one object, the way their single shared value does.
+  const fade = useContentFade();
 
   useEffect(() => {
-    const offMarkers = bridge.onMarkers((m) => {
-      setMarkers(m);
-      // Only the FIRST markers response starts it; later ones (the camera
-      // re-requests when it settles) must not restart the ramp or the markers
-      // would blink mid-session. Brief #12 §3 asks what their guard actually is.
-      if (faded.current) return;
-      faded.current = true;
-      Animated.timing(fade, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.cubic,
-        useNativeDriver: true,
-      }).start();
-    });
+    const offMarkers = bridge.onMarkers(setMarkers);
     const offVisibility = bridge.onMarkerVisibility(setVisible);
     // Mount happens on entering Controls; the camera move already re-requests markers when it
     // settles, but ask once more in case we arrived with the camera already at rest.
