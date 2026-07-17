@@ -175,17 +175,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // findings §2b, VERBATIM — and ours was wrong on all three counts (we had
-  // fontSize 19, fontWeight '600', alpha 0.92):
+  // findings §2b, VERBATIM:
   //   styles.textButton    = { height: 30, minHeight: 0, paddingVertical: 0 }
   //   styles.textColorGray = { color: 'rgba(255,255,255,0.7)', fontSize: 18 }
   //   styles.textColorDark = { color: 'rgba(0,0,0,0.7)',       fontSize: 18 }
   //   styles.disabledStyle = { opacity: 0.4 }
-  // That is the ENTIRE literal: no fontWeight, no fontFamily, no letterSpacing,
-  // no shadow, no backdrop — weight/family come from their shared Button's
-  // defaults. The textShadow we had is our own invention; dropped.
+  // fontSize 18 and alpha 0.7 are theirs (we had 19 / 0.92), and the textShadow
+  // we used to draw was our own invention — dropped.
+  //
+  // ⚠️ fontWeight '600' is DEVICE-VERIFIED, NOT RECOVERED. That literal carries
+  // no fontWeight because — as §2b itself notes — "weight/family come from the
+  // shared Button component's defaults", which the RE did NOT recover. Deleting
+  // the weight therefore did NOT inherit Tesla's default; it fell back to RN's
+  // regular 400, and the user reported the label was no longer bold enough while
+  // the previous '600' matched. So 600 stays until someone dumps their Button's
+  // default textStyle (asked for in brief #11 §3). Do not "correct" this to the
+  // §2b literal — the literal is silent on weight, it does not say 400.
   label: {
     fontSize: 18,
+    fontWeight: '600',
     color: TEXT_COLOR_GRAY,
   },
   // findings §2c: ONLY the frunk label adapts to the paint. The lock glyph and

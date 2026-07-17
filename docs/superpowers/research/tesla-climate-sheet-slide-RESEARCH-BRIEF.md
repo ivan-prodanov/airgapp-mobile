@@ -49,11 +49,25 @@ It sits near the **top edge of the screen**, roughly where the car's windscreen 
 3. Is it **paint/car dependent**, or fixed chrome? Does it appear on Controls/Home too, or Climate only?
 4. Give its exact geometry (height/position in points) and colour(s) so we can reproduce or rule it out.
 
+## §3. The `Button` component's default textStyle — R10 §2b left this open and it cost us
+
+R10 §2b dumped the Controls marker label style verbatim and correctly noted it carries **no `fontWeight` and no `fontFamily`**, adding: *"Weight/family come from the shared `Button` component's defaults."* **But it never recovered those defaults.**
+
+We took the literal at face value, dropped our `fontWeight: '600'`, and shipped — which did NOT inherit Tesla's default, it fell back to **RN's regular 400**. The user immediately reported the label was no longer bold enough, and that our previous 600 had matched. We've restored 600 on his word alone.
+
+Give us the real value:
+1. **The shared `Button` component's default `textStyle`**, verbatim — `fontFamily`, `fontWeight`, `fontSize`, `letterSpacing`, `lineHeight` — as it resolves for `appearance={ButtonAppearance.GHOST}` (the appearance the frunk/trunk labels use).
+2. Does it route through the TDS `<Text category=…>` path (i.e. a `Typography` entry → `getFontStyle` → a `UniversalSansText-*` PostScript name, as R5 §2a established for the status line)? If so, **which category**, and therefore **which cut**?
+3. If the resolved family is a Universal Sans cut, say which — **we already ship `UniversalSans-Text-Medium-540.ttf`** and can add another face if needed. Remember R5 §1b's trap: their name table gives Medium its own single-face family, so `fontFamily` + `fontWeight` does NOT reach a different cut — the PostScript name is what selects the weight.
+4. Does `ButtonAppearance.GHOST` alter the text style (weight/opacity) versus the default appearance?
+5. Same question for the **bottom row** (`ControlButton`, `ControlButtonAppearance.STATELESS_GHOST`) — its label's resolved family/weight/size.
+
 ---
 
 ## Output format
 1. **The slide** — the exact mechanism, verbatim, with the animation config and the from→to in points. If `animateOnMount:false` coexists with a real slide, explain how (that's the interesting part).
 2. **The top line** — what it is, RN or renderer, verbatim style/geometry, and whether it's Climate-only.
-3. **Citations**; iOS-verified vs Android-only. **Gaps**, plainly.
+3. **The Button default textStyle** — resolved family/weight, and the cut we should ship.
+4. **Citations**; iOS-verified vs Android-only. **Gaps**, plainly.
 
 **Note on §1:** "not in the bundle" is not an available answer this round — the user watched it happen. If you genuinely cannot find it, say exactly where you looked and what you ruled out, so we can capture it in slow motion and work backwards.
