@@ -10,6 +10,8 @@
 
 ---
 
+> **⚠️ Corrected by Round 8** (`tesla-climate-sheet-FINDINGS.md`): §3a's Service-carousel note lists `forceCloseAllClosures`/`fadeRoof`/`showFXAbove` in a way that implies they are Service-only. **They are not — the Climate screen calls all three.** `FADE_ROOF` = `{type:"FADE_ROOF", data:{vehicle_id, fade:true, animated:true, duration:0.25}}` and affects **roof material alpha only** (no geometry/scale). Everything else in this document stands, and R8 independently re-confirmed the Model 3/Y pose ruling (§3c) *by construction*: the per-carType override table has exactly two keys (`CARTYPESEMITRUCK`, `CARTYPECYBERTRUCK`), so Model 3/Y provably resolves to the base table.
+
 ## ⚠️ Corrections to earlier rounds (fix these so nobody trusts them again)
 
 1. **R5 §3b "Controls → PARKED" is WRONG.** The Controls *screen* (a distinct route, module fn #98623/#98626) unconditionally sends **`CameraPosition.TOP_DOWN`**. There is no per-vehicle-state camera machine on Controls (unlike Home). `[iOS-verified]` — fn #98626 case 112, iOS 4039675.

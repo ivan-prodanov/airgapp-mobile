@@ -55,9 +55,19 @@ export function ClimateScreen({ state, actions }: Props) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
-  // Collapsed peek = how much of the panel shows at rest (handle + temp row + Defrost), placing the
-  // grab handle at ~0.75 of the screen like the official app.
-  const PEEK = height * 0.25;
+  // Collapsed peek = how much of the panel shows at rest.
+  //
+  // 270 is THEIR literal — the Climate sheet is a @gorhom/bottom-sheet with
+  // `snapPoints: [270]`, the only snapPoint in the module, identical on iOS 4.56
+  // and Android 4.58 (tesla-climate-sheet-FINDINGS §1a). It mounts collapsed at
+  // detent 0 and can never be dismissed (`enablePanDownToClose: false`).
+  //
+  // This was `height * 0.25` = 213 — 57pt too short. That is the whole of the
+  // user's "ours shows more hood": the car band is FIXED at 59..612 on both
+  // apps, so their 270 sheet (top 582) covers the bottom 30pt of the car while
+  // our 213 sheet (top 639) covered nothing and left a 27pt gap. Same car
+  // pixels, different occlusion — the RE proved nothing scales the car per-view.
+  const PEEK = 270;
 
   // Bottom-anchored panel translated down by `translateY`; snaps between collapsed and expanded.
   const translateY = useRef(new Animated.Value(height)).current;
@@ -388,25 +398,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     gap: 12,
-    // Slightly elevated tone vs the scene + a soft top shadow and hairline so the bar reads as a
-    // sheet sitting above the page (matches the official app's separation between car and controls).
-    backgroundColor: '#1C1C1E',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.09)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.55,
-    shadowRadius: 16,
+    // findings §1e, verbatim. The sheet is FULLY OPAQUE `theme.backgroundColor`
+    // (#161718) — no blur, no translucency — which is what hides the bottom of
+    // the car. Corners are SQUARE (`bottomSheetBackgroundStyle: {borderRadius:0}`
+    // overriding gorhom's default 15) and there is no top hairline. Shadow is
+    // theirs: offset (0,10), opacity 1, radius 20, black — the radius exceeds the
+    // downward offset, so it still reads as a soft edge above the sheet.
+    backgroundColor: '#161718',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 1,
+    shadowRadius: 20,
   },
+  // findings §1e: the real grabber is SheetHandle's own style — 50x5, radius 5,
+  // marginTop 10 (our paddingTop above supplies that), opacity 0.2, centred. The
+  // handleStyle/handleIndicatorStyle Climate passes are DEAD CODE: it also
+  // passes handleComponent=SheetHandle, which consumes no props.
+  // NOTE: the colour token (`colors.highlight`) was NOT resolved to a hex
+  // (findings §4) — white at their 0.2 opacity is the closest faithful stand-in.
   handle: {
     alignSelf: 'center',
-    width: 38,
+    width: 50,
     height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.32)',
-    marginBottom: 6,
+    borderRadius: 5,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.2,
   },
   climateTemps: {
     textAlign: 'center',
