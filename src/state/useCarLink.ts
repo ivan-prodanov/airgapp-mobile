@@ -49,6 +49,7 @@ import { DirectBleTransport } from '@/ble/directBleTransport';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
+import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
@@ -369,18 +370,32 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     if (AppState.currentState !== 'active') teardown();
   }, [teardown]);
 
-  const dispatch = useCallback(
-    (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => {
-      // Stamp the just-changed keys with a grace window BEFORE issuing the
-      // command so a poll that fires mid-flight (or on a lagging sensor after)
-      // can't revert the optimistic value. Recorded even if the gateway isn't
-      // ready — harmless, and it keeps the UI honest until the car catches up.
-      if (affectedKeys && affectedKeys.length) {
-        const expiry = Date.now() + GRACE_MS;
-        for (const key of affectedKeys) intentRef.current.set(key, expiry);
-      }
+  // runDispatch is the REAL send. It is never called directly — the coalescer
+  // (below) owns when it runs, so that a burst of user input can't put two
+  // commands for the same field in flight with racing rollbacks. Resolves when
+  // the command has fully settled, which is what lets the coalescer release the
+  // lane and fire the burst's final value.
+  // The optimistic value is protected from the instant the user acts, not from
+  // whenever the command reaches the car — a poll that lands in between must not
+  // revert it. Recorded even if the gateway isn't ready: harmless, and it keeps
+  // the UI honest until the car catches up.
+  const stampIntent = useCallback((keys?: readonly VehicleStateKey[]) => {
+    if (!keys || !keys.length) return;
+    const expiry = Date.now() + GRACE_MS;
+    for (const key of keys) intentRef.current.set(key, expiry);
+  }, []);
+
+  const runDispatch = useCallback(
+    (cmd: CarCommand, rollback: () => void, affectedKeys?: readonly VehicleStateKey[]): Promise<void> => {
+      // Re-stamp the grace window as the command actually goes out, extending it
+      // from the send rather than from the (possibly much earlier) user action.
+      // The first stamp happens at SUBMIT time — see dispatch — because the
+      // optimistic value needs protecting from the moment the user acts, and a
+      // coalesced burst can sit queued behind an in-flight command.
+      stampIntent(affectedKeys);
       const gw = getGateway();
-      if (!gw) return; // not linked / not ready → no-op (demo cars stay pure-optimistic)
+      // not linked / not ready → no-op (demo cars stay pure-optimistic)
+      if (!gw) return Promise.resolve();
 
       // Mark the affected fields pending only now that we're truly dispatching
       // (past the demo/unlinked guard), so demo cars never show a pending
@@ -443,7 +458,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       } catch {
         bgId = null;
       }
-      void (async () => {
+      return (async () => {
         try {
           const outcome = await gw.runCommand(cmd);
           if (outcome.ok) {
@@ -476,7 +491,35 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         }
       })();
     },
-    [getGateway, settleInFlight],
+    [getGateway, settleInFlight, stampIntent],
+  );
+
+  // ── C2: rapid-input coalescing ──────────────────────────────────────────
+  // One command in flight per FIELD; a burst keeps only its latest value and
+  // neutralises the superseded rollbacks. A single tap is unaffected — it goes
+  // straight through, no debounce. See ble/coalesce.ts for the reasoning.
+  //
+  // Built once and kept in a ref: a per-render coalescer would forget which
+  // lanes are busy and defeat the whole point. runDispatch is read through a ref
+  // for the same reason — its identity changes when getGateway does, and the
+  // coalescer must not be rebuilt mid-burst.
+  const runDispatchRef = useRef(runDispatch);
+  runDispatchRef.current = runDispatch;
+  const coalescerRef = useRef<Coalescer<CarCommand> | null>(null);
+  if (!coalescerRef.current) {
+    coalescerRef.current = createCoalescer<CarCommand>((cmd, rollback, keys) =>
+      runDispatchRef.current(cmd, rollback, keys as readonly VehicleStateKey[]),
+    );
+  }
+
+  const dispatch = useCallback(
+    (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => {
+      // Stamp on USER ACTION, before the coalescer decides when (or whether)
+      // this one reaches the car.
+      stampIntent(affectedKeys);
+      coalescerRef.current?.submit({ cmd, rollback, keys: affectedKeys ?? [] });
+    },
+    [stampIntent],
   );
 
   useEffect(() => {
