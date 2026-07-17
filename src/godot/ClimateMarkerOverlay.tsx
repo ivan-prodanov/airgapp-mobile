@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Image, PixelRatio, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageStyle, type StyleProp } from 'react-native';
+import { Animated, Easing, Image, PixelRatio, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageStyle, type StyleProp } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 import { useGodotBridge } from './bridgeContext';
@@ -60,6 +60,9 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
   const { width: screenW } = useWindowDimensions();
   const pixelRatio = PixelRatio.get();
   const [markers, setMarkers] = useState<VehicleMarkers | null>(null);
+  // The 300ms Easing.cubic content fade (findings R10 §3d) — see MarkerOverlay.
+  const fade = useRef(new Animated.Value(0)).current;
+  const faded = useRef(false);
   const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState<ClimateKey | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,7 +90,21 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
   );
 
   useEffect(() => {
-    const offMarkers = bridge.onMarkers(setMarkers);
+    const offMarkers = bridge.onMarkers((m) => {
+      setMarkers(m);
+      // findings R10 §3d: Climate's overlay holds its OWN Animated.Value(0) and
+      // runs the same 300ms Easing.cubic clock as Controls — and, like Controls,
+      // it fires inside the vehicle-markers callback rather than on mount.
+      // First response only; see the note in MarkerOverlay.
+      if (faded.current) return;
+      faded.current = true;
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.cubic,
+        useNativeDriver: true,
+      }).start();
+    });
     const offVisibility = bridge.onMarkerVisibility(setVisible);
     bridge.requestMarkers();
     return () => {
@@ -191,10 +208,10 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
   const menu = renderMenu();
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]} pointerEvents="box-none">
       {controls}
       {menu}
-    </View>
+    </Animated.View>
   );
 
   function renderMenu(): React.ReactNode {

@@ -81,8 +81,34 @@ export function ClimateScreen({ state, actions }: Props) {
     snap.current = { collapsed, expanded: 0 };
     if (!measured.current) {
       measured.current = true;
-      translateY.setValue(collapsed);
       restingY.current = collapsed;
+      // SLIDE UP from off-screen on first layout — this used to be a
+      // `setValue(collapsed)`, i.e. instant, which is why our sheet just
+      // appeared while theirs travels.
+      //
+      // Mechanism, from tesla-climate-sheet-slide-FINDINGS §1: their sheet's
+      // container carries `transform: [{translateY: animatedPosition}]`
+      // (gorhom's BottomSheetBody), `animatedPosition` starts at SCREEN_HEIGHT
+      // (fully off-screen) and springs to SCREEN_HEIGHT - 270 on first
+      // layout-complete. Ours already starts at `height` and lands at the same
+      // place, so only the instant write had to become a spring.
+      //
+      // The config is theirs verbatim (§1c): Climate passes no animationConfigs,
+      // so gorhom's ANIMATION_CONFIGS default applies — and on iOS that's a
+      // SPRING (Android takes a 250ms timing instead). Note these constants are
+      // identical to react-navigation's TransitionIOSSpec: the sheet slide and
+      // the card fade ride the same curve. ~467ms to settle, critically damped
+      // (zeta 4.56 is over-damped, but Reanimated has no over-damped branch).
+      Animated.spring(translateY, {
+        toValue: collapsed,
+        damping: 500,
+        stiffness: 1000,
+        mass: 3,
+        overshootClamping: true,
+        restDisplacementThreshold: 10,
+        restSpeedThreshold: 10,
+        useNativeDriver: true,
+      }).start();
     }
   };
 
