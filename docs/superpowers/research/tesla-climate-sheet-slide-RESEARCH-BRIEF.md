@@ -62,12 +62,31 @@ Give us the real value:
 4. Does `ButtonAppearance.GHOST` alter the text style (weight/opacity) versus the default appearance?
 5. Same question for the **bottom row** (`ControlButton`, `ControlButtonAppearance.STATELESS_GHOST`) — its label's resolved family/weight/size.
 
+## §4. EXTRACT the seat/wheel climate icons — we're switching to their design
+
+R10 §3b's headline was that **the level is carried entirely by the icon asset**, and that seats are `buttonHeaterOn` **#FF3A3A at every level including OFF** — they never grey out; only the steering wheel does.
+
+We shipped that rule and the user rejected it on sight, for a reason §3b implies but doesn't spell out: **our marker is a wave FILL with no seat body**, so "red at level 0" renders as red waves and reads as ON. Theirs is `seat_climate_0` — a red seat glyph **with no waves in the artwork** — which reads as OFF *while still being red*. Their tint token is correct and simply has no valid value for our design, so we've been hand-tuning a grey their palette doesn't contain (currently `rgba(235,235,235,0.92)`, device-tuned, ours).
+
+**The user's decision: do it their way.** That needs their artwork. Please extract, exactly as you did `mini_spinner.png` in R3:
+
+1. **`seat_climate_0`, `seat_climate_1`, `seat_climate_2`, `seat_climate_3`** — the four assets `seatHeatingIcon` (#97708) and `seatCoolingIcon` return. Real files into `docs/superpowers/research/tesla-status-assets/`, every density/variant present, with the APK/IPA source path, intrinsic size and format for each.
+2. **Are they PNGs, or `react-native-svg` `<Path>` components** (like `battery_nipple` in R4 §1d, which turned out to be a path in a lazy component registry, not a font glyph)? If vector, give the **verbatim `d=`** and viewBox — that's directly usable for us.
+3. Confirm `seatHeatingIcon` and `seatCoolingIcon` really return the **same four assets** (R10 §3c says structurally identical) — i.e. cooling reuses the heating artwork and only the tint differs. If the cooling artwork is separate, extract it too.
+4. **The steering-wheel icons**: the equivalent assets/paths for the wheel marker at each level, plus the **yoke** variant if one exists (our app draws both — `steeringWheelType: 'round' | 'yoke'`).
+5. **How the asset is composed with the tint**: is it a single-colour mask taking `iconStyle.color` (like `mini_spinner`'s alpha ramp), or multi-colour artwork? Does the seat body and the waves come from one asset, or is the body separate?
+6. **Render box**: R10 §3c gives `SEAT_HEATER_BUTTON_SIZE = 55` — confirm that's the icon's box, and give the icon's own size/padding within it, so the artwork lands at their scale.
+7. Anything **paint-dependent** here (as the frunk label is, R10 §2c)? Or is the seat tint purely heat/cool?
+
+With those we can drop our invented greys entirely and match them: red/blue always, off-ness in the artwork.
+
 ---
 
 ## Output format
 1. **The slide** — the exact mechanism, verbatim, with the animation config and the from→to in points. If `animateOnMount:false` coexists with a real slide, explain how (that's the interesting part).
 2. **The top line** — what it is, RN or renderer, verbatim style/geometry, and whether it's Climate-only.
 3. **The Button default textStyle** — resolved family/weight, and the cut we should ship.
-4. **Citations**; iOS-verified vs Android-only. **Gaps**, plainly.
+4. **The seat/wheel icons** — extracted files (or verbatim vector paths), composition, render box.
+5. **Citations**; iOS-verified vs Android-only. **Gaps**, plainly.
 
 **Note on §1:** "not in the bundle" is not an available answer this round — the user watched it happen. If you genuinely cannot find it, say exactly where you looked and what you ruled out, so we can capture it in slow motion and work backwards.

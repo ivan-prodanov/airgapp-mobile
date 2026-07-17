@@ -213,7 +213,13 @@ It **fades with the shared content `Animated.Value`** (5 of the 10 opacity sites
 
 ## §3. Climate
 
-### 3a. ⚠️ The `animateOnMount` contradiction — **R8 is right; there is no slide-up** `[iOS-verified]`
+### 3a. ⚠️ ~~The `animateOnMount` contradiction — R8 is right; there is no slide-up~~ **WRONG — see Round 11**
+
+> 🛑 **This entire subsection is WRONG and is superseded by `tesla-climate-sheet-slide-FINDINGS.md` (Round 11). The sheet DOES slide — 270pt, spring, ~467ms.** The error: I read `evaluatePosition`'s `else { setToPosition(...) }` branch and asserted Climate takes it. **It never does.** `isAnimatedOnMount = useSharedValue(!animateOnMount || _providedIndex === -1)` (iOS 1783465-1783472) — so `animateOnMount:false` sets the flag **`true`**, making that whole branch **dead code** and sending every position evaluation, *including the first*, to `animateToPosition`. Since `animatedPosition` starts at `INITIAL_POSITION = SCREEN_HEIGHT`, the first evaluation springs the sheet from off-screen up to the detent. **`animateOnMount:false` is what CAUSES the slide.** The translate lives in `BottomSheetBody.tsx` (module 4126, iOS 1787885) — `transform: [{translateY: animatedPosition}]` — which is why searching `BottomSheet.tsx` found no transform and I wrongly concluded "not in the bundle". The correct claim below is only that `animateOnMount: false` is real and honoured; everything after that is void.
+
+<details><summary>Original (incorrect) text, kept for the record</summary>
+
+#### The `animateOnMount` contradiction — R8 is right; there is no slide-up `[iOS-verified]`
 
 **`animateOnMount: false` is real and is honoured.** iOS 5222699 literally contains `'animateOnMount': false`, never reassigned. And it is **not** swallowed downstream: the default-merge is guarded `if(!(r54 === undefined)) …` — a **`??`, not a `||`** — so `false !== undefined` means the prop wins and `DEFAULT_ANIMATE_ON_MOUNT` (=`true`) is never substituted.
 
@@ -232,6 +238,10 @@ Climate takes the **else** branch: a bare shared-value write, **instantaneous**.
 **So the observed slide-up is not in the bundle.** All three candidate mechanisms were ruled out with citations. Honest reading: the sheet is *placed*, not animated, and what reads as a "slide-up" is most likely the **card's `forFade`** bringing the whole Climate screen (sheet included) up from opacity 0 — plus the fact that the sheet's pre-layout position is off-screen at 852, so a slow layout frame would show it *appear*, not travel. **This is a hypothesis, flagged as such — I recommend re-checking on device (slow-motion capture) before building a slide.** If a real slide exists, it is not in this bundle version.
 
 *Verify note:* two gorhom copies exist; the **live** one for Climate is module **4120** (live mount path `evaluatePosition_Gorhom_BottomSheetTsx12`, iOS 1783076; merge iOS 1783143-1783151), not the 4054 copy R8 cited. **The conclusion is unchanged** under either copy.
+
+</details>
+
+> *(R11 footnote on the module numbering above: Climate's `deps[10]` is **4054**, registered at iOS 1772174 — the same `gorhom_*` worklets. R8's citation was right; the "4120" relabel was cosmetic and changed nothing.)*
 
 ### 3b. The marker colours `[iOS-verified]`
 
