@@ -22,11 +22,25 @@ import { VehicleProvider } from '@/state/VehicleProvider';
 // the core PanResponder system, so no GestureHandlerRootView is needed.
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  // Tesla's real typeface (see constants/fonts.ts). Deliberately NOT gated on:
-  // rendering waits for nothing, and the header restyles when the faces land —
-  // blocking here would hold up the Godot scene for a font.
-  useFonts(TESLA_FONT_MAP);
+  // Tesla's real typeface (see constants/fonts.ts).
+  //
+  // ⚠️ MUST be gated. This used to render regardless, on my assumption that "the
+  // header restyles when the faces land". It does NOT: expo-font loads
+  // asynchronously, and a <Text> that has already mounted keeps whatever font it
+  // resolved at mount. React re-rendering it changes nothing either — with
+  // identical props RN sends no update to the native view, so the fallback (SF)
+  // sticks until the text's CONTENT actually changes.
+  //
+  // The symptom that exposed it: the battery % only turned bold when the user
+  // TAPPED it — the tap swaps "48%" -> "312 km", which re-creates the native
+  // text node and finally resolves the real face. The status line looked correct
+  // only by luck: it re-renders every 5s on the age ticker.
+  //
+  // So every Text must mount AFTER the faces are registered. The cost is a frame
+  // or two on a cold start — the files are local to the bundle.
+  const [fontsLoaded] = useFonts(TESLA_FONT_MAP);
   useSharedLocationIntake();
+  if (!fontsLoaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
