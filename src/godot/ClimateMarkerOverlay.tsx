@@ -28,7 +28,12 @@ type ClimateKey = SeatPosition | 'steeringWheel';
 // match the official app's seat-heater glyph (waves fill the mode color from the bottom up by level).
 const HEAT = '#FF3B30';
 const COOL = '#0A84FF';
-const DIM = 'rgba(255,255,255,0.55)';
+// The NOT-ENABLED colour: an off seat's whole glyph, and the unlit waves of a
+// partially-lit one. Was rgba(255,255,255,0.55) — a translucent WHITE, which is
+// invisible against the white seats it sits on. #999999 is Tesla's real
+// `buttonHeaterOff` token (findings §3b) and is the one colour in their palette
+// meant for exactly this "present but not on" job.
+const DIM = '#999999';
 // Auto's wave colour. Was rgba(255,255,255,0.9) — near-white, which is
 // indistinguishable from the white seats it sits on. #999999 is Tesla's real
 // `buttonHeaterOff` token (tesla-transitions-markers-FINDINGS §3b): a true
