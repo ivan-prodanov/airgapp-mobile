@@ -90,7 +90,12 @@ const styles = StyleSheet.create({
   //    than the official Medium-500. So: same face as the 14px status line,
   //    differing only in size.
   text: {
-    fontFamily: TeslaFonts.medium,
+    // Bold, not Medium — see constants/fonts.ts. Their literal says
+    // `fontWeight: 'bold'`; R5 §1b reasoned it can't resolve and their % is
+    // therefore Medium, but that reasoning is INFERRED (unmeasured), and on
+    // device this read lighter than the status line. Shipping the cut their
+    // literal asks for.
+    fontFamily: TeslaFonts.bold,
     fontSize: 16,
     marginHorizontal: 5,
   },
