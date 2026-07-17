@@ -50,6 +50,8 @@ import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
+import { withTransportLogging } from '@/ble/loggingTransport';
+import { logd, logi, logw, loge } from '@/services/logbus';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
@@ -320,12 +322,13 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         // fallback when a base URL + token are configured.
         candidates.push({
           name: 'ble',
-          make: () => new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
+          make: () =>
+            withTransportLogging('ble', new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS })),
         });
         if (cfg.baseUrl && cfg.token) {
           candidates.push({
             name: 'pi',
-            make: () => wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store),
+            make: () => withTransportLogging('pi', wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store)),
           });
         }
         // onSelect records which transport connected so a successful poll tick
@@ -451,6 +454,8 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       // Fire-and-forget: the gateway's per-VIN queue serializes commands. We
       // never surface the promise to the caller — a failure rolls the UI back
       // and tells the user (toast or notification); success light-haptics.
+      const t0 = Date.now();
+      logi('cmd', 'dispatch', { type: cmd.type, keys: affectedKeys, inFlight: inFlightRef.current });
       inFlightRef.current += 1;
       // Hold an iOS background-task assertion for the command's lifetime. iOS
       // suspends the JS runtime shortly after the app is backgrounded, so a
@@ -469,6 +474,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       return (async () => {
         try {
           const outcome = await gw.runCommand(cmd);
+          logi('cmd', 'settle', { type: cmd.type, ms: Date.now() - t0, outcome: outcome.ok ? 'ok' : outcome.kind });
           if (outcome.ok) {
             // Light confirmation — matches the app's impact/selection-only
             // haptic vocabulary (no notification feedback).
@@ -481,7 +487,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
           // A throw (unexpected — runCommand normally returns an outcome) has no
           // structured outcome; surface it as an unreachable-style failure.
           onFailure({ ok: false, kind: 'unreachable', message: String(err) });
-          console.warn('[useCarLink] command threw', cmd.type, err);
+          loge('cmd', 'threw', { type: cmd.type, ms: Date.now() - t0, err: String(err) });
         } finally {
           // EVERY terminal path — ok, fail, throw, deadline — lands here, so a
           // control can never be left spinning forever (the stuck-spinner bug:
@@ -657,7 +663,10 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       // liveness tick; expensive to make someone wait 8s for a lock because a
       // background read got there first. A tick lands as soon as the command
       // settles (inFlightRef hits 0).
-      if (inFlightRef.current > 0) return;
+      if (inFlightRef.current > 0) {
+        logd('poll', 'skip: command in flight', { inFlight: inFlightRef.current });
+        return;
+      }
       const gw = getGateway();
       if (!gw) {
         // Linked but the gateway isn't ready yet (config/keys still loading).
@@ -666,7 +675,9 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       }
       inFlight = true;
       try {
+        const vt0 = Date.now();
         const st = await gw.readVcsecStatus();
+        logi('poll', 'vcsec', { ms: Date.now() - vt0, txp: selectedTransportRef.current });
         // Empty closureIntent — the grace is applied uniformly HERE, keyed by
         // VehicleStateKey, so telemetry.ts's closure-only keying is bypassed.
         const { patch } = vcsecStatusToPatch(st, {}, Date.now());
@@ -703,7 +714,9 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
           now - lastInfotainmentAtRef.current >= INFOTAINMENT_MS
         ) {
           try {
+            const it0 = Date.now();
             const snap = await gw.awakeSync();
+            logi('poll', 'infotainment', { ms: Date.now() - it0 });
             if (stopped || paused) return;
             lastInfotainmentAtRef.current = Date.now();
             const infoPatch = filterPatchUnderIntent(
@@ -715,17 +728,19 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
               applyTelemetryRef.current(infoPatch);
               cacheInfotainment(infoPatch);
             }
-          } catch {
+          } catch (e) {
             // Asleep mid-read, or the infotainment session faulted. The VCSEC
             // half stands; retry after the throttle window (don't hammer a cold
             // domain-3 open every tick — that WAS the bug).
+            logw('poll', 'infotainment failed', { err: String(e) });
             lastInfotainmentAtRef.current = Date.now();
           }
         }
         if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
-      } catch {
+      } catch (e) {
         // A failed read means no clean contact this tick — drop to offline
         // (do NOT keep a stale 'online'). The loop keeps retrying every POLL_MS.
+        logw('poll', 'vcsec failed → offline', { err: String(e) });
         if (!stopped && !paused) setConnection('offline');
       } finally {
         inFlight = false;

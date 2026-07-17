@@ -5,6 +5,15 @@
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 
+// Logging pipe up FIRST — captures boot + every console.* from here on. See
+// services/logbus.ts (console.* is invisible in a Hermes Release build).
+import { initLogSink } from '@/services/logSink';
+import { installConsoleBridge } from '@/services/consoleBridge';
+import { logi } from '@/services/logbus';
+installConsoleBridge();
+initLogSink();
+logi('app', 'boot');
+
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
 import { useFonts } from 'expo-font';

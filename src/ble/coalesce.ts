@@ -31,6 +31,8 @@
 //
 // Pure and node-tested: no react-native import (the ble/* isolation rule).
 
+import { logi } from '../services/logbus';
+
 export interface CoalesceJob<C> {
   cmd: C;
   // Reverts the optimistic UI. Called only if THIS job is still the newest in
@@ -101,11 +103,13 @@ export function createCoalescer<C>(run: RunJob<C>): Coalescer<C> {
       const state = lanes.get(lane);
       if (!state) {
         lanes.set(lane, { next: null, supersede: null });
+        logi('coalesce', 'run', { lane });
         start(lane, job);
         return;
       }
       // Busy: this job supersedes whatever is in flight AND any job already
       // queued behind it. Both of their rollbacks are now stale.
+      logi('coalesce', 'supersede', { lane, hadQueued: state.next !== null });
       state.supersede?.();
       state.next = job;
     },
