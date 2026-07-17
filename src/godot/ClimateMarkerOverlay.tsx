@@ -29,16 +29,16 @@ type ClimateKey = SeatPosition | 'steeringWheel';
 const HEAT = '#FF3B30';
 const COOL = '#0A84FF';
 // The NOT-ENABLED colour: an off seat's whole glyph, and the unlit waves of a
-// partially-lit one. Was rgba(255,255,255,0.55) — a translucent WHITE, which is
-// invisible against the white seats it sits on. #999999 is Tesla's real
-// `buttonHeaterOff` token (findings §3b) and is the one colour in their palette
-// meant for exactly this "present but not on" job.
-const DIM = '#999999';
-// Auto's wave colour. Was rgba(255,255,255,0.9) — near-white, which is
-// indistinguishable from the white seats it sits on. #999999 is Tesla's real
-// `buttonHeaterOff` token (tesla-transitions-markers-FINDINGS §3b): a true
-// mid-grey that reads against both the white seats and the dark cabin.
-const AUTO_WAVE = '#999999';
+// partially-lit one. Also auto's waves (AUTO_WAVE below reuses it).
+//
+// Tuned on device by the user, and NOT a recovered value — the two candidates
+// from the RE both failed on his screen: rgba(255,255,255,0.55) was invisible
+// against the white seats, and Tesla's own buttonHeaterOff #999999 read too
+// grey. Their palette assumes four discrete seat_climate_* assets, not our wave
+// fill, so it doesn't transfer. Don't "correct" this to #999999.
+const DIM = 'rgba(235,235,235,0.92)';
+// Auto reuses the grey rather than carrying its own (was rgba(255,255,255,0.9)).
+const AUTO_WAVE = DIM;
 // Steering wheel body — neutral grey (the heat waves on top carry the state colour).
 const WHEEL_GREY = 'rgba(235,235,235,0.92)';
 
