@@ -17,7 +17,7 @@ import {
 } from './fleet';
 import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
-import { diffToCommands, revertLockedIfNeeded } from '../ble/reconcile';
+import { diffToCommands, revertFields } from '../ble/reconcile';
 
 export interface Fleet {
   vehicles: Vehicle[];
@@ -107,17 +107,12 @@ export function useFleetState(): {
       if (activeIsLive) {
         const prev = current.state;
         const next = update(prev);
-        const commands = diffToCommands(prev, next);
-        if (commands.length) {
-          // The exact fields the user changed — passed to dispatch so the
-          // grace window covers precisely those keys (for a lock, ['locked']),
-          // stopping a lagging poll from reverting them.
-          const changedKeys = (Object.keys(next) as VehicleStateKey[]).filter(
-            (key) => prev[key] !== next[key],
-          );
-          for (const cmd of commands) {
-            carLink.dispatch(cmd, () => applyActive((s) => revertLockedIfNeeded(s, prev)), changedKeys);
-          }
+        // Each command carries the fields IT owns. dispatch gets those keys, so:
+        // the coalescer lanes per field, the grace window covers exactly them,
+        // and a failure reverts only that command's fields (not every edit made
+        // in the same tick — see revertFields).
+        for (const { cmd, keys } of diffToCommands(prev, next)) {
+          carLink.dispatch(cmd, () => applyActive((s) => revertFields(s, prev, keys)), keys);
         }
       }
       applyActive(update);

@@ -1,39 +1,148 @@
 // reconcile.ts — the pure user-action → CarCommand reconciler.
 //
-// diffToCommands maps a USER-INITIATED optimistic state change (prev → next)
-// to the car command(s) that realize it. This is the single extensible seam
-// between the app's view-state and the BLE command layer: every future
-// control lights up by adding one `prev.field !== next.field` case here, with
-// no per-button wiring. It is deliberately PURE (imports only the CarCommand
-// union + the view-state type) so it runs and is unit-tested under plain node.
+// diffToCommands maps a USER-INITIATED optimistic state change (prev → next) to
+// the car command(s) that realize it, EACH PAIRED WITH THE FIELDS IT OWNS. This
+// is the single extensible seam between the app's view-state and the BLE command
+// layer: a control lights up by adding one `prev.field !== next.field` case, no
+// per-button wiring. Deliberately PURE (imports only the CarCommand union + the
+// view-state types) so it runs and is unit-tested under plain node.
 //
-// CRITICAL: this must ONLY ever be fed the USER-action apply path (the wrapped
-// apply in useFleetState). It must NEVER see telemetry-driven state mutations —
-// if it did, an incoming lock-status telemetry patch would diff into a lock
-// command and loop back out to the car. The two write paths (user vs telemetry)
-// are kept separate at the apply layer precisely so this stays a one-way map.
+// CRITICAL: only ever feed this the USER-action apply path (the wrapped apply in
+// useFleetState). It must NEVER see telemetry-driven mutations — an incoming
+// lock-status patch would otherwise diff into a lock command and loop back to
+// the car. The two write paths are kept separate at the apply layer precisely so
+// this stays a one-way map.
 //
-// For this slice only `locked` is mapped. revertLockedIfNeeded is the matching
-// rollback: it reverts ONLY the `locked` field when a dispatched lock/unlock
-// command fails, leaving every other (independently-applied) field untouched.
+// WHY commands now carry their keys (was lock-only): a failed command must revert
+// ONLY the fields IT owns, not everything the user touched since. With one
+// command that was cosmetic; across a screen of independent controls it's
+// correctness — a failed temp set must not revert a seat toggle flipped in the
+// same tick. These `keys` are also what the coalescer lanes on and what the
+// intent-grace window covers.
 
 import type { CarCommand } from './commands';
-import type { VehicleViewState } from '../types/vehicleTypes';
+import type { SeatPosition, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 
-export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): CarCommand[] {
-  const commands: CarCommand[] = [];
-  if (prev.locked !== next.locked) {
-    commands.push({ type: next.locked ? 'lock' : 'unlock' });
-  }
-  return commands;
+export interface ReconciledCommand {
+  cmd: CarCommand;
+  keys: VehicleStateKey[];
 }
 
-// revertLockedIfNeeded returns state with `locked` restored to prev.locked.
-// Used as the rollback for a failed lock/unlock: it touches only that one
-// field so any other user edit applied since the optimistic toggle survives.
-export function revertLockedIfNeeded(
+// Fleet SeatPosition → the command builder's seat id. Cooling only exists front
+// (the command builder enforces it); rear/third-row cool is impossible in the UI
+// anyway. Third row has no heater command in the protocol, so it's absent here.
+const SEAT_CMD_ID: Partial<Record<SeatPosition, 'FL' | 'FR' | 'RL' | 'RC' | 'RR'>> = {
+  frontLeft: 'FL',
+  frontRight: 'FR',
+  rearLeft: 'RL',
+  rearMiddle: 'RC',
+  rearRight: 'RR',
+};
+
+const WINDOW_KEYS: VehicleStateKey[] = [
+  'leftFrontWindowOpen',
+  'rightFrontWindowOpen',
+  'leftRearWindowOpen',
+  'rightRearWindowOpen',
+];
+
+export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): ReconciledCommand[] {
+  const out: ReconciledCommand[] = [];
+  const emit = (cmd: CarCommand, ...keys: VehicleStateKey[]) => out.push({ cmd, keys });
+
+  // ── Controls ───────────────────────────────────────────────────────────────
+  if (prev.locked !== next.locked) emit({ type: next.locked ? 'lock' : 'unlock' }, 'locked');
+  // Frunk only OPENS (no close command — you shut it by hand). Ignore false.
+  if (!prev.frunkOpen && next.frunkOpen) emit({ type: 'openFrunk' }, 'frunkOpen');
+  if (prev.trunkOpen !== next.trunkOpen) {
+    emit({ type: next.trunkOpen ? 'openTrunk' : 'closeTrunk' }, 'trunkOpen');
+  }
+  if (prev.chargePortOpen !== next.chargePortOpen) {
+    emit({ type: next.chargePortOpen ? 'openChargePort' : 'closeChargePort' }, 'chargePortOpen');
+  }
+  if (prev.sentryEnabled !== next.sentryEnabled) {
+    emit({ type: 'sentry', on: next.sentryEnabled }, 'sentryEnabled');
+  }
+
+  // ── Windows: one UI toggle flips all four, so any-open → vent, none-open →
+  // close, and the command owns the whole set. ────────────────────────────────
+  const prevVented = WINDOW_KEYS.some((k) => prev[k]);
+  const nextVented = WINDOW_KEYS.some((k) => next[k]);
+  if (prevVented !== nextVented) {
+    emit({ type: nextVented ? 'ventWindows' : 'closeWindows' }, ...WINDOW_KEYS);
+  }
+
+  // ── Charging ─────────────────────────────────────────────────────────────────
+  if (prev.charging !== next.charging) {
+    emit({ type: next.charging ? 'chargeStart' : 'chargeStop' }, 'charging');
+  }
+  if (prev.chargeLimitPercent !== next.chargeLimitPercent) {
+    emit({ type: 'setChargeLimit', percent: next.chargeLimitPercent }, 'chargeLimitPercent');
+  }
+  if (prev.chargingAmps !== next.chargingAmps) {
+    emit({ type: 'setChargingAmps', amps: next.chargingAmps }, 'chargingAmps');
+  }
+
+  // ── Climate ───────────────────────────────────────────────────────────────────
+  if (prev.climateOn !== next.climateOn) {
+    emit({ type: next.climateOn ? 'climateOn' : 'climateOff' }, 'climateOn');
+  }
+  if (prev.targetTempC !== next.targetTempC) {
+    emit({ type: 'setClimateTemp', celsius: next.targetTempC }, 'targetTempC');
+  }
+  if (prev.bioweaponOn !== next.bioweaponOn) {
+    emit({ type: 'bioweaponMode', on: next.bioweaponOn }, 'bioweaponOn');
+  }
+  if (prev.cabinOverheatMode !== next.cabinOverheatMode) {
+    emit({ type: 'cabinOverheat', on: next.cabinOverheatMode !== 'off' }, 'cabinOverheatMode');
+  }
+  // Camp and Pet are independent toggles that both map to climateKeeper.
+  if (prev.campModeOn !== next.campModeOn) {
+    emit({ type: 'climateKeeper', mode: next.campModeOn ? 'camp' : 'off' }, 'campModeOn');
+  }
+  if (prev.petModeOn !== next.petModeOn) {
+    emit({ type: 'climateKeeper', mode: next.petModeOn ? 'dog' : 'off' }, 'petModeOn');
+  }
+
+  // ── Seat + steering-wheel heaters ──────────────────────────────────────────────
+  // seatClimateModes is a single state key, so every seat change reverts through
+  // it. That's correct: the whole map is applied as one optimistic object.
+  for (const pos of Object.keys(SEAT_CMD_ID) as SeatPosition[]) {
+    const seat = SEAT_CMD_ID[pos]!;
+    const p = prev.seatClimateModes[pos];
+    const n = next.seatClimateModes[pos];
+    if (p.level === n.level && p.mode === n.mode) continue;
+    if (n.mode === 'cool' && (seat === 'FL' || seat === 'FR')) {
+      emit({ type: 'seatCooler', seat, level: n.level }, 'seatClimateModes');
+    } else {
+      emit({ type: 'seatHeater', seat, level: n.mode === 'off' ? 0 : n.level }, 'seatClimateModes');
+    }
+  }
+  if (prev.steeringWheelClimate.mode !== next.steeringWheelClimate.mode) {
+    emit(
+      { type: 'steeringWheelHeat', on: next.steeringWheelClimate.mode !== 'off' },
+      'steeringWheelClimate',
+    );
+  }
+
+  return out;
+}
+
+// revertFields restores exactly `keys` to their prev values, leaving every other
+// (independently-applied) field untouched — the generic rollback for a failed
+// command. Returns the same object when nothing changed so React can bail.
+export function revertFields(
   state: VehicleViewState,
   prev: VehicleViewState,
+  keys: readonly VehicleStateKey[],
 ): VehicleViewState {
-  return state.locked === prev.locked ? state : { ...state, locked: prev.locked };
+  let changed = false;
+  const out: VehicleViewState = { ...state };
+  for (const key of keys) {
+    if (out[key] !== prev[key]) {
+      (out as Record<VehicleStateKey, unknown>)[key] = prev[key];
+      changed = true;
+    }
+  }
+  return changed ? out : state;
 }
