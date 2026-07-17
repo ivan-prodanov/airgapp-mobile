@@ -3,7 +3,7 @@ import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimension
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
-import { CARD_SPRING } from '@/godot/cardTransition';
+import { CARD_FADE_MS, cardFadeEasing } from '@/godot/cardTransition';
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
 import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
@@ -144,7 +144,12 @@ export default function Index() {
 
   useEffect(() => {
     if (pushed) setRenderedPush(pushed);
-    Animated.spring(cardProgress, { toValue: pushed ? 1 : 0, ...CARD_SPRING }).start(({ finished }) => {
+    Animated.timing(cardProgress, {
+      toValue: pushed ? 1 : 0,
+      duration: CARD_FADE_MS,
+      easing: cardFadeEasing,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
       // Unmount only after the pop has actually finished, or we'd cut the fade.
       if (finished && !pushed) setRenderedPush(null);
     });
@@ -167,13 +172,29 @@ export default function Index() {
         {/* Pushed card. */}
         {renderedPush ? (
           <Animated.View
-            style={[StyleSheet.absoluteFill, { opacity: cardProgress }]}
+            // justifyContent MUST match VehicleCanvas's overlay: ControlsScreen
+            // is a fragment whose bottom bar isn't positioned — it relies on the
+            // parent's flex-end. Wrapping it in a bare absoluteFill sent the bar
+            // to the top.
+            style={[StyleSheet.absoluteFill, styles.card, { opacity: cardProgress }]}
             pointerEvents={pushed ? 'box-none' : 'none'}>
             {renderedPush === 'climate' ? (
               <ClimateScreen state={state} actions={actions} />
             ) : (
               <ControlsScreen state={state} actions={actions} />
             )}
+
+            {/* The back chevron + "Controls" title are part of the pushed CARD,
+                so they fade with it. They used to live outside the canvas and
+                appeared/vanished instantly while everything else faded. */}
+            <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
+              <View style={styles.topBarRow}>
+                <Pressable style={styles.backButton} onPress={() => actions.setCameraMode('PARKED')}>
+                  <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
+                </Pressable>
+                {renderedPush === 'controls' ? <Text style={styles.title}>Controls</Text> : null}
+              </View>
+            </SafeAreaView>
           </Animated.View>
         ) : null}
       </VehicleCanvas>
@@ -182,16 +203,6 @@ export default function Index() {
         <View style={styles.edgeBack} {...edgeBack.panHandlers} />
       ) : null}
 
-      {mode !== 'home' ? (
-        <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
-          <View style={styles.topBarRow}>
-            <Pressable style={styles.backButton} onPress={() => actions.setCameraMode('PARKED')}>
-              <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
-            </Pressable>
-            {mode === 'controls' ? <Text style={styles.title}>Controls</Text> : null}
-          </View>
-        </SafeAreaView>
-      ) : null}
     </View>
   );
 }
@@ -200,6 +211,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: 'black',
+  },
+  card: {
+    justifyContent: 'flex-end',
   },
   homePanel: {
     padding: 16,

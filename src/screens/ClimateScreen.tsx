@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
 import { StatusBarFade } from '../components/StatusBarFade';
+import { SHEET_SPRING } from '../godot/cardTransition';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -100,16 +101,7 @@ export function ClimateScreen({ state, actions }: Props) {
       // identical to react-navigation's TransitionIOSSpec: the sheet slide and
       // the card fade ride the same curve. ~467ms to settle, critically damped
       // (zeta 4.56 is over-damped, but Reanimated has no over-damped branch).
-      Animated.spring(translateY, {
-        toValue: collapsed,
-        damping: 500,
-        stiffness: 1000,
-        mass: 3,
-        overshootClamping: true,
-        restDisplacementThreshold: 10,
-        restSpeedThreshold: 10,
-        useNativeDriver: true,
-      }).start();
+      Animated.spring(translateY, { toValue: collapsed, ...SHEET_SPRING }).start();
     }
   };
 
