@@ -27,21 +27,44 @@ type ClimateKey = SeatPosition | 'steeringWheel';
 
 // Mode colors: heat = orange-red, cool = blue, auto/off = neutral white at different opacities. These
 // match the official app's seat-heater glyph (waves fill the mode color from the bottom up by level).
-const HEAT = '#FF3B30';
-const COOL = '#0A84FF';
-// The NOT-ENABLED colour: an off seat's whole glyph, and the unlit waves of a
-// partially-lit one. Also auto's waves (AUTO_WAVE below reuses it).
+// Round 12 opened the ARTWORK, which is what R10 §3b never did — and it maps
+// exactly onto our wave glyph, because `seat_climate_*` turns out to be three
+// heat waves and NO seat body: anatomically identical to ours.
 //
-// Tuned on device by the user, and NOT a recovered value — the two candidates
-// from the RE both failed on his screen: rgba(255,255,255,0.55) was invisible
-// against the white seats, and Tesla's own buttonHeaterOff #999999 read too
-// grey. Their palette assumes four discrete seat_climate_* assets, not our wave
-// fill, so it doesn't transfer. Don't "correct" this to #999999.
-const DIM = 'rgba(235,235,235,0.92)';
-// Auto reuses the grey rather than carrying its own (was rgba(255,255,255,0.9)).
+// Their design is one artwork re-split per level, with two fills:
+//   seat_climate_0 : [1454 #999999]                     all 3 waves grey
+//   seat_climate_1 : [482 currentColor] + [972 #999999] wave 1 lit
+//   seat_climate_2 : [968 currentColor] + [486 #999999] waves 1-2 lit
+//   seat_climate_3 : [1454 currentColor]                all 3 lit
+// So the LIT waves take the tint and the UNLIT waves are hardcoded #999999 —
+// which is why R10 concluded "seats never grey out" (the tint token really IS
+// always heaterOn) and was still wrong: at level 0 there is no currentColor path
+// for the tint to touch.
+//
+// ⇒ lit = the tint; unlit = #999999. Heating and cooling share the SAME artwork
+// (there are no seat_cool_* assets) and differ ONLY in tint.
+const HEAT = '#FF3A3A'; // buttonHeaterOn  — the LIT tint
+const COOL = '#3E6BE2'; // buttonCoolerOn  — the LIT tint when cooling
+// The UNLIT wave colour — an off seat's whole glyph, and the dark waves of a
+// partially-lit one. #999999 is BAKED INTO their artwork (see above), not read
+// from the theme, which is exactly why it stayed invisible to three rounds of
+// token-hunting and why we ended up hand-tuning a substitute.
+//
+// ⚠️ The user rejected this exact value once ("Nope, too grey!") back when we
+// had no idea it was theirs. It is now confirmed as the real thing, so it goes
+// in — but if it still reads too grey on device, that is a genuine divergence
+// worth understanding (our wave SHAPE differs from their path), not a licence to
+// re-tune it by eye.
+const DIM = '#999999';
+// `auto` is OURS — their seats have heat/cool levels and no auto tint at all, so
+// there is nothing to copy. Kept on the grey per the user's explicit request.
 const AUTO_WAVE = DIM;
 // Steering wheel body — neutral grey (the heat waves on top carry the state colour).
-const WHEEL_GREY = 'rgba(235,235,235,0.92)';
+// The wheel's off/unlit colour. Their `steering_wheel_heater_off` is BOTH paths
+// (rim + squiggles) hardcoded #999999; `_low` lights the rim and one squiggle;
+// `_high` lights everything. So the wheel body really does turn red when heating
+// — which our `wheelColor` already does.
+const WHEEL_GREY = '#999999';
 
 // Control box (centered on the marker) and how far below it the Heat/Cool/Auto menu floats.
 const BOX = { w: 58, h: 60 } as const;
