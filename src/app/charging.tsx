@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
@@ -6,18 +6,13 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
+import { AMP_MAX, AMP_MIN, LIMIT_MAX, LIMIT_MIN } from '@/state/fleet';
 import { useVehicle } from '@/state/VehicleProvider';
 
-// Charge-limit slider domain (Tesla: daily 50% up to trip 100%).
-const LIMIT_MIN = 50;
-const LIMIT_MAX = 100;
 // Detent "stoppers" on the track — the thumb snaps + ticks (haptic) at each, like the Tesla app.
 const DETENTS = [50, 60, 70, 80, 90, 100];
 // Magnetic pull: within this many % of a stopper the value sticks to it.
 const SNAP = 2;
-// Charging current stepper domain, per spec: 5 A … 16 A.
-const AMP_MIN = 5;
-const AMP_MAX = 16;
 
 const DIM = 'rgba(255,255,255,0.22)';
 // Detent "click" shared by the charge-limit stoppers and the current stepper, so both feel the same.
@@ -30,8 +25,16 @@ export default function ChargingScreen() {
   const router = useRouter();
   const [state, actions] = useVehicle();
 
-  const [chargeLimit, setChargeLimit] = useState(80);
-  const [amps, setAmps] = useState(AMP_MAX);
+  const chargeLimit = state.chargeLimitPercent;
+  const amps = state.chargingAmps;
+  // The slider's PanResponder is built ONCE (useRef), so it would capture the first render's
+  // `actions` — and `actions` is rebuilt on every state change. Route the drag through a ref so it
+  // always calls the current one. Kept fresh in an effect (not during render); the ref is only ever
+  // read from a drag handler, which by definition runs after mount.
+  const actionsRef = useRef(actions);
+  useEffect(() => {
+    actionsRef.current = actions;
+  }, [actions]);
   // While dragging the slider, freeze the page ScrollView so the drag adjusts the value instead of scrolling.
   const [sliding, setSliding] = useState(false);
   // Green fill = the CURRENT battery level; the draggable thumb = the charge limit (they're independent, like
@@ -46,7 +49,7 @@ export default function ChargingScreen() {
   const trackRef = useRef<View>(null);
   const trackW = useRef(0);
   const trackLeft = useRef(0);
-  const lastValue = useRef(80); // for detecting detent crossings between successive drag samples
+  const lastValue = useRef(state.chargeLimitPercent); // detects detent crossings between drag samples
   const measureTrack = () => {
     trackRef.current?.measureInWindow((x, _y, w) => {
       if (w > 0) {
@@ -75,7 +78,7 @@ export default function ChargingScreen() {
       detentTick();
     }
     lastValue.current = value;
-    setChargeLimit(value);
+    actionsRef.current.setChargeLimit(value);
   };
   const limitPan = useRef(
     PanResponder.create({
@@ -97,12 +100,12 @@ export default function ChargingScreen() {
   const decAmps = () => {
     if (amps <= AMP_MIN) return;
     detentTick();
-    setAmps((a) => Math.max(AMP_MIN, a - 1));
+    actions.setChargingAmps(amps - 1);
   };
   const incAmps = () => {
     if (amps >= AMP_MAX) return;
     detentTick();
-    setAmps((a) => Math.min(AMP_MAX, a + 1));
+    actions.setChargingAmps(amps + 1);
   };
 
   // Charge port: closed → "Open"; open & idle → "Close"; open & charging → "Unlock" (releases the latch).

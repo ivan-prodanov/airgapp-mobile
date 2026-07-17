@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import {
   Animated,
   PanResponder,
@@ -15,19 +15,17 @@ import * as Haptics from 'expo-haptics';
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
 import { StatusBarFade } from '../components/StatusBarFade';
 import { SHEET_SPRING } from '../godot/cardTransition';
+import { HI_TEMP, LO_TEMP } from '../state/fleet';
 import type { VehicleActions } from '../state/useVehicleState';
-import type { VehicleViewState } from '../types/vehicleTypes';
+import type { CabinOverheatMode, CabinOverheatTemp, VehicleViewState } from '../types/vehicleTypes';
 
 interface Props {
   state: VehicleViewState;
   actions: VehicleActions;
 }
 
-// Temperature dial domain (matches the real app): LO, 15.5, 16.0 … 27.5, HI in 0.5° steps.
-// 15.0 is the LO sentinel, 28.0 is HI; everything in between shows the number.
-const LO_TEMP = 15;
-const HI_TEMP = 28;
-const clampTemp = (v: number) => Math.min(HI_TEMP, Math.max(LO_TEMP, Math.round(v * 2) / 2));
+// The dial domain (LO, 15.5, 16.0 … 27.5, HI in 0.5° steps) now lives with the setpoint state in
+// fleet.ts, which clamps to it; the bounds double as the LO/HI sentinels this formatter renders.
 const formatTemp = (v: number) => (v <= LO_TEMP ? 'LO' : v >= HI_TEMP ? 'HI' : `${v.toFixed(1)}°`);
 // Rubber-band overscroll past the snap bounds — copied from the Tesla app, which uses
 // @gorhom/bottom-sheet's overDrag: you can pull slightly past expanded/collapsed against a
@@ -46,9 +44,6 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 
 const tap = () => Haptics.selectionAsync().catch(() => {});
 const bump = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-
-type OverheatMode = 'off' | 'noac' | 'on';
-type ActivationTemp = '30' | '35' | '40';
 
 // Climate controls — RN build of the Tesla climate sheet. The bar is a bottom-anchored panel that you
 // drag up/down BY THE PANEL ITSELF (like the real app — swiping above it, on the car, does nothing).
@@ -137,22 +132,16 @@ export function ClimateScreen({ state, actions }: Props) {
     }),
   ).current;
 
-  const [temp, setTemp] = useState(19.5);
-  const [overheat, setOverheat] = useState<OverheatMode>('on');
-  const [activation, setActivation] = useState<ActivationTemp>('40');
-  const [bioweapon, setBioweapon] = useState(false);
-  const [camp, setCamp] = useState(false);
-  const [pet, setPet] = useState(false);
-
   const vented =
     state.leftFrontWindowOpen ||
     state.rightFrontWindowOpen ||
     state.leftRearWindowOpen ||
     state.rightRearWindowOpen;
 
+  // setTargetTemp clamps + snaps to the 0.5° grid, so the raw sum is safe to pass.
   const adjustTemp = (delta: number) => {
     tap();
-    setTemp((current) => clampTemp(current + delta));
+    actions.setTargetTemp(state.targetTempC + delta);
   };
 
   // "Vent" lowers all windows a little; "Close" raises them. Drives the four window flags the Godot
@@ -174,7 +163,7 @@ export function ClimateScreen({ state, actions }: Props) {
     const on = !state.frontDefrostOn;
     if (on) {
       actions.patch({ climateOn: true, frontDefrostOn: true, rearDefrostOn: true });
-      setTemp(HI_TEMP);
+      actions.setTargetTemp(HI_TEMP);
     } else {
       actions.patch({ frontDefrostOn: false, rearDefrostOn: false });
     }
@@ -221,7 +210,7 @@ export function ClimateScreen({ state, actions }: Props) {
             <Pressable hitSlop={16} onPress={() => adjustTemp(-0.5)}>
               <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
             </Pressable>
-            <Text style={styles.temp}>{formatTemp(temp)}</Text>
+            <Text style={styles.temp}>{formatTemp(state.targetTempC)}</Text>
             <Pressable hitSlop={16} onPress={() => adjustTemp(0.5)}>
               <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
             </Pressable>
@@ -244,10 +233,10 @@ export function ClimateScreen({ state, actions }: Props) {
         <Row
           symbol="microbe"
           label="Bioweapon Defense Mode"
-          active={bioweapon}
+          active={state.bioweaponOn}
           onPress={() => {
             tap();
-            setBioweapon((v) => !v);
+            actions.toggle('bioweaponOn');
           }}
         />
 
@@ -255,20 +244,20 @@ export function ClimateScreen({ state, actions }: Props) {
           <GroupRow
             symbol="tent"
             label="Camp Mode"
-            active={camp}
+            active={state.campModeOn}
             divider
             onPress={() => {
               tap();
-              setCamp((v) => !v);
+              actions.toggle('campModeOn');
             }}
           />
           <GroupRow
             symbol="pawprint.fill"
             label="Pet Mode"
-            active={pet}
+            active={state.petModeOn}
             onPress={() => {
               tap();
-              setPet((v) => !v);
+              actions.toggle('petModeOn');
             }}
           />
         </View>
@@ -282,10 +271,10 @@ export function ClimateScreen({ state, actions }: Props) {
               { key: 'noac', label: 'No A/C' },
               { key: 'on', label: 'On' },
             ]}
-            value={overheat}
+            value={state.cabinOverheatMode}
             onChange={(k) => {
               tap();
-              setOverheat(k as OverheatMode);
+              actions.setCabinOverheatMode(k as CabinOverheatMode);
             }}
           />
         </Section>
@@ -297,10 +286,10 @@ export function ClimateScreen({ state, actions }: Props) {
               { key: '35', label: '35°C' },
               { key: '40', label: '40°C' },
             ]}
-            value={activation}
+            value={state.cabinOverheatTemp}
             onChange={(k) => {
               tap();
-              setActivation(k as ActivationTemp);
+              actions.setCabinOverheatTemp(k as CabinOverheatTemp);
             }}
           />
         </Section>
