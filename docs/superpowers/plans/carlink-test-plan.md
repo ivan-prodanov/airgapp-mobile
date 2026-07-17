@@ -69,6 +69,57 @@ behaviour DISAGREES with readability (e.g. it treats something as "waiting" that
 the car clearly reports) is itself a finding — usually that the app reads a field
 we're not parsing. Reconcile the report against the corrected provenance above.
 
+## The optimistic-vs-waiting report — digested (2026-07-17)
+
+The report (`tesla-optimistic-buttons-FINDINGS.md`) landed a bigger finding than
+"which buttons spin": **our optimistic ARCHITECTURE is the inverse of Tesla's.**
+
+- **Us:** patch the vehicle state optimistically, dispatch with a rollback
+  closure, and a 30s intent-grace stops the poll reverting it.
+- **Them:** never patch state. Store the whole command in a pending list and
+  DERIVE the effective state by folding pending commands onto polled data.
+  Revert is free — drop the command. Two orthogonal hooks: `useEffectiveState`
+  (flip) and `useBusy(type)` (spinner).
+
+**We are visibly BACKWARDS on the two controls that matter most.** Our Home bar
+spins a control iff its `CONTROL_AFFECTED_KEYS` are pending, so:
+- `lock` (keys `['locked']`) **spins** — the report says lock FLIPS, no spinner.
+- `frunk`/`trunk` (keys `[]`) **never spin** — they are the ONE pair the report
+  says SHOULD spin.
+
+### Decision: keep patch+rollback, layer the report's per-button CLASSES on top
+
+The full pending-list-derive rewrite is a large, risky change and the flip case
+is behaviourally equivalent to what we already do. So: **do NOT rewrite the
+engine now.** Instead drive feedback off the command TYPE via
+`src/ble/commandFeedback.ts` (the report's §3 verdict as pure, tested data):
+`optimistic` (flip, no spinner) / `spinner` (frunk/trunk, climate-keeper) /
+`fire-and-forget` (honk/flash/homelink/boombox) / `release` (sliders/steppers).
+The pending-list-derive model stays documented as the eventual cleanup if
+patch+rollback ever bites — it composes especially well with the READ-first
+parser work (fold pending onto real polled state).
+
+### Feedback class per control (from the report §3)
+
+| Control | Class | In-flight look |
+|---|---|---|
+| Lock / Unlock, Sentry, Charge-port, Windows, Charge start/stop, Climate on/off | **optimistic** | flip instantly, NO spinner |
+| Seat heat/cool, Steering-wheel heat, Defrost, COP | **optimistic** | flip (seat heaters explicitly never spin) |
+| **Frunk / Trunk** | **spinner** | BusyIcon replaces icon, state does NOT flip |
+| **Keep / Dog / Camp** (climate keeper) | **spinner** | the one climate control that spins |
+| Remote start | **spinner** then active + countdown | brief spinner |
+| Honk, Flash, HomeLink, Boombox | **fire-and-forget** | no feedback |
+| Charge-limit / amps / temp | **release** | local value during drag; command on release |
+
+### Reconcile details worth copying (report §1e/§1g)
+- Poll cadence **5000 ms online / 1200 ms waking** (ours is 20s — a candidate to
+  match for a live feel).
+- **`COMMAND_FAILED` reverts immediately**; a no-ack command auto-clears at **30s**
+  (evaluated per poll tick, not a setTimeout — we already do this).
+- **Error card is a separate 7s layer**, independent of the 30s revert (we match).
+
+---
+
 ## Methodology — two independent passes
 
 ### PASS 1 — READ (does the car's real state load?)
