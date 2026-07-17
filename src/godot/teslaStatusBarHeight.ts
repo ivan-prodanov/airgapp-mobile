@@ -32,9 +32,27 @@ export const TESLA_SBH_TALL = 59;
 export const TESLA_SBH_NOTCH = 47;
 export const TESLA_SBH_PLAIN = 50;
 
-// The identifier prefixes their table maps to 59. Matched as a prefix so a whole
-// generation (e.g. every `iPhone17,x`) resolves, which is how their list reads
-// (bare `iPhone14` alongside the specific `iPhone14,4`).
+// ⚠️ INCOMPLETE — verified for the phones we ship to, SUSPECT for the rest.
+// Brief #9 (tesla-statusbar-table-RESEARCH-BRIEF.md) asks for the verbatim
+// function; until it lands, treat anything outside iPhone15..18 as unverified.
+//
+// The findings summarise their table as "these identifiers -> 59", but that list
+// cannot be literally right — it contradicts the devices' real geometry:
+//     iPhone14,6 = iPhone SE 3   -> real inset 20 (home button, NO notch!)
+//     iPhone13,1 = iPhone 12 mini-> real inset 50
+//     iPhone14,7 = iPhone 14     -> real inset 47
+//     iPhone15,2 = iPhone 14 Pro -> real inset 59  ✓
+// A 59pt status bar on a no-notch SE isn't credible, and a bare `iPhone13` prefix
+// makes the `iPhone13,1` entry redundant UNLESS they return different values. So
+// their function is probably a branch chain returning a DIFFERENT constant per
+// generation (13,1->50, 13->47, 14,4->50, 14,6->20, 14->47, 15+->59), which the
+// summary flattened onto its last value. That shape matches every real inset.
+//
+// We keep 59-for-everything-listed because (a) it is what the findings state and
+// (b) it is verified correct on our target (iPhone18,4 -> 59, measured). But on a
+// 12/13/14, a mini or an SE this will likely feed 59 where Tesla feeds 47/50/20 —
+// the exact bug class we just spent four turns finding, on a device we don't own.
+const TALL_PREFIXES = [
 const TALL_PREFIXES = [
   'iPhone13,1',
   'iPhone13',
@@ -52,7 +70,9 @@ const TALL_PREFIXES = [
 // anything newer, so a device they never listed still needs a branch.
 export function teslaStatusBarHeight(modelId: string | null, insetTop: number): number {
   if (modelId && TALL_PREFIXES.some((p) => modelId.startsWith(p))) return TESLA_SBH_TALL;
-  // Not in their list: fall back to their own notch/non-notch split. A real inset
-  // above the classic 20pt status bar means a notch/island of some kind.
+  // ⚠️ OUR PREDICATE, NOT THEIRS. The findings give the two VALUES ("other notch
+  // -> 47; non-notch -> 50") but never the test that chooses between them, so
+  // this inset check is an invention — flagged rather than passed off as parity.
+  // Brief #9 asks for their real condition.
   return insetTop > 20 ? TESLA_SBH_NOTCH : TESLA_SBH_PLAIN;
 }
