@@ -13,6 +13,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
+import { StatusBarFade } from '../components/StatusBarFade';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -191,6 +192,11 @@ export function ClimateScreen({ state, actions }: Props) {
     // box-none: touches above the panel fall through to the orbit guard (VehicleCanvas) — nothing
     // happens on the car. The panel below captures its own drags/taps.
     <View style={styles.root} pointerEvents="box-none">
+      {/* findings §2: Climate renders <StatusBarFade/> with no props as the first
+          child of its transparent container — a statusBarHeight-tall scrim over
+          the car. Fixed chrome, car-independent. */}
+      <StatusBarFade />
+
       {/* Seat + steering-wheel heater controls pinned to the Godot markers over the top-down car. */}
       <ClimateMarkerOverlay state={state} actions={actions} />
 

@@ -245,6 +245,8 @@ Climate takes the **else** branch: a bare shared-value write, **instantaneous**.
 
 ### 3b. The marker colours `[iOS-verified]`
 
+> 🛑 **CORRECTED by Round 12 (`tesla-icons-buttons-FINDINGS.md`).** The claim below that seats are "**#FF3A3A at every level including OFF**" and "**never grey out**" is **WRONG** — it read the tint *predicate* and never opened the *assets*. **`seat_climate_0`'s artwork is 100% hardcoded `fill="#999999"` and contains no `currentColor` path at all**, so at level 0 the seat renders **grey** regardless of the tint passed. Likewise **`buttonHeaterOff` (#999999) is NOT an unusable token** — it is the colour of the **unlit waves at every level**, baked into the SVG. (Same narrowing for the wheel: the button *does* pass `buttonHeaterOff`, but every `*_heater_off` asset has no `currentColor`, so the token is **inert**.) The rest of this subsection — the token values, the heat/cool split, disabled ⇒ opacity 0.5 — stands.
+
 **Headline: there is NO per-level tint.** Only three tint tokens exist; **the level is carried entirely by the icon asset.**
 
 | token | LIGHT | DARK | CYBERTRUCK |
