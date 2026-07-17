@@ -17,7 +17,10 @@ import { ExpoGodotView } from '../../modules/expo-godot-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CAMERA_ANIM } from './cameraPresets';
+import * as Device from 'expo-device';
+
 import { isVehicleDataUnreliable } from '@/ble/vehicleStatusText';
+import { teslaStatusBarHeight } from './teslaStatusBarHeight';
 import { useCarLinkStatus } from '@/state/VehicleProvider';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { FrameData } from '../types/rendererMessages';
@@ -185,6 +188,11 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const carLink = useCarLinkStatus();
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
+  // NOT insets.top. Their frames are built from a HARDCODED statusBarHeight
+  // table, which on this phone says 59 where the real inset reports 68 — a 9pt
+  // gap that made Climate render 1.5% small (measured on device; see
+  // teslaStatusBarHeight.ts for the full derivation).
+  const statusBarHeight = teslaStatusBarHeight(Device.modelId ?? null, insets.top);
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
@@ -231,7 +239,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     layout.current = { width, height };
-    const frame = buildFrame(width, height, state.cameraMode, false, insets.top, screenHeight);
+    const frame = buildFrame(width, height, state.cameraMode, false, statusBarHeight, screenHeight);
 
     if (!booted.current) {
       bridge.boot(state, frame);
@@ -247,7 +255,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   useEffect(() => {
     if (booted.current && layout.current) {
       bridge.updateFrame(
-        buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, insets.top, screenHeight),
+        buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, statusBarHeight, screenHeight),
       );
     }
   }, [bridge, state.cameraMode]);
