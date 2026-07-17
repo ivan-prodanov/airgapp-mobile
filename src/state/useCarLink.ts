@@ -47,7 +47,7 @@ import {
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
-import { vcsecStatusToPatch } from '@/ble/telemetry';
+import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
@@ -501,6 +501,22 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     };
   }, [teardown, teardownWhenIdle, prunePending]);
 
+  // Persist the infotainment-derived fields so a cold start can paint the real
+  // battery/range immediately (their cached vehicle_data slice — findings §B),
+  // instead of falling back to the mock.
+  const cacheInfotainment = useCallback((patch: Partial<VehicleViewState>) => {
+    const base = cacheRef.current;
+    if (!base) return; // no timestamp yet; the awake stamp below seeds it
+    const next: CarLinkCache = {
+      ...base,
+      batteryLevel: patch.batteryLevel ?? base.batteryLevel,
+      rangeMiles: patch.rangeMiles ?? base.rangeMiles,
+      charging: patch.charging ?? base.charging,
+    };
+    cacheRef.current = next;
+    saveCacheRef.current?.(next);
+  }, []);
+
   // stampRead records a successful contact with the car.
   //
   // lastVehicleDataAt is our analogue of their vehicle_data timestamp, and it
@@ -589,6 +605,36 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
         stampRead(patch, Date.now());
         setConnection('online');
+
+        // ── INFOTAINMENT read (charge / climate / drive / location) ─────────
+        // VCSEC gives us lock/awake/closures and nothing else — no state of
+        // charge, no range. Without this the battery % stayed on its MOCK 48 and
+        // `rangeMiles` was permanently null, so tapping the battery rendered a
+        // blank label (correctly, per findings §2b — there was genuinely no
+        // range to show).
+        //
+        // Gated on AWAKE: awakeSync explicitly does not wake the car, and its
+        // reads simply fault on a sleeping one. Best-effort — a failure here
+        // must not knock the connection offline, because the VCSEC read above
+        // already succeeded and is what 'online' means.
+        if (patch.awake === true) {
+          try {
+            const snap = await gw.awakeSync();
+            if (stopped || paused) return;
+            const infoPatch = filterPatchUnderIntent(
+              infotainmentToPatch(snap),
+              intentRef.current,
+              Date.now(),
+            );
+            if (Object.keys(infoPatch).length) {
+              applyTelemetryRef.current(infoPatch);
+              cacheInfotainment(infoPatch);
+            }
+          } catch {
+            // Asleep mid-read, or the infotainment session faulted. The VCSEC
+            // half stands; try again next tick.
+          }
+        }
         if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
       } catch {
         // A failed read means no clean contact this tick — drop to offline
