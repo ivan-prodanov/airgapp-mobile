@@ -64,6 +64,7 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
   // The 300ms Easing.cubic content fade (findings R10 §3d) — see useContentFade.
   const fade = useContentFade();
   const [visible, setVisible] = useState(false);
+  const shown = useRef(false);
   const [selected, setSelected] = useState<ClimateKey | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -141,7 +142,14 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
     [actions, armTimer],
   );
 
-  if (!visible || !markers) {
+  // ⚠️ Once shown, STAY shown. The renderer flips marker-visibility to false the
+  // moment the camera starts moving away, and unmounting on that made the
+  // markers VANISH on the way out instead of fading (the user's "the markers
+  // don't fade out"). The pushed card owns our lifetime — it fades us over 479ms
+  // and unmounts us when that finishes — so `visible` only ever needs to gate
+  // the FIRST appearance.
+  if (!shown.current && visible && markers) shown.current = true;
+  if (!shown.current || !markers) {
     return null;
   }
 

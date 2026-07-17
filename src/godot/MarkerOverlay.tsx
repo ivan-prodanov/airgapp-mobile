@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, PixelRatio, Pressable, StyleSheet, Text } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
@@ -31,6 +31,7 @@ export function MarkerOverlay({ state, actions }: Props) {
   const bridge = useGodotBridge();
   const [markers, setMarkers] = useState<VehicleMarkers | null>(null);
   const [visible, setVisible] = useState(false);
+  const shown = useRef(false);
   const pixelRatio = PixelRatio.get();
 
   // The screen's content fade — see useContentFade. ControlsScreen runs the same
@@ -50,7 +51,14 @@ export function MarkerOverlay({ state, actions }: Props) {
     };
   }, [bridge]);
 
-  if (!visible || !markers) {
+  // ⚠️ Once shown, STAY shown. The renderer flips marker-visibility to false the
+  // moment the camera starts moving away, and unmounting on that made the
+  // markers VANISH on the way out instead of fading (the user's "the markers
+  // don't fade out"). The pushed card owns our lifetime — it fades us over 479ms
+  // and unmounts us when that finishes — so `visible` only ever needs to gate
+  // the FIRST appearance.
+  if (!shown.current && visible && markers) shown.current = true;
+  if (!shown.current || !markers) {
     return null;
   }
 
