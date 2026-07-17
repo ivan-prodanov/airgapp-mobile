@@ -89,7 +89,9 @@ left = 0 ;  width = SCREEN_WIDTH
 
 ### 2b. The three inputs, defined and resolved
 
-1. **`statusBarOffset`** `[differ]` — fn #32533, iOS 1338583. On iOS it **is** `statusBarHeight()` (Android = 0). `statusBarHeight` (iOS ~1338500, verbatim device branches): identifiers `iPhone13,1 / iPhone13 / iPhone14,4 / iPhone14,6 / iPhone14 / iPhone15 / iPhone16 / iPhone17 / iPhone18 → 59`; other notch → 47; non-notch → 50. **A 393×852 Dynamic-Island phone carries an `iPhone15,x`/`iPhone16,x`/`iPhone17,x` identifier → `statusBarOffset = 59`.** So it is the **same** value as `statusBarHeight`, and equal to the `insets.top` (59) you already pass. **This is not your error.**
+1. **`statusBarOffset`** `[differ]` — fn #32533, iOS 1338583. On iOS it **is** `statusBarHeight()` (Android = 0). **A 393×852 Dynamic-Island phone carries an `iPhone15,x`/`iPhone16,x`/`iPhone17,x` identifier → `statusBarOffset = 59`.** So it is the **same** value as `statusBarHeight`, and equal to the `insets.top` (59) you already pass. **This is not your error.**
+
+   > 🛑 **The device table that used to be quoted here was WRONG and has been removed. See `tesla-statusbar-table-FINDINGS.md` (Round 9) for the verbatim function.** It was produced by a *filtered grep* that stripped the `if` statements, then inferred the mapping from adjacency. Two errors: (a) it flattened **four** distinct return values (**50 / 47 / 59 / library-fallback**) into a single "→ 59"; (b) **"other notch → 47; non-notch → 50" was fabricated — there is no notch predicate in that function at all.** The real name is `getAdjustedStatusBarHeight` (fn #32534), and the 50-vs-47 split is **mini vs non-mini**, not notch vs non-notch. The `59` conclusion for a 393×852 phone (and for our `iPhone18,4`) is unaffected and remains correct — but do not trust the rest of the old list.
 
 2. **`240`** — **not a named constant, and not a sheet height.** It is two inline literals `− 320 + 80` (a fixed net inset). Copy the literal `240`; there is no "their sheet height vs ours" nuance to worry about. `[iOS-verified]`
 

@@ -1,77 +1,93 @@
-// Tesla's `statusBarHeight` — a HARDCODED device-identifier lookup, NOT the real
-// safe-area inset.
+// Tesla's `getAdjustedStatusBarHeight` — a HARDCODED device-identifier table,
+// NOT the safe-area inset.
 //
-// Source: docs/superpowers/research/tesla-renderer-transitions-FINDINGS.md §2b
-// (iOS ~1338500), verbatim: identifiers `iPhone13,1 / iPhone13 / iPhone14,4 /
-// iPhone14,6 / iPhone14 / iPhone15 / iPhone16 / iPhone17 / iPhone18` -> 59;
-// any other notched device -> 47; non-notch -> 50. `Specifications.statusBarOffset`
-// (#32533) returns exactly this on iOS (and 0 on Android).
+// Source: docs/superpowers/research/tesla-statusbar-table-FINDINGS.md — the
+// verbatim branch chain of fn #32534 (iOS 1338493-1338578), read unfiltered and
+// re-derived by two further agents. It SUPERSEDES the earlier summary in
+// tesla-renderer-transitions-FINDINGS §2b, which was wrong twice over: it
+// flattened four distinct return values into "-> 59", and its "other notch ->
+// 47; non-notch -> 50" rule was FABRICATED — there is no notch predicate in this
+// function at all. (Tesla's real HAS_NOTCH exists, but only feeds the hamburger
+// padding and the bottom nav bar; never the status bar.)
 //
-// WHY THIS FILE EXISTS — measured on device, not inferred:
-//   Their frames are built from THIS number, and two of them bake it in:
-//     Home     top = statusBarHeight + 60,  height = 355            (absolute)
-//     Controls top = 0,                     height = SCREEN_H - 20  (no sbh)
-//     Climate  top = statusBarHeight,       height = SCREEN_H - sbh - 240
-//   We were passing `useSafeAreaInsets().top`, which on the target phone
-//   (420x912) reports **68**, not 59. Consequences, exactly as observed:
-//     - Controls: sbh absent from the formula      -> pixel-exact ("exact copy")
-//     - Home:     height is the absolute 355       -> same SIZE, 9pt low
-//     - Climate:  sbh is INSIDE the height         -> 604 vs 613 = 1.5% SMALL
-//   That 1.5% was the "zoomed out a little" / "mirrors slightly inward" the RE
-//   could never explain: nothing scales the car — we just fed the frame maths a
-//   different status-bar height than Tesla does.
+// WHY WE MIRROR THIS AT ALL — measured on device, not inferred:
+//   Every renderer frame is built from this number, and Climate BAKES IT INTO
+//   ITS HEIGHT (`SCREEN_HEIGHT - sbh - 240`), so a wrong value silently rescales
+//   the car. We used to pass `useSafeAreaInsets().top`, which on the target
+//   phone (iPhone18,4, 420x912) reports 68 where Tesla's table says 59:
+//     Controls  sbh absent from its formula   ->  pixel-exact
+//     Home      height is the absolute 355    ->  right size, 9pt low
+//     Climate   sbh is INSIDE the height      ->  604 vs 613 = 1.5% too small
+//   which is exactly what the user reported. Nothing scales the car — we were
+//   feeding the frame maths a different status-bar height than Tesla does.
 //
-// So: to match their render we must reproduce their LOOKUP, including the fact
-// that it ignores the device's actual inset (e.g. under Display Zoom).
-
-// PURE — no react-native / expo imports, so this stays node-testable (the same
-// isolation rule as ble/*: anything importing a native module can't load under
-// tsx). VehicleCanvas binds Device.modelId + Platform.OS to it.
+// PURE — no react-native / expo imports, so it stays node-testable (same
+// isolation rule as ble/*). VehicleCanvas binds the device id + window + inset.
 
 export const TESLA_SBH_TALL = 59;
-export const TESLA_SBH_NOTCH = 47;
-export const TESLA_SBH_PLAIN = 50;
+export const TESLA_SBH_WIDE = 47; // 12 / 13 / 14, non-mini
+export const TESLA_SBH_MINI = 50; // 12 mini / 13 mini
+export const TESLA_SBH_IPHONE_X = 44; // the library's notched value
+export const TESLA_SBH_PLAIN = 20; // the library's pre-notch value
 
-// ⚠️ INCOMPLETE — verified for the phones we ship to, SUSPECT for the rest.
-// Brief #9 (tesla-statusbar-table-RESEARCH-BRIEF.md) asks for the verbatim
-// function; until it lands, treat anything outside iPhone15..18 as unverified.
-//
-// The findings summarise their table as "these identifiers -> 59", but that list
-// cannot be literally right — it contradicts the devices' real geometry:
-//     iPhone14,6 = iPhone SE 3   -> real inset 20 (home button, NO notch!)
-//     iPhone13,1 = iPhone 12 mini-> real inset 50
-//     iPhone14,7 = iPhone 14     -> real inset 47
-//     iPhone15,2 = iPhone 14 Pro -> real inset 59  ✓
-// A 59pt status bar on a no-notch SE isn't credible, and a bare `iPhone13` prefix
-// makes the `iPhone13,1` entry redundant UNLESS they return different values. So
-// their function is probably a branch chain returning a DIFFERENT constant per
-// generation (13,1->50, 13->47, 14,4->50, 14,6->20, 14->47, 15+->59), which the
-// summary flattened onto its last value. That shape matches every real inset.
-//
-// We keep 59-for-everything-listed because (a) it is what the findings state and
-// (b) it is verified correct on our target (iPhone18,4 -> 59, measured). But on a
-// 12/13/14, a mini or an SE this will likely feed 59 where Tesla feeds 47/50/20 —
-// the exact bug class we just spent four turns finding, on a device we don't own.
-const TALL_PREFIXES = [
-  'iPhone13,1',
-  'iPhone13',
-  'iPhone14,4',
-  'iPhone14,6',
-  'iPhone14',
-  'iPhone15',
-  'iPhone16',
-  'iPhone17',
-  'iPhone18',
-];
+export interface WindowSize {
+  width: number;
+  height: number;
+}
 
-// modelId is e.g. "iPhone17,2". `insetTop` is only used to tell a notched device
-// from a non-notched one for models outside their list — their table predates
-// anything newer, so a device they never listed still needs a branch.
-export function teslaStatusBarHeight(modelId: string | null, insetTop: number): number {
-  if (modelId && TALL_PREFIXES.some((p) => modelId.startsWith(p))) return TESLA_SBH_TALL;
-  // ⚠️ OUR PREDICATE, NOT THEIRS. The findings give the two VALUES ("other notch
-  // -> 47; non-notch -> 50") but never the test that chooses between them, so
-  // this inset check is an invention — flagged rather than passed off as parity.
-  // Brief #9 asks for their real condition.
-  return insetTop > 20 ? TESLA_SBH_NOTCH : TESLA_SBH_PLAIN;
+// Their fallback: `require(2451).getStatusBarHeight()` — stock
+// react-native-status-bar-height, called with ZERO args:
+//     ios: isIPhoneX ? 44 : 20
+//     isIPhoneX = (W === 375 && H === 812) || (W === 414 && H === 896)
+// computed ONCE at module-eval, so it never reacts to rotation.
+//
+// That library is correct for <= iPhone 11; Tesla's table is a patch on top for
+// iPhone 12+. Which explains the two odd-looking rows: the SE 3 is deliberately
+// routed BACK here (375x667 -> 20, correct), while the minis need exact
+// carve-outs because the library would wrongly call them an iPhone X (they are
+// also 375x812 -> 44, but their real inset is 50).
+function teslaLibraryFallback(win: WindowSize, insetTop: number): number {
+  const isIPhoneX =
+    (win.width === 375 && win.height === 812) || (win.width === 414 && win.height === 896);
+  if (isIPhoneX) return TESLA_SBH_IPHONE_X;
+
+  // ⚠️ DELIBERATE DIVERGENCE FROM TESLA (findings §4 recommends it).
+  // Their library returns 20 here — including for ANY iPhone newer than the
+  // iPhone18,x generation, which falls through all 14 branches. That is ~39pt
+  // short, and because Climate bakes sbh into its height it would silently
+  // rescale the car on a future phone. Their table is an allowlist that needs an
+  // app update per hardware generation and degrades to the SMALLEST value; we
+  // would rather degrade to the real inset. Affects UNKNOWN devices only — every
+  // shipping identifier is matched below, so parity is unaffected.
+  return insetTop > 0 ? insetTop : TESLA_SBH_PLAIN;
+}
+
+// deviceId is the raw `hw.machine` string, e.g. "iPhone18,4". Tesla reads it via
+// react-native-device-info's getDeviceId(); we use expo-device's Device.modelId,
+// which surfaces the same value (findings §2 — same shape, INFERRED equal since
+// both are native reads).
+//
+// ⚠️ THE ORDER IS LOAD-BEARING (findings §1c). Each exact `===` carve-out MUST
+// precede the `.includes()` that would otherwise swallow it — and their tests
+// really are unanchored `.includes`, not startsWith / regex / a map:
+//     'iPhone13,1' before includes('iPhone13')  -> else the 12 mini regresses 50->47
+//     'iPhone14,4' before includes('iPhone14')  -> else the 13 mini regresses 50->47
+//     'iPhone14,6' before includes('iPhone14')  -> else the SE 3 gets a 27pt
+//                                                  phantom notch on a notchless phone
+export function teslaStatusBarHeight(
+  deviceId: string | null,
+  win: WindowSize,
+  insetTop: number,
+): number {
+  const id = deviceId ?? '';
+  if (id === 'iPhone13,1') return TESLA_SBH_MINI; // 12 mini
+  if (id.includes('iPhone13')) return TESLA_SBH_WIDE; // 12 / Pro / Pro Max
+  if (id === 'iPhone14,4') return TESLA_SBH_MINI; // 13 mini
+  if (id === 'iPhone14,6') return teslaLibraryFallback(win, insetTop); // SE 3 -> 20
+  if (id.includes('iPhone14')) return TESLA_SBH_WIDE; // 13 / 13 Pro / 14 / Plus
+  if (id.includes('iPhone15')) return TESLA_SBH_TALL; // 14 Pro / 15
+  if (id.includes('iPhone16')) return TESLA_SBH_TALL; // 15 Pro
+  if (id.includes('iPhone17')) return TESLA_SBH_TALL; // 16 family
+  if (id.includes('iPhone18')) return TESLA_SBH_TALL; // 17 / Air  (ours: iPhone18,4)
+  return teslaLibraryFallback(win, insetTop);
 }

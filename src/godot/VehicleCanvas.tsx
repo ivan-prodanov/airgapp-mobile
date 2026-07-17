@@ -187,12 +187,16 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const bridge = useMemo(() => new GodotRendererBridge(), []);
   const carLink = useCarLinkStatus();
   const insets = useSafeAreaInsets();
-  const { height: screenHeight } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   // NOT insets.top. Their frames are built from a HARDCODED statusBarHeight
   // table, which on this phone says 59 where the real inset reports 68 — a 9pt
   // gap that made Climate render 1.5% small (measured on device; see
   // teslaStatusBarHeight.ts for the full derivation).
-  const statusBarHeight = teslaStatusBarHeight(Device.modelId ?? null, insets.top);
+  const statusBarHeight = teslaStatusBarHeight(
+    Device.modelId ?? null,
+    { width: screenWidth, height: screenHeight },
+    insets.top,
+  );
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
