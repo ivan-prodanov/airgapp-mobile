@@ -53,7 +53,6 @@ export const TESLA_SBH_PLAIN = 50;
 // 12/13/14, a mini or an SE this will likely feed 59 where Tesla feeds 47/50/20 —
 // the exact bug class we just spent four turns finding, on a device we don't own.
 const TALL_PREFIXES = [
-const TALL_PREFIXES = [
   'iPhone13,1',
   'iPhone13',
   'iPhone14,4',
