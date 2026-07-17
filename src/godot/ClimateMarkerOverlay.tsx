@@ -29,7 +29,11 @@ type ClimateKey = SeatPosition | 'steeringWheel';
 const HEAT = '#FF3B30';
 const COOL = '#0A84FF';
 const DIM = 'rgba(255,255,255,0.55)';
-const AUTO_WAVE = 'rgba(255,255,255,0.9)';
+// Auto's wave colour. Was rgba(255,255,255,0.9) — near-white, which is
+// indistinguishable from the white seats it sits on. #999999 is Tesla's real
+// `buttonHeaterOff` token (tesla-transitions-markers-FINDINGS §3b): a true
+// mid-grey that reads against both the white seats and the dark cabin.
+const AUTO_WAVE = '#999999';
 // Steering wheel body — neutral grey (the heat waves on top carry the state colour).
 const WHEEL_GREY = 'rgba(235,235,235,0.92)';
 
