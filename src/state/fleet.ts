@@ -19,6 +19,10 @@ import {
 export interface Vehicle {
   id: string;
   name: string;
+  // The enrolled car's VIN, bound at runtime from PiConfig (P3.T1). Present on
+  // exactly ONE vehicle — the real car. Demo cars added via addVehicle have
+  // none, which is what makes "is this the live car?" answerable at all.
+  vin?: string;
   state: VehicleViewState;
   // Stable mock GPS offset from the user's live position (random bearing, fixed ~100 m). Generated
   // once at creation so the Location pin doesn't re-randomize on every render. Removed when BLE lands.
@@ -49,6 +53,20 @@ export function createInitialFleet(): FleetState {
       { id: 'veh_1', name: 'Red Velvet', state: { ...initialVehicleState }, mockLocationOffset: createMockLocationOffset() },
     ],
     activeId: 'veh_1',
+  };
+}
+
+// bindVehicleVin marks one vehicle as the enrolled car. Idempotent, and it
+// CLEARS the vin from every other vehicle so the "live" car can never be
+// ambiguous — two vins would silently share one gateway (see useCarLink's
+// single-gateway invariant).
+export function bindVehicleVin(fleet: FleetState, id: string, vin: string): FleetState {
+  if (fleet.vehicles.every((v) => (v.id === id ? v.vin === vin : v.vin === undefined))) return fleet;
+  return {
+    ...fleet,
+    vehicles: fleet.vehicles.map((v) =>
+      v.id === id ? { ...v, vin } : v.vin === undefined ? v : { ...v, vin: undefined },
+    ),
   };
 }
 

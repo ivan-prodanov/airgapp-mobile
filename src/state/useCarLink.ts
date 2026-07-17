@@ -96,8 +96,14 @@ const EMPTY_PENDING: ReadonlySet<VehicleStateKey> = new Set();
 // link itself. Commands still go through dispatch (CarLink), which is
 // deliberately NOT exposed here.
 export interface CarLinkStatus {
-  // enabled + config + device keys + a VIN to bind to.
+  // A car is ENROLLED (enabled + config + device keys + a VIN to bind to).
+  //
+  // ⚠️ This says nothing about WHICH vehicle is on screen. The fleet layer
+  // narrows it to "the ACTIVE car is the live one" before re-exposing it under
+  // the same name — see useFleetState. Consumers get the narrowed version.
   linked: boolean;
+  // The enrolled car's VIN, so the fleet can tell which of its vehicles is real.
+  vin: string | null;
   // 'offline' = no successful contact yet / last poll failed / backgrounded.
   // 'connecting' = first contact in flight. 'online' = last read succeeded.
   connection: 'offline' | 'connecting' | 'online';
@@ -164,6 +170,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   applyTelemetryRef.current = applyTelemetry;
 
   const [linked, setLinked] = useState(false);
+  const [vin, setVin] = useState<string | null>(null);
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -254,6 +261,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         cfgRef.current = cfg;
         keysRef.current = keys;
         setLinked(!!cfg?.vin);
+        setVin(cfg?.vin ?? null);
         // Rehydrate the cached telemetry BEFORE the first poll lands, so the
         // header opens on "Last seen {age} ago" + cached battery rather than
         // "Connecting" + a mock level (findings §B).
@@ -695,6 +703,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   return useMemo<CarLink>(
     () => ({
       linked,
+      vin,
       connection,
       transport,
       lastUpdatedAt,
@@ -704,6 +713,6 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       dispatch,
       refresh,
     }),
-    [linked, connection, transport, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, dispatch, refresh],
+    [linked, vin, connection, transport, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, dispatch, refresh],
   );
 }

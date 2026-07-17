@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CarModel, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import {
+  bindVehicleVin,
   activeIndex,
   activeVehicle,
   addVehicle,
@@ -49,23 +50,44 @@ export function useFleetState(): {
   );
 
   // applyTelemetry is the PLAIN write path handed to the poll: merge the
-  // (already intent-filtered) VCSEC patch into the active car. Guarded to the
-  // linked car — for v1's single real car the active car IS the live car, so a
-  // stray telemetry write can never land on a demo car. linkedRef breaks the
-  // chicken-and-egg (useCarLink needs applyTelemetry; the guard needs `linked`)
-  // and is read only inside the async poll, well after the ref is populated.
-  const linkedRef = useRef(false);
+  // (already intent-filtered) patch into the active car.
+  //
+  // ⚠️ Gated on the ACTIVE car being the LIVE one, not merely on a car being
+  // enrolled. The old guard's comment said "for v1's single real car the active
+  // car IS the live car" — true when written, FALSE since the fleet gained
+  // addVehicle: swipe to a demo car and the real car's telemetry would overwrite
+  // the demo car's state. The ref breaks the chicken-and-egg (useCarLink needs
+  // applyTelemetry; the guard needs the result) and is read only inside the
+  // async poll, well after it's populated.
+  const activeIsLiveRef = useRef(false);
   const applyTelemetry = useCallback(
     (patch: Partial<VehicleViewState>) => {
-      if (!linkedRef.current) return;
+      if (!activeIsLiveRef.current) return;
       applyActive((s) => ({ ...s, ...patch }));
     },
     [applyActive],
   );
   const carLink = useCarLink({ applyTelemetry });
-  linkedRef.current = carLink.linked;
 
   const current = activeVehicle(fleet);
+
+  // ── P3.T1: which vehicle IS the enrolled car? ────────────────────────────
+  // Bind the enrolled VIN to the fleet's FIRST vehicle. That is the app's
+  // existing assumption made explicit (the original 'veh_1' is the real car;
+  // everything from addVehicle is a demo), and it's the seam the real
+  // enrollment flow replaces once the user picks their car after Pi setup.
+  useEffect(() => {
+    const vin = carLink.vin;
+    const first = fleet.vehicles[0];
+    if (!vin || !first || first.vin === vin) return;
+    setFleet((f) => (f.vehicles[0] ? bindVehicleVin(f, f.vehicles[0].id, vin) : f));
+  }, [carLink.vin, fleet.vehicles]);
+
+  // THE narrowing. `carLink.linked` only means "a car is enrolled"; a command is
+  // only ever legitimate when the car ON SCREEN is that car. Without this,
+  // tapping Lock on a demo Model S sent a real lock to the real Tesla.
+  const activeIsLive = carLink.linked && !!carLink.vin && current.vin === carLink.vin;
+  activeIsLiveRef.current = activeIsLive;
 
   // applyActiveUser wraps applyActive for USER-initiated mutations only: it
   // computes prev→next and, for a linked (live) car, dispatches the reconciled
@@ -82,7 +104,7 @@ export function useFleetState(): {
   // the wrapper (and `actions`) always see the freshest snapshot.
   const applyActiveUser = useCallback(
     (update: (state: VehicleViewState) => VehicleViewState) => {
-      if (carLink.linked) {
+      if (activeIsLive) {
         const prev = current.state;
         const next = update(prev);
         const commands = diffToCommands(prev, next);
@@ -127,7 +149,10 @@ export function useFleetState(): {
 
   const carLinkStatus = useMemo<CarLinkStatus>(
     () => ({
-      linked: carLink.linked,
+      // Consumers (Home's status line, the controls' pending state) must see
+      // "the car in front of me is live", not "some car is enrolled".
+      linked: activeIsLive,
+      vin: carLink.vin,
       connection: carLink.connection,
       transport: carLink.transport,
       lastUpdatedAt: carLink.lastUpdatedAt,
@@ -137,7 +162,8 @@ export function useFleetState(): {
       pending: carLink.pending,
     }),
     [
-      carLink.linked,
+      activeIsLive,
+      carLink.vin,
       carLink.connection,
       carLink.transport,
       carLink.lastUpdatedAt,

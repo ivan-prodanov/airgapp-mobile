@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  bindVehicleVin,
   activeVehicle,
   addVehicle,
   AMP_MAX,
@@ -294,4 +295,45 @@ test('setpoints are per-vehicle: editing the active car leaves the others alone'
   const edited = updateActiveVehicleState(fleet, (s) => setChargeLimitState(s, 100));
   assert.equal(activeVehicle(edited).state.chargeLimitPercent, 100);
   assert.equal(edited.vehicles[0].state.chargeLimitPercent, 80); // veh_1 untouched
+});
+
+// ── P3.T1: which vehicle is the enrolled car? ──────────────────────────────
+test('bindVehicleVin marks one vehicle as the live car', () => {
+  const fleet = addVehicle(createInitialFleet(), 'modelS');
+  const bound = bindVehicleVin(fleet, fleet.vehicles[0].id, '5YJ...123');
+  assert.equal(bound.vehicles[0].vin, '5YJ...123');
+  assert.equal(bound.vehicles[1].vin, undefined, 'a demo car must never carry a vin');
+});
+
+test('bindVehicleVin CLEARS the vin from every other vehicle — "live" must be unambiguous', () => {
+  // Two vins would silently share one gateway (useCarLink's single-gateway
+  // invariant: session.ts's _domainCache is keyed on domain only, not VIN).
+  let fleet = addVehicle(createInitialFleet(), 'modelS');
+  fleet = bindVehicleVin(fleet, fleet.vehicles[0].id, 'VIN_A');
+  fleet = bindVehicleVin(fleet, fleet.vehicles[1].id, 'VIN_B');
+  assert.equal(fleet.vehicles[0].vin, undefined);
+  assert.equal(fleet.vehicles[1].vin, 'VIN_B');
+  assert.equal(fleet.vehicles.filter((v) => v.vin !== undefined).length, 1);
+});
+
+test('bindVehicleVin is idempotent — returns the same object when nothing changes', () => {
+  const fleet = bindVehicleVin(createInitialFleet(), 'veh_1', 'VIN_A');
+  assert.equal(bindVehicleVin(fleet, 'veh_1', 'VIN_A'), fleet, 'must not churn state each render');
+});
+
+test('a fresh fleet has no vin — nothing is live until enrollment binds one', () => {
+  assert.equal(createInitialFleet().vehicles[0].vin, undefined);
+});
+
+// The rule useFleetState applies. Pinned here because getting it wrong sends a
+// real command to a real car from a demo car's UI.
+const activeIsLive = (activeVin: string | undefined, enrolled: string | null, linked: boolean) =>
+  linked && !!enrolled && activeVin === enrolled;
+
+test('activeIsLive: only the enrolled car on screen counts as live', () => {
+  assert.equal(activeIsLive('VIN_A', 'VIN_A', true), true, 'the real car, enrolled');
+  assert.equal(activeIsLive(undefined, 'VIN_A', true), false, 'a DEMO car while a real car is enrolled');
+  assert.equal(activeIsLive('VIN_B', 'VIN_A', true), false, 'a different car');
+  assert.equal(activeIsLive('VIN_A', null, false), false, 'nothing enrolled');
+  assert.equal(activeIsLive(undefined, null, false), false, 'pure demo app');
 });
