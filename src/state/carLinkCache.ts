@@ -31,10 +31,25 @@ export function carLinkCacheKey(vin: string): string {
   return `carlink.cache.${vin}`;
 }
 
+// NORMALISE on load. This is persisted across app versions, so a payload can
+// predate today's shape — `rangeKm` was renamed to `rangeMiles` in the Round-5
+// work, and the old key rehydrated as `undefined`, which then rendered "NaN km".
+// Anything absent or non-finite becomes null, so a stale cache degrades to "no
+// value" instead of leaking undefined into vehicle state.
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
+
 export async function loadCarLinkCache(storage: AppStorage, vin: string): Promise<CarLinkCache | null> {
-  const cached = await load<CarLinkCache | null>(storage, carLinkCacheKey(vin), null);
-  if (!cached || typeof cached.lastVehicleDataAt !== 'number') return null;
-  return cached;
+  const cached = await load<Partial<CarLinkCache> | null>(storage, carLinkCacheKey(vin), null);
+  const at = num(cached?.lastVehicleDataAt);
+  if (at === null) return null;
+  return {
+    lastVehicleDataAt: at,
+    batteryLevel: num(cached?.batteryLevel),
+    rangeMiles: num(cached?.rangeMiles),
+    charging: bool(cached?.charging),
+    awake: bool(cached?.awake),
+  };
 }
 
 export function makeCarLinkCacheSaver(storage: AppStorage, vin: string): (value: CarLinkCache) => void {

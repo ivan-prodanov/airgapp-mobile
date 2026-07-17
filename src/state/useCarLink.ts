@@ -265,10 +265,13 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
             cacheRef.current = cached;
             setLastVehicleDataAt(cached.lastVehicleDataAt);
             const patch: Partial<VehicleViewState> = {};
-            if (cached.batteryLevel !== null) patch.batteryLevel = cached.batteryLevel;
-            if (cached.rangeMiles !== null) patch.rangeMiles = cached.rangeMiles;
-            if (cached.charging !== null) patch.charging = cached.charging;
-            if (cached.awake !== null) patch.awake = cached.awake;
+            // `!= null` (loose) — a cache written under an older schema is
+            // missing today's keys, and `undefined !== null` would happily write
+            // undefined into state. That's how "NaN km" shipped.
+            if (cached.batteryLevel != null) patch.batteryLevel = cached.batteryLevel;
+            if (cached.rangeMiles != null) patch.rangeMiles = cached.rangeMiles;
+            if (cached.charging != null) patch.charging = cached.charging;
+            if (cached.awake != null) patch.awake = cached.awake;
             if (Object.keys(patch).length) applyTelemetryRef.current(patch);
           }
         }

@@ -92,13 +92,19 @@ export const KM_PER_MILES = 1.609344;
 export function batteryLabel(
   mode: 'percent' | 'distance',
   pct: number,
-  rangeMiles: number | null,
+  rangeMiles: number | null | undefined,
   unit: 'km' | 'mi',
 ): string | null {
   if (mode === 'percent') return `${Math.round(pct)}%`;
   // findings §2b: in distance mode with no range, their string builder returns
   // undefined and the Text renders NOTHING. It does NOT fall back to percent.
-  if (rangeMiles === null) return null;
+  //
+  // `== null` (loose) on purpose — it catches undefined too. A strict `=== null`
+  // shipped "NaN km": a persisted cache written before rangeKm was renamed to
+  // rangeMiles rehydrated `undefined` into state, which sailed past the check
+  // and multiplied to NaN. The Number.isFinite guard is the belt to that braces:
+  // this renders on screen, so it must never emit garbage regardless of input.
+  if (rangeMiles == null || !Number.isFinite(rangeMiles)) return null;
   const value = unit === 'km' ? rangeMiles * KM_PER_MILES : rangeMiles;
   return `${Math.round(value)} ${unit}`;
 }

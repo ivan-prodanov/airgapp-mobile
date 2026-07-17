@@ -96,4 +96,17 @@ describe('batteryLabel (findings §C4 / Round 5 §2a — rangeMiles is the RAW f
   it('still renders percent with no range, since % needs no range', () => {
     assert.equal(batteryLabel('percent', 75, null, 'km'), '75%');
   });
+
+  it('renders NOTHING for undefined — never "NaN km"', () => {
+    // The shipped bug: a cache written before rangeKm -> rangeMiles rehydrated
+    // `undefined` into state; a strict `=== null` let it through and it
+    // multiplied to NaN.
+    assert.equal(batteryLabel('distance', 75, undefined, 'km'), null);
+    assert.equal(batteryLabel('distance', 75, undefined, 'mi'), null);
+  });
+
+  it('renders NOTHING for a non-finite range — this text is on screen', () => {
+    assert.equal(batteryLabel('distance', 75, NaN, 'km'), null);
+    assert.equal(batteryLabel('distance', 75, Infinity, 'km'), null);
+  });
 });
