@@ -46,6 +46,13 @@ const WINDOW_KEYS: VehicleStateKey[] = [
   'rightRearWindowOpen',
 ];
 
+// Cabin-overheat protection temperature -> the car's three COP levels.
+const COP_TEMP_LEVEL: Record<'30' | '35' | '40', 'low' | 'medium' | 'high'> = {
+  '30': 'low',
+  '35': 'medium',
+  '40': 'high',
+};
+
 export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): ReconciledCommand[] {
   const out: ReconciledCommand[] = [];
   const emit = (cmd: CarCommand, ...keys: VehicleStateKey[]) => out.push({ cmd, keys });
@@ -96,6 +103,17 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   if (prev.cabinOverheatMode !== next.cabinOverheatMode) {
     emit({ type: 'cabinOverheat', on: next.cabinOverheatMode !== 'off' }, 'cabinOverheatMode');
   }
+  // Cabin-overheat TEMP (30/35/40 -> COP low/med/high). Was UNMAPPED, so changing
+  // the segmented temp did nothing. The Defrost button drives front+rear together
+  // and both flip as one, so a single defrostOn/Off covers the pair. Both were
+  // unmapped — tapping Defrost only ever sent climateOn ("does something else").
+  if (prev.cabinOverheatTemp !== next.cabinOverheatTemp) {
+    emit({ type: 'setCopTemp', level: COP_TEMP_LEVEL[next.cabinOverheatTemp] }, 'cabinOverheatTemp');
+  }
+  if (prev.frontDefrostOn !== next.frontDefrostOn || prev.rearDefrostOn !== next.rearDefrostOn) {
+    const on = next.frontDefrostOn || next.rearDefrostOn;
+    emit({ type: on ? 'defrostOn' : 'defrostOff' }, 'frontDefrostOn', 'rearDefrostOn');
+  }
   // Camp and Pet are independent toggles that both map to climateKeeper.
   if (prev.campModeOn !== next.campModeOn) {
     emit({ type: 'climateKeeper', mode: next.campModeOn ? 'camp' : 'off' }, 'campModeOn');
@@ -112,8 +130,17 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
     const p = prev.seatClimateModes[pos];
     const n = next.seatClimateModes[pos];
     if (p.level === n.level && p.mode === n.mode) continue;
-    if (n.mode === 'cool' && (seat === 'FL' || seat === 'FR')) {
-      emit({ type: 'seatCooler', seat, level: n.level }, 'seatClimateModes');
+    const canCool = seat === 'FL' || seat === 'FR';
+    // Going OFF must turn off whichever system was RUNNING. The old code keyed on
+    // next.mode only, so cool->off (next.mode 'off') fell to the heater branch and
+    // sent seatHeater 0 — leaving the COOLER on. Key on the PREVIOUS mode when the
+    // target is off.
+    const effective = n.mode === 'off' ? p.mode : n.mode;
+    if (effective === 'cool' && canCool) {
+      emit({ type: 'seatCooler', seat, level: n.mode === 'off' ? 0 : n.level }, 'seatClimateModes');
+    } else if (effective === 'auto') {
+      // No seat-auto command exists over BLE (see the test plan). Emit nothing
+      // rather than silently sending a heater level the user didn't ask for.
     } else {
       emit({ type: 'seatHeater', seat, level: n.mode === 'off' ? 0 : n.level }, 'seatClimateModes');
     }

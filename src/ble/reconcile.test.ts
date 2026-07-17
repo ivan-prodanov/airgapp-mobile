@@ -153,3 +153,56 @@ test('revertFields returns the SAME object when nothing needs reverting', () => 
   const state = s({ locked: true });
   assert.equal(revertFields(state, prev, ['locked'] as VehicleStateKey[]), state);
 });
+
+// ── Bugs found on the real car 2026-07-17 (see carlink-test-plan.md) ──────────
+test('Defrost: front+rear flipping ON emits defrostOn (was UNMAPPED → only climateOn)', () => {
+  const prev: VehicleViewState = { ...base, frontDefrostOn: false, rearDefrostOn: false };
+  const next: VehicleViewState = { ...base, frontDefrostOn: true, rearDefrostOn: true };
+  const cmds = diffToCommands(prev, next).map((c) => c.cmd.type);
+  assert.ok(cmds.includes('defrostOn'), 'must send defrostOn');
+});
+
+test('Defrost OFF emits defrostOff', () => {
+  const prev: VehicleViewState = { ...base, frontDefrostOn: true, rearDefrostOn: true };
+  const next: VehicleViewState = { ...base, frontDefrostOn: false, rearDefrostOn: false };
+  assert.deepEqual(
+    diffToCommands(prev, next).map((c) => c.cmd),
+    [{ type: 'defrostOff' }],
+  );
+});
+
+test('Cabin overheat TEMP 30/35/40 -> setCopTemp low/medium/high (was UNMAPPED)', () => {
+  for (const [temp, level] of [['30', 'low'], ['35', 'medium'], ['40', 'high']] as const) {
+    const prev: VehicleViewState = { ...base, cabinOverheatTemp: '35' };
+    const next: VehicleViewState = { ...base, cabinOverheatTemp: temp };
+    if (temp === '35') continue; // no change
+    assert.deepEqual(diffToCommands(prev, next)[0].cmd, { type: 'setCopTemp', level });
+  }
+});
+
+test('Seat COOL 1 -> off emits seatCooler 0, NOT seatHeater 0 (the reported bug)', () => {
+  const prev: VehicleViewState = {
+    ...base,
+    seatClimateModes: { ...base.seatClimateModes, frontLeft: { mode: 'cool', level: 1 } },
+  };
+  const next: VehicleViewState = {
+    ...base,
+    seatClimateModes: { ...base.seatClimateModes, frontLeft: { mode: 'off', level: 0 } },
+  };
+  assert.deepEqual(diffToCommands(prev, next)[0].cmd, { type: 'seatCooler', seat: 'FL', level: 0 });
+});
+
+test('Seat cool 3->2->1 still emits seatCooler at each level', () => {
+  const at = (mode: 'cool', level: number): VehicleViewState => ({
+    ...base,
+    seatClimateModes: { ...base.seatClimateModes, frontLeft: { mode, level: level as 0 | 1 | 2 | 3 } },
+  });
+  assert.deepEqual(diffToCommands(at('cool', 3), at('cool', 2))[0].cmd, { type: 'seatCooler', seat: 'FL', level: 2 });
+  assert.deepEqual(diffToCommands(at('cool', 2), at('cool', 1))[0].cmd, { type: 'seatCooler', seat: 'FL', level: 1 });
+});
+
+test('Seat AUTO emits NOTHING over BLE (no command exists — must not send a stray heater level)', () => {
+  const prev: VehicleViewState = { ...base, seatClimateModes: { ...base.seatClimateModes, frontLeft: { mode: 'off', level: 0 } } };
+  const next: VehicleViewState = { ...base, seatClimateModes: { ...base.seatClimateModes, frontLeft: { mode: 'auto', level: 3 } } };
+  assert.equal(diffToCommands(prev, next).length, 0);
+});
