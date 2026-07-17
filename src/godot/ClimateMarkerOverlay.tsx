@@ -24,41 +24,14 @@ interface Props {
 
 type ClimateKey = SeatPosition | 'steeringWheel';
 
-// Mode colours — the official app's tokens, VERBATIM
-// (tesla-transitions-markers-FINDINGS §3b). Ours were invented and all four were
-// off: HEAT was #FF3B30 (theirs #FF3A3A), COOL #0A84FF (theirs #3E6BE2), and our
-// DIM/AUTO/WHEEL greys don't exist in their palette at all.
-//
-// WHAT WE TAKE FROM THEM: the three hexes below. Their bundle has no per-level
-// tint and no `buttonCoolerOff` token at all.
-//   - Steering wheel: ON -> buttonHeaterOn; OFF -> buttonHeaterOff.  <- the
-//     user's "different colour when not enabled" is THIS element, and it is the
-//     only one that goes grey in their app.
-//   - Disabled keeps its tint and dims the container to opacity 0.5 (not wired
-//     — we have no disabled state on these markers yet).
-//
-// WHAT WE DELIBERATELY DON'T TAKE: findings §3b says their SEATS are heaterOn
-// (or coolerOn when cooling) at every level INCLUDING off, with off-ness carried
-// by the swapped icon asset. Ported literally that turns our off/auto seats RED,
-// which the user rejected on sight — because it only works with their four
-// discrete assets, and our glyph is a wave FILL where an unlit fill still needs
-// a neutral. So seats keep heat/cool when active and fall to our grey otherwise.
-// A conscious divergence, driven by the glyph choice, not an oversight.
-const HEAT = '#FF3A3A'; // buttonHeaterOn
-const COOL = '#3E6BE2'; // buttonCoolerOn
-const HEATER_OFF = '#999999'; // buttonHeaterOff (Cybertruck: #898989)
-// NOT YET APPLIED (findings §3b): a DISABLED marker keeps its tint and dims its
-// icon container to iconButtonBusyOpacity = 0.5. We have no disabled state on
-// these markers yet, so there's nothing to gate it on — wire it in when we do.
-// Our wave-fill glyph's greys — deliberately OURS, not theirs. Their level ramp
-// is four discrete assets (seat_climate_0..3) rather than a fill, so a fill's
-// unlit/neutral colour has no counterpart in their palette. Keeping the glyph is
-// the user's call, so these stay.
-//
-// AUTO now reuses DIM: it used to have its own brighter grey (rgba(255,255,255,
-// 0.9)), which is gone.
+// Mode colors: heat = orange-red, cool = blue, auto/off = neutral white at different opacities. These
+// match the official app's seat-heater glyph (waves fill the mode color from the bottom up by level).
+const HEAT = '#FF3B30';
+const COOL = '#0A84FF';
 const DIM = 'rgba(255,255,255,0.55)';
-const WHEEL_GREY = HEATER_OFF;
+const AUTO_WAVE = 'rgba(255,255,255,0.9)';
+// Steering wheel body — neutral grey (the heat waves on top carry the state colour).
+const WHEEL_GREY = 'rgba(235,235,235,0.92)';
 
 // Control box (centered on the marker) and how far below it the Heat/Cool/Auto menu floats.
 const BOX = { w: 58, h: 60 } as const;
@@ -283,7 +256,7 @@ function Control({
   onPress: () => void;
 }) {
   const point = anchorToPoint(anchor, pixelRatio, CLIMATE_MARKER_CALIBRATION[marker] ?? { dx: 0, dy: 0 });
-  const color = mode === 'heat' ? HEAT : mode === 'cool' ? COOL : DIM;
+  const color = mode === 'heat' ? HEAT : mode === 'cool' ? COOL : mode === 'auto' ? AUTO_WAVE : DIM;
   // Auto has no level ramp; light every wave so the glyph reads as "on" with the Auto label below.
   const lit = mode === 'auto' ? waves : level;
   // Steering wheel turns the S-line colour as long as ≥1 wave is actually lit red (heat, level ≥ 1).
