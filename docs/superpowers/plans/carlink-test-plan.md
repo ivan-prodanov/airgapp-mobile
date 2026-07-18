@@ -216,3 +216,12 @@ effect = a builder/proto bug (wrong action bytes); a fault = the car rejected it
   Pi-only or deferred.
 - **`cabinOverheatMode: 'noac'`**: no COP-no-A/C command in the union; the current
   mapping treats noac and on identically. Needs the proto or demotion.
+- **Offline optimistic controls lie (ROADMAP, 2026-07-18)**: while the app is
+  OFFLINE / unlinked / can't reach the car, tapping frunk/trunk/lock/etc still
+  flips the state optimistically as if it worked ("dummy stuff" — it opens in the
+  UI but nothing was sent). Demo cars SHOULD stay pure-optimistic, but the live
+  car when it can't reach the transport should NOT pretend. Fix = when
+  `connection !== 'online'` (or the dispatch has no gateway / the command fails to
+  send), don't commit the optimistic flip for the live car — or surface a
+  "couldn't reach car" affordance and revert. Distinct from the in-flight spinner
+  (OPTIMISTIC_TIMEOUT_MS); this is about never-sent commands on an offline live car.
