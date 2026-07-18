@@ -1,4 +1,3 @@
-import { probeNum } from '../state/readProbe';
 export type ThemeMode = 'dark' | 'light';
 
 export type CameraMode = 'PARKED' | 'TOP_DOWN' | 'CLIMATE' | 'CHARGING' | 'CLOSURE_OPEN';
@@ -121,15 +120,15 @@ export interface VehicleViewState {
   theme: ThemeMode;
   // Per-car battery percentage shown in the Home header (0–100). Stubbed until BLE; each vehicle
   // carries its own so switching cars shows a different value.
-  batteryLevel: number;
+  batteryLevel: number | null; // null = never read (no cache) → blank
   // Remaining range in MILES — the raw `battery_range` field, which is the source the official app
   // reads (it converts at display time, so we keep it unconverted; see batteryDisplay.ts). null until
   // a read supplies it. Tapping the Home battery % swaps the label to this.
   rangeMiles: number | null;
   // Live cabin + ambient temperatures (°C), shown on the climate view and the Home Climate row.
   // Mock for now; maps to BLE ClimateState.inside_temp / outside_temp per vehicle.
-  interiorTempC: number;
-  exteriorTempC: number;
+  interiorTempC: number | null;
+  exteriorTempC: number | null;
   // The car's real GPS position from telemetry (DriveState/locationState lat/lon + heading). `null`
   // until a read supplies it — and ONLY ever non-null for the live car (telemetry applies only to the
   // active-is-live vehicle), so the map reads: carLocation present → real pin, else the mock offset
@@ -210,10 +209,10 @@ export const initialVehicleState: VehicleViewState = {
   },
   cameraMode: 'PARKED',
   theme: 'dark',
-  batteryLevel: probeNum(48),
+  batteryLevel: null,
   rangeMiles: null,
-  interiorTempC: probeNum(21),
-  exteriorTempC: probeNum(18),
+  interiorTempC: null,
+  exteriorTempC: null,
   carLocation: null,
   targetTempC: 19.5,
   cabinOverheatMode: 'on',

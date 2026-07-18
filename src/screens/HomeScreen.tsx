@@ -296,6 +296,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             title="Climate"
             status={state.climateOn ? 'Active' : undefined}
             subtitle={showNum(state.interiorTempC, (v) => `Interior ${Math.round(v)}°C`)}
+            subtitleDim={status.stale && state.interiorTempC != null}
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
           <NavRow
@@ -425,6 +426,7 @@ function NavRow({
   title,
   status,
   subtitle,
+  subtitleDim,
   onPress,
   leading,
   disabled,
@@ -434,6 +436,8 @@ function NavRow({
   // Bold/bright leading word (e.g. Climate "Active"), like the official app; rendered before subtitle.
   status?: string;
   subtitle?: string;
+  // Dim just the subtitle value (e.g. a stale, cached temp) — mirrors the battery row's §C3 fade.
+  subtitleDim?: boolean;
   onPress?: () => void;
   // Optional custom leading icon; defaults to the SF Symbol. The Location row passes its compass arrow.
   leading?: ReactNode;
@@ -453,7 +457,7 @@ function NavRow({
           <Text style={styles.navSubtitle} numberOfLines={1}>
             {status ? <Text style={styles.navStatus}>{status}</Text> : null}
             {status && subtitle ? ' · ' : null}
-            {subtitle}
+            {subtitle ? <Text style={subtitleDim ? styles.navSubtitleDim : undefined}>{subtitle}</Text> : null}
           </Text>
         ) : null}
       </View>
@@ -591,6 +595,10 @@ const styles = StyleSheet.create({
   navStatus: {
     fontWeight: '700',
     color: 'rgba(255,255,255,0.9)',
+  },
+  // Stale (cached-but-not-fresh) subtitle value — same fade as the battery row (§C3).
+  navSubtitleDim: {
+    opacity: 0.5,
   },
   dots: {
     flexDirection: 'row',

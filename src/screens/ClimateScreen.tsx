@@ -14,6 +14,8 @@ import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
 import { showNum } from '../state/readProbe';
+import { useCarLinkStatus } from '../state/VehicleProvider';
+import { vehicleStatusText } from '../ble/vehicleStatusText';
 import { StatusBarFade } from '../components/StatusBarFade';
 import { SHEET_SPRING } from '../godot/cardTransition';
 import { HI_TEMP, LO_TEMP } from '../state/fleet';
@@ -50,6 +52,16 @@ const bump = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
 // drag up/down BY THE PANEL ITSELF (like the real app — swiping above it, on the car, does nothing).
 // Collapsed it shows the temp row; dragging up reveals Defrost / Bioweapon / Camp / Pet / Cabin Overheat.
 export function ClimateScreen({ state, actions }: Props) {
+  // Dim the read-only cabin temps when the data is stale (cached, not fresh) —
+  // the same §C3 fade the Home battery row uses.
+  const carLink = useCarLinkStatus();
+  const tempsStale = vehicleStatusText({
+    linked: carLink.linked,
+    lastVehicleDataAt: carLink.lastVehicleDataAt,
+    awake: state.awake,
+    wakeInFlight: carLink.wakeInFlight,
+    now: Date.now(),
+  }).stale;
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -192,7 +204,7 @@ export function ClimateScreen({ state, actions }: Props) {
 
         {/* Interior + ambient temps (mock now; BLE ClimateState.inside_temp / outside_temp later) — like
             the official app, sits centred above the setpoint. */}
-        <Text style={styles.climateTemps}>
+        <Text style={[styles.climateTemps, tempsStale && styles.climateTempsStale]}>
           {showNum(state.interiorTempC, (v) => `Interior ${Math.round(v)}°C`)} · {showNum(state.exteriorTempC, (v) => `Exterior ${Math.round(v)}°C`)}
         </Text>
 
@@ -445,6 +457,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: 'rgba(255,255,255,0.5)',
     marginTop: 6,
+  },
+  // Cached-but-stale cabin temps fade, mirroring the Home battery row (§C3).
+  climateTempsStale: {
+    opacity: 0.5,
   },
   tempRow: {
     flexDirection: 'row',

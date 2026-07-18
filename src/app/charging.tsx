@@ -39,7 +39,7 @@ export default function ChargingScreen() {
   const [sliding, setSliding] = useState(false);
   // Green fill = the CURRENT battery level; the draggable thumb = the charge limit (they're independent, like
   // the Tesla app — the fill is where the battery is now, the handle is where charging will stop).
-  const batteryFrac = Math.max(0, Math.min(1, state.batteryLevel / LIMIT_MAX));
+  const batteryFrac = Math.max(0, Math.min(1, (state.batteryLevel ?? 0) / LIMIT_MAX));
   const limitFrac = chargeLimit / LIMIT_MAX;
 
   // Custom slider (no slider dep). Drive it from the touch's ABSOLUTE pageX minus the track's measured
@@ -130,7 +130,9 @@ export default function ChargingScreen() {
           </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Charging</Text>
-            <Text style={styles.subtitle}>{Math.round(state.batteryLevel)}%</Text>
+            <Text style={styles.subtitle}>
+              {state.batteryLevel != null ? `${Math.round(state.batteryLevel)}%` : '—'}
+            </Text>
           </View>
         </View>
 

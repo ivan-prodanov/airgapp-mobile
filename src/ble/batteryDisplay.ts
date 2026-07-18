@@ -49,8 +49,9 @@ export const TEXT_COLOR_LIGHT_DARK = '#8A8B8B';
 // getBatteryColor (#117267), checked in their order. We model the two states we
 // have (charging / normal) plus the two thresholds; their powershare/solar
 // branches (priorities 4-5) have no equivalent in this app.
-export function batteryFillColor(pct: number, charging: boolean): string {
+export function batteryFillColor(pct: number | null, charging: boolean): string {
   if (charging) return BatteryColors.charging;
+  if (pct == null || !Number.isFinite(pct)) return BatteryColors.normalDark;
   const soc = Math.round(pct);
   if (soc <= BATTERY_CRITICAL_PCT) return BatteryColors.critical;
   if (soc <= BATTERY_WARNING_PCT) return BatteryColors.warning;
@@ -65,14 +66,14 @@ export function batteryTextColor(charging: boolean): string {
 
 // findings §1c `getFillPercentage`: the fill never drops below 10% of the inner
 // width, so an empty battery still reads as a battery rather than a hairline.
-export function batteryFillFraction(pct: number): number {
-  if (!Number.isFinite(pct)) return 0; // READ PROBE: unknown -> empty until read
+export function batteryFillFraction(pct: number | null): number {
+  if (pct == null || !Number.isFinite(pct)) return 0; // no data -> empty until read/cache
   const x = pct / 100;
   return x >= 0.1 ? Math.min(1, x) : 0.1;
 }
 
 // findings §1c, verbatim: width = round((measuredWidth - 4) * fill).
-export function batteryFillWidth(pct: number): number {
+export function batteryFillWidth(pct: number | null): number {
   return Math.round((BATTERY_WIDTH - BATTERY_FILL_INSET) * batteryFillFraction(pct));
 }
 
@@ -92,11 +93,11 @@ export const KM_PER_MILES = 1.609344;
 // Returns null for "render nothing" — see the no-data note below.
 export function batteryLabel(
   mode: 'percent' | 'distance',
-  pct: number,
+  pct: number | null,
   rangeMiles: number | null | undefined,
   unit: 'km' | 'mi',
 ): string | null {
-  if (!Number.isFinite(pct)) return '—'; // READ PROBE: unknown until telemetry lands
+  if (pct == null || !Number.isFinite(pct)) return '—'; // no data until telemetry/cache lands
   if (mode === 'percent') return `${Math.round(pct)}%`;
   // findings §2b: in distance mode with no range, their string builder returns
   // undefined and the Text renders NOTHING. It does NOT fall back to percent.

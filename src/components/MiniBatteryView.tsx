@@ -38,7 +38,7 @@ const NUB_WIDTH = 2; // the path spans x 1->3
 const NUB_HEIGHT = 6; // y 5->11
 const NUB_RADIUS = 2;
 
-export function MiniBatteryView({ pct, charging }: { pct: number; charging: boolean }) {
+export function MiniBatteryView({ pct, charging }: { pct: number | null; charging: boolean }) {
   return (
     <View style={styles.row}>
       <View style={styles.body}>

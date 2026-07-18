@@ -23,7 +23,7 @@ export function ChargeStatus({
   // and so lights the same wake/spinner path — see findings §C4/§A.)
   onRefresh,
 }: {
-  batteryLevel: number;
+  batteryLevel: number | null;
   rangeMiles: number | null;
   charging: boolean;
   stale: boolean;
