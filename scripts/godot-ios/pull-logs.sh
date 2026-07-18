@@ -44,8 +44,8 @@ echo
 # the story is (a 6000ms gap before an openSession = a cold BLE scan).
 sqlite3 -noheader -separator '|' "$OUT" \
   "SELECT t, level, cat, msg, COALESCE(data,'') FROM (
-     SELECT * FROM log $WHERE ORDER BY seq DESC $LIMIT
-   ) ORDER BY seq ASC;" 2>/dev/null | awk -F'|' '
+     SELECT * FROM log $WHERE ORDER BY t DESC $LIMIT
+   ) ORDER BY t ASC;" 2>/dev/null | awk -F'|' '
   BEGIN { prev=0 }
   {
     d = (prev==0) ? 0 : $1 - prev; prev=$1

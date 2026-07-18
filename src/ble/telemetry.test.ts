@@ -172,6 +172,49 @@ test('vcsecStatusToPatch: AJAR/OPENING -> true, CLOSING -> false', () => {
   assert.equal(patch.driverRearDoorOpen, false);
 });
 
+test('vcsecStatusToPatch: LOCKED with NO closureStatuses clears all four doors (the settled-car stuck-open fix)', () => {
+  const now = 1_000_000;
+  // Settled car: reports locked but omits closureStatuses entirely (closures:{}).
+  const status = parseVcsecStatus({ vehicleLockState: 1 /* LOCKED */ });
+  const { patch } = vcsecStatusToPatch(status, {}, now);
+  assert.equal(patch.locked, true);
+  assert.equal(patch.driverFrontDoorOpen, false);
+  assert.equal(patch.passengerFrontDoorOpen, false);
+  assert.equal(patch.driverRearDoorOpen, false);
+  assert.equal(patch.passengerRearDoorOpen, false);
+  // Trunk/frunk/charge-port are NOT inferred from the lock.
+  assert.equal('trunkOpen' in patch, false);
+  assert.equal('frunkOpen' in patch, false);
+  assert.equal('chargePortOpen' in patch, false);
+});
+
+test('vcsecStatusToPatch: UNLOCKED with no closureStatuses does NOT infer doors closed', () => {
+  const now = 1_000_000;
+  const status = parseVcsecStatus({ vehicleLockState: 0 /* UNLOCKED */ });
+  const { patch } = vcsecStatusToPatch(status, {}, now);
+  assert.equal(patch.locked, false);
+  assert.equal('driverFrontDoorOpen' in patch, false); // no truth source -> leave the UI's value
+});
+
+test('vcsecStatusToPatch: an explicit door OPEN beats the locked inference (contradiction -> trust the read)', () => {
+  const now = 1_000_000;
+  const status = parseVcsecStatus({
+    vehicleLockState: 1, // LOCKED
+    closureStatuses: { frontDriverDoor: 1 /* OPEN */ },
+  });
+  const { patch } = vcsecStatusToPatch(status, {}, now);
+  assert.equal(patch.driverFrontDoorOpen, true); // explicit open wins
+  assert.equal(patch.passengerFrontDoorOpen, false); // the rest inferred closed
+});
+
+test('vcsecStatusToPatch: locked inference respects a still-valid door intent', () => {
+  const now = 1_000_000;
+  const status = parseVcsecStatus({ vehicleLockState: 1 });
+  const { patch } = vcsecStatusToPatch(status, { frontDriverDoor: now + 5000 }, now);
+  assert.equal('driverFrontDoorOpen' in patch, false); // intent grace protects it
+  assert.equal(patch.passengerFrontDoorOpen, false); // others still inferred closed
+});
+
 test('vcsecStatusToPatch: closure-intent grace — still-valid intent omits the field and carries it forward', () => {
   const now = 1_000_000;
   const status = parseVcsecStatus({ closureStatuses: { rearTrunk: 0 } }); // VCSEC says CLOSED
