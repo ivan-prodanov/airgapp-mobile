@@ -366,33 +366,27 @@ export function vcsecStatusToPatch(
     }
   }
 
-  // A LOCKED car has every door shut — you cannot lock a Tesla with a door open.
-  // This lets us clear a stale-open door even when the settled car's VCSEC status
-  // omits `closureStatuses` entirely (which it does once idle — every closed-car
-  // read comes back with no closures), which the poll could otherwise NEVER clear
-  // until an app restart. Only fills doors the explicit read didn't already mark
-  // open (trust a concrete open over the inference) and respects intent grace.
-  if (patch.locked === true) {
-    for (const field of DOOR_CLOSURE_FIELDS) {
+  // ABSENT closureStatuses ⟺ every closure is CLOSED. [verified on-car 2026-07-18]
+  // The car includes closureStatuses ONLY when at least one closure is open, and
+  // when it does it lists ALL of them; the moment everything is shut it omits the
+  // sub-message entirely (both in unsolicited pushes AND solicited GET_STATUS
+  // reads — a read went empty the instant the frunk closed). So an EMPTY closures
+  // map is a POSITIVE "all closed" signal, not "unknown" — this is what makes a
+  // CLOSE reflect instantly (its push carries no closureStatuses) and clears any
+  // stale-open closure on a settled read. Respects intent grace per field.
+  if (Object.keys(status.closures).length === 0) {
+    for (const [field, viewKey] of Object.entries(CLOSURE_FIELD_TO_VIEW_KEY) as [
+      ClosureFieldName,
+      ClosureViewKey,
+    ][]) {
       const expiresAt = closureIntent[field];
       if (expiresAt !== undefined && expiresAt > now) continue;
-      const viewKey = CLOSURE_FIELD_TO_VIEW_KEY[field];
-      if (viewKey && patch[viewKey] !== true) patch[viewKey] = false;
+      patch[viewKey] = false;
     }
   }
 
   return { patch, closureIntent: newIntent };
 }
-
-// The four passenger doors (a subset of CLOSURE_FIELDS) — the closures whose
-// state is physically implied by the lock (doors must be shut to lock). Trunk/
-// frunk/charge-port are NOT inferred: a car can sit locked with the trunk up.
-const DOOR_CLOSURE_FIELDS: readonly ClosureFieldName[] = [
-  'frontDriverDoor',
-  'frontPassengerDoor',
-  'rearDriverDoor',
-  'rearPassengerDoor',
-];
 
 // Gears that count as "the car is moving" for the Godot wheel-spin path. 'P'/'Invalid'/'SNA'/
 // absent all fall through to false.

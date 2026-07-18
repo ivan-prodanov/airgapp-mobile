@@ -319,7 +319,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           text={status.text}
           spinner={status.spinner}
           onPress={onRefresh}
-          transport={carLink.transport}
+          // Only show the transport dot while actually connected — `transport`
+          // holds the LAST transport and never clears, so gate on the live
+          // connection or it lingers blue/amber after the car goes out of range.
+          transport={carLink.connection === 'online' ? carLink.transport : null}
         />
         {fleet.vehicles.length > 1 ? (
           <View style={styles.dots}>

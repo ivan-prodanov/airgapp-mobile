@@ -172,47 +172,38 @@ test('vcsecStatusToPatch: AJAR/OPENING -> true, CLOSING -> false', () => {
   assert.equal(patch.driverRearDoorOpen, false);
 });
 
-test('vcsecStatusToPatch: LOCKED with NO closureStatuses clears all four doors (the settled-car stuck-open fix)', () => {
+test('vcsecStatusToPatch: EMPTY closureStatuses ⟺ ALL closures closed (the close-reflects-instantly fix)', () => {
   const now = 1_000_000;
-  // Settled car: reports locked but omits closureStatuses entirely (closures:{}).
-  const status = parseVcsecStatus({ vehicleLockState: 1 /* LOCKED */ });
+  // A close-event push / settled read: no closureStatuses sub-message at all.
+  const status = parseVcsecStatus({ vehicleLockState: 0 /* UNLOCKED */ });
   const { patch } = vcsecStatusToPatch(status, {}, now);
-  assert.equal(patch.locked, true);
+  // Every closure — doors AND trunk/frunk/charge-port — clears, regardless of lock.
   assert.equal(patch.driverFrontDoorOpen, false);
   assert.equal(patch.passengerFrontDoorOpen, false);
   assert.equal(patch.driverRearDoorOpen, false);
   assert.equal(patch.passengerRearDoorOpen, false);
-  // Trunk/frunk/charge-port are NOT inferred from the lock.
-  assert.equal('trunkOpen' in patch, false);
-  assert.equal('frunkOpen' in patch, false);
-  assert.equal('chargePortOpen' in patch, false);
+  assert.equal(patch.trunkOpen, false);
+  assert.equal(patch.frunkOpen, false);
+  assert.equal(patch.chargePortOpen, false);
 });
 
-test('vcsecStatusToPatch: UNLOCKED with no closureStatuses does NOT infer doors closed', () => {
-  const now = 1_000_000;
-  const status = parseVcsecStatus({ vehicleLockState: 0 /* UNLOCKED */ });
-  const { patch } = vcsecStatusToPatch(status, {}, now);
-  assert.equal(patch.locked, false);
-  assert.equal('driverFrontDoorOpen' in patch, false); // no truth source -> leave the UI's value
-});
-
-test('vcsecStatusToPatch: an explicit door OPEN beats the locked inference (contradiction -> trust the read)', () => {
+test('vcsecStatusToPatch: a PRESENT closureStatuses (something open) is trusted verbatim, NOT slammed shut', () => {
   const now = 1_000_000;
   const status = parseVcsecStatus({
-    vehicleLockState: 1, // LOCKED
-    closureStatuses: { frontDriverDoor: 1 /* OPEN */ },
+    vehicleLockState: 0,
+    closureStatuses: { frontDriverDoor: 1 /* OPEN */, rearTrunk: 0 /* CLOSED */ },
   });
   const { patch } = vcsecStatusToPatch(status, {}, now);
-  assert.equal(patch.driverFrontDoorOpen, true); // explicit open wins
-  assert.equal(patch.passengerFrontDoorOpen, false); // the rest inferred closed
+  assert.equal(patch.driverFrontDoorOpen, true); // explicit open stands
+  assert.equal(patch.trunkOpen, false); // explicit closed
 });
 
-test('vcsecStatusToPatch: locked inference respects a still-valid door intent', () => {
+test('vcsecStatusToPatch: empty-closures all-closed respects a still-valid closure intent', () => {
   const now = 1_000_000;
   const status = parseVcsecStatus({ vehicleLockState: 1 });
   const { patch } = vcsecStatusToPatch(status, { frontDriverDoor: now + 5000 }, now);
   assert.equal('driverFrontDoorOpen' in patch, false); // intent grace protects it
-  assert.equal(patch.passengerFrontDoorOpen, false); // others still inferred closed
+  assert.equal(patch.passengerFrontDoorOpen, false); // others still cleared
 });
 
 test('vcsecStatusToPatch: closure-intent grace — still-valid intent omits the field and carries it forward', () => {
@@ -248,10 +239,11 @@ test('vcsecStatusToPatch: intent for one field does not block other fields', () 
 
 test('vcsecStatusToPatch: userPresence maps to no VehicleViewState field', () => {
   const now = 1_000_000;
-  const status = parseVcsecStatus({ userPresence: 2 });
+  // Give it a PRESENT closure so the "empty ⟺ all closed" rule doesn't fire —
+  // this isolates the presence check: presence itself must add no key.
+  const status = parseVcsecStatus({ userPresence: 2, closureStatuses: { frontDriverDoor: 1 } });
   const { patch } = vcsecStatusToPatch(status, {}, now);
-  // No key on VehicleViewState corresponds to presence; patch should have no stray key for it.
-  assert.equal(Object.keys(patch).length, 0);
+  assert.deepEqual(Object.keys(patch), ['driverFrontDoorOpen']); // door only; no presence key
 });
 
 test(CLOSURE_INTENT_GRACE_MS + 'ms is the documented closure-intent grace window', () => {
