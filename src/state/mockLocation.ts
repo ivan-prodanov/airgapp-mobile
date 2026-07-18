@@ -34,6 +34,19 @@ export function offsetCoordinate(origin: LatLng, offset: MockLocationOffset): La
   return { latitude: origin.latitude + dLat, longitude: origin.longitude + dLng };
 }
 
+// Initial great-circle bearing FROM `a` TO `b`, degrees 0-360 (0 = north,
+// clockwise). Used by the Home "Location" row arrow to point at the car: fed the
+// user's live coord + the car's real GPS, it updates as either moves — unlike
+// the static mockLocationOffset.bearingDeg it replaces once carLocation lands.
+export function bearingBetween(a: LatLng, b: LatLng): number {
+  const lat1 = a.latitude * DEG;
+  const lat2 = b.latitude * DEG;
+  const dLng = (b.longitude - a.longitude) * DEG;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(y, x) / DEG + 360) % 360;
+}
+
 // Great-circle distance between two coordinates, in metres (haversine).
 export function distanceMeters(a: LatLng, b: LatLng): number {
   const dLat = (b.latitude - a.latitude) * DEG;

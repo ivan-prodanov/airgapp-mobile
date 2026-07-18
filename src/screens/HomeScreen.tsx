@@ -12,10 +12,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
+import { bearingBetween, type LatLng } from '@/state/mockLocation';
 import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
@@ -66,10 +68,39 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
     const id = setInterval(() => setNow((n) => n + 1), 5_000);
     return () => clearInterval(id);
   }, [carLink.linked]);
-  // Geographic bearing to the active car (mock = its stable offset bearing; real coords arrive via BLE).
-  // Drives the compass arrow on the Location row.
+  // Geographic bearing to the active car, driving the compass arrow on the
+  // Location row. Once the live car reports real GPS (state.carLocation), compute
+  // the TRUE bearing from the user's current location to the car — recomputed as
+  // either moves (and on refresh). Falls back to the stable mock offset bearing
+  // when there's no real fix yet or no user location.
   const activeVehicle = fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0];
-  const bearingToCar = activeVehicle.mockLocationOffset.bearingDeg;
+  const [userCoord, setUserCoord] = useState<LatLng | null>(null);
+  useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+    void (async () => {
+      // Don't PROMPT from Home — only use location if already granted (the user
+      // grants it from the Location tab). Last-known first (instant, no fix wait),
+      // then watch so the arrow tracks as the user walks around the car.
+      const perm = await Location.getForegroundPermissionsAsync();
+      if (!perm.granted || cancelled) return;
+      const last = await Location.getLastKnownPositionAsync();
+      if (last && !cancelled) setUserCoord({ latitude: last.coords.latitude, longitude: last.coords.longitude });
+      sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
+        (pos) => setUserCoord({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+      sub?.remove();
+    };
+  }, []);
+  const carLoc = state.carLocation;
+  const bearingToCar =
+    carLoc && userCoord
+      ? bearingBetween(userCoord, { latitude: carLoc.lat, longitude: carLoc.lon })
+      : activeVehicle.mockLocationOffset.bearingDeg;
   const [customizing, setCustomizing] = useState(false);
   const openCustomize = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
