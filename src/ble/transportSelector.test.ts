@@ -125,36 +125,100 @@ test('empty candidates list throws a clear "no transports configured" error', as
 
 // --- re-selection after close -----------------------------------------------
 
-test('after closeSession, a second openSession re-selects (ble now succeeds) rather than sticking with pi', async () => {
-  let bleShouldFail = true;
-  const ble = makeCandidate('ble', async () => {
-    if (bleShouldFail) throw new Error('car not found');
-    return 'ble-sess-2';
-  });
-  const pi = makeCandidate('pi', succeeds('pi-sess-1'));
+test('after closeSession, a re-open still constructs a fresh instance of the chosen transport', async () => {
+  const ble = makeCandidate('ble', succeeds('ble-sess-1'));
+  const t = createSelectingTransport([ble.candidate]);
+  await t.openSession('5YJ3XYZ');
+  await t.closeSession('ble-sess-1');
+  await t.openSession('5YJ3XYZ');
+  assert.equal(ble.instances.length, 2, 're-open must mint a fresh instance, never reuse the closed one');
+});
+
+// --- sticky selection (the perf fix) ----------------------------------------
+
+test('STICKY: once Pi wins (BLE down), later opens try Pi FIRST — BLE is not re-probed every open', async () => {
+  const ble = makeCandidate('ble', fails('car not found — out of BLE range'));
+  const pi = makeCandidate('pi', succeeds('pi-sess'));
   const selected: string[] = [];
+  // reprobeEvery huge so no re-probe interferes with this assertion.
+  const t = createSelectingTransport([ble.candidate, pi.candidate], (n) => selected.push(n), {
+    reprobeEvery: 100,
+  });
 
-  const t = createSelectingTransport([ble.candidate, pi.candidate], (name) => selected.push(name));
+  await t.openSession('V'); // cold: declared order → ble fails, pi wins
+  await t.closeSession('pi-sess');
+  await t.openSession('V'); // sticky: pi first, ble NOT tried
+  await t.closeSession('pi-sess');
+  await t.openSession('V');
 
-  const firstId = await t.openSession('5YJ3XYZ');
-  assert.equal(firstId, 'pi-sess-1');
+  assert.deepEqual(selected, ['pi', 'pi', 'pi']);
+  assert.equal(ble.instances.length, 1, 'BLE tried once (the cold open), then skipped — no repeated 10s timeout');
+  assert.equal(pi.instances.length, 3);
+});
+
+test('STICKY falls back: if the remembered transport later fails, the other is used', async () => {
+  let piUp = true;
+  const ble = makeCandidate('ble', succeeds('ble-sess'));
+  const pi = makeCandidate('pi', async () => {
+    if (piUp) return 'pi-sess';
+    throw new Error('pi unreachable');
+  });
+  const selected: string[] = [];
+  // Seed pi as last-good so pi is tried first; BLE is the fallback.
+  const t = createSelectingTransport([ble.candidate, pi.candidate], (n) => selected.push(n), {
+    reprobeEvery: 100,
+    initialLastGood: 'pi',
+  });
+
+  await t.openSession('V'); // pi first, pi ok
   assert.deepEqual(selected, ['pi']);
+  await t.closeSession('pi-sess');
 
-  await t.closeSession('pi-sess-1');
-  assert.deepEqual(pi.instances[0].closeSessionCalls, ['pi-sess-1']);
-
-  bleShouldFail = false;
-  const secondId = await t.openSession('5YJ3XYZ');
-  assert.equal(secondId, 'ble-sess-2');
+  piUp = false;
+  const id = await t.openSession('V'); // pi first fails → ble
+  assert.equal(id, 'ble-sess');
   assert.deepEqual(selected, ['pi', 'ble']);
-  assert.equal(ble.instances.length, 2, 're-selection must construct a FRESH ble transport, not reuse the failed one');
+});
 
-  await t.exchange('ble-sess-2', 'CCCC', 1000);
-  assert.deepEqual(ble.instances[1].exchangeCalls, [{ sessionId: 'ble-sess-2', payloadB64: 'CCCC', timeoutMs: 1000 }]);
-  // The old (first-attempt, failed) ble instance and the pi instance from
-  // the first session must not see this second exchange.
-  assert.deepEqual(ble.instances[0].exchangeCalls, []);
-  assert.deepEqual(pi.instances[0].exchangeCalls, []);
+test('RE-PROBE: after reprobeEvery sticky opens the declared order is retried so recovered BLE is picked up', async () => {
+  let bleUp = false;
+  const ble = makeCandidate('ble', async () => {
+    if (bleUp) return 'ble-sess';
+    throw new Error('out of range');
+  });
+  const pi = makeCandidate('pi', succeeds('pi-sess'));
+  const selected: string[] = [];
+  // reprobeEvery=2: open #1 is the cold declared probe, #2 and #3 are sticky-pi,
+  // #4 hits the re-probe (2 sticky opens elapsed) and retries the declared order.
+  const t = createSelectingTransport([ble.candidate, pi.candidate], (n) => selected.push(n), {
+    reprobeEvery: 2,
+  });
+
+  await t.openSession('V');
+  await t.closeSession('pi-sess'); // #1 declared: ble fails → pi
+  await t.openSession('V');
+  await t.closeSession('pi-sess'); // #2 sticky pi
+  bleUp = true; // BLE back in range
+  await t.openSession('V');
+  await t.closeSession('pi-sess'); // #3 STILL sticky pi (not due yet)
+  assert.equal(selected[selected.length - 1], 'pi', 'not due for a re-probe yet → still Pi');
+  await t.openSession('V'); // #4 re-probe declared order → ble now wins
+  assert.equal(selected[selected.length - 1], 'ble', 'the re-probe open must pick BLE back up');
+  assert.equal(ble.instances.length, 2, 'BLE constructed only on the cold open + the one re-probe — not every open');
+});
+
+test('SEED: initialLastGood makes the very first open try that transport first (skips cold BLE timeout)', async () => {
+  const ble = makeCandidate('ble', fails('would time out ~10s'));
+  const pi = makeCandidate('pi', succeeds('pi-sess'));
+  const selected: string[] = [];
+  const t = createSelectingTransport([ble.candidate, pi.candidate], (n) => selected.push(n), {
+    initialLastGood: 'pi',
+    reprobeEvery: 100,
+  });
+
+  await t.openSession('V');
+  assert.deepEqual(selected, ['pi']);
+  assert.equal(ble.instances.length, 0, 'seeded last-good Pi means BLE is not even constructed on the first open');
 });
 
 // --- guard rails --------------------------------------------------------

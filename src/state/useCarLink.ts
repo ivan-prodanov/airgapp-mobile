@@ -65,6 +65,10 @@ import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 // DirectBleTransport's full default scan. Matches carlink.tsx.
 const AUTO_BLE_SCAN_TIMEOUT_MS = 6000;
 
+// Persisted name of the last transport that connected, so a cold start seeds the
+// selector's preference (see lastGoodTransportRef). Non-secret → appStorage.
+const LAST_TRANSPORT_KEY = 'ble.lastTransport.v1';
+
 // Foreground VCSEC poll cadence. readVcsecStatus works while the car sleeps
 // (VCSEC stays awake) so it's cheap and never wakes the car; 20s is frequent
 // enough for a live lock/awake/closures indicator without spamming the link.
@@ -163,6 +167,12 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   // Which candidate the selector last chose (recorded via its onSelect). Read
   // into `transport` state on a successful poll tick.
   const selectedTransportRef = useRef<'ble' | 'pi' | null>(null);
+  // The last transport that SUCCESSFULLY connected, persisted across launches
+  // (LAST_TRANSPORT_KEY). Seeds the selector so a cold start / post-teardown
+  // rebuild tries the transport that actually worked last time FIRST, instead of
+  // re-paying BLE's ~10s connect timeout when the car is out of range. Survives
+  // teardown (which nulls selectorRef) because it lives here, not in the selector.
+  const lastGoodTransportRef = useRef<'ble' | 'pi' | null>(null);
   // Optimistic-intent map: VehicleStateKey → grace expiry (Date.now()+GRACE_MS).
   // Stamped by dispatch, consumed (and pruned) by the poll's strip filter.
   const intentRef = useRef<Map<VehicleStateKey, number>>(new Map());
@@ -268,7 +278,12 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
       try {
         const cfg = await loadPiConfig(store);
         const keys = await loadOrCreateDeviceKeys(store);
+        // Seed the transport preference from last session BEFORE cfgRef/keysRef
+        // are set — those are what let getGateway build the selector, so the seed
+        // must be in place first or the first cold open re-pays the BLE timeout.
+        const savedTxp = await appStorage.getItem(LAST_TRANSPORT_KEY);
         if (cancelled) return;
+        if (savedTxp === 'ble' || savedTxp === 'pi') lastGoodTransportRef.current = savedTxp;
         cfgRef.current = cfg;
         keysRef.current = keys;
         setLinked(!!cfg?.vin);
@@ -333,9 +348,20 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         }
         // onSelect records which transport connected so a successful poll tick
         // can surface it as `transport`. Names are 'ble' | 'pi' (see candidates).
-        selectorRef.current = createSelectingTransport(candidates, (name) => {
-          selectedTransportRef.current = name === 'pi' ? 'pi' : 'ble';
-        });
+        selectorRef.current = createSelectingTransport(
+          candidates,
+          (name) => {
+            const txp = name === 'pi' ? 'pi' : 'ble';
+            selectedTransportRef.current = txp;
+            // Remember + persist the winner (only on change — opens are frequent,
+            // the transport rarely flips) so the next launch seeds this.
+            if (lastGoodTransportRef.current !== txp) {
+              lastGoodTransportRef.current = txp;
+              void appStorage.setItem(LAST_TRANSPORT_KEY, txp);
+            }
+          },
+          { initialLastGood: lastGoodTransportRef.current },
+        );
       }
       gatewayRef.current = createCarGateway({
         transport: selectorRef.current,
@@ -683,6 +709,18 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         const { patch } = vcsecStatusToPatch(st, {}, Date.now());
         const filtered = filterPatchUnderIntent(patch, intentRef.current, Date.now());
         if (stopped || paused) return; // backgrounded/unlinked while awaiting
+        // READ SNAPSHOT (diagnostic): what the car reported (st.closures), what the
+        // mapper produced (trunkRaw/frunkRaw), and what survived the intent filter
+        // (…Applied). Triangulates a wrong closure to: bad sensor value vs mapping
+        // bug vs a stale optimistic intent masking the real read.
+        logi('read', 'vcsec', {
+          awake: patch.awake,
+          locked: patch.locked,
+          closures: st.closures,
+          trunkRaw: patch.trunkOpen,
+          trunkApplied: filtered.trunkOpen,
+          frunkRaw: patch.frunkOpen,
+        });
         if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
         stampRead(patch, Date.now());
         setConnection('online');

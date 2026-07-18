@@ -25,22 +25,57 @@ export interface TransportCandidate {
   make: () => CarTransport;
 }
 
+export interface SelectingTransportOptions {
+  // After this many consecutive opens served by the remembered last-good
+  // transport, the NEXT open ignores that memory and tries the full declared
+  // order again — so a higher-preference transport that has recovered (e.g. BLE
+  // back in range) gets picked up. Higher = stickier (fewer wasted re-probes of
+  // a down transport); lower = faster recovery. Default 6.
+  reprobeEvery?: number;
+  // Seed the "last-good" memory (e.g. from persistence) so the very FIRST open
+  // after construction can skip a doomed higher-preference candidate. Without
+  // this, every cold start / post-teardown rebuild re-pays the BLE timeout even
+  // though Pi was the only thing that worked last session.
+  initialLastGood?: string | null;
+}
+
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-// createSelectingTransport returns a CarTransport that, on openSession,
-// tries each candidate in order until one connects, then routes
-// exchange/closeSession to that chosen transport for the session's lifetime.
-// Order encodes preference (put BLE first for BLE-primary). Re-selects on
-// the next openSession — closeSession always clears the active transport,
-// even if the underlying close rejects, so a later re-open starts a fresh
-// selection rather than being stuck on whatever won last time.
+// createSelectingTransport returns a CarTransport that, on openSession, tries
+// candidates until one connects, then routes exchange/closeSession to it for the
+// session's lifetime.
+//
+// STICKY selection: the declared order encodes preference (BLE first), but once
+// a transport connects it is remembered and tried FIRST on subsequent opens — so
+// a persistently-unreachable BLE (car out of range) is not re-probed on every
+// open, which was costing a full ~10s connect timeout each time before the Pi
+// fallback even got a turn. Every `reprobeEvery` opens the full declared order is
+// retried so a recovered BLE is picked back up. closeSession clears the ACTIVE
+// transport (so a re-open re-runs selection) but keeps the last-good memory.
 export function createSelectingTransport(
   candidates: TransportCandidate[],
   onSelect?: (name: string) => void,
+  opts?: SelectingTransportOptions,
 ): CarTransport {
+  const reprobeEvery = opts?.reprobeEvery ?? 6;
   let active: CarTransport | null = null;
+  let lastGood: string | null = opts?.initialLastGood ?? null;
+  // Consecutive opens served WITHOUT a full-order re-probe. Hitting reprobeEvery
+  // forces the next open back to the declared order.
+  let opensSinceReprobe = 0;
+
+  // The candidate order for THIS open: last-good first (if remembered and not due
+  // for a re-probe), else the declared preference order.
+  function orderFor(): { ordered: TransportCandidate[]; reprobing: boolean } {
+    if (lastGood === null || opensSinceReprobe >= reprobeEvery) {
+      return { ordered: candidates, reprobing: true };
+    }
+    const preferred = candidates.find((c) => c.name === lastGood);
+    if (!preferred) return { ordered: candidates, reprobing: true }; // lastGood no longer offered
+    return { ordered: [preferred, ...candidates.filter((c) => c.name !== lastGood)], reprobing: false };
+  }
 
   return {
     async openSession(vin: string): Promise<string> {
@@ -48,12 +83,15 @@ export function createSelectingTransport(
         throw new Error('no transports configured');
       }
 
+      const { ordered, reprobing } = orderFor();
       const failures: string[] = [];
-      for (const candidate of candidates) {
+      for (const candidate of ordered) {
         const transport = candidate.make();
         try {
           const sessionId = await transport.openSession(vin);
           active = transport;
+          lastGood = candidate.name;
+          opensSinceReprobe = reprobing ? 0 : opensSinceReprobe + 1;
           onSelect?.(candidate.name);
           return sessionId;
         } catch (e) {
