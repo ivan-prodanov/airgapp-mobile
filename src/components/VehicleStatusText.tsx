@@ -17,6 +17,7 @@ export function VehicleStatusText({
   text,
   spinner,
   onPress,
+  transport = null,
 }: {
   // null renders nothing at all (findings §A: empty text = zero nodes).
   text: string | null;
@@ -24,6 +25,10 @@ export function VehicleStatusText({
   // Tapping the status line wakes the car (findings §C1: the whole row is a
   // TouchableOpacity -> vehicleWakeUp(vin, TAP_STATUS_TEXT)).
   onPress?: () => void;
+  // Dev-only cue for which transport served the last read (blue = direct BLE,
+  // amber = Pi forwarder). Deliberately tiny/muted — a glanceable diagnostic,
+  // not a user-facing feature. null (not connected) shows nothing.
+  transport?: 'ble' | 'pi' | null;
 }) {
   if (text === null) return null;
 
@@ -35,6 +40,9 @@ export function VehicleStatusText({
         </View>
       ) : null}
       <Text style={styles.text}>{text}</Text>
+      {transport ? (
+        <View style={[styles.txpDot, transport === 'pi' ? styles.txpPi : styles.txpBle]} />
+      ) : null}
     </View>
   );
 
@@ -70,4 +78,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_COLOR_LIGHT_DARK,
   },
+  // Transport cue: 5px dot, muted, sitting just after the status text.
+  txpDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginLeft: 6,
+    opacity: 0.5,
+  },
+  txpBle: { backgroundColor: '#5B8DB0' }, // direct BLE
+  txpPi: { backgroundColor: '#B0895B' }, // Pi forwarder
 });

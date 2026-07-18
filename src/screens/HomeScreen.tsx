@@ -315,7 +315,12 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
         </View>
         {/* findings §C1: the whole status row is a TouchableOpacity ->
             vehicleWakeUp(vin, TAP_STATUS_TEXT). Same path as the pull. */}
-        <VehicleStatusText text={status.text} spinner={status.spinner} onPress={onRefresh} />
+        <VehicleStatusText
+          text={status.text}
+          spinner={status.spinner}
+          onPress={onRefresh}
+          transport={carLink.transport}
+        />
         {fleet.vehicles.length > 1 ? (
           <View style={styles.dots}>
             {fleet.vehicles.map((vehicle, index) => (
