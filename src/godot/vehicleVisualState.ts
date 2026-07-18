@@ -44,7 +44,10 @@ export function hasVehicleVisualStateChanged(previous: VehicleViewState, next: V
     if (IGNORED_KEYS.has(key)) {
       continue;
     }
-    if (previous[key] !== next[key]) {
+    // Object.is, not !==, so the READ_PROBE NaN sentinel (batteryLevel etc. boot
+    // to NaN) compares equal to itself — plain !== reports NaN !== NaN as a
+    // phantom change on an unchanged state.
+    if (!Object.is(previous[key], next[key])) {
       return true;
     }
   }

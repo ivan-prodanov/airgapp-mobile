@@ -1,3 +1,4 @@
+import { probeNum } from '../state/readProbe';
 export type ThemeMode = 'dark' | 'light';
 
 export type CameraMode = 'PARKED' | 'TOP_DOWN' | 'CLIMATE' | 'CHARGING' | 'CLOSURE_OPEN';
@@ -176,10 +177,10 @@ export const initialVehicleState: VehicleViewState = {
   },
   cameraMode: 'PARKED',
   theme: 'dark',
-  batteryLevel: 48,
+  batteryLevel: probeNum(48),
   rangeMiles: null,
-  interiorTempC: 21,
-  exteriorTempC: 18,
+  interiorTempC: probeNum(21),
+  exteriorTempC: probeNum(18),
   targetTempC: 19.5,
   cabinOverheatMode: 'on',
   cabinOverheatTemp: '40',

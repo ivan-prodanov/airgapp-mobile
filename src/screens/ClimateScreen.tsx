@@ -13,6 +13,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
+import { showNum } from '../state/readProbe';
 import { StatusBarFade } from '../components/StatusBarFade';
 import { SHEET_SPRING } from '../godot/cardTransition';
 import { HI_TEMP, LO_TEMP } from '../state/fleet';
@@ -192,7 +193,7 @@ export function ClimateScreen({ state, actions }: Props) {
         {/* Interior + ambient temps (mock now; BLE ClimateState.inside_temp / outside_temp later) — like
             the official app, sits centred above the setpoint. */}
         <Text style={styles.climateTemps}>
-          Interior {Math.round(state.interiorTempC)}°C · Exterior {Math.round(state.exteriorTempC)}°C
+          {showNum(state.interiorTempC, (v) => `Interior ${Math.round(v)}°C`)} · {showNum(state.exteriorTempC, (v) => `Exterior ${Math.round(v)}°C`)}
         </Text>
 
         <View style={styles.tempRow}>

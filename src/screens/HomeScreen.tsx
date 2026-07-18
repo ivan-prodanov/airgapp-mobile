@@ -24,6 +24,7 @@ import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
 import { ChargeStatus } from '@/components/ChargeStatus';
 import { vehicleStatusText } from '@/ble/vehicleStatusText';
+import { showNum } from '@/state/readProbe';
 import { CONTENT_FADE_MS } from '@/godot/useContentFade';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -261,7 +262,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             symbol="fanblades.fill"
             title="Climate"
             status={state.climateOn ? 'Active' : undefined}
-            subtitle={`Interior ${Math.round(state.interiorTempC)}°C`}
+            subtitle={showNum(state.interiorTempC, (v) => `Interior ${Math.round(v)}°C`)}
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
           <NavRow

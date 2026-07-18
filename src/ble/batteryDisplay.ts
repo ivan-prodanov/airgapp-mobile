@@ -66,6 +66,7 @@ export function batteryTextColor(charging: boolean): string {
 // findings §1c `getFillPercentage`: the fill never drops below 10% of the inner
 // width, so an empty battery still reads as a battery rather than a hairline.
 export function batteryFillFraction(pct: number): number {
+  if (!Number.isFinite(pct)) return 0; // READ PROBE: unknown -> empty until read
   const x = pct / 100;
   return x >= 0.1 ? Math.min(1, x) : 0.1;
 }
@@ -95,6 +96,7 @@ export function batteryLabel(
   rangeMiles: number | null | undefined,
   unit: 'km' | 'mi',
 ): string | null {
+  if (!Number.isFinite(pct)) return '—'; // READ PROBE: unknown until telemetry lands
   if (mode === 'percent') return `${Math.round(pct)}%`;
   // findings §2b: in distance mode with no range, their string builder returns
   // undefined and the Text renders NOTHING. It does NOT fall back to percent.

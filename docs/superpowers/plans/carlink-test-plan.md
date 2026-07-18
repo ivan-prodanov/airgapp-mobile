@@ -141,6 +141,26 @@ are fiction.
 invisible (the field already "looks right"). With unknown-until-read, a broken
 read is a field stuck on "—".
 
+**Shipped 2026-07-18 — the DIAGNOSTIC probe (`src/state/readProbe.ts`, `READ_PROBE=true`).**
+Scoped to the three pure read-only NUMERICS — **battery %, interior temp, exterior
+temp** — which boot to a NaN "unknown" sentinel and render `—` until telemetry
+fills them (`showNum`/`isUnknownNum`; battery label/glyph guard non-finite).
+Deployed JS-only to the device. `targetTempC` is deliberately EXCLUDED: it drives
+the +/- stepper (NaN would break the chevrons) and self-verifies on the next poll
+after a write. `hasVehicleVisualStateChanged` switched to `Object.is` so the NaN
+sentinel doesn't read as a phantom visual change.
+
+On the car: open the app cold and confirm each of the three flips `—` → real
+value once a read lands (`pull-logs.sh` shows the read). A field still on `—`
+after a successful read is a real parse/telemetry gap — now visible.
+
+**Still MANDATORY (user: "we HAVE to do that at some point"):** the PROPER
+nullable version — every readable field genuinely nullable (booleans + enums too)
+rendering *Tesla's real* no-data state. Gated on miner brief #14
+(`tesla-nodata-display-RESEARCH-BRIEF.md`, dispatched 2026-07-18): does the
+official app show a dash, a skeleton, or a cached last-known value before first
+data? We copy whatever it actually does.
+
 ### PASS 2 — WRITE (does each control send the right command, and obey?)
 For each control: change it, pull the log, and check three things in order:
 1. **`cmd dispatch {type}`** — did we emit the RIGHT command type? (reconciler)
