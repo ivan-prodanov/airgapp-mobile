@@ -130,6 +130,11 @@ export interface CarLinkStatus {
   connection: 'offline' | 'connecting' | 'online';
   // Which transport the selector used on the last successful read.
   transport: 'ble' | 'pi' | null;
+  // Whether the live-push WS event-STREAM is currently open (Pi path only). BLE
+  // delivers pushes natively on its held connection, so this stays false for BLE
+  // — consumers treat a connected BLE link as inherently live. Drives the
+  // brightness of the transport dot: bright = live pushes, dim = poll-only.
+  streaming: boolean;
   // Date.now() of the last successful read (null until the first one lands).
   lastUpdatedAt: number | null;
   // Date.now() of the last read that found the car AWAKE and reporting —
@@ -226,6 +231,8 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
   const [vin, setVin] = useState<string | null>(null);
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
+  // Mirrors whether the Pi event-stream socket is open (see startStream/stopStream).
+  const [streaming, setStreaming] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   // Our analogue of the official app's `last_received_vehicle_data_timestamp`:
   // the last read that found the car AWAKE and reporting. Distinct from
@@ -436,6 +443,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
       streamStopRef.current = null;
     }
     streamSessionIdRef.current = null;
+    setStreaming(false);
   }, []);
   stopStreamRef.current = stopStream;
 
@@ -483,6 +491,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
         onStatus: (s) => {
           if (s === 'open') {
             logi('stream', 'open', { sessionId });
+            setStreaming(true);
             return;
           }
           // 'closed' — only react if this callback still belongs to the
@@ -491,6 +500,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
           // for a session we've already left behind.
           if (streamSessionIdRef.current !== sessionId) return;
           logw('stream', 'closed', { sessionId });
+          setStreaming(false);
           streamStopRef.current = null;
           streamSessionIdRef.current = null;
           scheduleReconnect();
@@ -1022,6 +1032,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
       vin,
       connection,
       transport,
+      streaming,
       lastUpdatedAt,
       lastVehicleDataAt,
       wakeInFlight,
@@ -1029,6 +1040,6 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
       dispatch,
       refresh,
     }),
-    [linked, vin, connection, transport, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, dispatch, refresh],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, dispatch, refresh],
   );
 }

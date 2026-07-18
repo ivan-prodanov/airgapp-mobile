@@ -18,6 +18,7 @@ export function VehicleStatusText({
   spinner,
   onPress,
   transport = null,
+  live = false,
 }: {
   // null renders nothing at all (findings §A: empty text = zero nodes).
   text: string | null;
@@ -29,6 +30,9 @@ export function VehicleStatusText({
   // amber = Pi forwarder). Deliberately tiny/muted — a glanceable diagnostic,
   // not a user-facing feature. null (not connected) shows nothing.
   transport?: 'ble' | 'pi' | null;
+  // Whether a live PUSH channel is active (BLE native notify, or the Pi WS
+  // stream) vs poll-only. BRIGHT dot = live pushes; DIM dot = 20s polling only.
+  live?: boolean;
 }) {
   if (text === null) return null;
 
@@ -41,7 +45,13 @@ export function VehicleStatusText({
       ) : null}
       <Text style={styles.text}>{text}</Text>
       {transport ? (
-        <View style={[styles.txpDot, transport === 'pi' ? styles.txpPi : styles.txpBle]} />
+        <View
+          style={[
+            styles.txpDot,
+            transport === 'pi' ? styles.txpPi : styles.txpBle,
+            live ? styles.txpLive : styles.txpPoll,
+          ]}
+        />
       ) : null}
     </View>
   );
@@ -78,14 +88,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_COLOR_LIGHT_DARK,
   },
-  // Transport cue: 5px dot, muted, sitting just after the status text.
+  // Transport cue: 5px dot sitting just after the status text. Brightness
+  // (opacity) encodes live-push vs poll-only; hue encodes the transport.
   txpDot: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
     marginLeft: 6,
-    opacity: 0.5,
   },
   txpBle: { backgroundColor: '#5B8DB0' }, // direct BLE
   txpPi: { backgroundColor: '#B0895B' }, // Pi forwarder
+  txpLive: { opacity: 0.95 }, // live push channel (BLE notify / Pi WS stream)
+  txpPoll: { opacity: 0.4 }, // poll-only (20s)
 });

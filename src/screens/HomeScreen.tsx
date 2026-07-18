@@ -323,6 +323,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           // holds the LAST transport and never clears, so gate on the live
           // connection or it lingers blue/amber after the car goes out of range.
           transport={carLink.connection === 'online' ? carLink.transport : null}
+          // Bright when a live push channel is up: BLE delivers pushes natively
+          // on its held link; Pi only when the WS event-stream is open. Dim =
+          // poll-only (20s). So a dim amber dot = Pi fallback (no stream).
+          live={carLink.transport === 'ble' || carLink.streaming}
         />
         {fleet.vehicles.length > 1 ? (
           <View style={styles.dots}>
