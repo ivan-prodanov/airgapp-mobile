@@ -425,13 +425,21 @@ export class DirectBleTransport implements CarTransport {
     const targetName = vehicleLocalName(vin);
     return new Promise<Device>((resolve, reject) => {
       let settled = false;
+      // Diagnostic: every distinct named device we saw this scan. Surfaced in
+      // the timeout error so a pulled log tells us whether the car was
+      // seen-but-unmatched (name-field issue) vs genuinely not advertising
+      // (asleep / already at max BLE clients / Pi holding the link).
+      const seenNames = new Set<string>();
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
         this.manager.stopDeviceScan().catch(() => {});
+        const names = [...seenNames];
+        const teslaLike = names.filter((n) => /^S[0-9a-f]{16}C$/i.test(n));
         reject(
           new Error(
-            `car not found (asleep or out of BLE range?) — no advertisement matching ${targetName} within ${this.scanTimeoutMs}ms`,
+            `car not found (asleep or out of BLE range?) — no advertisement matching ${targetName} within ${this.scanTimeoutMs}ms` +
+              ` · saw ${names.length} named devices${teslaLike.length ? `, tesla-like: ${teslaLike.join(',')}` : ''}`,
           ),
         );
       }, this.scanTimeoutMs);
@@ -445,7 +453,15 @@ export class DirectBleTransport implements CarTransport {
             reject(new Error(`BLE scan failed: ${errMsg(error)}`));
             return;
           }
-          if (!device || device.localName !== targetName) return;
+          if (!device) return;
+          // iOS often omits the advertisement's localName on a re-scan of a
+          // previously-seen peripheral, delivering the name only on `.name`
+          // (the cached GAP name). Match on EITHER so we don't miss the car
+          // when the advert-side name is null. Both are exact-equality against
+          // the VIN-derived S…C string, so there's no false-positive risk.
+          const advName = device.localName ?? device.name;
+          if (advName) seenNames.add(advName);
+          if (device.localName !== targetName && device.name !== targetName) return;
           settled = true;
           clearTimeout(timer);
           this.manager.stopDeviceScan().catch(() => {});
