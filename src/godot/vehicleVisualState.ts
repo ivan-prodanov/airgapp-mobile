@@ -39,6 +39,14 @@ const IGNORED_KEYS = new Set<keyof VehicleViewState>([
   'petModeOn',
   'chargeLimitPercent',
   'chargingAmps',
+  // Security & Drivers: PIN + protected-feature settings are pure sheet state, never on the 3D car.
+  'securityPin',
+  'speedLimitKph',
+  'parentalLimitSpeed',
+  'parentalLimitSpeedKph',
+  'parentalReduceAccel',
+  'parentalRequireSafety',
+  'parentalCurfewNotify',
 ]);
 
 export function hasVehicleVisualStateChanged(previous: VehicleViewState, next: VehicleViewState): boolean {

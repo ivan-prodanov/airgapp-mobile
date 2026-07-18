@@ -281,8 +281,15 @@ export const LIMIT_MAX = 100;
 // Charging current stepper domain, per spec: 5 A … 16 A.
 export const AMP_MIN = 5;
 export const AMP_MAX = 16;
+// Speed-limit domain (km/h) — shared by Speed Limit Mode and the Parental Controls "Limit Speed" stepper.
+export const SPEED_LIMIT_MIN = 80;
+export const SPEED_LIMIT_MAX = 193;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+// Clamp + round a km/h value into the speed-limit domain. Used by both speed steppers.
+export const clampSpeedLimit = (kph: number): number =>
+  clamp(Math.round(kph), SPEED_LIMIT_MIN, SPEED_LIMIT_MAX);
 
 export function setTargetTempState(state: VehicleViewState, tempC: number): VehicleViewState {
   // Round to the nearest half-degree BEFORE clamping so the dial can only ever land on a real detent.

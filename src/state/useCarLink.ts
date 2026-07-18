@@ -345,6 +345,11 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
             if (cached.rangeMiles != null) patch.rangeMiles = cached.rangeMiles;
             if (cached.charging != null) patch.charging = cached.charging;
             if (cached.awake != null) patch.awake = cached.awake;
+            if (cached.interiorTempC != null) patch.interiorTempC = cached.interiorTempC;
+            if (cached.exteriorTempC != null) patch.exteriorTempC = cached.exteriorTempC;
+            if (cached.targetTempC != null) patch.targetTempC = cached.targetTempC;
+            if (cached.chargeLimitPercent != null) patch.chargeLimitPercent = cached.chargeLimitPercent;
+            if (cached.chargingAmps != null) patch.chargingAmps = cached.chargingAmps;
             if (Object.keys(patch).length) applyTelemetryRef.current(patch);
           }
         }
@@ -765,6 +770,11 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
       batteryLevel: patch.batteryLevel ?? base.batteryLevel,
       rangeMiles: patch.rangeMiles ?? base.rangeMiles,
       charging: patch.charging ?? base.charging,
+      interiorTempC: patch.interiorTempC ?? base.interiorTempC,
+      exteriorTempC: patch.exteriorTempC ?? base.exteriorTempC,
+      targetTempC: patch.targetTempC ?? base.targetTempC,
+      chargeLimitPercent: patch.chargeLimitPercent ?? base.chargeLimitPercent,
+      chargingAmps: patch.chargingAmps ?? base.chargingAmps,
     };
     cacheRef.current = next;
     saveCacheRef.current?.(next);
@@ -793,7 +803,17 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
     }
     setLastVehicleDataAt(at);
     const next: CarLinkCache = {
-      ...(cacheRef.current ?? { batteryLevel: null, rangeMiles: null, charging: null, awake: null }),
+      ...(cacheRef.current ?? {
+        batteryLevel: null,
+        rangeMiles: null,
+        charging: null,
+        awake: null,
+        interiorTempC: null,
+        exteriorTempC: null,
+        targetTempC: null,
+        chargeLimitPercent: null,
+        chargingAmps: null,
+      }),
       lastVehicleDataAt: at,
       awake: true,
     };

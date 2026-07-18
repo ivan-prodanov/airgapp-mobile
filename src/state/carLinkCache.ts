@@ -23,6 +23,14 @@ export interface CarLinkCache {
   rangeMiles: number | null;
   charging: boolean | null;
   awake: boolean | null;
+  // The rest of the visible readable telemetry, so a cold start rehydrates the
+  // whole Home/Climate/Charging surface (dimmed) instead of blank — the way the
+  // official app persists its full vehicle_data slice (findings §B).
+  interiorTempC: number | null;
+  exteriorTempC: number | null;
+  targetTempC: number | null;
+  chargeLimitPercent: number | null;
+  chargingAmps: number | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -49,6 +57,11 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     rangeMiles: num(cached?.rangeMiles),
     charging: bool(cached?.charging),
     awake: bool(cached?.awake),
+    interiorTempC: num(cached?.interiorTempC),
+    exteriorTempC: num(cached?.exteriorTempC),
+    targetTempC: num(cached?.targetTempC),
+    chargeLimitPercent: num(cached?.chargeLimitPercent),
+    chargingAmps: num(cached?.chargingAmps),
   };
 }
 

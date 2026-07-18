@@ -85,6 +85,18 @@ export interface VehicleViewState {
   parentalControls: boolean;
   speedLimitMode: boolean;
   pinToDrive: boolean;
+  // A single shared 4-digit security PIN. `null` until the user first sets one by enabling a protected
+  // feature (Valet / Parental Controls / Speed Limit / PIN to Drive); after that, disabling Parental
+  // Controls / Speed Limit / PIN to Drive requires re-entering it. Persisted per-vehicle.
+  securityPin: string | null;
+  // Speed Limit Mode's cap (km/h), clamped SPEED_LIMIT_MIN..SPEED_LIMIT_MAX. Edited via the row's "…" panel.
+  speedLimitKph: number;
+  // "Customize Parental Controls" panel sub-options (all non-renderer sheet state).
+  parentalLimitSpeed: boolean;
+  parentalLimitSpeedKph: number;
+  parentalReduceAccel: boolean;
+  parentalRequireSafety: boolean;
+  parentalCurfewNotify: boolean;
   // Whether the car is awake (online) vs. asleep. Asleep dims the 3D car on every screen and shows
   // "Last seen ..." instead of "Parked". Stubbed for now; real wake state arrives via BLE.
   awake: boolean;
@@ -170,6 +182,13 @@ export const initialVehicleState: VehicleViewState = {
   parentalControls: false,
   speedLimitMode: false,
   pinToDrive: false,
+  securityPin: null,
+  speedLimitKph: 80,
+  parentalLimitSpeed: true,
+  parentalLimitSpeedKph: 137,
+  parentalReduceAccel: true,
+  parentalRequireSafety: true,
+  parentalCurfewNotify: true,
   awake: true,
   vehicleConnected: true,
   tirePressureVisible: false,
