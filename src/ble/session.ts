@@ -159,6 +159,18 @@ async function _findOrOpenPiSession(transport: PiTransport, vin: string): Promis
   return transport.openSession(vin);
 }
 
+// peekPiSessionId returns the Pi-side BLE sessionId currently cached for this
+// VIN (one per VIN — the Pi is single-session), or null if no session is
+// open. Unlike _findOrOpenPiSession, this NEVER opens one — it's a read-only
+// peek so a caller (useCarLink's stream wiring) can tell whether a live
+// session exists without paying for or triggering a handshake.
+export function peekPiSessionId(vin: string): string | null {
+  for (const entry of _domainCache.values()) {
+    if (entry.session.vin === vin && entry.session.sessionId) return entry.session.sessionId;
+  }
+  return null;
+}
+
 async function _bindPiSession(transport: PiTransport, vin: string): Promise<string> {
   const sessionId = await _findOrOpenPiSession(transport, vin);
   _piSessionAcquire(sessionId);

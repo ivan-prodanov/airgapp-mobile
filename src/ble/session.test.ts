@@ -10,6 +10,7 @@ import {
   withCachedSession,
   evictSession,
   closeAllCachedSessions,
+  peekPiSessionId,
   honkAction,
   vcsecGetStatusAction,
   encodeInfotainmentAction,
@@ -249,6 +250,33 @@ test('both domains share one Pi session; closeSession fires only after the last 
   // when the refcount reaches 0 — exactly once.
   await evictSession(VIN, DOMAIN_VEHICLE_SECURITY);
   assert.equal(car.closeCount, 1);
+});
+
+// --- (i) peekPiSessionId — non-opening session-id peek ----------------------
+
+test('peekPiSessionId returns null when no session is cached for the VIN', () => {
+  __resetSessionCaches();
+  assert.equal(peekPiSessionId(VIN), null);
+});
+
+test('peekPiSessionId surfaces the cached Pi sessionId WITHOUT opening a new one', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar();
+  const deviceKeys = makeDeviceKeys();
+  await withCachedSession(
+    { transport: car, vin: VIN, deviceKeys, domain: DOMAIN_INFOTAINMENT as Domain },
+    async () => {},
+  );
+
+  assert.equal(peekPiSessionId(VIN), 'pi-sess-1');
+  // Purely a read — no additional Pi-side open.
+  assert.equal(car.openCount, 1);
+
+  // A different VIN has no cached session.
+  assert.equal(peekPiSessionId('5YJ3E1EA1AAAA9999'), null);
+
+  closeAllCachedSessions();
+  assert.equal(peekPiSessionId(VIN), null);
 });
 
 // --- action builders sanity -------------------------------------------------

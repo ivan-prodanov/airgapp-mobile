@@ -16,7 +16,7 @@ export type { CarGateway, CommandOutcome, CreateCarGatewayArgs } from './gateway
 // Session lifecycle — callers must free the Pi's single BLE session on
 // teardown (screen unmount / app background) so it isn't orphaned (the Pi
 // holds bleMu for ~5 min otherwise, blocking the next session).
-export { closeAllCachedSessions } from './session';
+export { closeAllCachedSessions, peekPiSessionId } from './session';
 
 export { PiClient, TransportError } from './transport';
 export type { TransportErrorKind } from './transport';
