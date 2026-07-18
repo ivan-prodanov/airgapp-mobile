@@ -33,13 +33,29 @@
 int iphone_main(int width, int height, int argc, char **argv, String data_dir);
 void iphone_finish();
 
+// CGDataProvider release callback for the glReadPixels buffer backing the background snapshot image.
+static void GodotHostReleasePixelData(void *info, const void *data, size_t size) {
+  free((void *)data);
+}
+
 @interface GodotHost () <GLViewDelegate, UIGestureRecognizerDelegate> {
   GLView *_glView;
   __weak UIView *_parentView;        // weak — RN owns the lifetime of ExpoGodotView
   UIPanGestureRecognizer *_orbitPan; // dynamic: created when orbit is enabled, removed when disabled
   int _frameCount;
   bool _started;
+
+  // Background-snapshot overlay. The GLView is a CAEAGLLayer, whose GPU-side drawable is invisible
+  // to iOS's app-switcher snapshot → the render area captures as pure black. Before backgrounding
+  // we glReadPixels the last frame into this UIImageView and show it, so iOS snapshots a real image.
+  UIImageView *_snapshotView;
+  BOOL _captureRequested; // set on resign-active; the next drawView: reads the frame into _snapshotView
 }
+- (void)captureBackgroundSnapshotFromView:(GLView *)view;
+- (void)appWillResignActive;
+- (void)appDidEnterBackground;
+- (void)appWillEnterForeground;
+- (void)appDidBecomeActive;
 @end
 
 @implementation GodotHost
@@ -108,6 +124,13 @@ void iphone_finish();
   // with glView.userInteractionEnabled=NO. RN sibling UI above the parent absorbs touches it owns
   // (bottom sheets, buttons); only touches landing on the bare Godot area reach our recognizer.
   NSLog(@"[GodotHost] GLView attached, animation started");
+
+  // App-lifecycle hooks that drive the background-snapshot overlay (see _snapshotView above).
+  NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+  [nc addObserver:self selector:@selector(appWillResignActive) name:UIApplicationWillResignActiveNotification object:nil];
+  [nc addObserver:self selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
+  [nc addObserver:self selector:@selector(appWillEnterForeground) name:UIApplicationWillEnterForegroundNotification object:nil];
+  [nc addObserver:self selector:@selector(appDidBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
 
   return self;
 }
@@ -210,6 +233,102 @@ void iphone_finish();
       Main::iteration();
     } break;
   }
+
+  // The frame is now rendered into gl_view's bound framebuffer but NOT yet presented (present, which
+  // discards it under retained-backing=NO, happens after this delegate returns). This is the one safe
+  // window to read it back for the background snapshot.
+  if (_captureRequested && _started) {
+    _captureRequested = NO;
+    [self captureBackgroundSnapshotFromView:view];
+  }
+}
+
+// MARK: - Background snapshot (CAEAGLLayer app-switcher black-void workaround)
+
+// Read the freshly-rendered GL frame into a UIImage and stash it in the overlay (kept hidden until
+// the app actually backgrounds). Called from drawView: while gl_view's framebuffer is still bound.
+- (void)captureBackgroundSnapshotFromView:(GLView *)view {
+  const int w = (int)(view.bounds.size.width * view.contentScaleFactor);
+  const int h = (int)(view.bounds.size.height * view.contentScaleFactor);
+  if (w <= 0 || h <= 0) {
+    return;
+  }
+
+  const size_t bytesPerRow = (size_t)w * 4;
+  const size_t length = bytesPerRow * (size_t)h;
+  GLubyte *pixels = (GLubyte *)malloc(length);
+  if (pixels == NULL) {
+    return;
+  }
+  glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+  CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixels, length, GodotHostReleasePixelData);
+  CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+  // GL bytes are R,G,B,A; skip alpha (Godot's opaque frame can carry alpha=0, which would otherwise
+  // premultiply the whole image to black).
+  CGImageRef cg = CGImageCreate(w, h, 8, 32, bytesPerRow, cs,
+                                kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big,
+                                provider, NULL, NO, kCGRenderingIntentDefault);
+  // glReadPixels' origin is bottom-left; DownMirrored flips it to UIKit's top-left.
+  UIImage *img = cg ? [UIImage imageWithCGImage:cg scale:view.contentScaleFactor orientation:UIImageOrientationDownMirrored] : nil;
+  CGImageRelease(cg);
+  CGColorSpaceRelease(cs);
+  CGDataProviderRelease(provider);
+  if (img == nil) {
+    return;
+  }
+
+  UIView *parent = _parentView;
+  if (parent == nil) {
+    return;
+  }
+  if (_snapshotView == nil) {
+    _snapshotView = [[UIImageView alloc] initWithFrame:parent.bounds];
+    _snapshotView.contentMode = UIViewContentModeScaleToFill;
+    _snapshotView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _snapshotView.userInteractionEnabled = NO;
+    _snapshotView.hidden = YES;
+    [parent addSubview:_snapshotView];
+  }
+  _snapshotView.frame = parent.bounds;
+  _snapshotView.image = img;
+}
+
+// Resign-active fires BEFORE iOS takes the app-switcher snapshot, and while GL is still safe to touch.
+// Force one synchronous frame so drawView: captures the current scene into the overlay.
+- (void)appWillResignActive {
+  if (!_started || _glView == nil) {
+    return;
+  }
+  _captureRequested = YES;
+  [_glView drawView];
+  _captureRequested = NO; // clear in case drawView bailed (e.g. animation already inactive)
+}
+
+// Actually entering the background: reveal the captured frame so the snapshot shows it, and stop
+// rendering (GL access in the background risks a watchdog kill).
+- (void)appDidEnterBackground {
+  if (_snapshotView != nil && _snapshotView.image != nil) {
+    UIView *parent = _parentView;
+    if (parent != nil) {
+      [parent bringSubviewToFront:_snapshotView];
+    }
+    _snapshotView.hidden = NO;
+  }
+  if (_started) {
+    [_glView stopAnimation];
+  }
+}
+
+// Resume rendering behind the overlay so a fresh frame is ready before we uncover the GL surface.
+- (void)appWillEnterForeground {
+  if (_started && _glView != nil) {
+    [_glView startAnimation];
+  }
+}
+
+- (void)appDidBecomeActive {
+  _snapshotView.hidden = YES;
 }
 
 - (void)pause {
@@ -240,6 +359,10 @@ void iphone_finish();
     _orbitPan = nil;
     NSLog(@"[GodotHost] orbit recognizer removed");
   }
+}
+
+- (void)dealloc {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 @end
