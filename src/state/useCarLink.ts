@@ -245,7 +245,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
   const [wakeInFlight, setWakeInFlight] = useState(false);
   // The poll's tick, republished each effect run so refresh() can reuse it
   // (same read + intent-filter + stamp path) instead of duplicating it.
-  const tickRef = useRef<(() => Promise<void>) | null>(null);
+  const tickRef = useRef<((opts?: { forceInfotainment?: boolean }) => Promise<void>) | null>(null);
   // Latest cacheable telemetry, mirrored so the debounced saver can persist a
   // whole snapshot on each awake read without re-rendering.
   const cacheRef = useRef<CarLinkCache | null>(null);
@@ -838,9 +838,10 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
         await gw.wake().catch(() => {});
         // A user-initiated refresh must actually refresh — bypass the
         // infotainment throttle so charge/range update NOW, not on the next
-        // 60s window.
+        // 60s window, AND force the infotainment (battery/range) read even if
+        // the car is still mid-wake, like the Tesla app's pull-to-refresh.
         lastInfotainmentAtRef.current = 0;
-        await tickRef.current?.();
+        await tickRef.current?.({ forceInfotainment: true });
       } finally {
         setWakeInFlight(false);
       }
@@ -864,7 +865,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
     let inFlight = false; // a tick is awaiting the car
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const tick = async () => {
+    const tick = async (opts?: { forceInfotainment?: boolean }) => {
       if (stopped || paused || inFlight) return;
       // ⚠️ Interactive commands own the BLE link; the background poll yields.
       // Everything for the live car runs through ONE per-VIN FIFO, so a poll
@@ -928,9 +929,14 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
         // 60s is plenty, and it's skipped entirely while a command is in flight
         // or one landed in the last INFOTAINMENT_MS. The VCSEC half above keeps
         // Home live every tick regardless.
+        // A user-initiated refresh (opts.forceInfotainment) requests charge/range
+        // even if this tick's VCSEC read hasn't flipped awake yet — the car may be
+        // mid-wake right after refresh's gw.wake(). awakeSync faults harmlessly on
+        // a still-asleep car (caught below), matching the Tesla app, which fetches
+        // vehicle_data on pull-to-refresh. The automatic poll keeps the awake gate.
         const now = Date.now();
         if (
-          patch.awake === true &&
+          (patch.awake === true || opts?.forceInfotainment === true) &&
           inFlightRef.current === 0 &&
           now - lastInfotainmentAtRef.current >= INFOTAINMENT_MS
         ) {
