@@ -16,7 +16,7 @@ import {
   type LocationSheetHandle,
   type LocationTab,
 } from '@/components/LocationSheet';
-import { useFleet } from '@/state/VehicleProvider';
+import { useFleet, useVehicle } from '@/state/VehicleProvider';
 import {
   distanceMeters,
   formatKm,
@@ -165,9 +165,20 @@ export default function LocationView() {
     quietRefetchUntil.current = Date.now() + ms;
   };
 
+  // The active car's live view state — carLocation is non-null ONLY for the live car once its GPS
+  // has been read (telemetry applies only to the active-is-live vehicle). So: real coords when we
+  // have them, otherwise the per-car mock offset (demo cars, or the live car before its first read).
+  const [vehState] = useVehicle();
+  const liveCoord: LatLng | null = useMemo(() => {
+    const loc = vehState.carLocation;
+    if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)) {
+      return { latitude: loc.lat, longitude: loc.lon };
+    }
+    return null;
+  }, [vehState.carLocation]);
   const carCoord = useMemo(
-    () => offsetCoordinate(userCoord ?? FALLBACK_COORD, offset),
-    [userCoord, offset],
+    () => liveCoord ?? offsetCoordinate(userCoord ?? FALLBACK_COORD, offset),
+    [liveCoord, userCoord, offset],
   );
 
   // Navigate search (recents tab): live Apple/local results + persisted recents.

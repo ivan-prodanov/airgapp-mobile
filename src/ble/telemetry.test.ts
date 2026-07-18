@@ -282,6 +282,28 @@ test('drive: absent shiftState -> driving:false', () => {
   assert.equal(infotainmentToPatch(snap).driving, false);
 });
 
+test('location: lat/lon/heading -> carLocation patch', () => {
+  const snap = parseCarServerResponse({
+    locationState: { latitude: 42.6977, longitude: 23.3219, heading: 90 },
+  });
+  assert.deepEqual(infotainmentToPatch(snap).carLocation, { lat: 42.6977, lon: 23.3219, heading: 90 });
+});
+
+test('location: heading absent -> carLocation.heading null', () => {
+  const snap = parseCarServerResponse({ locationState: { latitude: 1, longitude: 2 } });
+  assert.deepEqual(infotainmentToPatch(snap).carLocation, { lat: 1, lon: 2, heading: null });
+});
+
+test('location: a partial fix (lon missing) leaves carLocation untouched', () => {
+  const snap = parseCarServerResponse({ locationState: { latitude: 1 } });
+  assert.equal(infotainmentToPatch(snap).carLocation, undefined);
+});
+
+test('location: no locationState -> no carLocation key emitted', () => {
+  const snap = parseCarServerResponse({ driveState: {} });
+  assert.equal('carLocation' in infotainmentToPatch(snap), false);
+});
+
 test('sentry: Armed -> sentryEnabled:true; Off -> sentryEnabled:false', () => {
   const armed = parseCarServerResponse({ closuresState: { sentryModeState: { Armed: {} } } });
   assert.equal(infotainmentToPatch(armed).sentryEnabled, true);

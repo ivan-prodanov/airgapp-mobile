@@ -27,6 +27,8 @@ const IGNORED_KEYS = new Set<keyof VehicleViewState>([
   'vehicleConnected',
   'tirePressureVisible',
   'mediaPlaying',
+  // The car's GPS position drives the map pin only, never the 3D product payload.
+  'carLocation',
   // Climate/charging setpoints + comfort toggles: sheet state, never rendered on the car. Without
   // these, a held temp chevron or a slider drag would fire an UPDATE_PRODUCT per sample.
   'targetTempC',

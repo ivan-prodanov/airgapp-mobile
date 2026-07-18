@@ -33,6 +33,8 @@ test('climate/charging setpoints and comfort toggles never trigger a renderer up
   assert.equal(changed({ petModeOn: true }), false);
   assert.equal(changed({ chargeLimitPercent: 100 }), false);
   assert.equal(changed({ chargingAmps: 5 }), false);
+  // The car's GPS position drives the map pin only, never the 3D payload.
+  assert.equal(changed({ carLocation: { lat: 1, lon: 2, heading: null } }), false);
 });
 
 // A slider drag / held chevron mutates one setpoint per sample; none may reach Godot.

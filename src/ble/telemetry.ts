@@ -421,6 +421,16 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     patch.driving = DRIVING_GEARS.has(snap.drive.gear);
   }
 
+  // Real GPS → the map's car pin (location.tsx). Only emit when BOTH coords are finite; a partial
+  // read leaves carLocation untouched rather than placing the car at a bogus 0/undefined point.
+  if (snap.location && snap.location.lat !== undefined && snap.location.lon !== undefined) {
+    patch.carLocation = {
+      lat: snap.location.lat,
+      lon: snap.location.lon,
+      heading: snap.location.heading ?? null,
+    };
+  }
+
   if (snap.closures) {
     // sentryModeState absent -> sentryOn is undefined -> omit sentryEnabled entirely rather than
     // reporting a fabricated "false" (matches the reference's `if (cls.sentryModeState)` gate).

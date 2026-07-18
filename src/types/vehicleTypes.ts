@@ -53,6 +53,14 @@ export type SeatClimateModes = Record<SeatPosition, SeatClimateMode>;
 export type CabinOverheatMode = 'off' | 'noac' | 'on';
 export type CabinOverheatTemp = '30' | '35' | '40';
 
+// The car's real position, from the infotainment read's locationState/driveState. heading is the
+// car's own compass bearing (which way it's pointing), null when the car doesn't report it.
+export interface CarLocation {
+  lat: number;
+  lon: number;
+  heading: number | null;
+}
+
 export interface VehicleViewState {
   frunkOpen: boolean;
   trunkOpen: boolean;
@@ -110,6 +118,12 @@ export interface VehicleViewState {
   // Mock for now; maps to BLE ClimateState.inside_temp / outside_temp per vehicle.
   interiorTempC: number;
   exteriorTempC: number;
+  // The car's real GPS position from telemetry (DriveState/locationState lat/lon + heading). `null`
+  // until a read supplies it — and ONLY ever non-null for the live car (telemetry applies only to the
+  // active-is-live vehicle), so the map reads: carLocation present → real pin, else the mock offset
+  // (demo cars, or the live car before its first location read). NOT renderer state — ignored by
+  // hasVehicleVisualStateChanged.
+  carLocation: CarLocation | null;
   // ── Climate/charging setpoints ────────────────────────────────────────────────────────────────
   // These are the car's *requested* values (vs. the measured interior/exterior temps above). They
   // live here rather than in the screens so a command can be dispatched for them and telemetry can
@@ -181,6 +195,7 @@ export const initialVehicleState: VehicleViewState = {
   rangeMiles: null,
   interiorTempC: probeNum(21),
   exteriorTempC: probeNum(18),
+  carLocation: null,
   targetTempC: 19.5,
   cabinOverheatMode: 'on',
   cabinOverheatTemp: '40',
