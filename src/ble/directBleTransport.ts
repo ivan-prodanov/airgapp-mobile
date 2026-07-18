@@ -151,9 +151,19 @@ export class DirectBleTransport implements CarTransport {
   // an out-of-range car quickly instead of holding up the fallback for the
   // full 20s.
   private readonly scanTimeoutMs: number;
+  // Sink for UNSOLICITED frames — the car-initiated VCSEC VehicleStatus pushes
+  // that arrive while idle, or that don't answer an in-flight exchange. null =
+  // dropped (today's behavior). The consumer decodes them (vcsecPush.ts) and
+  // applies closure/lock changes instantly instead of waiting for the poll.
+  private readonly onUnsolicited: ((frame: Uint8Array) => void) | null;
+  // True only while exchange() is awaiting its reply — gates whether an inbound
+  // frame is a candidate reply (buffered in the inbox for correlator matching)
+  // or an unsolicited push (forwarded straight to onUnsolicited).
+  private exchangeInFlight = false;
 
-  constructor(opts?: { scanTimeoutMs?: number }) {
+  constructor(opts?: { scanTimeoutMs?: number; onUnsolicited?: (frame: Uint8Array) => void }) {
     this.scanTimeoutMs = opts?.scanTimeoutMs ?? SCAN_TIMEOUT_MS;
+    this.onUnsolicited = opts?.onUnsolicited ?? null;
   }
 
   // openSession scans for, connects to, and subscribes on the car's BLE
@@ -196,9 +206,17 @@ export class DirectBleTransport implements CarTransport {
       if (error || !char?.value) return;
       const bytes = base64ToBytes(char.value);
       const frames = this.reassembler.push(bytes, Date.now());
-      if (frames.length > 0) {
+      if (frames.length === 0) return;
+      if (this.exchangeInFlight) {
+        // An exchange is awaiting its reply — buffer for correlator matching.
         this.inbox.push(...frames);
         this.wake();
+      } else {
+        // Idle link: nothing is waiting on a reply, so every complete frame is
+        // an unsolicited car push. Surface it (the consumer filters to VCSEC
+        // status frames) instead of letting it rot in the inbox to be wiped by
+        // the next exchange's stale-drain.
+        for (const f of frames) this.onUnsolicited?.(f);
       }
     });
 
@@ -223,10 +241,14 @@ export class DirectBleTransport implements CarTransport {
 
     // Drain stale: anything buffered before we send can't be our reply.
     this.inbox = [];
-
-    const chunks = frameForWrite(req, this.blockLength);
+    // From here until we get our reply, inbound frames are candidate replies
+    // (buffered), not pushes. Reset in the finally so the idle link resumes
+    // routing frames straight to onUnsolicited.
+    this.exchangeInFlight = true;
     try {
-      for (const chunk of chunks) {
+      const chunks = frameForWrite(req, this.blockLength);
+      try {
+        for (const chunk of chunks) {
         // WITH response — the Go connector writes each chunk with noRsp=false
         // (ble.go:121), i.e. an ATT Write Request the car ACKs; the Tesla TX
         // characteristic ignores Write-Without-Response commands (they leave
@@ -243,9 +265,12 @@ export class DirectBleTransport implements CarTransport {
       throw new Error(`BLE connection closed — write failed: ${detail}`);
     }
 
-    const clampedTimeout = Math.min(Math.max(timeoutMs, 0), MAX_EXCHANGE_TIMEOUT_MS);
-    const matched = await this.awaitMatchingFrame(want, clampedTimeout);
-    return bytesToBase64(matched);
+      const clampedTimeout = Math.min(Math.max(timeoutMs, 0), MAX_EXCHANGE_TIMEOUT_MS);
+      const matched = await this.awaitMatchingFrame(want, clampedTimeout);
+      return bytesToBase64(matched);
+    } finally {
+      this.exchangeInFlight = false;
+    }
   }
 
   // sendAddKey writes the VCSEC add-key enrollment message (spec §7) on the
@@ -326,6 +351,10 @@ export class DirectBleTransport implements CarTransport {
     while (this.inbox.length > 0) {
       const frame = this.inbox.shift()!;
       if (frameAnswersRequest(frame, want)) return frame;
+      // Non-matching frame that arrived during the exchange: a stale broadcast
+      // or an unsolicited VCSEC push. Surface it rather than only discarding —
+      // the consumer decodes/filters (vcsecPush ignores anything non-VCSEC).
+      this.onUnsolicited?.(frame);
     }
     return null;
   }

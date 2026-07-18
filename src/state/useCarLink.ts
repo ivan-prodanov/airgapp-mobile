@@ -48,6 +48,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
+import { decodeUnsolicitedVcsecStatus } from '@/ble/vcsecPush';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
@@ -189,6 +190,10 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   // identity can change per render, but the poll must not tear down/rebuild.
   const applyTelemetryRef = useRef(applyTelemetry);
   applyTelemetryRef.current = applyTelemetry;
+  // The unsolicited-push handler, held in a ref so the BLE transport's make()
+  // (built before the handler is declared, and only once) always reads the
+  // current one. Assigned just below its useCallback.
+  const handleVcsecPushRef = useRef<(frame: Uint8Array) => void>(() => {});
 
   const [linked, setLinked] = useState(false);
   const [vin, setVin] = useState<string | null>(null);
@@ -338,7 +343,16 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         candidates.push({
           name: 'ble',
           make: () =>
-            withTransportLogging('ble', new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS })),
+            withTransportLogging(
+              'ble',
+              new DirectBleTransport({
+                scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS,
+                // Route the car's unsolicited VCSEC pushes into the live apply
+                // path — closures/lock update instantly while this link is held
+                // open, with the poll as backstop.
+                onUnsolicited: handleVcsecPushRef.current,
+              }),
+            ),
         });
         if (cfg.baseUrl && cfg.token) {
           candidates.push({
@@ -638,6 +652,27 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     cacheRef.current = next;
     saveCacheRef.current?.(next);
   }, []);
+
+  // Apply an UNSOLICITED VCSEC push (car-initiated VehicleStatus on a closure /
+  // lock / presence change) the INSTANT it arrives on a held-open BLE link —
+  // instead of waiting up to POLL_MS. Same apply path as the poll's VCSEC read
+  // (vcsecStatusToPatch → intent filter → applyTelemetry, which itself gates on
+  // the active-live car), minus the infotainment/connection/stamp bits: a push
+  // is a VCSEC delta, not a full tick, and the poll remains the backstop that
+  // owns the freshness timestamp. Non-VCSEC / encrypted / solicited frames are
+  // filtered out by the decoder (returns null). Only DirectBleTransport ever
+  // calls this — Pi is request/response, so instant-over-Pi needs streaming.
+  const handleVcsecPush = useCallback((frame: Uint8Array) => {
+    const status = decodeUnsolicitedVcsecStatus(frame);
+    if (!status) return;
+    const now = Date.now();
+    const { patch } = vcsecStatusToPatch(status, {}, now);
+    const filtered = filterPatchUnderIntent(patch, intentRef.current, now);
+    if (Object.keys(filtered).length === 0) return;
+    applyTelemetryRef.current(filtered);
+    logi('push', 'vcsec', { locked: patch.locked, closures: status.closures });
+  }, []);
+  handleVcsecPushRef.current = handleVcsecPush;
 
   // refresh: the real pull-to-refresh. Wakes the car, then re-reads it — the
   // spinner runs for the whole round trip. Replaces a demo stub that only set
