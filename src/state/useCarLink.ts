@@ -675,19 +675,9 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
     const now = Date.now();
     const { patch } = vcsecStatusToPatch(status, {}, now);
     const filtered = filterPatchUnderIntent(patch, intentRef.current, now, getActiveStateRef.current());
-    // DIAGNOSTIC (frunk-close bug): raw = what the decode/patch produced,
-    // applied = what survived the intent filter, intent = keys currently under
-    // optimistic grace (the prime suspect for a value that decodes right but
-    // never reaches the UI). Logged even when nothing applies.
-    logi('push', 'vcsec', {
-      fRaw: patch.frunkOpen,
-      fApplied: filtered.frunkOpen,
-      tRaw: patch.trunkOpen,
-      intent: Object.keys(intentRef.current),
-      closures: status.closures,
-    });
     if (Object.keys(filtered).length === 0) return;
     applyTelemetryRef.current(filtered);
+    logi('push', 'vcsec', { locked: patch.locked, closures: status.closures });
   }, []);
   handleVcsecPushRef.current = handleVcsecPush;
 
