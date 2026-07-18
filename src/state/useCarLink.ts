@@ -840,8 +840,18 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
         // infotainment throttle so charge/range update NOW, not on the next
         // 60s window, AND force the infotainment (battery/range) read even if
         // the car is still mid-wake, like the Tesla app's pull-to-refresh.
-        lastInfotainmentAtRef.current = 0;
-        await tickRef.current?.({ forceInfotainment: true });
+        //
+        // RETRY: the domain-3 (charge/battery) read intermittently times out on
+        // a cold open (~30% observed), so a single attempt often leaves the
+        // battery empty. Retry a few times until it lands — the tick stamps
+        // lastInfotainmentAtRef only on SUCCESS, so a non-zero value after the
+        // tick means the read succeeded. Bounded so the spinner can't hang.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          lastInfotainmentAtRef.current = 0;
+          await tickRef.current?.({ forceInfotainment: true });
+          if (lastInfotainmentAtRef.current !== 0) break; // infotainment landed
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 600));
+        }
       } finally {
         setWakeInFlight(false);
       }
