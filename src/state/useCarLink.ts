@@ -154,9 +154,14 @@ export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
   // poll-derived patch through here must never loop back into a command.
   applyTelemetry: (patch: Partial<VehicleViewState>) => void;
+  // The active (live) car's current view state, read at telemetry time so the
+  // intent grace can CONFIRM-AND-RELEASE: a read matching the optimistic value
+  // clears the grace early (see filterPatchUnderIntent). A getter, not a value,
+  // so the stable poll/push closures always see the freshest snapshot.
+  getActiveState: () => VehicleViewState;
 }
 
-export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
+export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions): CarLink {
   const enabled = isCarLinkEnabled();
 
   const cfgRef = useRef<PiConfig | null>(null);
@@ -190,6 +195,8 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
   // identity can change per render, but the poll must not tear down/rebuild.
   const applyTelemetryRef = useRef(applyTelemetry);
   applyTelemetryRef.current = applyTelemetry;
+  const getActiveStateRef = useRef(getActiveState);
+  getActiveStateRef.current = getActiveState;
   // The unsolicited-push handler, held in a ref so the BLE transport's make()
   // (built before the handler is declared, and only once) always reads the
   // current one. Assigned just below its useCallback.
@@ -667,10 +674,20 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
     if (!status) return;
     const now = Date.now();
     const { patch } = vcsecStatusToPatch(status, {}, now);
-    const filtered = filterPatchUnderIntent(patch, intentRef.current, now);
+    const filtered = filterPatchUnderIntent(patch, intentRef.current, now, getActiveStateRef.current());
+    // DIAGNOSTIC (frunk-close bug): raw = what the decode/patch produced,
+    // applied = what survived the intent filter, intent = keys currently under
+    // optimistic grace (the prime suspect for a value that decodes right but
+    // never reaches the UI). Logged even when nothing applies.
+    logi('push', 'vcsec', {
+      fRaw: patch.frunkOpen,
+      fApplied: filtered.frunkOpen,
+      tRaw: patch.trunkOpen,
+      intent: Object.keys(intentRef.current),
+      closures: status.closures,
+    });
     if (Object.keys(filtered).length === 0) return;
     applyTelemetryRef.current(filtered);
-    logi('push', 'vcsec', { locked: patch.locked, closures: status.closures });
   }, []);
   handleVcsecPushRef.current = handleVcsecPush;
 
@@ -742,7 +759,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
         // Empty closureIntent — the grace is applied uniformly HERE, keyed by
         // VehicleStateKey, so telemetry.ts's closure-only keying is bypassed.
         const { patch } = vcsecStatusToPatch(st, {}, Date.now());
-        const filtered = filterPatchUnderIntent(patch, intentRef.current, Date.now());
+        const filtered = filterPatchUnderIntent(patch, intentRef.current, Date.now(), getActiveStateRef.current());
         if (stopped || paused) return; // backgrounded/unlinked while awaiting
         // READ SNAPSHOT (diagnostic): what the car reported (st.closures), what the
         // mapper produced (trunkRaw/frunkRaw), and what survived the intent filter
@@ -796,6 +813,7 @@ export function useCarLink({ applyTelemetry }: UseCarLinkOptions): CarLink {
               infotainmentToPatch(snap),
               intentRef.current,
               Date.now(),
+              getActiveStateRef.current(),
             );
             if (Object.keys(infoPatch).length) {
               applyTelemetryRef.current(infoPatch);

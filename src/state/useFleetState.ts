@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CarModel, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
+import { initialVehicleState } from '../types/vehicleTypes';
 import {
   bindVehicleVin,
   activeIndex,
@@ -67,9 +68,14 @@ export function useFleetState(): {
     },
     [applyActive],
   );
-  const carLink = useCarLink({ applyTelemetry });
+  // Latest active-car state, tracked in a ref so useCarLink's stable poll/push
+  // closures can read the freshest snapshot at telemetry time (for the intent
+  // grace's confirm-and-release). Assigned just below, once `current` exists.
+  const activeStateRef = useRef<VehicleViewState>(initialVehicleState);
+  const carLink = useCarLink({ applyTelemetry, getActiveState: () => activeStateRef.current });
 
   const current = activeVehicle(fleet);
+  activeStateRef.current = current.state;
 
   // ── P3.T1: which vehicle IS the enrolled car? ────────────────────────────
   // Bind the enrolled VIN to the fleet's FIRST vehicle. That is the app's

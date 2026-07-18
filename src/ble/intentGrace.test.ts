@@ -71,3 +71,35 @@ test('a false value under live intent is still stripped (not confused for absent
   const out = filterPatchUnderIntent({ locked: false }, intent, now);
   assert.deepEqual(out, {}); // the falsey value was present and got stripped
 });
+
+// ── confirm-and-release (with `current`) ────────────────────────────────────
+
+test('CONFIRM: a read matching the optimistic value releases the grace and passes through', () => {
+  const now = 0;
+  const intent = new Map<VehicleStateKey, number>([['frunkOpen', now + 5_000]]);
+  // Optimistically opened the frunk (current=true); the car confirms open.
+  const out = filterPatchUnderIntent({ frunkOpen: true }, intent, now, { frunkOpen: true } as VehicleViewState);
+  assert.deepEqual(out, { frunkOpen: true });
+  assert.equal(intent.has('frunkOpen'), false); // grace RELEASED on confirmation
+});
+
+test('CONTRADICT: a read differing from the optimistic value is suppressed and keeps the grace', () => {
+  const now = 0;
+  const intent = new Map<VehicleStateKey, number>([['frunkOpen', now + 5_000]]);
+  // Optimistic=true; a stale read says closed → suppress, grace stays.
+  const out = filterPatchUnderIntent({ frunkOpen: false }, intent, now, { frunkOpen: true } as VehicleViewState);
+  assert.deepEqual(out, {});
+  assert.equal(intent.has('frunkOpen'), true); // still under grace
+});
+
+test('THE FRUNK BUG: confirm on open, then a real close applies immediately (no 30s wait)', () => {
+  const intent = new Map<VehicleStateKey, number>([['frunkOpen', 30_000]]);
+  // 1) You tapped open (current=true); the car's push confirms open → releases.
+  let out = filterPatchUnderIntent({ frunkOpen: true }, intent, 1_000, { frunkOpen: true } as VehicleViewState);
+  assert.deepEqual(out, { frunkOpen: true });
+  assert.equal(intent.has('frunkOpen'), false);
+  // 2) You then close it manually a few seconds later — well inside the old 30s
+  //    window. With the grace released, the close now applies instantly.
+  out = filterPatchUnderIntent({ frunkOpen: false }, intent, 5_000, { frunkOpen: true } as VehicleViewState);
+  assert.deepEqual(out, { frunkOpen: false });
+});
