@@ -24,7 +24,6 @@ import {
   getMockLastUpdated,
   offsetCoordinate,
   type LatLng,
-  type MockLocationOffset,
 } from '@/state/mockLocation';
 import {
   boundsForRegion,
@@ -132,11 +131,6 @@ export default function LocationView() {
     [height],
   );
 
-  const offset: MockLocationOffset = useMemo(() => {
-    const active = fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0];
-    return active.mockLocationOffset;
-  }, [fleet.vehicles, fleet.activeId]);
-
   const [userCoord, setUserCoord] = useState<LatLng | null>(null);
   const [mapType, setMapType] = useState<MapType>('standard');
   const [tab, setTab] = useState<LocationTab>(tabParam === 'charging' ? 'charging' : 'location');
@@ -176,9 +170,11 @@ export default function LocationView() {
     }
     return null;
   }, [vehState.carLocation]);
+  // Real car GPS when we have it; otherwise the user's own location (no fake
+  // offset). The car pin sits on the user until the live fix lands, then moves.
   const carCoord = useMemo(
-    () => liveCoord ?? offsetCoordinate(userCoord ?? FALLBACK_COORD, offset),
-    [liveCoord, userCoord, offset],
+    () => liveCoord ?? userCoord ?? FALLBACK_COORD,
+    [liveCoord, userCoord],
   );
 
   // Navigate search (recents tab): live Apple/local results + persisted recents.
@@ -589,9 +585,9 @@ export default function LocationView() {
   droppedPinRef.current = droppedPin;
   useEffect(() => {
     if (droppedPinRef.current) return;
-    if (userCoord) recenter(offsetCoordinate(userCoord, offset));
+    recenter(carCoord); // real car GPS if known, else the user's location
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userCoord]);
+  }, [userCoord, liveCoord]);
 
   // Discovery = the bundled OSM extract (local bbox filter, no network, no quota). Padded slightly beyond
   // the edge so pins near the border exist. Live availability is fetched separately (Chargeprice, below).

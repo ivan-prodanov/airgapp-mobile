@@ -69,11 +69,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
     return () => clearInterval(id);
   }, [carLink.linked]);
   // Geographic bearing to the active car, driving the compass arrow on the
-  // Location row. Once the live car reports real GPS (state.carLocation), compute
-  // the TRUE bearing from the user's current location to the car — recomputed as
-  // either moves (and on refresh). Falls back to the stable mock offset bearing
-  // when there's no real fix yet or no user location.
-  const activeVehicle = fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0];
+  // Location row: the TRUE bearing from the user's current location to the car's
+  // real GPS (state.carLocation), recomputed as either moves and on refresh.
+  // NULL when there's no real fix yet or no user location — the arrow is hidden
+  // rather than pointed at a made-up position.
   const [userCoord, setUserCoord] = useState<LatLng | null>(null);
   useEffect(() => {
     let sub: Location.LocationSubscription | null = null;
@@ -97,10 +96,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
     };
   }, []);
   const carLoc = state.carLocation;
-  const bearingToCar =
+  const bearingToCar: number | null =
     carLoc && userCoord
       ? bearingBetween(userCoord, { latitude: carLoc.lat, longitude: carLoc.lon })
-      : activeVehicle.mockLocationOffset.bearingDeg;
+      : null;
   const [customizing, setCustomizing] = useState(false);
   const openCustomize = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -301,7 +300,11 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             title="Location"
             subtitle="Nearby"
             onPress={() => router.push('/location')}
-            leading={<CarHeadingArrow bearingToCar={bearingToCar} size={26} color="white" />}
+            leading={
+              bearingToCar != null ? (
+                <CarHeadingArrow bearingToCar={bearingToCar} size={26} color="white" />
+              ) : undefined
+            }
           />
           <NavRow symbol="steeringwheel" title="Summon" disabled />
           <NavRow symbol="bolt.fill" title="Charging" onPress={() => router.push('/charging')} />

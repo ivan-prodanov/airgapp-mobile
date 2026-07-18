@@ -10,7 +10,7 @@ import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { LocationPickerSheet, type ScheduleLocationKey } from '@/components/LocationPickerSheet';
 import { ScheduleSheet } from '@/components/ScheduleSheet';
 import { Toggle } from '@/components/Toggle';
-import { offsetCoordinate, type LatLng } from '@/state/mockLocation';
+import { type LatLng } from '@/state/mockLocation';
 import {
   type AnySchedule,
   newCharging,
@@ -36,7 +36,7 @@ type Editing = { draft: AnySchedule; mode: 'create' | 'edit' };
 
 // Set Schedules screen (route). Precondition + Charging schedules per vehicle (Light Show is shown but
 // disabled — it can't run over BLE). The header's location dropdown scopes which place these are "at";
-// Current Location is the live car position (fake for now), reverse-geocoded to a street name.
+// Current Location is the car's position (real GPS if known, else the user's), reverse-geocoded to a street name.
 export default function SchedulesScreen() {
   const router = useRouter();
   const fleet = useFleet();
@@ -47,12 +47,16 @@ export default function SchedulesScreen() {
   const [locationKey, setLocationKey] = useState<ScheduleLocationKey>('current');
   const [currentLabel, setCurrentLabel] = useState('Current location');
 
-  const offset = useMemo(() => {
+  // The active car's real GPS (null until read / for demo cars) — no fake offset.
+  const carCoord: LatLng | null = useMemo(() => {
     const active = fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0];
-    return active.mockLocationOffset;
+    const loc = active.state.carLocation;
+    return loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)
+      ? { latitude: loc.lat, longitude: loc.lon }
+      : null;
   }, [fleet.vehicles, fleet.activeId]);
 
-  // Resolve the live car position to a street/boulevard name for the header (e.g. "Aleksandar Malinov Blvd").
+  // Resolve the car position (real GPS if known, else the user's) to a street/boulevard name for the header.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -63,7 +67,7 @@ export default function SchedulesScreen() {
           const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           user = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         }
-        const [addr] = await Location.reverseGeocodeAsync(offsetCoordinate(user, offset));
+        const [addr] = await Location.reverseGeocodeAsync(carCoord ?? user);
         if (!cancelled && addr) {
           setCurrentLabel(pickPlaceLabel(addr));
         }
@@ -74,7 +78,7 @@ export default function SchedulesScreen() {
     return () => {
       cancelled = true;
     };
-  }, [offset]);
+  }, [carCoord]);
 
   const locLabel = locationKey === 'current' ? currentLabel : locationKey === 'home' ? 'Home' : 'Work';
 

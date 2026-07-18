@@ -1,31 +1,20 @@
-// MOCK car-location source. Until BLE feeds real coordinates, the car is pinned to the user's live
-// GPS position plus a small, STABLE per-car offset (a random bearing at a fixed ~100 m distance). The
-// offset is generated once per vehicle (see Vehicle.mockLocationOffset in fleet.ts) so the pin doesn't
-// jump on every re-render. When BLE lands, only the LocationView's coordinate source changes — this
-// whole module goes away.
+// Geo utilities (bearing/distance/polar-offset) + a handful of remaining UI mocks (recents, busy-times).
+// The car's map position is now the real GPS from BLE (state.carLocation); when it isn't known yet the
+// UI falls back to the user's own location — there is no longer a fake per-car offset.
 
 export interface LatLng {
   latitude: number;
   longitude: number;
 }
 
-// A fixed-distance, random-bearing offset from the user. Stored per-car so it's stable across renders.
-export interface MockLocationOffset {
-  bearingDeg: number; // 0 = north, clockwise
-  distanceM: number;
-}
-
 const EARTH_RADIUS_M = 6_378_137;
 const DEG = Math.PI / 180;
 
-// Generate a fresh stable offset: a random compass bearing at a fixed 100 m. Call ONCE per vehicle.
-export function createMockLocationOffset(): MockLocationOffset {
-  return { bearingDeg: Math.random() * 360, distanceM: 100 };
-}
-
-// Project `origin` by `offset` using the equirectangular small-distance approximation (exact enough at
-// 100 m). North component shifts latitude; east component shifts longitude, scaled by cos(lat).
-export function offsetCoordinate(origin: LatLng, offset: MockLocationOffset): LatLng {
+// Project `origin` by a polar offset (bearing + distance) using the equirectangular small-distance
+// approximation. North component shifts latitude; east component shifts longitude, scaled by cos(lat).
+// Used to fan out overlapping charger pins (location.tsx / tomtom.ts) — NOT for the car position, which
+// now comes solely from the car's real GPS (state.carLocation).
+export function offsetCoordinate(origin: LatLng, offset: { bearingDeg: number; distanceM: number }): LatLng {
   const brng = offset.bearingDeg * DEG;
   const dNorth = offset.distanceM * Math.cos(brng);
   const dEast = offset.distanceM * Math.sin(brng);
@@ -36,8 +25,7 @@ export function offsetCoordinate(origin: LatLng, offset: MockLocationOffset): La
 
 // Initial great-circle bearing FROM `a` TO `b`, degrees 0-360 (0 = north,
 // clockwise). Used by the Home "Location" row arrow to point at the car: fed the
-// user's live coord + the car's real GPS, it updates as either moves — unlike
-// the static mockLocationOffset.bearingDeg it replaces once carLocation lands.
+// user's live coord + the car's real GPS, it updates as either moves.
 export function bearingBetween(a: LatLng, b: LatLng): number {
   const lat1 = a.latitude * DEG;
   const lat2 = b.latitude * DEG;
