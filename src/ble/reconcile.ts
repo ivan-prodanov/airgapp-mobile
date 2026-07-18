@@ -59,8 +59,11 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
 
   // ── Controls ───────────────────────────────────────────────────────────────
   if (prev.locked !== next.locked) emit({ type: next.locked ? 'lock' : 'unlock' }, 'locked');
-  // Frunk only OPENS (no close command — you shut it by hand). Ignore false.
-  if (!prev.frunkOpen && next.frunkOpen) emit({ type: 'openFrunk' }, 'frunkOpen');
+  // Frunk actuate is a TOGGLE on the car: the SAME openFrunk command opens it,
+  // and sending it again closes it (Tesla's own app sends OPEN for "Close" too;
+  // aftermarket auto-close add-ons ride the same command). So emit openFrunk on
+  // BOTH transitions, not just open.
+  if (prev.frunkOpen !== next.frunkOpen) emit({ type: 'openFrunk' }, 'frunkOpen');
   if (prev.trunkOpen !== next.trunkOpen) {
     emit({ type: next.trunkOpen ? 'openTrunk' : 'closeTrunk' }, 'trunkOpen');
   }

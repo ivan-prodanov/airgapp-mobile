@@ -34,11 +34,13 @@ test('lock / unlock', () => {
   expect(s({ locked: true }), s({ locked: false }), [{ cmd: { type: 'unlock' }, keys: ['locked'] }]);
 });
 
-test('frunk only OPENS — closing it emits nothing (no close command exists)', () => {
+test('frunk actuate is a toggle — BOTH directions send the same openFrunk command', () => {
   expect(s({ frunkOpen: false }), s({ frunkOpen: true }), [
     { cmd: { type: 'openFrunk' }, keys: ['frunkOpen'] },
   ]);
-  expect(s({ frunkOpen: true }), s({ frunkOpen: false }), []);
+  expect(s({ frunkOpen: true }), s({ frunkOpen: false }), [
+    { cmd: { type: 'openFrunk' }, keys: ['frunkOpen'] },
+  ]);
 });
 
 test('trunk / charge port open+close', () => {

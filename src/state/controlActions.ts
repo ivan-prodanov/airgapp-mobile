@@ -82,13 +82,10 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     label: 'Frunk',
     symbol: () => 'car.side.front.open.fill',
     isActive: (s) => s.frunkOpen,
-    // Open-only: the frunk has no powered close on any Tesla (you shut it by
-    // hand), and the reconciler only ever emits `openFrunk` (reconcile.ts). A
-    // toggle would flip the state to "closed" optimistically and send nothing —
-    // so tapping an already-open frunk does nothing, matching reality.
-    run: (s, a) => {
-      if (!s.frunkOpen) a.patch({ frunkOpen: true });
-    },
+    // Toggle: the frunk actuate is a toggle on the car, so BOTH taps send the
+    // same openFrunk command (see reconcile.ts). The state flip drives the
+    // reconciler AND the optimistic open/closed label.
+    run: (_s, a) => a.toggle('frunkOpen'),
   },
   trunk: {
     id: 'trunk',
