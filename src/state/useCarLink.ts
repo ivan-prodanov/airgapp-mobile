@@ -33,6 +33,7 @@ import {
   createCarGateway,
   createSelectingTransport,
   closeAllCachedSessions,
+  peekPiSessionId,
   loadPiConfig,
   loadOrCreateDeviceKeys,
   isCarLinkEnabled,
@@ -53,6 +54,7 @@ import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
+import { startPiEventStream } from './piEventStream';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
@@ -79,6 +81,12 @@ const POLL_MS = 20_000;
 // every POLL_MS; this rides on top far less often. Charge state changes slowly,
 // and a cold domain-3 open is ~8s of shared-queue time — see the tick.
 const INFOTAINMENT_MS = 60_000;
+
+// Flat backoff before retrying a dropped Pi event-stream socket. The 20s poll
+// is the backstop meanwhile (it'll re-establish the stream on its next
+// successful tick regardless), so a single flat delay is enough — no
+// exponential ladder needed.
+const STREAM_RECONNECT_MS = 2000;
 
 // OPTIMISTIC_TIMEOUT_MS is the hard wall-clock cap on a pending record — the
 // official app's `OPTIMISTIC_TIMEOUT_MS = TimeInMs.THIRTY_SECONDS` (findings
@@ -179,6 +187,13 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
   // re-paying BLE's ~10s connect timeout when the car is out of range. Survives
   // teardown (which nulls selectorRef) because it lives here, not in the selector.
   const lastGoodTransportRef = useRef<'ble' | 'pi' | null>(null);
+  // Pi event-stream lifecycle (P3): the stop fn for the currently-open
+  // WebSocket stream and the Pi sessionId it's bound to, plus any pending
+  // reconnect timer. Refs (not state) — managing the stream must never
+  // trigger a re-render, same reasoning as selectedTransportRef above.
+  const streamStopRef = useRef<(() => void) | null>(null);
+  const streamSessionIdRef = useRef<string | null>(null);
+  const streamReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Optimistic-intent map: VehicleStateKey → grace expiry (Date.now()+GRACE_MS).
   // Stamped by dispatch, consumed (and pruned) by the poll's strip filter.
   const intentRef = useRef<Map<VehicleStateKey, number>>(new Map());
@@ -393,16 +408,119 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
     return gatewayRef.current;
   }, []);
 
+  // ── Pi event-stream lifecycle (P3) ──────────────────────────────────────
+  // Streams live VCSEC push frames over the Pi's WebSocket into the SAME
+  // handleVcsecPush the direct-BLE unsolicited path uses (handleVcsecPushRef,
+  // via DirectBleTransport's onUnsolicited). Only Pi needs this: direct BLE
+  // already delivers unsolicited frames itself, so streaming on top of it
+  // would double-feed the same frame through both paths.
+
+  // stopStream tears down the current stream socket (if any) and cancels any
+  // pending reconnect timer. Idempotent.
+  const stopStream = useCallback(() => {
+    if (streamReconnectTimerRef.current) {
+      clearTimeout(streamReconnectTimerRef.current);
+      streamReconnectTimerRef.current = null;
+    }
+    if (streamStopRef.current) {
+      streamStopRef.current();
+      streamStopRef.current = null;
+    }
+    streamSessionIdRef.current = null;
+  }, []);
+
+  // startStreamRef lets scheduleReconnect call the CURRENT startStream
+  // without a direct reference — same ref-indirection pattern as
+  // handleVcsecPushRef, needed here to avoid a useCallback circular
+  // dependency (scheduleReconnect restarts the stream; startStream schedules
+  // a reconnect on close).
+  const startStreamRef = useRef<(sessionId: string) => void>(() => {});
+
+  // scheduleReconnect retries a dropped stream after a flat backoff, but only
+  // if we're still linked + Pi-selected + foregrounded + the Pi still has a
+  // live session for this VIN (it may have moved to a different sessionId by
+  // the time the timer fires — e.g. a fresh handshake after this one died).
+  const scheduleReconnect = useCallback(() => {
+    if (streamReconnectTimerRef.current) return; // already scheduled
+    streamReconnectTimerRef.current = setTimeout(() => {
+      streamReconnectTimerRef.current = null;
+      const cfg = cfgRef.current;
+      if (!cfg?.vin) return; // unlinked/torn down meanwhile
+      if (selectedTransportRef.current !== 'pi') return; // BLE took over
+      if (AppState.currentState !== 'active') return; // backgrounded
+      const liveId = peekPiSessionId(cfg.vin);
+      if (!liveId) return; // no Pi session open right now; the next poll tick restarts it
+      startStreamRef.current(liveId);
+    }, STREAM_RECONNECT_MS);
+  }, []);
+
+  // startStream (re)opens the event-stream socket for `sessionId`, tearing
+  // down any previous one first.
+  const startStream = useCallback(
+    (sessionId: string) => {
+      const cfg = cfgRef.current;
+      if (!cfg?.baseUrl || !cfg?.token) return;
+      stopStream();
+      streamSessionIdRef.current = sessionId;
+      streamStopRef.current = startPiEventStream({
+        baseUrl: cfg.baseUrl,
+        token: cfg.token,
+        sessionId,
+        onFrame: (f) => handleVcsecPushRef.current(f),
+        onStatus: (s) => {
+          if (s === 'open') {
+            logi('stream', 'open', { sessionId });
+            return;
+          }
+          // 'closed' — only react if this callback still belongs to the
+          // CURRENT stream; a superseded stream's belated close (e.g. we
+          // already moved to a new sessionId) must not schedule a reconnect
+          // for a session we've already left behind.
+          if (streamSessionIdRef.current !== sessionId) return;
+          logw('stream', 'closed', { sessionId });
+          streamStopRef.current = null;
+          streamSessionIdRef.current = null;
+          scheduleReconnect();
+        },
+      });
+    },
+    [stopStream, scheduleReconnect],
+  );
+  startStreamRef.current = startStream;
+
+  // syncStream reconciles the event-stream with the transport the poll tick
+  // that just called this actually used. Called only after a SUCCESSFUL poll
+  // tick (see the tick below) — never for a demo/unlinked car, since the poll
+  // itself never runs for one.
+  const syncStream = useCallback(() => {
+    const cfg = cfgRef.current;
+    if (!cfg?.vin || selectedTransportRef.current !== 'pi') {
+      // BLE selected (delivers pushes itself) or nothing to stream against.
+      stopStream();
+      return;
+    }
+    const sessionId = peekPiSessionId(cfg.vin);
+    if (!sessionId) {
+      // No live Pi session cached — shouldn't happen right after a
+      // successful Pi poll, but never stream against nothing.
+      stopStream();
+      return;
+    }
+    if (sessionId === streamSessionIdRef.current) return; // already streaming this one
+    startStream(sessionId);
+  }, [stopStream, startStream]);
+
   // teardown frees the Pi's single session + drops the BLE link and resets the
   // gateway/selector refs so the next dispatch rebuilds a fresh gateway.
   const teardown = useCallback(() => {
     deferredTeardownRef.current = false;
+    stopStream();
     closeAllCachedSessions();
     const sel = selectorRef.current;
     selectorRef.current = null;
     gatewayRef.current = null;
     if (sel) sel.closeSession('').catch(() => {});
-  }, []);
+  }, [stopStream]);
 
   // teardownWhenIdle is the background path: tearing the transport down under
   // an in-flight command is exactly what killed it (and left the control
@@ -818,6 +936,10 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
           }
         }
         if (selectedTransportRef.current) setTransport(selectedTransportRef.current);
+        // Reconcile the event-stream with whichever transport this successful
+        // tick actually used — starts/rotates it for Pi, stops it for BLE
+        // (direct BLE delivers unsolicited pushes itself; see the header).
+        syncStream();
       } catch (e) {
         // A failed read means no clean contact this tick — drop to offline
         // (do NOT keep a stale 'online'). The loop keeps retrying every POLL_MS.
