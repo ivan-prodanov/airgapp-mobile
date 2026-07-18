@@ -194,6 +194,11 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
   const streamStopRef = useRef<(() => void) | null>(null);
   const streamSessionIdRef = useRef<string | null>(null);
   const streamReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Always points at the CURRENT stopStream (stable useCallback, set right
+  // after its declaration below) so onSelect — defined earlier in getGateway,
+  // before stopStream exists textually — can stop the stream immediately on a
+  // transport flip without a circular useCallback dependency.
+  const stopStreamRef = useRef<null | (() => void)>(null);
   // Optimistic-intent map: VehicleStateKey → grace expiry (Date.now()+GRACE_MS).
   // Stamped by dispatch, consumed (and pruned) by the poll's strip filter.
   const intentRef = useRef<Map<VehicleStateKey, number>>(new Map());
@@ -395,6 +400,10 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
               lastGoodTransportRef.current = txp;
               void appStorage.setItem(LAST_TRANSPORT_KEY, txp);
             }
+            // BLE delivers unsolicited frames directly, so the Pi stream must
+            // stop the instant BLE wins — closes the double-feed window that
+            // syncStream would otherwise only close on the next poll.
+            if (txp === 'ble') stopStreamRef.current?.();
           },
           { initialLastGood: lastGoodTransportRef.current },
         );
@@ -428,6 +437,7 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
     }
     streamSessionIdRef.current = null;
   }, []);
+  stopStreamRef.current = stopStream;
 
   // startStreamRef lets scheduleReconnect call the CURRENT startStream
   // without a direct reference — same ref-indirection pattern as
@@ -466,7 +476,10 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
         baseUrl: cfg.baseUrl,
         token: cfg.token,
         sessionId,
-        onFrame: (f) => handleVcsecPushRef.current(f),
+        onFrame: (f) => {
+          logi('stream', 'frame', { bytes: f.length });
+          handleVcsecPushRef.current(f);
+        },
         onStatus: (s) => {
           if (s === 'open') {
             logi('stream', 'open', { sessionId });
@@ -994,8 +1007,14 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
       if (timer) clearTimeout(timer);
       timer = null;
       sub.remove();
+      // Defensive: only `teardown()` (unmount/background) owns the stream
+      // today, but a future `linked` false transition runs THIS cleanup
+      // without necessarily going through teardown — stop the stream (and
+      // any pending reconnect timer) here too so one can't be left running.
+      // No-op-safe: stopStream() is idempotent.
+      stopStream();
     };
-  }, [linked, getGateway]);
+  }, [linked, getGateway, stopStream]);
 
   return useMemo<CarLink>(
     () => ({
