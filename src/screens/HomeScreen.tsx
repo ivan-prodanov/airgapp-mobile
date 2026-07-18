@@ -85,8 +85,11 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
       if (!perm.granted || cancelled) return;
       const last = await Location.getLastKnownPositionAsync();
       if (last && !cancelled) setUserCoord({ latitude: last.coords.latitude, longitude: last.coords.longitude });
+      // High accuracy + tight filters so the bearing actually tracks as you WALK
+      // to the car — Balanced (~100m) is too coarse: sub-100m movement barely
+      // registers, so the arrow looked frozen on the initial fix.
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
+        { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 2000 },
         (pos) => setUserCoord({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
       );
     })();
