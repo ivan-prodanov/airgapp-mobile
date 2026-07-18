@@ -11,7 +11,7 @@ import { base64ToBytes } from '../ble/bytes';
 
 // MinimalSocket is the subset of RN's WebSocket we actually use: assignable
 // on*/close handlers plus close(). The real global WebSocket satisfies this
-// structurally, so the default socketFactory needs no wrapper.
+// at runtime, so the default socketFactory needs no wrapper.
 export interface MinimalSocket {
   onopen: (() => void) | null;
   onmessage: ((ev: { data: string }) => void) | null;
@@ -33,7 +33,7 @@ export interface PiEventStreamOptions {
 // bearer token query param.
 function eventsUrl(baseUrl: string, sessionId: string, token: string): string {
   const wsBase = baseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-  return `${wsBase}/api/ble/sessions/${sessionId}/events?token=${token}`;
+  return `${wsBase}/api/ble/sessions/${sessionId}/events?token=${encodeURIComponent(token)}`;
 }
 
 export function startPiEventStream(opts: PiEventStreamOptions): () => void {
@@ -61,11 +61,13 @@ export function startPiEventStream(opts: PiEventStreamOptions): () => void {
       'frame_b64' in parsed &&
       typeof (parsed as { frame_b64: unknown }).frame_b64 === 'string'
     ) {
+      let bytes: Uint8Array;
       try {
-        onFrame(base64ToBytes((parsed as { frame_b64: string }).frame_b64));
+        bytes = base64ToBytes((parsed as { frame_b64: string }).frame_b64);
       } catch {
-        // malformed base64 — ignore
+        return; // malformed base64 in an otherwise well-formed message — ignore
       }
+      onFrame(bytes);
     }
   };
 
