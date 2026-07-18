@@ -8,7 +8,16 @@
 //
 // Zero React/Expo/network imports, no hardware — pure TS.
 
-import type { VehicleViewState } from '../types/vehicleTypes';
+import type {
+  CabinOverheatMode,
+  CabinOverheatTemp,
+  SeatClimateMode,
+  SeatPosition,
+  SteeringWheelClimateModeName,
+  VehicleViewState,
+} from '../types/vehicleTypes';
+import { initialVehicleState } from '../types/vehicleTypes';
+import { copMode, copTemp, keeperToToggles, resolveSeat, resolveSteeringWheel } from './climateStateMap';
 
 // ── Normalized types (Part 4 shape) ────────────────────────────────────────
 
@@ -46,6 +55,13 @@ export interface InfotainmentSnapshot {
     outsideTempC: number | undefined;
     targetTempC: number | undefined;
     isOn: boolean;
+    frontDefrostOn: boolean | undefined;
+    rearDefrostOn: boolean | undefined;
+    cabinOverheatMode: CabinOverheatMode | undefined;
+    cabinOverheatTemp: CabinOverheatTemp | undefined;
+    keeper: { campModeOn: boolean; petModeOn: boolean } | undefined;
+    steeringWheel: { mode: SteeringWheelClimateModeName; level: 0 | 1 | 2 } | undefined;
+    seats: Partial<Record<SeatPosition, SeatClimateMode>> | undefined;
   };
   drive?: { speed: number | null; gear: string };
   location?: { lat: number | undefined; lon: number | undefined; heading: number | undefined };
@@ -203,11 +219,38 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
 
   const cl = pick(vehicleData, root, 'climateState');
   if (cl) {
+    // Per-seat: combine the three separate proto fields (heat / cool / auto),
+    // front seats only for cool+auto. Only positions the car actually reported
+    // appear; the rest keep their existing state (see the apply block).
+    const seats: Partial<Record<SeatPosition, SeatClimateMode>> = {};
+    const setSeat = (pos: SeatPosition, heat: unknown, cool?: unknown, auto?: unknown) => {
+      const r = resolveSeat(heat, cool, auto);
+      if (r) seats[pos] = r;
+    };
+    setSeat('frontLeft', cl.seatHeaterLeft, cl.seatFanFrontLeft, cl.autoSeatClimateLeft);
+    setSeat('frontRight', cl.seatHeaterRight, cl.seatFanFrontRight, cl.autoSeatClimateRight);
+    setSeat('rearLeft', cl.seatHeaterRearLeft);
+    setSeat('rearMiddle', cl.seatHeaterRearCenter);
+    setSeat('rearRight', cl.seatHeaterRearRight);
+    setSeat('thirdRowLeft', cl.seatHeaterThirdRowLeft);
+    setSeat('thirdRowRight', cl.seatHeaterThirdRowRight);
+
     snap.climate = {
       insideTempC: num(cl.insideTempCelsius),
       outsideTempC: num(cl.outsideTempCelsius),
       targetTempC: num(cl.driverTempSetting),
       isOn: cl.isClimateOn === true,
+      frontDefrostOn: typeof cl.isFrontDefrosterOn === 'boolean' ? cl.isFrontDefrosterOn : undefined,
+      rearDefrostOn: typeof cl.isRearDefrosterOn === 'boolean' ? cl.isRearDefrosterOn : undefined,
+      cabinOverheatMode: copMode(cl.cabinOverheatProtection),
+      cabinOverheatTemp: copTemp(cl.copActivationTemperature),
+      keeper: keeperToToggles(cl.climateKeeperMode),
+      steeringWheel: resolveSteeringWheel(
+        cl.autoSteeringWheelHeat,
+        cl.steeringWheelHeatLevel,
+        cl.steeringWheelHeater,
+      ),
+      seats: Object.keys(seats).length ? seats : undefined,
     };
   }
 
@@ -350,9 +393,28 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
   }
 
   if (snap.climate) {
-    if (snap.climate.insideTempC !== undefined) patch.interiorTempC = snap.climate.insideTempC;
-    if (snap.climate.outsideTempC !== undefined) patch.exteriorTempC = snap.climate.outsideTempC;
-    patch.climateOn = snap.climate.isOn;
+    const c = snap.climate;
+    if (c.insideTempC !== undefined) patch.interiorTempC = c.insideTempC;
+    if (c.outsideTempC !== undefined) patch.exteriorTempC = c.outsideTempC;
+    patch.climateOn = c.isOn;
+    // targetTempC was PARSED but never applied before — the mock 19.5 stuck.
+    if (c.targetTempC !== undefined) patch.targetTempC = c.targetTempC;
+    if (c.frontDefrostOn !== undefined) patch.frontDefrostOn = c.frontDefrostOn;
+    if (c.rearDefrostOn !== undefined) patch.rearDefrostOn = c.rearDefrostOn;
+    if (c.cabinOverheatMode !== undefined) patch.cabinOverheatMode = c.cabinOverheatMode;
+    if (c.cabinOverheatTemp !== undefined) patch.cabinOverheatTemp = c.cabinOverheatTemp;
+    if (c.keeper !== undefined) {
+      patch.campModeOn = c.keeper.campModeOn;
+      patch.petModeOn = c.keeper.petModeOn;
+    }
+    if (c.steeringWheel !== undefined) patch.steeringWheelClimate = c.steeringWheel;
+    // MERGE onto current seats — the car omits positions it doesn't have, and we
+    // must not blow away the ones it didn't mention. The caller passes prev via
+    // applyTelemetry's spread, but seatClimateModes is a nested object, so merge
+    // here against the defaults and let applyActive spread the rest.
+    if (c.seats) {
+      patch.seatClimateModes = { ...initialVehicleState.seatClimateModes, ...c.seats };
+    }
   }
 
   if (snap.drive) {

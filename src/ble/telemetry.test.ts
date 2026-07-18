@@ -414,3 +414,47 @@ test('vcsecStatusToPatch: expired intent for a key with no VehicleViewState fiel
   const { closureIntent } = vcsecStatusToPatch(status, intent, now);
   assert.equal('tonneau' in closureIntent, false);
 });
+
+// ── Expanded ClimateState read (2026-07-18) — the parser was a 6-field stub ───
+test('climate: the full state reads back through infotainmentToPatch', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: {
+      climateState: {
+        driverTempSetting: 21.5,
+        isClimateOn: true,
+        isFrontDefrosterOn: true,
+        isRearDefrosterOn: false,
+        cabinOverheatProtection: 2, // FanOnly -> noac
+        copActivationTemperature: 3, // High -> 40
+        climateKeeperMode: { Party: {} }, // Camp
+        seatHeaterLeft: 2, // FL heat 2
+        seatFanFrontRight: 1, // FR cool 1
+        autoSteeringWheelHeat: true,
+      },
+    },
+  });
+  const p = infotainmentToPatch(snap);
+  assert.equal(p.targetTempC, 21.5, 'targetTempC now APPLIED (was parsed-but-dropped)');
+  assert.equal(p.frontDefrostOn, true);
+  assert.equal(p.rearDefrostOn, false);
+  assert.equal(p.cabinOverheatMode, 'noac');
+  assert.equal(p.cabinOverheatTemp, '40');
+  assert.equal(p.campModeOn, true);
+  assert.equal(p.petModeOn, false);
+  assert.deepEqual(p.steeringWheelClimate, { mode: 'auto', level: 0 });
+  assert.deepEqual(p.seatClimateModes?.frontLeft, { mode: 'heat', level: 2 });
+  assert.deepEqual(p.seatClimateModes?.frontRight, { mode: 'cool', level: 1 });
+  // A seat the car didn't mention keeps its default (merge, not clobber).
+  assert.deepEqual(p.seatClimateModes?.rearMiddle, { mode: 'off', level: 0 });
+});
+
+test('climate: absent optional fields are OMITTED from the patch (proto3-optional rule)', () => {
+  const snap = parseCarServerResponse({ vehicleData: { climateState: { isClimateOn: false } } });
+  const p = infotainmentToPatch(snap);
+  assert.equal(p.climateOn, false);
+  assert.equal('targetTempC' in p, false);
+  assert.equal('cabinOverheatMode' in p, false);
+  assert.equal('campModeOn' in p, false);
+  assert.equal('seatClimateModes' in p, false, 'no seat field reported -> do not touch the map');
+  assert.equal('steeringWheelClimate' in p, false);
+});
