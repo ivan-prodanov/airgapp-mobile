@@ -1,0 +1,50 @@
+# CI — roadmap E1.
+#
+# Runs the node:test suite + typecheck on every push/PR. This is the safety net
+# for a branch carrying the whole BLE/car-link stack: the tests are pure and
+# node-safe by design (no native modules, no device), so they run fine on a
+# plain Linux runner — nothing here builds the iOS app or touches the car.
+#
+# Deliberately NOT running `expo lint` yet: it has never gated this repo, so
+# turning it on here would land a red CI on day one. Add it once the existing
+# findings are cleared.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A newer push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm, because pnpm-workspace.yaml carries patchedDependencies
+      # (react-native-maps) that npm/yarn would not apply.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the local toolchain. The test script globs via
+          # `node --test "src/**/*.test.ts"`, which needs a Node with glob
+          # support — don't drop below 22.
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: pnpm test
