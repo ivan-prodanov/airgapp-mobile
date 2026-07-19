@@ -574,6 +574,31 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     teardown();
   }, [teardown]);
 
+  // teardownForBackground is the TRANSPORT-AWARE background path (roadmap C5).
+  //
+  // A direct-BLE link is KEPT across background. With the `bluetooth-central`
+  // background mode (ios/airgapp/Info.plist), Core Bluetooth maintains the GATT
+  // connection while iOS suspends us, so returning to the foreground resumes on
+  // the live link instead of paying a ~6s re-scan + reconnect + re-handshake —
+  // the "app feels like it reloaded" jank. This is what the official app does.
+  //
+  // We deliberately do NOT probe the link on resume. If it DID die (long
+  // background, memory pressure, the car dropped it), the first poll read fails
+  // transport-dead and gateway.runAction already evicts + re-opens under the
+  // BLE-first selector. Re-implementing that here would just duplicate it.
+  //
+  // The Pi is the opposite case: its session holds the Pi's SINGLE BLE slot and
+  // would otherwise sit there until the ~5-min reaper, blocking the next open
+  // (the outage we root-caused on 2026-07-19). So Pi still tears down — deferred
+  // past any in-flight command, exactly as before.
+  const teardownForBackground = useCallback(() => {
+    if (selectedTransportRef.current === 'ble') {
+      logi('lifecycle', 'background: keeping direct-BLE link (C5)');
+      return;
+    }
+    teardownWhenIdle();
+  }, [teardownWhenIdle]);
+
   // settleInFlight retires one command and, if it was the last one a
   // backgrounded teardown was waiting on, runs that teardown now — unless the
   // user came back to the app in the meantime, in which case the session stays
@@ -758,7 +783,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // never runs — you come back to a still-spinning header. The session is
         // being torn down here anyway, so the in-flight read is already doomed.
         setWakeInFlight(false);
-        teardownWhenIdle();
+        teardownForBackground();
       }
     });
     return () => {
@@ -768,7 +793,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       // for ~5 min.
       teardown();
     };
-  }, [teardown, teardownWhenIdle, prunePending]);
+  }, [teardown, teardownForBackground, prunePending]);
 
   // Persist the infotainment-derived fields so a cold start can paint the real
   // battery/range immediately (their cached vehicle_data slice — findings §B),
