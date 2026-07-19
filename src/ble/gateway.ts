@@ -29,6 +29,7 @@ import {
   isTransportDeadError,
   isStaleFrameError,
   vcsecGetStatusAction,
+  vcsecGetWhitelistEntryAction,
   TRANSIENT_DELAY_MS,
   MAX_BLE_ATTEMPTS as SESSION_MAX_BLE_ATTEMPTS,
   type ActionPayload,
@@ -41,6 +42,11 @@ import {
   getLocationStateAction,
 } from './builders';
 import { decodeMessage, FromVCSECMessage, Response } from './proto';
+import {
+  parseWhitelistPermissions,
+  describeWhitelistPermissions,
+  hasLocalUnlock,
+} from './whitelistPermissions';
 import { parseVcsecStatus, parseCarServerResponse, type VcsecStatus, type InfotainmentSnapshot } from './telemetry';
 import type { Domain, DeviceKeys, PiTransport } from './types';
 
@@ -65,10 +71,26 @@ export type CommandOutcome =
   | { ok: false; kind: 'cancelled'; message: string }
   | { ok: false; kind: 'unreachable' | 'timeout' | 'auth' | 'exhausted'; message: string };
 
+// WhitelistEntryProbe is the result of asking the car what it granted our key.
+// `permissions: null` = UNKNOWN (no permissions field in the reply), which is
+// NOT the same as an empty grant — see readWhitelistEntry.
+export interface WhitelistEntryProbe {
+  permissions: number[] | null;
+  // true = passive-entry eligible, false = walk-up would be refused,
+  // null = couldn't tell.
+  localUnlock: boolean | null;
+  keyRole: number | null;
+  slot: number | null;
+  // Human-readable verdict for the on-device diagnostics log.
+  summary: string;
+}
+
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
   runCommand(cmd: CarCommand, opts?: { signal?: AbortSignal }): Promise<CommandOutcome>;
   readVcsecStatus(): Promise<VcsecStatus>;
+  // Passive-entry precondition probe — see readWhitelistEntry's implementation.
+  readWhitelistEntry(): Promise<WhitelistEntryProbe>;
   awakeSync(): Promise<InfotainmentSnapshot>;
   wake(): Promise<CommandOutcome>;
 }
@@ -355,6 +377,39 @@ export function createCarGateway({
     return parseVcsecStatus(fromVcsec.vehicleStatus);
   }
 
+  // readWhitelistEntry asks the car which permissions it granted OUR key, to
+  // settle the single firmware-side unknown blocking passive entry: does
+  // ROLE_DRIVER expand to include LOCAL_UNLOCK(1) on this car? (research doc
+  // §1.4/§3.1.3). Returns the raw list plus a rendered verdict for the
+  // on-device diagnostics log.
+  //
+  // `permissions: null` means UNKNOWN (the car sent no permissions field), which
+  // is deliberately NOT collapsed to an empty list — "we couldn't tell" and "the
+  // car granted nothing" are very different answers.
+  async function readWhitelistEntry(): Promise<WhitelistEntryProbe> {
+    const action = vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw);
+    const { outcome, result } = await runAction(action, 'vcsecGetWhitelistEntry');
+    if (!outcome.ok) {
+      throw new Error(`readWhitelistEntry failed: ${outcome.message}`);
+    }
+    if (!result?.decryptedPayload) {
+      throw new Error('readWhitelistEntry: car returned no encrypted payload');
+    }
+    // Decode for the fields the proto DOES model, and hand-scan for the one it
+    // drops (permissions). See whitelistPermissions.ts for why.
+    const fromVcsec = decodeMessage(FromVCSECMessage, result.decryptedPayload) as {
+      whitelistEntryInfo?: { keyRole?: number; slot?: number };
+    };
+    const permissions = parseWhitelistPermissions(result.decryptedPayload);
+    return {
+      permissions,
+      localUnlock: hasLocalUnlock(permissions),
+      keyRole: fromVcsec.whitelistEntryInfo?.keyRole ?? null,
+      slot: fromVcsec.whitelistEntryInfo?.slot ?? null,
+      summary: describeWhitelistPermissions(permissions),
+    };
+  }
+
   async function awakeSync(): Promise<InfotainmentSnapshot> {
     // Four state reads on ONE warm INFOTAINMENT session (single handshake).
     // Does NOT wake — the caller wakes first if the car is asleep; on an
@@ -415,5 +470,5 @@ export function createCarGateway({
     return runCommand({ type: 'wake' });
   }
 
-  return { runCommand, readVcsecStatus, awakeSync, wake };
+  return { runCommand, readVcsecStatus, readWhitelistEntry, awakeSync, wake };
 }

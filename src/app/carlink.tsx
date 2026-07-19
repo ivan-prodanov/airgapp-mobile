@@ -388,6 +388,31 @@ export default function CarLinkScreen() {
     }
   };
 
+  // PASSIVE-ENTRY PRECONDITION PROBE. Asks the car which permissions it granted
+  // OUR key. Settles the one firmware-side unknown from the phone-key research
+  // (§1.4): does ROLE_DRIVER expand to include LOCAL_UNLOCK(1)? If yes, our
+  // existing card-enrolled key is passive-entry eligible as-is and the work is
+  // purely a background-BLE-presence runtime feature. If no, walk-up unlock is
+  // firmware-blocked for a driver key and the whole project needs rethinking —
+  // which is exactly why this runs BEFORE any of it gets built.
+  const handleProbeWhitelist = async () => {
+    try {
+      const gw = await makeGateway();
+      const probe = await gw.readWhitelistEntry();
+      append(`whitelist entry: keyRole=${probe.keyRole} slot=${probe.slot}`);
+      append(probe.summary);
+      append(
+        probe.localUnlock === null
+          ? 'VERDICT: inconclusive — car did not report permissions for this key'
+          : probe.localUnlock
+            ? 'VERDICT: PASSIVE ENTRY ELIGIBLE — key needs no change, only a background BLE presence'
+            : 'VERDICT: NOT eligible — LOCAL_UNLOCK missing; walk-up unlock would be refused',
+      );
+    } catch (err) {
+      append(`ERROR whitelist probe: ${errMsg(err)}`);
+    }
+  };
+
   const handleWake = async () => {
     try {
       const gw = await makeGateway();
@@ -502,6 +527,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
+              <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />

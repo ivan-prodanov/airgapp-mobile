@@ -835,3 +835,24 @@ export function vcsecGetStatusAction(): ActionPayload {
     bytes: encodeVCSECMessage({ InformationRequest: { informationRequestType: 0 } }),
   };
 }
+
+// vcsecGetWhitelistEntryAction — ask the car what permissions IT actually
+// granted our key. INFORMATION_REQUEST_TYPE_GET_WHITELIST_ENTRY_INFO(6),
+// targeting our own entry via the InformationRequest `publicKey` oneof arm (we
+// hold the raw SEC1 point; no need to derive the SHA1 keyId).
+//
+// Why it matters: we enroll with keyRole=ROLE_DRIVER and an EMPTY permission
+// list, relying on the car to expand the role into concrete permissions. That
+// expansion lives in VCSEC firmware and is the one passive-entry precondition
+// no amount of static RE can settle (research doc §1.4). This read settles it.
+// Parse the reply with parseWhitelistPermissions — the vendored proto drops the
+// permissions field (see whitelistPermissions.ts).
+export function vcsecGetWhitelistEntryAction(publicKeyRaw: Uint8Array): ActionPayload {
+  return {
+    domain: DOMAIN_VEHICLE_SECURITY,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeVCSECMessage({
+      InformationRequest: { informationRequestType: 6, publicKey: publicKeyRaw },
+    }),
+  };
+}
