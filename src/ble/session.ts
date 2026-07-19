@@ -29,6 +29,7 @@
 //     and safe (deferred as P5.T1). _persistSessionMetadata is a no-op.
 
 import { randomBytes } from '@noble/hashes/utils';
+import { sha1 } from '@noble/hashes/sha1';
 
 import {
   deriveSessionKeyMaterial,
@@ -847,12 +848,36 @@ export function vcsecGetStatusAction(): ActionPayload {
 // no amount of static RE can settle (research doc §1.4). This read settles it.
 // Parse the reply with parseWhitelistPermissions — the vendored proto drops the
 // permissions field (see whitelistPermissions.ts).
-export function vcsecGetWhitelistEntryAction(publicKeyRaw: Uint8Array): ActionPayload {
+// How to identify OUR entry to the car. InformationRequest carries a oneof
+// (keyId | publicKey | slot) and the car's accepted arm is not documented
+// anywhere we can read — the first on-car run targeting `publicKey` came back
+// with no whitelistEntryInfo at all, so we try each arm rather than guess.
+// `KeyIdentifier.publicKeySHA1` + research §1.2 ("keyId = SHA1(pubkey)[…]")
+// make the SHA1 arms the strong candidates; the "[…]" is ambiguous about
+// truncation, hence both full and 4-byte variants.
+export type WhitelistTargetMode = 'keyId-sha1' | 'keyId-sha1-4' | 'publicKey';
+
+export const WHITELIST_TARGET_MODES: readonly WhitelistTargetMode[] = [
+  'keyId-sha1',
+  'keyId-sha1-4',
+  'publicKey',
+];
+
+export function vcsecGetWhitelistEntryAction(
+  publicKeyRaw: Uint8Array,
+  mode: WhitelistTargetMode = 'keyId-sha1',
+): ActionPayload {
+  const digest = sha1(publicKeyRaw);
+  const request =
+    mode === 'publicKey'
+      ? { informationRequestType: 6, publicKey: publicKeyRaw }
+      : {
+          informationRequestType: 6,
+          keyId: { publicKeySHA1: mode === 'keyId-sha1-4' ? digest.slice(0, 4) : digest },
+        };
   return {
     domain: DOMAIN_VEHICLE_SECURITY,
     flags: FLAG_ENCRYPT_RESPONSE_BIT,
-    bytes: encodeVCSECMessage({
-      InformationRequest: { informationRequestType: 6, publicKey: publicKeyRaw },
-    }),
+    bytes: encodeVCSECMessage({ InformationRequest: request }),
   };
 }

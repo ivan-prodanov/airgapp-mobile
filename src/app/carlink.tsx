@@ -399,11 +399,25 @@ export default function CarLinkScreen() {
     try {
       const gw = await makeGateway();
       const probe = await gw.readWhitelistEntry();
-      append(`whitelist entry: keyRole=${probe.keyRole} slot=${probe.slot}`);
+
+      // Print EVERY attempt. The first on-car run was inconclusive and the log
+      // could not say why — whether the car refused, replied with something
+      // else, or we named the key wrongly. The per-arm subMessage + raw hex is
+      // what turns a second inconclusive run into a diagnosable one.
+      for (const a of probe.attempts) {
+        append(
+          `probe[${a.mode}]: ${a.error ? `ERROR ${a.error}` : `reply=${a.subMessage ?? 'none'}`}`,
+        );
+        if (a.rawHex) append(`  raw: ${a.rawHex}`);
+      }
+
+      if (probe.matchedMode) {
+        append(`entry via ${probe.matchedMode}: keyRole=${probe.keyRole} slot=${probe.slot}`);
+      }
       append(probe.summary);
       append(
         probe.localUnlock === null
-          ? 'VERDICT: inconclusive — car did not report permissions for this key'
+          ? 'VERDICT: inconclusive — see per-arm replies above (request-side, NOT a firmware verdict)'
           : probe.localUnlock
             ? 'VERDICT: PASSIVE ENTRY ELIGIBLE — key needs no change, only a background BLE presence'
             : 'VERDICT: NOT eligible — LOCAL_UNLOCK missing; walk-up unlock would be refused',

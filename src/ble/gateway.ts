@@ -30,6 +30,8 @@ import {
   isStaleFrameError,
   vcsecGetStatusAction,
   vcsecGetWhitelistEntryAction,
+  WHITELIST_TARGET_MODES,
+  type WhitelistTargetMode,
   TRANSIENT_DELAY_MS,
   MAX_BLE_ATTEMPTS as SESSION_MAX_BLE_ATTEMPTS,
   type ActionPayload,
@@ -74,7 +76,22 @@ export type CommandOutcome =
 // WhitelistEntryProbe is the result of asking the car what it granted our key.
 // `permissions: null` = UNKNOWN (no permissions field in the reply), which is
 // NOT the same as an empty grant — see readWhitelistEntry.
+// One targeting attempt, kept so an inconclusive probe is diagnosable from the
+// device log rather than by guesswork.
+export interface WhitelistProbeAttempt {
+  mode: WhitelistTargetMode;
+  // Which FromVCSECMessage oneof arm came back ('whitelistEntryInfo',
+  // 'nominalError', 'vehicleStatus', …) — usually the decisive clue.
+  subMessage: string | null;
+  rawHex: string | null;
+  permissions: number[] | null;
+  error: string | null;
+}
+
 export interface WhitelistEntryProbe {
+  // Which arm the car accepted, or null if none did.
+  matchedMode: WhitelistTargetMode | null;
+  attempts: WhitelistProbeAttempt[];
   permissions: number[] | null;
   // true = passive-entry eligible, false = walk-up would be refused,
   // null = couldn't tell.
@@ -170,6 +187,15 @@ function classifyTransportError(e: unknown): 'unreachable' | 'timeout' | 'auth' 
 }
 
 const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+// bytesToHexDump renders a payload for the on-device diagnostics log. Capped —
+// these are small VCSEC replies, and an unbounded dump would flood the log.
+function bytesToHexDump(b: Uint8Array, max = 96): string {
+  const shown = Array.from(b.subarray(0, max))
+    .map((x) => x.toString(16).padStart(2, '0'))
+    .join(' ');
+  return b.length > max ? `${shown} …(${b.length} bytes)` : `${shown} (${b.length} bytes)`;
+}
 
 export function createCarGateway({
   transport,
@@ -380,33 +406,84 @@ export function createCarGateway({
   // readWhitelistEntry asks the car which permissions it granted OUR key, to
   // settle the single firmware-side unknown blocking passive entry: does
   // ROLE_DRIVER expand to include LOCAL_UNLOCK(1) on this car? (research doc
-  // §1.4/§3.1.3). Returns the raw list plus a rendered verdict for the
-  // on-device diagnostics log.
+  // §1.4/§3.1.3).
   //
-  // `permissions: null` means UNKNOWN (the car sent no permissions field), which
-  // is deliberately NOT collapsed to an empty list — "we couldn't tell" and "the
+  // It tries each way of naming our entry (keyId-SHA1, keyId-SHA1[:4],
+  // publicKey) and STOPS at the first reply that actually carries a
+  // whitelistEntryInfo. The first on-car run targeted `publicKey` and came back
+  // with no entry at all, which is a REQUEST problem, not a firmware answer —
+  // the accepted oneof arm isn\'t documented anywhere we can read, and
+  // KeyIdentifier.publicKeySHA1 + research §1.2 point at the SHA1 arms.
+  //
+  // Every attempt records the RAW reply bytes, so an inconclusive run can be
+  // diagnosed from the hex instead of guessing and walking back to the car.
+  //
+  // `permissions: null` means UNKNOWN (car sent no permissions field), which is
+  // deliberately NOT collapsed to an empty list — "we could not tell" and "the
   // car granted nothing" are very different answers.
   async function readWhitelistEntry(): Promise<WhitelistEntryProbe> {
-    const action = vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw);
-    const { outcome, result } = await runAction(action, 'vcsecGetWhitelistEntry');
-    if (!outcome.ok) {
-      throw new Error(`readWhitelistEntry failed: ${outcome.message}`);
+    const attempts: WhitelistProbeAttempt[] = [];
+
+    for (const mode of WHITELIST_TARGET_MODES) {
+      const action = vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw, mode);
+      let payload: Uint8Array | null = null;
+      let error: string | null = null;
+      try {
+        const { outcome, result } = await runAction(action, `vcsecGetWhitelistEntry:${mode}`);
+        if (!outcome.ok) {
+          error = outcome.message;
+        } else {
+          payload = result?.decryptedPayload ?? null;
+          if (!payload) error = 'car returned no encrypted payload';
+        }
+      } catch (e) {
+        error = errMsg(e);
+      }
+
+      if (!payload) {
+        attempts.push({ mode, subMessage: null, rawHex: null, permissions: null, error });
+        continue;
+      }
+
+      const fromVcsec = decodeMessage(FromVCSECMessage, payload) as {
+        subMessage?: string;
+        whitelistEntryInfo?: { keyRole?: number; slot?: number };
+      };
+      const permissions = parseWhitelistPermissions(payload);
+      attempts.push({
+        mode,
+        subMessage: fromVcsec.subMessage ?? null,
+        rawHex: bytesToHexDump(payload),
+        permissions,
+        error: null,
+      });
+
+      // A reply carrying our entry is the answer — stop probing arms.
+      if (fromVcsec.whitelistEntryInfo) {
+        return {
+          permissions,
+          localUnlock: hasLocalUnlock(permissions),
+          keyRole: fromVcsec.whitelistEntryInfo.keyRole ?? null,
+          slot: fromVcsec.whitelistEntryInfo.slot ?? null,
+          summary: describeWhitelistPermissions(permissions),
+          matchedMode: mode,
+          attempts,
+        };
+      }
     }
-    if (!result?.decryptedPayload) {
-      throw new Error('readWhitelistEntry: car returned no encrypted payload');
-    }
-    // Decode for the fields the proto DOES model, and hand-scan for the one it
-    // drops (permissions). See whitelistPermissions.ts for why.
-    const fromVcsec = decodeMessage(FromVCSECMessage, result.decryptedPayload) as {
-      whitelistEntryInfo?: { keyRole?: number; slot?: number };
-    };
-    const permissions = parseWhitelistPermissions(result.decryptedPayload);
+
+    // No arm produced an entry. Report it as UNKNOWN (never as "denied") and
+    // hand back every attempt so the hex can be read.
     return {
-      permissions,
-      localUnlock: hasLocalUnlock(permissions),
-      keyRole: fromVcsec.whitelistEntryInfo?.keyRole ?? null,
-      slot: fromVcsec.whitelistEntryInfo?.slot ?? null,
-      summary: describeWhitelistPermissions(permissions),
+      permissions: null,
+      localUnlock: null,
+      keyRole: null,
+      slot: null,
+      summary:
+        'permissions: UNKNOWN — no targeting arm produced a whitelistEntryInfo. ' +
+        'This is a REQUEST-side result, not a firmware verdict; see the per-attempt hex.',
+      matchedMode: null,
+      attempts,
     };
   }
 
