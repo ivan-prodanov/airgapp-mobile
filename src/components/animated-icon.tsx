@@ -126,7 +126,9 @@ const styles = StyleSheet.create({
   },
   backgroundSolidColor: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    // App background grey (matches VehicleCanvas / the Godot scene) so the cold-start splash blends
+    // into the app instead of flashing the old Expo-template blue.
+    backgroundColor: '#161718',
     zIndex: 1000,
   },
 });
