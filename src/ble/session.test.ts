@@ -252,6 +252,30 @@ test('both domains share one Pi session; closeSession fires only after the last 
   assert.equal(car.closeCount, 1);
 });
 
+test('concurrent binds for the same VIN share ONE Pi openSession (in-flight dedup)', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar();
+  const deviceKeys = makeDeviceKeys();
+
+  // Two domains bind CONCURRENTLY (the poll tick + the event-stream reconnect
+  // racing in the same moment) before either has populated _domainCache. On the
+  // single-session Pi a second open would preempt/kill the first mid-use, so
+  // this must collapse to exactly one openSession.
+  await Promise.all([
+    withCachedSession(
+      { transport: car, vin: VIN, deviceKeys, domain: DOMAIN_VEHICLE_SECURITY },
+      async () => {},
+    ),
+    withCachedSession(
+      { transport: car, vin: VIN, deviceKeys, domain: DOMAIN_INFOTAINMENT as Domain },
+      async () => {},
+    ),
+  ]);
+
+  assert.equal(car.openCount, 1);
+  closeAllCachedSessions();
+});
+
 // --- (i) peekPiSessionId — non-opening session-id peek ----------------------
 
 test('peekPiSessionId returns null when no session is cached for the VIN', () => {

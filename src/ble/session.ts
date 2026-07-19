@@ -145,9 +145,20 @@ async function _piSessionRelease(transport: PiTransport, sessionId: string): Pro
   return true;
 }
 
+// In-flight openSession dedup, keyed by VIN. Concurrent binds for the same VIN
+// — classically the domain-3 poll tick and the event-stream reconnect firing
+// in the same moment, before EITHER has populated _domainCache — must share ONE
+// openSession, not each open a Pi-side link. The Pi is single-session: a second
+// open used to block on its per-VIN mutex, and now (with the Pi's preempt-on-
+// Open take-over) it actively CLOSES the first session mid-use, so the first
+// caller's next exchange faults session-not-found. This collapses that race to
+// a single open. Cleared when the openSession settles.
+const _openInFlight = new Map<string, Promise<string>>();
+
 // _findOrOpenPiSession returns the Pi-side sessionId for the given VIN.
-// Reuses any in-memory _domainCache session on the same VIN; otherwise
-// opens a fresh Pi-side BLE link. (IDB-persisted lookup dropped for v1.)
+// Reuses any in-memory _domainCache session on the same VIN; else joins an
+// in-flight open for that VIN; else opens a fresh Pi-side BLE link. (IDB-
+// persisted lookup dropped for v1.)
 async function _findOrOpenPiSession(transport: PiTransport, vin: string): Promise<string> {
   for (const entry of _domainCache.values()) {
     if (entry.session.vin === vin && entry.session.sessionId) {
@@ -155,8 +166,17 @@ async function _findOrOpenPiSession(transport: PiTransport, vin: string): Promis
       return entry.session.sessionId;
     }
   }
+  const inflight = _openInFlight.get(vin);
+  if (inflight) {
+    debug('[ble] joining in-flight Pi openSession for vin', vin.slice(-6));
+    return inflight;
+  }
   debug('[ble] opening fresh Pi-side BLE session for vin', vin.slice(-6));
-  return transport.openSession(vin);
+  const opening = transport.openSession(vin).finally(() => {
+    _openInFlight.delete(vin);
+  });
+  _openInFlight.set(vin, opening);
+  return opening;
 }
 
 // peekPiSessionId returns the Pi-side BLE sessionId currently cached for this
@@ -774,6 +794,7 @@ export function closeAllCachedSessions(): void {
 export function __resetSessionCaches(): void {
   _domainCache.clear();
   _piSessionRefcounts.clear();
+  _openInFlight.clear();
 }
 
 // --- Shared encode helpers (consumed by P1d builders) ----------------------
