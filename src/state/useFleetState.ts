@@ -13,6 +13,7 @@ import {
   removeVehicle,
   setActiveVehicle,
   updateActiveVehicleState,
+  updateEnrolledVehicleState,
   type FleetState,
   type Vehicle,
 } from './fleet';
@@ -68,11 +69,26 @@ export function useFleetState(): {
     },
     [applyActive],
   );
+  // hydrateTelemetry is the LAUNCH-TIME rehydrate path (distinct from the live
+  // applyTelemetry above). It seeds the ENROLLED car with its own persisted
+  // last-known telemetry, UNGATED: at cold start the live gate is still false
+  // (linked/vin haven't propagated, the VIN isn't bound to veh_1 yet), so
+  // routing the cached patch through applyTelemetry silently dropped it — the
+  // "cache doesn't work, battery stays empty until the car connects" bug. This
+  // targets vehicles[0] (the real car) directly, so the value paints instantly
+  // and dimmed; the first live tick then overwrites it with fresh data.
+  const hydrateTelemetry = useCallback((patch: Partial<VehicleViewState>) => {
+    setFleet((f) => updateEnrolledVehicleState(f, (s) => ({ ...s, ...patch })));
+  }, []);
   // Latest active-car state, tracked in a ref so useCarLink's stable poll/push
   // closures can read the freshest snapshot at telemetry time (for the intent
   // grace's confirm-and-release). Assigned just below, once `current` exists.
   const activeStateRef = useRef<VehicleViewState>(initialVehicleState);
-  const carLink = useCarLink({ applyTelemetry, getActiveState: () => activeStateRef.current });
+  const carLink = useCarLink({
+    applyTelemetry,
+    hydrateTelemetry,
+    getActiveState: () => activeStateRef.current,
+  });
 
   const current = activeVehicle(fleet);
   activeStateRef.current = current.state;

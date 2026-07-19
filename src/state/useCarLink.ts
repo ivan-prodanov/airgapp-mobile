@@ -167,6 +167,12 @@ export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
   // poll-derived patch through here must never loop back into a command.
   applyTelemetry: (patch: Partial<VehicleViewState>) => void;
+  // The LAUNCH-TIME rehydrate apply: seeds the enrolled car with its own cached
+  // last-known telemetry, UNGATED by the active-is-live check that applyTelemetry
+  // uses. At cold start that gate is still false, so the rehydrate would be
+  // dropped if it went through applyTelemetry — leaving the battery/temps blank
+  // until the car actually connects. See useFleetState's hydrateTelemetry.
+  hydrateTelemetry: (patch: Partial<VehicleViewState>) => void;
   // The active (live) car's current view state, read at telemetry time so the
   // intent grace can CONFIRM-AND-RELEASE: a read matching the optimistic value
   // clears the grace early (see filterPatchUnderIntent). A getter, not a value,
@@ -174,7 +180,7 @@ export interface UseCarLinkOptions {
   getActiveState: () => VehicleViewState;
 }
 
-export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions): CarLink {
+export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }: UseCarLinkOptions): CarLink {
   const enabled = isCarLinkEnabled();
 
   const cfgRef = useRef<PiConfig | null>(null);
@@ -220,6 +226,8 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
   // identity can change per render, but the poll must not tear down/rebuild.
   const applyTelemetryRef = useRef(applyTelemetry);
   applyTelemetryRef.current = applyTelemetry;
+  const hydrateTelemetryRef = useRef(hydrateTelemetry);
+  hydrateTelemetryRef.current = hydrateTelemetry;
   const getActiveStateRef = useRef(getActiveState);
   getActiveStateRef.current = getActiveState;
   // The unsolicited-push handler, held in a ref so the BLE transport's make()
@@ -350,7 +358,10 @@ export function useCarLink({ applyTelemetry, getActiveState }: UseCarLinkOptions
             if (cached.targetTempC != null) patch.targetTempC = cached.targetTempC;
             if (cached.chargeLimitPercent != null) patch.chargeLimitPercent = cached.chargeLimitPercent;
             if (cached.chargingAmps != null) patch.chargingAmps = cached.chargingAmps;
-            if (Object.keys(patch).length) applyTelemetryRef.current(patch);
+            // Rehydrate via the UNGATED path: at cold start the active-is-live
+            // gate is still false, so applyTelemetry would drop this and the
+            // battery/temps would stay blank until the car connects.
+            if (Object.keys(patch).length) hydrateTelemetryRef.current(patch);
           }
         }
         // Free any session a prior force-kill orphaned before the first command.

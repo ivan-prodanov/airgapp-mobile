@@ -158,6 +158,23 @@ export function updateActiveVehicleState(
   return { ...fleet, vehicles };
 }
 
+// Update the ENROLLED car's state — always vehicles[0], the real car by the
+// app's single-enrolled-car assumption (see bindVehicleVin). Used ONLY for the
+// launch-time cache rehydrate, which must seed the enrolled car with its own
+// persisted telemetry regardless of which car is on screen or whether the live
+// link is up yet — bypassing the "active-is-live" gate that live telemetry uses
+// (that gate exists to stop live reads bleeding into a demo car; a rehydrate of
+// the car's OWN last-known values is not that).
+export function updateEnrolledVehicleState(
+  fleet: FleetState,
+  update: (state: VehicleViewState) => VehicleViewState,
+): FleetState {
+  if (!fleet.vehicles[0]) return fleet;
+  const vehicles = fleet.vehicles.slice();
+  vehicles[0] = { ...vehicles[0], state: update(vehicles[0].state) };
+  return { ...fleet, vehicles };
+}
+
 // --- Active-vehicle state updaters (moved from the old useVehicleState; pure + reused by the hook) ---
 
 export function patchState(state: VehicleViewState, partial: Partial<VehicleViewState>): VehicleViewState {

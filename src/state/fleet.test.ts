@@ -25,6 +25,7 @@ import {
   stepSteeringWheelClimateState,
   toggleState,
   updateActiveVehicleState,
+  updateEnrolledVehicleState,
 } from './fleet';
 import { climateCapabilitiesFor, initialVehicleState, vehicleConfigs } from '../types/vehicleTypes';
 
@@ -56,6 +57,17 @@ test('addVehicle de-dups names for the same model', () => {
     fleet.vehicles.map((v) => v.name),
     ['Red Velvet', 'Model 3', 'Model 3 (2)'],
   );
+});
+
+test('updateEnrolledVehicleState always targets vehicles[0], even when another car is active', () => {
+  // The launch-time cache rehydrate must land on the enrolled car (index 0)
+  // regardless of which car is on screen — swipe to a demo car, rehydrate still
+  // seeds the real car.
+  let fleet = addVehicle(createInitialFleet(), 'model3'); // demo car becomes active
+  assert.notEqual(fleet.activeId, fleet.vehicles[0].id); // active is NOT the enrolled car
+  fleet = updateEnrolledVehicleState(fleet, (s) => ({ ...s, batteryLevel: 46 }));
+  assert.equal(fleet.vehicles[0].state.batteryLevel, 46); // enrolled car got it
+  assert.equal(activeVehicle(fleet).state.batteryLevel, null); // active demo car untouched
 });
 
 test('new vehicle inherits theme and lightingMode from the active car', () => {
