@@ -517,3 +517,63 @@ test('wake: runs the VCSEC wake command', async () => {
   assert.deepEqual(outcome, { ok: true, attempts: 1 });
   assert.deepEqual(car.handshakeDomains, [DOMAIN_VEHICLE_SECURITY]);
 });
+
+// ── C3: in-flight cancellation ──────────────────────────────────────────────
+
+test('C3: an already-aborted signal cancels before the car is touched', async () => {
+  __resetSessionCaches();
+  // A script that would otherwise retry its way through the fault-recovery loop.
+  const { car, gateway } = makeGateway(
+    Array.from({ length: MAX_BLE_ATTEMPTS }, () => ({ kind: 'fault', fault: 1 }) as const),
+  );
+
+  const outcome = await gateway.runCommand({ type: 'lock' }, { signal: AbortSignal.abort() });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok === false && outcome.kind, 'cancelled');
+  // The whole point: a superseded command must stop retrying, not burn the
+  // 25s deadline holding its lane while the user's newer value waits.
+  assert.equal(car.openCount, 0, 'cancelled before opening a session — no round-trip to the car');
+});
+
+test('C3: cancelling mid-flight stops the retry loop instead of exhausting attempts', async () => {
+  __resetSessionCaches();
+  const ctrl = new AbortController();
+  // Every attempt faults transiently, so WITHOUT cancellation this runs the full
+  // MAX_BLE_ATTEMPTS and returns 'exhausted' (see the 'exhausted' test above).
+  // Abort via the injected retry-delay timer: the gateway sleeps between
+  // transient faults, so this fires while the loop is genuinely mid-retry.
+  const car = new FakeCar({
+    script: Array.from({ length: MAX_BLE_ATTEMPTS }, () => ({ kind: 'fault', fault: 1 }) as const),
+  });
+  const gateway = createCarGateway({
+    transport: car,
+    vin: VIN,
+    deviceKeys: makeDeviceKeys(),
+    sleep: async () => {
+      ctrl.abort();
+    },
+  });
+
+  const outcome = await gateway.runCommand({ type: 'lock' }, { signal: ctrl.signal });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(
+    outcome.ok === false && outcome.kind,
+    'cancelled',
+    'a cancel during the retry loop settles as cancelled, NOT exhausted/timeout — it is not a failure to show the user',
+  );
+  assert.ok(
+    car.openCount < MAX_BLE_ATTEMPTS,
+    `stopped early: used ${car.openCount} of ${MAX_BLE_ATTEMPTS} attempts instead of burning the whole deadline`,
+  );
+});
+
+test('C3: no signal behaves exactly as before (parity, no behaviour change)', async () => {
+  __resetSessionCaches();
+  const { gateway } = makeGateway([{ kind: 'ok' }]);
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.equal(outcome.ok, true);
+});

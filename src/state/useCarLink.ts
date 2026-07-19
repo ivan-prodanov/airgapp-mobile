@@ -626,7 +626,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   }, []);
 
   const runDispatch = useCallback(
-    (cmd: CarCommand, rollback: () => void, affectedKeys?: readonly VehicleStateKey[]): Promise<void> => {
+    (
+      cmd: CarCommand,
+      rollback: () => void,
+      affectedKeys?: readonly VehicleStateKey[],
+      signal?: AbortSignal,
+    ): Promise<void> => {
       // Re-stamp the grace window as the command actually goes out, extending it
       // from the send rather than from the (possibly much earlier) user action.
       // The first stamp happens at SUBMIT time — see dispatch — because the
@@ -665,7 +670,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       // would see and a haptic nobody would feel are pointless — post the local
       // notification instead (what the official app does), and still roll back
       // so the UI is honest whenever the user does come back.
-      const onFailure = (outcome: Extract<CommandOutcome, { ok: false }>) => {
+      // Excludes 'cancelled' (C3): a superseded command did not fail, so it must
+      // never reach the toast/notification path. The type makes that a compile
+      // error rather than a judgement call at each call site.
+      const onFailure = (outcome: Exclude<Extract<CommandOutcome, { ok: false }>, { kind: 'cancelled' }>) => {
         rollback();
         // Only a true 'background' means the user can't see us. iOS also emits a
         // transient 'inactive' for the app switcher / control center / a call
@@ -702,12 +710,18 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       }
       return (async () => {
         try {
-          const outcome = await gw.runCommand(cmd);
+          const outcome = await gw.runCommand(cmd, signal ? { signal } : undefined);
           logi('cmd', 'settle', { type: cmd.type, ms: Date.now() - t0, outcome: outcome.ok ? 'ok' : outcome.kind });
           if (outcome.ok) {
             // Light confirmation — matches the app's impact/selection-only
             // haptic vocabulary (no notification feedback).
             if (AppState.currentState !== 'background') Haptics.selectionAsync().catch(() => {});
+          } else if (outcome.kind === 'cancelled') {
+            // C3: a NEWER command for this lane superseded us, so we stopped
+            // retrying. The user caused this and the newer optimistic value
+            // already stands — no toast, no notification, no rollback, no
+            // warn. (The coalescer neutralised the rollback; onFailure would
+            // also fire a "failed" banner for something that didn't fail.)
           } else {
             onFailure(outcome);
             console.warn('[useCarLink] command failed', cmd.type, outcome);
@@ -750,8 +764,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   runDispatchRef.current = runDispatch;
   const coalescerRef = useRef<Coalescer<CarCommand> | null>(null);
   if (!coalescerRef.current) {
-    coalescerRef.current = createCoalescer<CarCommand>((cmd, rollback, keys) =>
-      runDispatchRef.current(cmd, rollback, keys as readonly VehicleStateKey[]),
+    coalescerRef.current = createCoalescer<CarCommand>((cmd, rollback, keys, signal) =>
+      runDispatchRef.current(cmd, rollback, keys as readonly VehicleStateKey[], signal),
     );
   }
 

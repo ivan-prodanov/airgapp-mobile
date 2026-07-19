@@ -141,3 +141,51 @@ describe('createCoalescer — a rejecting runner must not wedge the lane', () =>
     assert.deepEqual(started, ['a', 'b'], 'a thrown command still releases the lane');
   });
 });
+
+// --- C3: in-flight cancellation on supersede ---------------------------------
+
+describe('createCoalescer — C3 aborts a superseded in-flight command', () => {
+  it("aborts the in-flight job's signal the moment a newer job lands in its lane", async () => {
+    const signals: AbortSignal[] = [];
+    let resolvers: (() => void)[] = [];
+    const run = (_cmd: string, _rollback: () => void, _keys: readonly string[], signal: AbortSignal) => {
+      signals.push(signal);
+      return new Promise<void>((resolve) => resolvers.push(resolve));
+    };
+    const c = createCoalescer<string>(run);
+
+    c.submit(job('lock', ['locked'], () => {}));
+    assert.equal(signals.length, 1);
+    assert.equal(signals[0].aborted, false, 'a lone command is not cancelled');
+
+    // The user changes their mind while the first is still retrying.
+    c.submit(job('unlock', ['locked'], () => {}));
+    assert.equal(
+      signals[0].aborted,
+      true,
+      'superseded command is told to stop retrying instead of holding its lane for the full deadline',
+    );
+
+    // The superseded command settles; the newer value then runs with a LIVE signal.
+    resolvers.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(signals.length, 2, 'the newer value is dispatched');
+    assert.equal(signals[1].aborted, false, 'the newest command is not born cancelled');
+  });
+
+  it('never aborts a command in a DIFFERENT lane', async () => {
+    const signals: AbortSignal[] = [];
+    const run = (_cmd: string, _rollback: () => void, _keys: readonly string[], signal: AbortSignal) => {
+      signals.push(signal);
+      return new Promise<void>(() => {});
+    };
+    const c = createCoalescer<string>(run);
+
+    c.submit(job('lock', ['locked'], () => {}));
+    c.submit(job('limit', ['chargeLimitPercent'], () => {}));
+    assert.equal(signals.length, 2, 'independent lanes both run');
+    assert.equal(signals[0].aborted, false, 'a charge-limit change must not cancel a lock');
+    assert.equal(signals[1].aborted, false);
+  });
+});

@@ -57,10 +57,17 @@ export const MAX_BLE_ATTEMPTS = SESSION_MAX_BLE_ATTEMPTS;
 export type CommandOutcome =
   | { ok: true; attempts: number }
   | { ok: false; kind: 'fault'; faultName: string; fault: number; message: string }
+  // `cancelled` (C3) is NOT a failure the user should ever be told about — it
+  // means a NEWER command for the same lane superseded this one, so we stopped
+  // retrying a value the user has already moved past. The coalescer has already
+  // neutralised its rollback. Distinct from `timeout`/`exhausted` precisely so
+  // the UI can stay silent instead of toasting a "failure" the user caused.
+  | { ok: false; kind: 'cancelled'; message: string }
   | { ok: false; kind: 'unreachable' | 'timeout' | 'auth' | 'exhausted'; message: string };
 
 export interface CarGateway {
-  runCommand(cmd: CarCommand): Promise<CommandOutcome>;
+  // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
+  runCommand(cmd: CarCommand, opts?: { signal?: AbortSignal }): Promise<CommandOutcome>;
   readVcsecStatus(): Promise<VcsecStatus>;
   awakeSync(): Promise<InfotainmentSnapshot>;
   wake(): Promise<CommandOutcome>;
@@ -155,7 +162,11 @@ export function createCarGateway({
   // loop. It drives ONE built action through the queue + cached session with
   // the full fault-recovery policy and returns both the structured outcome and
   // the raw CommandResult (so read paths can decode the response payload).
-  async function runAction(action: ActionPayload, label: string): Promise<{ outcome: CommandOutcome; result: CommandResult | null }> {
+  async function runAction(
+    action: ActionPayload,
+    label: string,
+    signal?: AbortSignal,
+  ): Promise<{ outcome: CommandOutcome; result: CommandResult | null }> {
     const flags = action.flags ?? 0;
     let lastResult: CommandResult | null = null;
 
@@ -166,6 +177,17 @@ export function createCarGateway({
     const deadlineExceeded = () => now() - startedAt >= commandDeadlineMs;
     const timedOut = (): { outcome: CommandOutcome; result: CommandResult | null } => ({
       outcome: { ok: false, kind: 'timeout', message: `[${label}] timeout: command deadline exceeded` },
+      result: lastResult,
+    });
+    // C3 — in-flight cancellation. Checked ONLY between attempts, never mid
+    // exchange, and identically for BOTH transports (BLE and Pi stay on par —
+    // transport selection is invisible to the user, so cancellation latency
+    // must not depend on it). Mid-exchange abort was rejected: DirectBleTransport
+    // allows exactly one in-flight exchange, and abandoning a reply-wait rejects
+    // as "stale frame", which this very loop then treats as a car fault and
+    // RETRIES — i.e. it would disguise a deliberate cancel as a failure.
+    const cancelled = (): { outcome: CommandOutcome; result: CommandResult | null } => ({
+      outcome: { ok: false, kind: 'cancelled', message: `[${label}] cancelled: superseded by a newer command` },
       result: lastResult,
     });
 
@@ -185,6 +207,7 @@ export function createCarGateway({
       const MAX_UNREACHABLE_EVICTS = 2;
 
       for (let attempt = 1; attempt <= MAX_BLE_ATTEMPTS; attempt++) {
+        if (signal?.aborted) return cancelled();
         if (deadlineExceeded()) return timedOut();
         let result: CommandResult;
         try {
@@ -309,9 +332,9 @@ export function createCarGateway({
     }
   }
 
-  async function runCommand(cmd: CarCommand): Promise<CommandOutcome> {
+  async function runCommand(cmd: CarCommand, opts?: { signal?: AbortSignal }): Promise<CommandOutcome> {
     const built = buildCommand(cmd);
-    const { outcome } = await runAction(built, cmd.type);
+    const { outcome } = await runAction(built, cmd.type, opts?.signal);
     return outcome;
   }
 

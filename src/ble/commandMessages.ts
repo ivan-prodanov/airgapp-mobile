@@ -12,7 +12,12 @@
 import type { CarCommand } from './commands';
 import type { CommandOutcome } from './gateway';
 
-type FailureOutcome = Extract<CommandOutcome, { ok: false }>;
+// Every failure kind that is SHOWN to the user. `cancelled` (C3) is excluded on
+// purpose: it means a newer command superseded this one, which the user caused
+// and must never be told about. Excluding it here makes that a COMPILE error if
+// anyone ever routes a cancelled outcome into the failure card, rather than a
+// silent copy bug — and keeps the switch below exhaustive.
+type FailureOutcome = Exclude<Extract<CommandOutcome, { ok: false }>, { kind: 'cancelled' }>;
 
 // cmd.type → the verb shown in the sentence (Title case; lowercased inside the
 // message). Extend as the sweep wires more live commands. Anything absent falls

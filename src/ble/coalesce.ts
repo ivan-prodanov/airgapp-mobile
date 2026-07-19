@@ -44,7 +44,17 @@ export interface CoalesceJob<C> {
 
 // `run` must resolve when the command is fully settled (ok, failed, or threw) —
 // its rejection is not our business; the caller already surfaces failures.
-export type RunJob<C> = (cmd: C, rollback: () => void, keys: readonly string[]) => Promise<void>;
+//
+// `signal` (C3) is aborted the moment a NEWER job supersedes this one. The
+// runner should thread it into the gateway so the doomed command stops
+// RETRYING — otherwise it holds its lane for the full 25s command deadline and
+// the user's final value waits behind a value they already moved past.
+export type RunJob<C> = (
+  cmd: C,
+  rollback: () => void,
+  keys: readonly string[],
+  signal: AbortSignal,
+) => Promise<void>;
 
 export interface Coalescer<C> {
   submit(job: CoalesceJob<C>): void;
@@ -70,13 +80,17 @@ export function createCoalescer<C>(run: RunJob<C>): Coalescer<C> {
     // lane arrives, so the in-flight command's failure becomes silent-to-the-UI
     // (the newer optimistic value stands, and the 20s poll reconciles truth).
     let live = true;
+    // C3: aborted on supersede so the in-flight command stops retrying instead
+    // of burning its full deadline while a newer value waits behind it.
+    const ctrl = new AbortController();
     state.supersede = () => {
       live = false;
+      ctrl.abort();
     };
     const guarded = () => {
       if (live) job.rollback();
     };
-    void run(job.cmd, guarded, job.keys).then(settle(lane), settle(lane));
+    void run(job.cmd, guarded, job.keys, ctrl.signal).then(settle(lane), settle(lane));
   };
 
   const settle = (lane: string) => () => {
@@ -95,8 +109,10 @@ export function createCoalescer<C>(run: RunJob<C>): Coalescer<C> {
   return {
     submit(job) {
       if (job.keys.length === 0) {
-        // Nothing to coalesce on — run it and forget it.
-        void run(job.cmd, job.rollback, job.keys);
+        // Nothing to coalesce on — run it and forget it. It declares no keys, so
+        // nothing can supersede it; hand it a signal that is never aborted
+        // rather than plumbing a controller nobody would ever fire.
+        void run(job.cmd, job.rollback, job.keys, new AbortController().signal);
         return;
       }
       const lane = laneOf(job.keys);
