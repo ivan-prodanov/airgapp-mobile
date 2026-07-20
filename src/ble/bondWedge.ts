@@ -138,9 +138,14 @@ export function bondWedgeBody(vehicleBleName: string | null): string {
 }
 
 // Do NOT retry the encrypted connect in a tight loop while wedged — every
-// attempt dies at the encryption step before any GATT, and hammering the
-// controller is the behaviour class behind the two lockouts. Tesla's own cadence
-// is a 30s cooldown with bounded retry, so match it.
+// attempt dies at the encryption step before any GATT, so the retries buy
+// nothing. Tesla's own cadence is a 30s cooldown with bounded retry, so match it.
+//
+// (An earlier version of this comment blamed the two lockouts on hammering the
+// controller. That was INFERENCE, not RE: RESPONSE-3 Q3 returned UNCERTAIN and
+// found no lockout, rate-limit, or attempt counter in authd/command-router. The
+// cooldown is justified by "pointless retries" alone; don't let it calcify into
+// a causal story we never established.)
 export const BOND_WEDGE_COOLDOWN_MS = 30_000;
 
 // What the user must actually do next. Distinguishing these matters: a stale
