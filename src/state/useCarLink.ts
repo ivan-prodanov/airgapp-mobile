@@ -174,6 +174,9 @@ export interface CarLinkStatus {
   // merely banner above them (Pi install: every row still works). Deliberately
   // "configured", not "reachable" — see recoveryPresentation.ts.
   piConfigured: boolean;
+  // The car's BLUETOOTH (GAP) name, remembered from the last live BLE link —
+  // what Settings > Bluetooth lists, which is NOT the vehicle display name.
+  vehicleBleName: string | null;
 }
 
 export interface CarLink extends CarLinkStatus {
@@ -1278,9 +1281,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       pending,
       recoveryRemedy,
       piConfigured,
+      vehicleBleName: bondWedge.bleName,
       dispatch,
       refresh,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, dispatch, refresh],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, refresh],
   );
 }

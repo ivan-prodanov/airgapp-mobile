@@ -5,7 +5,7 @@ import { parsePersistedWedge } from './bondWedgeStore';
 
 test('parsePersistedWedge round-trips a real verdict', () => {
   const p = parsePersistedWedge('{"wedged":true,"kind":"peer-removed-bond","at":123}');
-  assert.deepEqual(p, { wedged: true, kind: 'peer-removed-bond', at: 123 });
+  assert.deepEqual(p, { wedged: true, kind: 'peer-removed-bond', at: 123, bleName: null });
 });
 
 test('missing / malformed / older-schema storage degrades to no opinion, never throws', () => {
@@ -22,6 +22,7 @@ test('a stored HEALTHY verdict is still parsed (hydrate decides to ignore it)', 
     wedged: false,
     kind: 'other',
     at: 9,
+    bleName: null,
   });
 });
 
@@ -29,4 +30,11 @@ test('a stored verdict with no timestamp defaults rather than dropping the wedge
   const p = parsePersistedWedge('{"wedged":true,"kind":"peer-removed-bond"}');
   assert.equal(p?.wedged, true, 'the WEDGE is the payload; `at` is diagnostics only');
   assert.equal(p?.at, 0);
+});
+
+test('the Bluetooth name round-trips — it is only learnable while the link WORKS', () => {
+  // Stored even alongside a healthy verdict, because by the time we need it the
+  // link is broken and we can no longer ask the peripheral for its name.
+  const p = parsePersistedWedge('{"wedged":false,"kind":"other","at":1,"bleName":"\uD83D\uDD11 CHU\u0160KOPEK"}');
+  assert.equal(p?.bleName, '🔑 CHUŠKOPEK');
 });

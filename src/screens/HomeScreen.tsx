@@ -269,8 +269,8 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               // The DISPLAY name, which is what iOS shows in Settings >
               // Bluetooth — the user matches it by eye, so it must be the same
               // string, not our derived scan name.
-              vehicleName={fleet.activeName}
-              piWorking={recovery.presentation === 'banner'}
+              bleName={carLink.vehicleBleName}
+              onRetry={carLink.refresh}
             />
           ) : null}
 

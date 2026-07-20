@@ -5,7 +5,7 @@ import {
   classifyBleError,
   createBondWedgeDetector,
   WEDGE_CONSECUTIVE_CONNECT_FAILURES,
-  bondWedgeBody,
+  bondWedgeInstruction,
   remedyFor,
 } from './bondWedge';
 
@@ -65,16 +65,23 @@ test('a successful connect clears the state, including the explicit flag', () =>
   assert.equal(d.state().wedged, false, 'recovery must clear the warning');
 });
 
-test('guidance names the car by its Bluetooth name, as the official copy does', () => {
-  // {{name}} is the vehicle display name, which Tesla propagates into the BLE
-  // GAP name — so it matches exactly what iOS shows on the pairing sheet.
-  const body = bondWedgeBody('🔑 CHUŠKOPEK');
-  assert.match(body, /Remove "🔑 CHUŠKOPEK" in Settings > Bluetooth/);
-  assert.match(body, /not affected/i, 'reassures the key survives');
-  assert.match(body, /do not need your key card/i);
-  assert.match(body, /does not need to be unlocked/i, 'corrects the unlock assumption');
-  // Degrades sensibly when we do not know the name.
-  assert.match(bondWedgeBody(null), /Remove "your car"/);
+test('guidance names the car by its BLUETOOTH name, not its display name', () => {
+  // These are DIFFERENT strings and the distinction is the whole point: the
+  // user is scanning Settings > Bluetooth by eye. Tesla lists the GAP name
+  // ("🔑 CHUŠKOPEK"); the vehicle display name ("Red Velvet") does not appear
+  // there at all, so printing it sends them hunting for an entry that is not
+  // in the list. We shipped exactly that bug once.
+  const line = bondWedgeInstruction('🔑 CHUŠKOPEK');
+  assert.equal(line, "Remove '🔑 CHUŠKOPEK' in Settings > Bluetooth and try again");
+  // ONE line — the official row states the action and nothing else. An earlier
+  // multi-paragraph explainer read as an error dialog in a row this size.
+  assert.ok(!line.includes('\n'), 'single line, no wall of text');
+});
+
+test('guidance degrades sensibly when the Bluetooth name was never learned', () => {
+  // We can only learn the GAP name from a LIVE link, so a phone that has never
+  // connected has nothing to print.
+  assert.equal(bondWedgeInstruction(null), "Remove 'your car' in Settings > Bluetooth and try again");
 });
 
 // The two failure modes need OPPOSITE remedies, and getting this backwards is

@@ -182,6 +182,7 @@ export function useFleetState(): {
       // so it is equally true whichever car is on screen.
       recoveryRemedy: carLink.recoveryRemedy,
       piConfigured: carLink.piConfigured,
+      vehicleBleName: carLink.vehicleBleName,
     }),
     [
       activeIsLive,
@@ -196,6 +197,7 @@ export function useFleetState(): {
       carLink.pending,
       carLink.recoveryRemedy,
       carLink.piConfigured,
+      carLink.vehicleBleName,
     ],
   );
 

@@ -154,17 +154,18 @@ export function createBondWedgeDetector() {
 // Instructional text ONLY: there is no working iOS deep-link to the Bluetooth
 // pane (App-Prefs:/prefs:root=Bluetooth are zero-hit in the official binary and
 // Apple removed them), so we must not render a button that silently no-ops.
-export const BOND_WEDGE_TITLE = 'Reconnect Bluetooth';
-
-export function bondWedgeBody(vehicleBleName: string | null): string {
+// One line, verbatim from the official VehicleSuggestRemoveBondRow. It replaces
+// an earlier multi-paragraph explainer of ours: the official app states the
+// action and nothing else, and a wall of text in a row this size reads as an
+// error dialog rather than an instruction.
+//
+// `name` MUST be the BLUETOOTH name (the GAP name, e.g. "🔑 CHUŠKOPEK"), NOT the
+// vehicle's display name ("Red Velvet"). They differ, and the user is matching
+// this string by eye against a list in Settings > Bluetooth — printing the
+// display name sends them looking for an entry that isn't there.
+export function bondWedgeInstruction(vehicleBleName: string | null): string {
   const name = vehicleBleName ?? 'your car';
-  return (
-    `Remove "${name}" in Settings > Bluetooth, then return here.\n\n` +
-    'Your phone is holding stale Bluetooth pairing data, which blocks every app ' +
-    'from connecting to the car — not just this one.\n\n' +
-    'Your phone key is NOT affected. You do not need your key card, and the car ' +
-    'does not need to be unlocked.'
-  );
+  return `Remove '${name}' in Settings > Bluetooth and try again`;
 }
 
 // Do NOT retry the encrypted connect in a tight loop while wedged — every

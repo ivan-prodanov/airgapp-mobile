@@ -301,7 +301,16 @@ export class DirectBleTransport implements CarTransport {
     try {
       const dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
       bondWedgeStore.noteConnectSuccess();
-      logi('ble', 'connect ok', { deviceId: scanned.id });
+      // Learn the GAP name while we CAN — it is only readable on a live link,
+      // and it is only needed once the link is broken. Both fields are logged
+      // because which one carries the friendly name ("🔑 CHUŠKOPEK") vs Tesla's
+      // derived S…C scan name is an on-device question, not a documented one.
+      logi('ble', 'connect ok', {
+        deviceId: scanned.id,
+        name: dev.name ?? null,
+        localName: dev.localName ?? null,
+      });
+      bondWedgeStore.noteDeviceName(dev.name ?? null);
       return dev;
     } catch (first) {
       await scanned.cancelConnection().catch(() => {});

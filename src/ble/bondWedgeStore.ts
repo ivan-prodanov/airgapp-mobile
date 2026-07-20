@@ -31,19 +31,39 @@ export interface PersistedWedge {
   // verdict. A wedge does not heal with time; it heals when the user forgets
   // the device, and the successful connect that follows is what clears it.
   at: number;
+  // The car's BLUETOOTH (GAP) name as iOS reports it once connected — e.g.
+  // "🔑 CHUŠKOPEK". Remembered across launches BECAUSE we can only learn it while
+  // the link works, and we only need it once the link is broken. Without this
+  // the recovery copy falls back to the vehicle's display name ("Red Velvet"),
+  // which is NOT what Settings > Bluetooth lists, sending the user hunting for
+  // an entry that does not exist.
+  bleName?: string | null;
+}
+
+// What consumers render from: the verdict plus the remembered Bluetooth name.
+export interface BondWedgeSnapshot extends BondWedgeState {
+  bleName: string | null;
 }
 
 const detector = createBondWedgeDetector();
 
-let snapshot: BondWedgeState = detector.state();
+let bleName: string | null = null;
+let snapshot: BondWedgeSnapshot = { ...detector.state(), bleName: null };
 const listeners = new Set<() => void>();
 let persist: ((p: PersistedWedge) => void) | null = null;
 let log: ((msg: string, data: Record<string, unknown>) => void) | null = null;
 
-function publish(next: BondWedgeState, cause: string): void {
+function publish(state: BondWedgeState, cause: string): void {
+  const next: BondWedgeSnapshot = { ...state, bleName };
   // Only churn identity when something consumers can SEE changed. The failure
   // counter ticks on every attempt; re-rendering Home for that would be noise.
-  if (snapshot.wedged === next.wedged && snapshot.kind === next.kind) return;
+  if (
+    snapshot.wedged === next.wedged &&
+    snapshot.kind === next.kind &&
+    snapshot.bleName === next.bleName
+  ) {
+    return;
+  }
   const was = snapshot;
   snapshot = next;
   // Every VISIBLE transition is logged with its cause. The on-car test left us
@@ -55,7 +75,7 @@ function publish(next: BondWedgeState, cause: string): void {
     to: { wedged: next.wedged, kind: next.kind },
     consecutive: next.consecutiveConnectFailures,
   });
-  persist?.({ wedged: next.wedged, kind: next.kind, at: Date.now() });
+  persist?.({ wedged: next.wedged, kind: next.kind, at: Date.now(), bleName });
   listeners.forEach((l) => l());
 }
 
@@ -70,12 +90,25 @@ export const bondWedgeStore = {
     log = opts.log ?? null;
   },
 
-  // Seed from the previous process. No-op when there is nothing stored or the
-  // stored verdict was healthy, so a clean install starts clean.
+  // Seed from the previous process. The NAME is restored even when the stored
+  // verdict was healthy — it is only learnable while the link works, and only
+  // needed once it doesn't, so it must outlive the healthy→wedged transition.
   hydrate(p: PersistedWedge | null): void {
-    if (!p?.wedged) return;
+    if (!p) return;
+    if (p.bleName) bleName = p.bleName;
+    if (!p.wedged) return;
     detector.markWedged(p.kind);
     publish(detector.state(), 'hydrated-from-storage');
+  },
+
+  // Record the car's Bluetooth name, learned from a LIVE connection. Only a
+  // connected peripheral reports the GAP name; the scan advertises Tesla's
+  // derived S…C local name instead, which is not what Settings > Bluetooth
+  // shows. Callers should pass the connected device's name, not the scan's.
+  noteDeviceName(name: string | null): void {
+    if (!name || name === bleName) return;
+    bleName = name;
+    publish(detector.state(), 'device-name');
   },
 
   noteConnectFailure(err: unknown): BondWedgeState {
@@ -93,7 +126,7 @@ export const bondWedgeStore = {
   },
   // Must return a STABLE reference while nothing changed — useSyncExternalStore
   // re-renders in a loop otherwise.
-  getSnapshot(): BondWedgeState {
+  getSnapshot(): BondWedgeSnapshot {
     return snapshot;
   },
 };
@@ -109,6 +142,7 @@ export function parsePersistedWedge(raw: string | null): PersistedWedge | null {
       wedged: v.wedged,
       kind: (v.kind ?? 'other') as BleFailureKind,
       at: typeof v.at === 'number' ? v.at : 0,
+      bleName: typeof v.bleName === 'string' ? v.bleName : null,
     };
   } catch {
     return null;
