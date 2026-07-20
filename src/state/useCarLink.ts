@@ -197,24 +197,6 @@ const PASSIVE_ENTRY_RESPOND = false;
 // it is a knob: if the car refuses the first variant, change this and redeploy
 // via deploy-js.sh. A refusal is the EXPECTED first outcome, not a bug.
 
-// Force the recovery card on for a UI check, WITHOUT wedging a real car.
-//
-// The only way to induce a genuine wedge is to bond (read char 0301, accept the
-// pairing sheet) and wait for the car to drop its side — which RESPONSE-4's #1
-// recommendation tells us never to do, and which opts EVERY app on this phone
-// into the recurrence cycle. Verifying a card's layout is not worth that, so
-// the presentation is driven from an env flag instead.
-//
-// Set at bundle time: EXPO_PUBLIC_FAKE_RECOVERY=forget-bluetooth-device
-// (or =re-enroll-with-card) before deploy-js.sh; unset to return to real state.
-// Purely additive — when unset this is null and the real detector decides.
-const FAKE_RECOVERY: RecoveryRemedy | null =
-  process.env.EXPO_PUBLIC_FAKE_RECOVERY === 'forget-bluetooth-device'
-    ? 'forget-bluetooth-device'
-    : process.env.EXPO_PUBLIC_FAKE_RECOVERY === 're-enroll-with-card'
-      ? 're-enroll-with-card'
-      : null;
-
 export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
   // poll-derived patch through here must never loop back into a command.
@@ -310,7 +292,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
 
   const recoveryRemedy = useMemo(
     () =>
-      FAKE_RECOVERY ??
       remedyFor({
         wedged: bondWedge.wedged,
         // null = we have not read the whitelist in this session. remedyFor is
