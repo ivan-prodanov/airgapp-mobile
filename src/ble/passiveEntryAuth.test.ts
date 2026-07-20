@@ -6,7 +6,6 @@ import {
   encodeAuthenticationResponse,
   encodeUnsignedAuthResponse,
   encodeToVcsecSignedMessage,
-  buildAuthIv,
   describeReasons,
   AUTH_LEVEL,
   AUTH_REJECTION,
@@ -115,36 +114,14 @@ test('builds ToVCSECMessage{SignedMessage} with an EMPTY token field', () => {
   );
 });
 
-test('IV variants are 12 bytes and place the counter where their name says', () => {
-  // The exact assembly is the one unknown the RE could not pin, so the variants
-  // must be distinct and switchable without a rebuild.
-  const last = buildAuthIv(1, 'counter-last');
-  assert.equal(last.length, 12);
-  assert.deepEqual(Array.from(last.subarray(8)), [0, 0, 0, 1], 'BE counter right-aligned');
-  assert.deepEqual(Array.from(last.subarray(0, 8)), new Array(8).fill(0));
-
-  const first = buildAuthIv(1, 'counter-first');
-  assert.deepEqual(Array.from(first.subarray(0, 4)), [0, 0, 0, 1]);
-
-  const le = buildAuthIv(1, 'counter-last-le');
-  assert.deepEqual(Array.from(le.subarray(8)), [1, 0, 0, 0], 'little-endian');
-
-  // All variants must actually differ, or cycling them on-car proves nothing.
-  const seen = new Set(
-    (['counter-last', 'counter-first', 'counter-last-le', 'counter-first-le'] as const).map((v) =>
-      buildAuthIv(0x01020304, v).join(','),
-    ),
-  );
-  assert.equal(seen.size, 4, 'every variant is distinct');
-});
 
 test('describeReasons names the codes we actually saw on-car', () => {
   assert.match(describeReasons([5]), /PASSIVE_UNLOCK_EXTERIOR_HANDLE_PULL\(5\)/);
   assert.match(describeReasons([1, 8]), /IDENTIFICATION\(1\), ENTERED_HIGHER_AUTH_ZONE\(8\)/);
 });
 
-test('end-to-end: real challenge → sealed response, shape is wire-valid', async () => {
-  const { aesGcmEncryptWithNonce } = await import('./crypto');
+test('end-to-end: real challenge → sealed response with the CONFIRMED 4-byte IV', async () => {
+  const { aesGcmEncryptShortIv, be32 } = await import('./gcmShortIv');
   const req = parseAuthenticationRequest(REAL_HANDLE_PULL);
   assert.ok(req);
 
@@ -153,8 +130,8 @@ test('end-to-end: real challenge → sealed response, shape is wire-valid', asyn
   const plaintext = encodeUnsignedAuthResponse(
     encodeAuthenticationResponse({ authenticationLevel: req.requestedLevel }),
   );
-  // The token is the AAD — this is the binding that proves freshness.
-  const sealed = aesGcmEncryptWithNonce(sessionKey, plaintext, req.token, buildAuthIv(counter));
+  // The seal RE RESPONSE #2 confirmed: 4-byte BE counter IV, AAD = bare token.
+  const sealed = aesGcmEncryptShortIv(sessionKey, be32(counter), req.token, plaintext);
   const frame = encodeToVcsecSignedMessage({
     ciphertext: sealed.ciphertext,
     tag: sealed.tag,
@@ -164,48 +141,6 @@ test('end-to-end: real challenge → sealed response, shape is wire-valid', asyn
 
   assert.equal(sealed.tag.length, 16, 'GCM tag is 16 bytes');
   assert.ok(frame.length > 20 && frame[0] === 0x0a, 'ToVCSECMessage.signedMessage');
-  // Re-parsing our own output must not look like a challenge (no infinite loop).
-  assert.equal(parseAuthenticationRequest(frame), null);
+  assert.equal(parseAuthenticationRequest(frame), null, 'our own output is not a challenge');
 });
 
-test('AAD variants are all distinct — cycling them must actually test something', async () => {
-  // Guards the matrix search: identical "variants" would burn on-car attempts
-  // learning nothing, and a pass would be ambiguous about which one worked.
-  const { MetadataBlockBuilder, TAG } = await import('./crypto');
-  const token = Uint8Array.from(new Array(20).fill(0xab));
-  const counter = 1234;
-
-  const tokenCounter = new Uint8Array(24);
-  tokenCounter.set(token, 0);
-  new DataView(tokenCounter.buffer).setUint32(20, counter, false);
-
-  // Tags MUST ascend — COUNTER(5) before CHALLENGE(6) — or the builder throws.
-  const block = () =>
-    new MetadataBlockBuilder()
-      .add(TAG.SIGNATURE_TYPE, Uint8Array.from([3]))
-      .add(TAG.DOMAIN, Uint8Array.from([2]))
-      .add(TAG.PERSONALIZATION, new TextEncoder().encode('5YJ3E1EA1JF000000'))
-      .addUint32(TAG.COUNTER, counter)
-      .add(TAG.CHALLENGE, token);
-
-  const metaRaw = block().bytes();
-  const metaDigest = block().checksum(null);
-
-  const all = [token, tokenCounter, metaRaw, metaDigest].map((b) =>
-    Buffer.from(b).toString('hex'),
-  );
-  assert.equal(new Set(all).size, 4, 'every AAD variant produces distinct bytes');
-
-  // The RAW block must literally carry the challenge; the DIGEST binds it via
-  // SHA-256 (which is exactly how our working command AAD works), so the token
-  // must NOT appear literally there.
-  assert.ok(Buffer.from(metaRaw).includes(Buffer.from(token)), 'raw block carries the token');
-  assert.equal(metaDigest.length, 32, 'digest form is a SHA-256');
-  assert.ok(!Buffer.from(metaDigest).includes(Buffer.from(token)), 'digest binds, not embeds');
-
-  // Ascending-order rule is load-bearing: descending must throw, not silently
-  // produce a different block.
-  assert.throws(() =>
-    new MetadataBlockBuilder().add(TAG.CHALLENGE, token).addUint32(TAG.COUNTER, counter),
-  );
-});

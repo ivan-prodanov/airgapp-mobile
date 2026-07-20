@@ -55,7 +55,7 @@ import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
-import { formatUnsolicitedFrame } from '@/ble/passiveEntryCapture';
+import { formatUnsolicitedFrame, describeCommandStatus } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { startLogFileSink } from '@/services/logFileSink';
@@ -183,12 +183,6 @@ const PASSIVE_ENTRY_RESPOND = false;
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
 // it is a knob: if the car refuses the first variant, change this and redeploy
 // via deploy-js.sh. A refusal is the EXPECTED first outcome, not a bug.
-// 'cycle' rotates the IV assembly across successive challenges so ONE approach
-// tests every candidate. The first on-car run returned
-// SIGNEDMESSAGE_INFORMATION_FAULT_AES_DECRYPT_AUTH(6) — the car parsed our
-// envelope, found our keyId, and accepted the token and counter, failing ONLY
-// the GCM tag. So the envelope is right and the IV/AAD is what is left to find.
-const PASSIVE_ENTRY_IV_VARIANT = 'cycle' as const;
 
 export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
@@ -261,6 +255,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // (built before the handler is declared, and only once) always reads the
   // current one. Assigned just below its useCallback.
   const handleVcsecPushRef = useRef<(frame: Uint8Array) => void>(() => {});
+  // The passive-entry responder, kept so the push handler can feed the car's
+  // verdicts into its circuit breaker (see makeAuthResponder.noteVerdict).
+  const authResponderRef = useRef<ReturnType<typeof makeAuthResponder> | null>(null);
 
   const [linked, setLinked] = useState(false);
   const [vin, setVin] = useState<string | null>(null);
@@ -430,15 +427,13 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
                 // Answer passive-entry challenges on the link itself — the car
                 // gives up in ~6-10s, so a hop through React state first would
                 // eat the budget. Returns null for non-challenge frames.
-                authResponder: makeAuthResponder({
+                authResponder: (authResponderRef.current = makeAuthResponder({
                   vin,
-                  ivVariant: PASSIVE_ENTRY_IV_VARIANT,
-                  aadVariant: 'cycle',
                   enabled: () => PASSIVE_ENTRY_RESPOND,
                   log: (lines) => {
                     void appendDiagnostic('passive-entry auth', lines);
                   },
-                }),
+                })),
                 // Route the car's unsolicited VCSEC pushes into the live apply
                 // path — closures/lock update instantly while this link is held
                 // open, with the poll as backstop.
@@ -940,6 +935,13 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       } catch {
         // diagnostics must never break telemetry
       }
+    }
+    // Feed the car's verdict on OUR passive-entry response back into the
+    // responder's circuit breaker: an accept clears it, a run of rejects opens
+    // it (stop signing before we wedge VCSEC again — the 2026-07-20 lesson).
+    const verdict = describeCommandStatus(frame);
+    if (verdict && authResponderRef.current) {
+      authResponderRef.current.noteVerdict(verdict.includes('NONE (accepted)'));
     }
     const status = decodeUnsolicitedVcsecStatus(frame);
     if (!status) return;

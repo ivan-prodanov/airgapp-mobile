@@ -4,94 +4,70 @@
 // a raw unsolicited frame it returns the exact bytes to write back, or null when
 // the frame is not a challenge / we cannot legitimately answer.
 //
-// WHY THE TRANSPORT CALLS THIS (not useCarLink): the car retries at ~1 Hz and
-// gives up after ~6–10 s, and the response must be signed with the live session.
-// Answering inside the transport — which already owns the link, the write path
-// and receives the frame first — avoids a hop through React state before we can
-// reply. That matters more once M2 moves this to a background wake.
+// THE SEAL (RE RESPONSE #2, from the decompiled Android signer gf0/b.java k()):
+//   sessionKey = SHA1(ECDH)[:16]                (the key our commands already use)
+//   iv  = counter as a raw 4-BYTE big-endian value   ← NOT 12 bytes; this was the bug
+//   aad = the bare 20-byte challenge token, verbatim
+//   pt  = serialized UnsignedMessage{ authenticationResponse }
+//   ct,tag = AES-128-GCM(key, iv=4B, aad=token, pt)   → SignedMessage{ AES_GCM_TOKEN }
+// The 4-byte IV forces GCM's GHASH J0 derivation, which no 12-byte layout can
+// reproduce — see gcmShortIv.ts. All four 12-byte layouts failed on-car for this.
 //
-// SAFETY POSTURE. Passive entry physically unlocks a car, so this refuses by
-// construction rather than by care:
-//   • not a challenge            → null (routine pushes are untouched)
-//   • no token / wrong length    → null; never sign a grant without a fresh
-//                                  20-byte token (q1.java:643-652)
-//   • no live authenticated session → null; we cannot sign, and must not pretend
-//   • caller-disabled            → null before any parsing
-// Every outcome is reported to `log` so an on-car run is diagnosable.
+// SAFETY. Passive entry physically unlocks a car AND signs messages to a security
+// controller. This refuses by construction, and — after the 2026-07-20 incident
+// where a burst of malformed seals plausibly wedged the car's VCSEC until a
+// restart + key re-enrollment — it also RATE-LIMITS and CIRCUIT-BREAKS:
+//   • not a challenge / no token / wrong length / no live session → null
+//   • caller-disabled → null before any parsing
+//   • > MAX_PER_WINDOW answers in RATE_WINDOW_MS → stop (don't hammer VCSEC)
+//   • MAX_CONSECUTIVE_FAULTS car rejections in a row → OPEN the breaker and stop
+//     answering until reset; a persistent reject means our seal is wrong and
+//     retrying only risks another lockout. Feed verdicts back via noteVerdict().
 
 import { sha1 } from '@noble/hashes/sha1';
 
-import { aesGcmEncryptWithNonce, MetadataBlockBuilder, TAG } from './crypto';
+import { aesGcmEncryptShortIv, be32 } from './gcmShortIv';
 import { peekLiveSession, DOMAIN_VEHICLE_SECURITY } from './session';
 import {
   parseAuthenticationRequest,
   encodeAuthenticationResponse,
   encodeUnsignedAuthResponse,
   encodeToVcsecSignedMessage,
-  buildAuthIv,
   describeReasons,
   AUTH_TOKEN_LENGTH,
-  IV_VARIANTS,
-  AAD_VARIANTS,
-  SIGNATURE_TYPE_AES_GCM_TOKEN,
-  type IvVariant,
-  type AadVariant,
 } from './passiveEntryAuth';
+
+// Never sign more than this many responses per window. The car challenges at
+// ~1 Hz for 6-10 frames per approach; this bounds a runaway well above that.
+const RATE_WINDOW_MS = 10_000;
+const MAX_PER_WINDOW = 12;
+// After this many car rejections with no acceptance in between, stop. A steady
+// reject means the seal is wrong; continuing only risks wedging VCSEC again.
+const MAX_CONSECUTIVE_FAULTS = 6;
 
 export interface AuthResponderOptions {
   vin: string;
-  // Which IV assembly to try. The exact construction is the one crypto detail
-  // static RE could not pin. Pass a single variant to pin it, or 'cycle' to
-  // rotate through IV_VARIANTS on successive challenges — the car sends 6-10
-  // challenges per approach, so ONE handle-pull then tests every variant, and
-  // its commandStatus echoes our counter so each verdict is attributable to the
-  // exact variant that produced it.
-  ivVariant?: IvVariant | 'cycle';
-  // AAD assembly. 'cycle' walks the IV x AAD matrix — one approach (6-10
-  // challenges) covers a good fraction of it, and each verdict is attributable.
-  aadVariant?: AadVariant | 'cycle';
   enabled?: () => boolean;
   log?: (lines: string[]) => void;
 }
 
-export type AuthResponder = (frame: Uint8Array) => Uint8Array | null;
+export interface AuthResponder {
+  (frame: Uint8Array): Uint8Array | null;
+  // Feed the car's verdict back (parsed from its commandStatus) to drive the
+  // circuit breaker: any accept clears it; consecutive faults open it.
+  noteVerdict: (accepted: boolean) => void;
+  reset: () => void;
+}
 
 export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
-  const mode = opts.ivVariant ?? 'counter-last';
-  const aadMode = opts.aadVariant ?? 'token';
   const say = (lines: string[]) => opts.log?.(lines);
-  let cycleIndex = 0;
+  let recentTimes: number[] = [];
+  let consecutiveFaults = 0;
+  let broken = false;
 
-  // buildAad mirrors the WORKING command AAD (a TLV metadata block) for the
-  // 'meta-*' variants, since that construction is proven against this car —
-  // only the tag set differs. No EPOCH: the RE response is explicit that the
-  // VCSEC token path is token+counter with no epoch.
-  const buildAad = (variant: AadVariant, token: Uint8Array, counter: number, vin: string) => {
-    if (variant === 'token') return token;
-    if (variant === 'token-counter') {
-      const out = new Uint8Array(token.length + 4);
-      out.set(token, 0);
-      new DataView(out.buffer).setUint32(token.length, counter >>> 0, false);
-      return out;
-    }
-    // Mirrors buildAesGcmMetadata (our PROVEN command AAD) with CHALLENGE added
-    // and EPOCH/EXPIRES_AT omitted — the RE response is explicit that the token
-    // path is token+counter with no epoch.
-    //
-    // ASCENDING tag order is enforced by MetadataBlockBuilder (it THROWS
-    // otherwise), so COUNTER(5) must precede CHALLENGE(6).
-    const m = new MetadataBlockBuilder();
-    m.add(TAG.SIGNATURE_TYPE, new Uint8Array([SIGNATURE_TYPE_AES_GCM_TOKEN]));
-    m.add(TAG.DOMAIN, new Uint8Array([DOMAIN_VEHICLE_SECURITY]));
-    m.add(TAG.PERSONALIZATION, new TextEncoder().encode(vin));
-    m.addUint32(TAG.COUNTER, counter);
-    m.add(TAG.CHALLENGE, token);
-    // digest = how the working command path does it; raw = the same block unhashed.
-    return variant === 'meta-raw' ? m.bytes() : m.checksum(null);
-  };
-
-  return (frame: Uint8Array): Uint8Array | null => {
+  const responder = (frame: Uint8Array): Uint8Array | null => {
     if (opts.enabled && !opts.enabled()) return null;
+    if (broken) return null; // circuit open — stay silent until reset()
 
     const req = parseAuthenticationRequest(frame);
     if (!req) return null; // routine push — not our business
@@ -99,47 +75,34 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
     const reasons = describeReasons(req.reasons);
 
     if (req.token.length !== AUTH_TOKEN_LENGTH) {
-      say([`auth challenge IGNORED: token is ${req.token.length}B, expected ${AUTH_TOKEN_LENGTH}`]);
+      say([`auth IGNORED: token is ${req.token.length}B, expected ${AUTH_TOKEN_LENGTH}`]);
+      return null;
+    }
+
+    // Rate limit BEFORE touching the session — the whole point is to not flood
+    // VCSEC. Uses a coarse wall clock; Date.now is fine here.
+    const now = Date.now();
+    recentTimes = recentTimes.filter((t) => now - t < RATE_WINDOW_MS);
+    if (recentTimes.length >= MAX_PER_WINDOW) {
+      say([`auth RATE-LIMITED: ${recentTimes.length} answers in ${RATE_WINDOW_MS}ms, holding`]);
       return null;
     }
 
     const session = peekLiveSession(opts.vin, DOMAIN_VEHICLE_SECURITY);
     if (!session) {
-      // Expected when the app is cold or the session lapsed. Worth logging
-      // loudly: it is the difference between "we answered and were refused"
-      // and "we were never in a position to answer".
-      say([`auth challenge DROPPED (no live VCSEC session) reasons=[${reasons}]`]);
+      say([`auth DROPPED (no live VCSEC session) reasons=[${reasons}]`]);
       return null;
     }
 
-    // Walk the IV x AAD matrix: AAD is the slow axis so each AAD is tried
-    // against every IV before moving on.
-    const n = cycleIndex++;
-    const ivVariant: IvVariant =
-      mode === 'cycle' ? IV_VARIANTS[n % IV_VARIANTS.length] : mode;
-    const aadVariant: AadVariant =
-      aadMode === 'cycle'
-        ? AAD_VARIANTS[Math.floor(n / IV_VARIANTS.length) % AAD_VARIANTS.length]
-        : aadMode;
-
     // Monotonic anti-replay. Bump BEFORE sealing so a retry never reuses a
-    // counter with the same key — nonce reuse under AES-GCM is catastrophic,
-    // and here the IV is derived from this counter.
+    // counter — the IV is derived from it, and AES-GCM nonce reuse is fatal.
     session.counter += 1;
     const counter = session.counter;
 
     const plaintext = encodeUnsignedAuthResponse(
-      // Echo the level the car asked for; the grant is reason-independent.
       encodeAuthenticationResponse({ authenticationLevel: req.requestedLevel }),
     );
-    // The token is the AAD — bound cryptographically, never echoed as a field.
-    const aad = buildAad(aadVariant, req.token, counter, opts.vin);
-    const sealed = aesGcmEncryptWithNonce(
-      session.sessionKey,
-      plaintext,
-      aad,
-      buildAuthIv(counter, ivVariant),
-    );
+    const sealed = aesGcmEncryptShortIv(session.sessionKey, be32(counter), req.token, plaintext);
     const out = encodeToVcsecSignedMessage({
       ciphertext: sealed.ciphertext,
       tag: sealed.tag,
@@ -147,13 +110,36 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       counter,
     });
 
-    // counter is the JOIN KEY: the car's commandStatus echoes it back, so this
-    // line is what lets a verdict be attributed to the variant that caused it.
+    recentTimes.push(now);
+    // counter is the JOIN KEY: the car's commandStatus echoes it, so this line
+    // ties the eventual CAR VERDICT back to this exact attempt.
     say([
-      `auth ANSWERED counter=${counter} iv=${ivVariant} aad=${aadVariant} ` +
-        `reasons=[${reasons}] level=${req.requestedLevel} out=${out.length}B`,
-      `  token: ${Array.from(req.token).map((b) => b.toString(16).padStart(2, '0')).join('')}`,
+      `auth ANSWERED counter=${counter} iv=4B-be reasons=[${reasons}] ` +
+        `level=${req.requestedLevel} out=${out.length}B`,
     ]);
     return out;
   };
+
+  responder.noteVerdict = (accepted: boolean): void => {
+    if (accepted) {
+      consecutiveFaults = 0;
+      return;
+    }
+    consecutiveFaults += 1;
+    if (consecutiveFaults >= MAX_CONSECUTIVE_FAULTS && !broken) {
+      broken = true;
+      say([
+        `auth CIRCUIT OPEN: ${consecutiveFaults} consecutive rejects — seal is wrong, ` +
+          `stopping to avoid wedging VCSEC. reset() to retry.`,
+      ]);
+    }
+  };
+
+  responder.reset = (): void => {
+    recentTimes = [];
+    consecutiveFaults = 0;
+    broken = false;
+  };
+
+  return responder;
 }
