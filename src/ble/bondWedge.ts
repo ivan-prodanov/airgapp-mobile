@@ -116,10 +116,50 @@ export function createBondWedgeDetector() {
 // stale bond leaves the whitelist entry fully intact, and demanding a card tap
 // for a transport-layer problem is exactly the user-hostile mistake RE #3
 // warns about. Only a PERSISTENTLY absent whitelist entry justifies a card.
-export const BOND_WEDGE_TITLE = 'Bluetooth needs re-pairing';
-export const BOND_WEDGE_BODY =
-  'Your phone is holding stale Bluetooth pairing data for the car, which blocks ' +
-  'every app from connecting — not just this one.\n\n' +
-  'Open Settings → Bluetooth, tap the ⓘ next to your car, and choose "Forget This Device". ' +
-  'Then come back; it will reconnect on its own.\n\n' +
-  'Your phone key is NOT affected — you do not need your key card.';
+// Copy mirrors the official VehicleSuggestRemoveBondRow — "Remove '{{name}}' in
+// Settings > Bluetooth and try again" — where {{name}} is the vehicle display
+// name, which Tesla propagates into the BLE GAP name, so it matches exactly what
+// iOS shows on the pairing sheet (e.g. "🔑 CHUŠKOPEK").
+//
+// Instructional text ONLY: there is no working iOS deep-link to the Bluetooth
+// pane (App-Prefs:/prefs:root=Bluetooth are zero-hit in the official binary and
+// Apple removed them), so we must not render a button that silently no-ops.
+export const BOND_WEDGE_TITLE = 'Reconnect Bluetooth';
+
+export function bondWedgeBody(vehicleBleName: string | null): string {
+  const name = vehicleBleName ?? 'your car';
+  return (
+    `Remove "${name}" in Settings > Bluetooth, then return here.\n\n` +
+    'Your phone is holding stale Bluetooth pairing data, which blocks every app ' +
+    'from connecting to the car — not just this one.\n\n' +
+    'Your phone key is NOT affected. You do not need your key card, and the car ' +
+    'does not need to be unlocked.'
+  );
+}
+
+// Do NOT retry the encrypted connect in a tight loop while wedged — every
+// attempt dies at the encryption step before any GATT, and hammering the
+// controller is the behaviour class behind the two lockouts. Tesla's own cadence
+// is a 30s cooldown with bounded retry, so match it.
+export const BOND_WEDGE_COOLDOWN_MS = 30_000;
+
+// What the user must actually do next. Distinguishing these matters: a stale
+// bond and a wiped key need OPPOSITE remedies, and airgapp can tell them apart
+// (we read the whitelist over the Pi) where the official app cannot — it
+// collapses both into one "Set Up Phone Key" state because it can't see the
+// whitelist through a dead link.
+export type RecoveryRemedy =
+  | 'forget-bluetooth-device' // bond wedge — key intact
+  | 're-enroll-with-card' // genuine wipe — key gone
+  | 'none';
+
+export function remedyFor(opts: {
+  wedged: boolean;
+  keyOnWhitelist: boolean | null; // null = unknown (couldn't read)
+}): RecoveryRemedy {
+  // A confirmed-present key with a wedge is unambiguous.
+  if (opts.wedged && opts.keyOnWhitelist !== false) return 'forget-bluetooth-device';
+  // Only a KNOWN-absent key justifies demanding a card — never on unknown.
+  if (opts.keyOnWhitelist === false) return 're-enroll-with-card';
+  return 'none';
+}

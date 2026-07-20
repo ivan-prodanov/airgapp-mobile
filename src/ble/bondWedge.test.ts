@@ -5,7 +5,8 @@ import {
   classifyBleError,
   createBondWedgeDetector,
   WEDGE_CONSECUTIVE_CONNECT_FAILURES,
-  BOND_WEDGE_BODY,
+  bondWedgeBody,
+  remedyFor,
 } from './bondWedge';
 
 test('classifies the explicit iOS peer-removed-bond signal', () => {
@@ -64,10 +65,36 @@ test('a successful connect clears the state, including the explicit flag', () =>
   assert.equal(d.state().wedged, false, 'recovery must clear the warning');
 });
 
-test('guidance never tells the user to re-enroll or tap their card', () => {
-  // A stale bond leaves the whitelist intact. Demanding a card tap for a
-  // transport problem is the user-hostile mistake RE #3 explicitly warns about.
-  assert.ok(!/key card|re-?enroll|tap your/i.test(BOND_WEDGE_BODY.replace(/do not need your key card/i, '')));
-  assert.match(BOND_WEDGE_BODY, /Forget This Device/i, 'gives the ONE action that works');
-  assert.match(BOND_WEDGE_BODY, /not affected/i, 'reassures the key survives');
+test('guidance names the car by its Bluetooth name, as the official copy does', () => {
+  // {{name}} is the vehicle display name, which Tesla propagates into the BLE
+  // GAP name — so it matches exactly what iOS shows on the pairing sheet.
+  const body = bondWedgeBody('🔑 CHUŠKOPEK');
+  assert.match(body, /Remove "🔑 CHUŠKOPEK" in Settings > Bluetooth/);
+  assert.match(body, /not affected/i, 'reassures the key survives');
+  assert.match(body, /do not need your key card/i);
+  assert.match(body, /does not need to be unlocked/i, 'corrects the unlock assumption');
+  // Degrades sensibly when we do not know the name.
+  assert.match(bondWedgeBody(null), /Remove "your car"/);
+});
+
+// The two failure modes need OPPOSITE remedies, and getting this backwards is
+// the user-hostile outcome: demanding a card tap for a transport problem.
+test('remedy: a wedge with the key present ⇒ forget-device, never a card', () => {
+  assert.equal(remedyFor({ wedged: true, keyOnWhitelist: true }), 'forget-bluetooth-device');
+});
+
+test('remedy: UNKNOWN whitelist during a wedge still ⇒ forget-device, never a card', () => {
+  // We could not read the whitelist (e.g. no Pi). Guessing "wiped" here would
+  // send the user for their card over a stale bond.
+  assert.equal(remedyFor({ wedged: true, keyOnWhitelist: null }), 'forget-bluetooth-device');
+});
+
+test('remedy: only a KNOWN-absent key justifies asking for the card', () => {
+  assert.equal(remedyFor({ wedged: false, keyOnWhitelist: false }), 're-enroll-with-card');
+  assert.equal(remedyFor({ wedged: true, keyOnWhitelist: false }), 're-enroll-with-card');
+});
+
+test('remedy: healthy state asks for nothing', () => {
+  assert.equal(remedyFor({ wedged: false, keyOnWhitelist: true }), 'none');
+  assert.equal(remedyFor({ wedged: false, keyOnWhitelist: null }), 'none');
 });
