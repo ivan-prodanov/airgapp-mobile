@@ -177,7 +177,7 @@ const PASSIVE_ENTRY_CAPTURE = false;
 // end state is opt-in and off by default (M3); it is ON here because M1's whole
 // purpose is to find out whether our ROLE_DRIVER key is accepted — the
 // LOCAL_UNLOCK question the whitelist read could not answer.
-const PASSIVE_ENTRY_RESPOND = false;
+const PASSIVE_ENTRY_RESPOND = true;
 
 // Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
@@ -941,7 +941,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     // it (stop signing before we wedge VCSEC again — the 2026-07-20 lesson).
     const verdict = describeCommandStatus(frame);
     if (verdict && authResponderRef.current) {
-      authResponderRef.current.noteVerdict(verdict.includes('NONE (accepted)'));
+      const accepted = verdict.includes('NONE (accepted)');
+      authResponderRef.current.noteVerdict(accepted);
+      // Log the verdict into the SAME block as our ANSWERED line (join on the
+      // echoed counter), independent of full capture — so a test run shows
+      // attempt→verdict without the ~1 Hz frame-capture spam.
+      void appendDiagnostic('passive-entry auth', [verdict + (accepted ? '  *** GRANTED ***' : '')]);
     }
     const status = decodeUnsolicitedVcsecStatus(frame);
     if (!status) return;
