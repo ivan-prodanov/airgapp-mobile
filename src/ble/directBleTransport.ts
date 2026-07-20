@@ -28,7 +28,7 @@
 import { BleManager, BleErrorCode, State } from 'react-native-ble-plx';
 import type { Device, Subscription } from 'react-native-ble-plx';
 import { logw, logi } from '../services/logbus';
-import { createBondWedgeDetector } from './bondWedge';
+import { bondWedgeStore } from './bondWedgeStore';
 
 import { vehicleLocalName } from './bleScanName';
 import { BleReassembler, frameForWrite, MAX_BLE_MESSAGE_SIZE } from './bleFraming';
@@ -263,11 +263,13 @@ export class DirectBleTransport implements CarTransport {
   //
   // So: cancel any OS-level connection first, and on a wedged connect force a
   // disconnect and retry once. A second failure is a real failure.
-  // Tracks the stale-LE-bond wedge across connect attempts. Lives here because
-  // this is the only place that sees every raw connect outcome — ble-plx's
-  // BleError is WRAPPED by the time it reaches the transport logger, which
-  // discards the iOS CBError code that names peerRemovedPairingInformation.
-  private readonly bondWedge = createBondWedgeDetector();
+  // The stale-LE-bond verdict lives in a PROCESS-WIDE store, not on this
+  // instance: the wedge is a property of the phone's OS bond table and outlives
+  // every transport rebuild. As an instance field the failure run reset to 1 on
+  // each rebuild and the heuristic could never trip. This class is still the
+  // only PRODUCER — ble-plx's BleError is wrapped by the time it reaches the
+  // generic transport logger, which discards the iOS CBError code that names
+  // peerRemovedPairingInformation.
 
   // describeBleError pulls out every ble-plx field, because String(err) alone
   // collapses to "Device X connection failed" and hides the actual cause.
@@ -298,14 +300,14 @@ export class DirectBleTransport implements CarTransport {
     }
     try {
       const dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
-      this.bondWedge.noteConnectSuccess();
+      bondWedgeStore.noteConnectSuccess();
       logi('ble', 'connect ok', { deviceId: scanned.id });
       return dev;
     } catch (first) {
       await scanned.cancelConnection().catch(() => {});
       try {
         const dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect(retry)');
-        this.bondWedge.noteConnectSuccess();
+        bondWedgeStore.noteConnectSuccess();
         logi('ble', 'connect ok (after retry)', { deviceId: scanned.id });
         return dev;
       } catch (second) {
@@ -314,7 +316,7 @@ export class DirectBleTransport implements CarTransport {
         // the iOS CBError code (14 = peerRemovedPairingInformation) is the
         // definitive marker and is lost by the time the generic transport
         // logger stringifies it.
-        const verdict = this.bondWedge.noteConnectFailure(second);
+        const verdict = bondWedgeStore.noteConnectFailure(second);
         logw('ble', 'CONNECT FAILED (scan had succeeded)', {
           attempt1: DirectBleTransport.describeBleError(first),
           attempt2: DirectBleTransport.describeBleError(second),

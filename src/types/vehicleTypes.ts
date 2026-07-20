@@ -84,10 +84,13 @@ export interface VehicleViewState {
   parentalControls: boolean;
   speedLimitMode: boolean;
   pinToDrive: boolean;
-  // A single shared 4-digit security PIN. `null` until the user first sets one by enabling a protected
-  // feature (Valet / Parental Controls / Speed Limit / PIN to Drive); after that, disabling Parental
-  // Controls / Speed Limit / PIN to Drive requires re-entering it. Persisted per-vehicle.
-  securityPin: string | null;
+  // Per-feature 4-digit PINs — the real Tesla app keeps a SEPARATE PIN for each, not one shared. `null`
+  // until that feature's PIN is first set (by enabling it). Every enable AND disable of all four verifies
+  // the PIN (first enable sets it); the "Clear PIN" row action removes it. Persisted per-vehicle.
+  valetPin: string | null;
+  parentalPin: string | null;
+  speedLimitPin: string | null;
+  pinToDrivePin: string | null;
   // Speed Limit Mode's cap (km/h), clamped SPEED_LIMIT_MIN..SPEED_LIMIT_MAX. Edited via the row's "…" panel.
   speedLimitKph: number;
   // "Customize Parental Controls" panel sub-options (all non-renderer sheet state).
@@ -181,8 +184,11 @@ export const initialVehicleState: VehicleViewState = {
   parentalControls: false,
   speedLimitMode: false,
   pinToDrive: false,
-  securityPin: null,
-  speedLimitKph: 80,
+  valetPin: null,
+  parentalPin: null,
+  speedLimitPin: null,
+  pinToDrivePin: null,
+  speedLimitKph: 137, // Tesla's default current limit ≈ 85 mph
   parentalLimitSpeed: true,
   parentalLimitSpeedKph: 137,
   parentalReduceAccel: true,

@@ -29,6 +29,8 @@ import { vehicleStatusText } from '@/ble/vehicleStatusText';
 import { showNum } from '@/state/readProbe';
 import { CONTENT_FADE_MS } from '@/godot/useContentFade';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
+import { PhoneKeyRecoveryCard } from '@/components/PhoneKeyRecoveryCard';
+import { recoveryView } from '@/ble/recoveryPresentation';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -58,6 +60,14 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   const router = useRouter();
   const { favorites } = usePreferences();
   const carLink = useCarLinkStatus();
+  // How much of the menu the phone-key problem takes over. With a Pi configured
+  // every row below still works, so we banner above them; on a BLE-only install
+  // nothing works and we hide them, like the official app. See
+  // recoveryPresentation.ts for why this is gated on CONFIGURED, not reachable.
+  const recovery = recoveryView({
+    remedy: carLink.recoveryRemedy,
+    piConfigured: carLink.piConfigured,
+  });
   // Re-render every 5s while linked so the asleep/offline age ("Asleep 5
   // minutes", "Last seen 2 hours ago") ticks up between the 20s polls (the poll
   // itself re-renders on each successful read). No-op when unlinked, so demo
@@ -251,6 +261,23 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
         {/* transparent menu — no background */}
         <View style={styles.menu}>
+          {/* Above EVERYTHING when shown — the rows below may still work (Pi),
+              but this is the thing the user needs to act on. */}
+          {recovery.presentation !== 'none' ? (
+            <PhoneKeyRecoveryCard
+              remedy={recovery.remedy}
+              // The DISPLAY name, which is what iOS shows in Settings >
+              // Bluetooth — the user matches it by eye, so it must be the same
+              // string, not our derived scan name.
+              vehicleName={fleet.activeName}
+              compact={recovery.presentation === 'banner'}
+            />
+          ) : null}
+
+          {/* takeover = BLE-only install with a broken key: every row below
+              would fail, so we hide them rather than offer dead controls. */}
+          {recovery.presentation === 'takeover' ? null : (
+          <>
           <Pressable onLongPress={openCustomize} delayLongPress={300} style={styles.iconRow}>
             {favorites.map((id) => {
               const action = CONTROL_ACTIONS[id];
@@ -317,6 +344,8 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <NavRow symbol="wrench.and.screwdriver.fill" title="Service" disabled />
           <NavRow symbol="camera.fill" title="Dashcam Viewer" disabled />
           <NavRow symbol="camera.viewfinder" title="Photobooth" disabled />
+          </>
+          )}
         </View>
       </Animated.ScrollView>
 

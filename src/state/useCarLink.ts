@@ -25,7 +25,7 @@
 //     it on unmount AND on AppState → background so it isn't orphaned and the
 //     BLE link drops.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
@@ -58,6 +58,8 @@ import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
+import { bondWedgeStore } from '@/ble/bondWedgeStore';
+import { remedyFor, type RecoveryRemedy } from '@/ble/bondWedge';
 import { startPassiveEntryLink } from '@/ble/passiveEntryLink';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { startLogFileSink } from '@/services/logFileSink';
@@ -159,6 +161,15 @@ export interface CarLinkStatus {
   // Controls read this to show a pending affordance; demo/unlinked cars never
   // populate it (dispatch no-ops before adding).
   pending: ReadonlySet<VehicleStateKey>;
+  // What the user must DO to restore the phone key, or 'none' when nothing is
+  // wrong. Drives Home's recovery card. Distinguishing forget-device from
+  // re-enroll is why we can be gentler than the official app — see remedyFor.
+  recoveryRemedy: RecoveryRemedy;
+  // Is a Pi forwarder configured at all? Home needs this to decide whether a
+  // broken BLE path should HIDE the menus (BLE-only install: nothing works) or
+  // merely banner above them (Pi install: every row still works). Deliberately
+  // "configured", not "reachable" — see recoveryPresentation.ts.
+  piConfigured: boolean;
 }
 
 export interface CarLink extends CarLinkStatus {
@@ -265,6 +276,31 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const [vin, setVin] = useState<string | null>(null);
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
+  // Whether a Pi forwarder is configured. State (not just cfgRef) because Home
+  // renders from it and the config loads asynchronously on mount.
+  const [piConfigured, setPiConfigured] = useState(false);
+
+  // The bond-wedge verdict, published by the BLE transport from OUTSIDE React.
+  // useSyncExternalStore is the correct primitive here: the store is mutated by
+  // a non-React producer and must not tear across a concurrent render.
+  const bondWedge = useSyncExternalStore(
+    bondWedgeStore.subscribe,
+    bondWedgeStore.getSnapshot,
+    // Server/initial snapshot — same object, so SSR-less RN never mismatches.
+    bondWedgeStore.getSnapshot,
+  );
+
+  const recoveryRemedy = useMemo(
+    () =>
+      remedyFor({
+        wedged: bondWedge.wedged,
+        // null = we have not read the whitelist in this session. remedyFor is
+        // built so unknown NEVER routes to the key-card remedy — a transport
+        // problem must not send the user hunting for their card.
+        keyOnWhitelist: null,
+      }),
+    [bondWedge.wedged],
+  );
   // Mirrors whether the Pi event-stream socket is open (see startStream/stopStream).
   const [streaming, setStreaming] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
@@ -359,6 +395,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         if (savedTxp === 'ble' || savedTxp === 'pi') lastGoodTransportRef.current = savedTxp;
         cfgRef.current = cfg;
         keysRef.current = keys;
+        setPiConfigured(!!cfg?.baseUrl);
         setLinked(!!cfg?.vin);
         setVin(cfg?.vin ?? null);
         // Rehydrate the cached telemetry BEFORE the first poll lands, so the
@@ -1219,9 +1256,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       lastVehicleDataAt,
       wakeInFlight,
       pending,
+      recoveryRemedy,
+      piConfigured,
       dispatch,
       refresh,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, dispatch, refresh],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, dispatch, refresh],
   );
 }

@@ -178,6 +178,10 @@ export function useFleetState(): {
       wakeInFlight: carLink.wakeInFlight,
       refresh: carLink.refresh,
       pending: carLink.pending,
+      // NOT narrowed by activeIsLive: a bond wedge is a property of the PHONE,
+      // so it is equally true whichever car is on screen.
+      recoveryRemedy: carLink.recoveryRemedy,
+      piConfigured: carLink.piConfigured,
     }),
     [
       activeIsLive,
@@ -190,6 +194,8 @@ export function useFleetState(): {
       carLink.wakeInFlight,
       carLink.refresh,
       carLink.pending,
+      carLink.recoveryRemedy,
+      carLink.piConfigured,
     ],
   );
 

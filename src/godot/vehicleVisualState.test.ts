@@ -35,8 +35,11 @@ test('climate/charging setpoints and comfort toggles never trigger a renderer up
   assert.equal(changed({ chargingAmps: 5 }), false);
   // The car's GPS position drives the map pin only, never the 3D payload.
   assert.equal(changed({ carLocation: { lat: 1, lon: 2, heading: null } }), false);
-  // Security & Drivers PIN + protected-feature settings are sheet state, never rendered on the car.
-  assert.equal(changed({ securityPin: '1234' }), false);
+  // Security & Drivers PINs + protected-feature settings are sheet state, never rendered on the car.
+  assert.equal(changed({ valetPin: '1234' }), false);
+  assert.equal(changed({ parentalPin: '1234' }), false);
+  assert.equal(changed({ speedLimitPin: '1234' }), false);
+  assert.equal(changed({ pinToDrivePin: '1234' }), false);
   assert.equal(changed({ speedLimitKph: 120 }), false);
   assert.equal(changed({ parentalLimitSpeed: false }), false);
   assert.equal(changed({ parentalLimitSpeedKph: 150 }), false);
