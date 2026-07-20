@@ -5,6 +5,7 @@ import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
+import { appendDiagnostic } from '@/services/diagnosticFile';
 import { useTheme } from '@/hooks/use-theme';
 import {
   createCarGateway,
@@ -396,6 +397,13 @@ export default function CarLinkScreen() {
   // firmware-blocked for a driver key and the whole project needs rethinking —
   // which is exactly why this runs BEFORE any of it gets built.
   const handleProbeWhitelist = async () => {
+    // Collect into a buffer so the SAME text goes to the on-screen log and to
+    // the pullable diagnostics file — no risk of the two disagreeing.
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
     try {
       const gw = await makeGateway();
       const probe = await gw.readWhitelistEntry();
@@ -405,17 +413,15 @@ export default function CarLinkScreen() {
       // else, or we named the key wrongly. The per-arm subMessage + raw hex is
       // what turns a second inconclusive run into a diagnosable one.
       for (const a of probe.attempts) {
-        append(
-          `probe[${a.mode}]: ${a.error ? `ERROR ${a.error}` : `reply=${a.subMessage ?? 'none'}`}`,
-        );
-        if (a.rawHex) append(`  raw: ${a.rawHex}`);
+        say(`probe[${a.mode}]: ${a.error ? `ERROR ${a.error}` : `reply=${a.subMessage ?? 'none'}`}`);
+        if (a.rawHex) say(`  raw: ${a.rawHex}`);
       }
 
       if (probe.matchedMode) {
-        append(`entry via ${probe.matchedMode}: keyRole=${probe.keyRole} slot=${probe.slot}`);
+        say(`entry via ${probe.matchedMode}: keyRole=${probe.keyRole} slot=${probe.slot}`);
       }
-      append(probe.summary);
-      append(
+      say(probe.summary);
+      say(
         probe.localUnlock === null
           ? 'VERDICT: inconclusive — see per-arm replies above (request-side, NOT a firmware verdict)'
           : probe.localUnlock
@@ -423,7 +429,10 @@ export default function CarLinkScreen() {
             : 'VERDICT: NOT eligible — LOCAL_UNLOCK missing; walk-up unlock would be refused',
       );
     } catch (err) {
-      append(`ERROR whitelist probe: ${errMsg(err)}`);
+      say(`ERROR whitelist probe: ${errMsg(err)}`);
+    } finally {
+      const path = appendDiagnostic('whitelist permission probe', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
     }
   };
 
