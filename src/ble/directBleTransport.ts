@@ -187,7 +187,7 @@ export class DirectBleTransport implements CarTransport {
     await this.ensurePoweredOn();
     const scanned = await this.scanForVehicle(vin);
 
-    let dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
+    let dev = await this.connectClearingStale(scanned);
     dev = await withTimeout(
       dev.discoverAllServicesAndCharacteristics(),
       CONNECT_STEP_TIMEOUT_MS,
@@ -246,6 +246,39 @@ export class DirectBleTransport implements CarTransport {
     this.device = dev;
     this.sessionId = dev.id;
     return this.sessionId;
+  }
+
+  // connectClearingStale connects, tolerating a peripheral that iOS still
+  // believes is connected from a PREVIOUS app lifetime.
+  //
+  // cleanupDevice() above only clears THIS instance's device — a fresh process
+  // has none, while CoreBluetooth may still hold a live link. That became much
+  // more likely once we declared `bluetooth-central` and started keeping the BLE
+  // link across background (roadmap C5): the OS is now expected to preserve
+  // connections we no longer have a handle to. ble-plx connect() against such a
+  // peripheral does not error — it HANGS, which is exactly the observed
+  // "connect timed out after 10000ms (link wedged)" on every attempt.
+  //
+  // So: cancel any OS-level connection first, and on a wedged connect force a
+  // disconnect and retry once. A second failure is a real failure.
+  private async connectClearingStale(scanned: Device): Promise<Device> {
+    try {
+      if (await this.manager.isDeviceConnected(scanned.id)) {
+        await scanned.cancelConnection().catch(() => {});
+      }
+    } catch {
+      // isDeviceConnected can throw on a destroyed manager — proceed anyway.
+    }
+    try {
+      return await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
+    } catch (first) {
+      await scanned.cancelConnection().catch(() => {});
+      try {
+        return await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect(retry)');
+      } catch {
+        throw first; // surface the ORIGINAL error; the retry is a recovery attempt
+      }
+    }
   }
 
   // sendRaw writes a pre-built frame and does NOT wait for a reply. Used by the
