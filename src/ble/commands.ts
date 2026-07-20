@@ -65,6 +65,12 @@ import {
   mediaVolumeAction,
   setPinToDriveAction,
   resetPinToDriveAction,
+  resetValetPinAction,
+  setParentalControlsAction,
+  clearParentalControlsPinAction,
+  setParentalSpeedLimitAction,
+  setParentalSettingAction,
+  type ParentalSetting,
   setCopTempAction,
 } from './builders';
 
@@ -101,6 +107,19 @@ export type CarCommand =
   | { type: 'remoteStart' }
   | { type: 'sentry'; on: boolean }
   | { type: 'valet'; on: boolean; pin?: string }
+  // "Clear PIN" row actions — distinct from turning the feature off. Valet and PIN to Drive clear via a
+  // confirm alert with no PIN entry; Parental and Speed Limit clear by verifying the PIN (speedLimit
+  // .clearPin above), and both require the feature to be off first.
+  | { type: 'valetClearPin' }
+  | { type: 'pinToDriveClearPin' }
+  | {
+      type: 'parental';
+      action: 'activate' | 'deactivate' | 'clearPin' | 'setSpeedLimit' | 'setSetting';
+      pin?: string;
+      mph?: number;
+      setting?: ParentalSetting;
+      enable?: boolean;
+    }
   | { type: 'speedLimit'; action: 'activate' | 'deactivate' | 'set' | 'clearPin'; mph?: number; pin?: string }
   | { type: 'homelink'; lat: number; lon: number }
   | { type: 'boombox'; sound: number }
@@ -239,9 +258,31 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
     case 'bioweaponMode':
       return fromPayload(setBioweaponModeAction(cmd.on));
     case 'pinToDrive':
-      if (cmd.pin) return fromPayload(setPinToDriveAction(cmd.on, cmd.pin));
-      if (!cmd.on) return fromPayload(resetPinToDriveAction());
-      throw new Error('pinToDrive: enabling requires a pin');
+      // Off sends an empty password and KEEPS the stored PIN; clearing it is `pinToDriveClearPin`.
+      return fromPayload(
+        setPinToDriveAction(cmd.on, cmd.on ? requirePin(cmd.pin, 'pinToDrive') : ''),
+      );
+    case 'valetClearPin':
+      return fromPayload(resetValetPinAction());
+    case 'pinToDriveClearPin':
+      return fromPayload(resetPinToDriveAction());
+    case 'parental':
+      switch (cmd.action) {
+        case 'activate':
+          return fromPayload(setParentalControlsAction(true, requirePin(cmd.pin, 'parental.activate')));
+        case 'deactivate':
+          return fromPayload(setParentalControlsAction(false, requirePin(cmd.pin, 'parental.deactivate')));
+        case 'clearPin':
+          return fromPayload(clearParentalControlsPinAction(requirePin(cmd.pin, 'parental.clearPin')));
+        case 'setSpeedLimit':
+          if (cmd.mph == null) throw new Error('parental.setSpeedLimit requires mph');
+          return fromPayload(setParentalSpeedLimitAction(cmd.mph));
+        case 'setSetting':
+          if (!cmd.setting) throw new Error('parental.setSetting requires a setting');
+          return fromPayload(setParentalSettingAction(cmd.setting, !!cmd.enable));
+        default:
+          throw new Error(`unsupported over BLE: parental.${(cmd as { action: string }).action}`);
+      }
     case 'navigateTo':
       return fromPayload(
         cmd.label

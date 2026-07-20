@@ -284,11 +284,22 @@ export function validatePin(pin: unknown): string {
   return p;
 }
 
+// Turning valet ON carries a 4-digit PIN; turning it OFF sends an EMPTY password. Verified in the
+// decompiled app (v4.58.0): the Valet row's off path dispatches setValetMode(false, '') with no prompt
+// at all, so requiring a PIN here would make "turn valet off" impossible.
 export function setValetModeAction(on: boolean, pin: string): ActionPayload {
-  const p = validatePin(pin);
+  const p = on ? validatePin(pin) : '';
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ vehicleControlSetValetModeAction: { on: !!on, password: p } }),
+  };
+}
+// Valet "Clear PIN" — CarServer.VehicleControlResetValetPinAction (empty), via VehicleAction = 28.
+// This is the row's Clear PIN action, NOT the off switch (see setValetModeAction above).
+export function resetValetPinAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ vehicleControlResetValetPinAction: {} }),
   };
 }
 export function activateSpeedLimitAction(pin: string): ActionPayload {
@@ -516,8 +527,12 @@ export function mediaVolumeAction(delta: number): ActionPayload {
 // password string), via VehicleAction.vehicleControlSetPinToDriveAction =
 // 77; CarServer.VehicleControlResetPinToDriveAction (empty — OWNER reset,
 // not the admin-key variant), via ...ResetPinToDriveAction = 78. Confirmed.
+// Same asymmetry as valet: enabling carries the 4-digit PIN, disabling sends an EMPTY password with no
+// prompt (verified: the PIN-to-Drive row's off path dispatches setPinToDrive(false, '')). Turning it off
+// must NOT be routed to resetPinToDriveAction — that is the separate "Clear PIN" action, which would
+// discard the stored PIN the car keeps across an off/on cycle.
 export function setPinToDriveAction(on: boolean, pin: string): ActionPayload {
-  const p = validatePin(pin);
+  const p = on ? validatePin(pin) : '';
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ vehicleControlSetPinToDriveAction: { on: !!on, password: p } }),
@@ -527,6 +542,49 @@ export function resetPinToDriveAction(): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ vehicleControlResetPinToDriveAction: {} }),
+  };
+}
+
+// ── Parental Controls — CarServer.ParentalControls* (VehicleAction 109-113) ──────────────────────
+// Shapes mirror the app's own builders: activateParentalControls(activate, pin) and
+// clearParentalControlsPin(pin). See proto/car_server.proto for tag provenance.
+export function setParentalControlsAction(activate: boolean, pin: string): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({
+      parentalControlsAction: { activate: !!activate, pin: validatePin(pin) },
+    }),
+  };
+}
+export function clearParentalControlsPinAction(pin: string): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ parentalControlsClearPinAction: { pin: validatePin(pin) } }),
+  };
+}
+export function setParentalSpeedLimitAction(mph: number): ActionPayload {
+  const m = Number(mph);
+  if (!Number.isFinite(m) || m < 50 || m > 120) throw new Error('parental speed limit must be 50..120 mph');
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ parentalControlsSetSpeedLimitAction: { limitMph: m } }),
+  };
+}
+
+// The four sub-settings of the "Customize Parental Controls" panel.
+export type ParentalSetting = 'speedLimit' | 'acceleration' | 'safetyFeatures' | 'curfew';
+const PARENTAL_SETTING_ENUM: Record<ParentalSetting, number> = {
+  speedLimit: 1, // PARENTAL_CONTROLS_SETTING_SPEED_LIMIT
+  acceleration: 2, // PARENTAL_CONTROLS_SETTING_ACCELERATION
+  safetyFeatures: 3, // PARENTAL_CONTROLS_SETTING_SAFETY_FEATURES
+  curfew: 4, // PARENTAL_CONTROLS_SETTING_CURFEW
+};
+export function setParentalSettingAction(setting: ParentalSetting, enable: boolean): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({
+      parentalControlsEnableSettingsAction: { setting: PARENTAL_SETTING_ENUM[setting], enable: !!enable },
+    }),
   };
 }
 

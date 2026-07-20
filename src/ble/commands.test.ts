@@ -391,7 +391,8 @@ test('buildCommand: state-read-shaped variants are not in the CarCommand union â
 
   const pinReset = buildCommand({ type: 'pinToDrive', on: false });
   assert.notEqual(decodeAction(pinReset.bytes).vehicleAction?.vehicleControlResetPinToDriveAction, undefined);
-  assert.throws(() => buildCommand({ type: 'pinToDrive', on: true }), /requires a pin/);
+  // Enabling still requires a PIN; the message now comes from the shared requirePin() helper.
+  assert.throws(() => buildCommand({ type: 'pinToDrive', on: true }), /pin required/);
 
   const media = buildCommand({ type: 'media', action: 'next' });
   assert.notEqual(decodeAction(media.bytes).vehicleAction?.mediaNextTrack, undefined);
