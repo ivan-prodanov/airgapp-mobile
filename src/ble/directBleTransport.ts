@@ -30,7 +30,7 @@ import type { Device, Subscription } from 'react-native-ble-plx';
 import { logw, logi } from '../services/logbus';
 import { bondWedgeStore } from './bondWedgeStore';
 
-import { vehicleLocalName } from './bleScanName';
+import { vehicleLocalName, isDerivedScanName } from './bleScanName';
 import { BleReassembler, frameForWrite, MAX_BLE_MESSAGE_SIZE } from './bleFraming';
 import { outgoingCorrelators, frameAnswersRequest, type Correlators } from './bleCorrelation';
 import { buildAddKeyMessage } from './bleEnroll';
@@ -195,6 +195,15 @@ export class DirectBleTransport implements CarTransport {
       CONNECT_STEP_TIMEOUT_MS,
       'service discovery',
     );
+    // Capture the friendly name HERE, not at connect. Device.name is the
+    // advertised S<hex>C token until CoreBluetooth has read GAP 0x2A00 and
+    // fired peripheralDidUpdateName; by the time discovery has completed the
+    // OS cache has resolved, so this is the first point the value is the
+    // string Settings > Bluetooth actually shows. The connect-site capture
+    // stays as a cheap earlier shot — isDerivedScanName discards it if it is
+    // still the token. (RE #5 Q3: do NOT read 0x2A00 ourselves; neither
+    // official app does, and the OS cache is the authority.)
+    await this.captureFriendlyName(dev.id, 'after-discovery');
 
     let mtu = FALLBACK_MTU;
     try {
@@ -290,6 +299,24 @@ export class DirectBleTransport implements CarTransport {
     };
   }
 
+  // captureFriendlyName re-reads the OS-cached peripheral name and offers it to
+  // the wedge store, which drops it if it is still the S<hex>C scan token.
+  //
+  // Goes through manager.devices() rather than a held Device object because the
+  // cached name updates on the OS side after peripheralDidUpdateName; a Device
+  // captured earlier can carry a stale copy. Best-effort throughout — a failure
+  // to learn a display string must never break a connection.
+  private async captureFriendlyName(deviceId: string, at: string): Promise<void> {
+    try {
+      const [known] = await this.manager.devices([deviceId]);
+      const name = known?.name ?? null;
+      logi('ble', 'peripheral name', { at, name, derived: isDerivedScanName(name) });
+      bondWedgeStore.noteDeviceName(name);
+    } catch {
+      // Non-fatal by design — see above.
+    }
+  }
+
   private async connectClearingStale(scanned: Device): Promise<Device> {
     try {
       if (await this.manager.isDeviceConnected(scanned.id)) {
@@ -325,6 +352,11 @@ export class DirectBleTransport implements CarTransport {
         // the iOS CBError code (14 = peerRemovedPairingInformation) is the
         // definitive marker and is lost by the time the generic transport
         // logger stringifies it.
+        // Snapshot the name AT THE FAILURE INSTANT too (RE #5). This row fires
+        // when connect FAILS, so a capture-on-success-only cache would be empty
+        // in exactly the case that needs it — a phone bonded by the official
+        // app that has never completed a connect through us.
+        await this.captureFriendlyName(scanned.id, 'peer-removed-error');
         const verdict = bondWedgeStore.noteConnectFailure(second);
         logw('ble', 'CONNECT FAILED (scan had succeeded)', {
           attempt1: DirectBleTransport.describeBleError(first),

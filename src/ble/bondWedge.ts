@@ -163,9 +163,15 @@ export function createBondWedgeDetector() {
 // vehicle's display name ("Red Velvet"). They differ, and the user is matching
 // this string by eye against a list in Settings > Bluetooth — printing the
 // display name sends them looking for an entry that isn't there.
+// When the name is unknown the quoted token is DROPPED entirely, not filled
+// with a placeholder (RE #5 Q4). Quoting the wrong name is worse than quoting
+// none — that was the "Red Velvet" bug, and `'your car'` repeats its shape by
+// putting a string in quotes that Settings will never show. Tesla ships no
+// nameless variant at all (their row is structurally unreachable without a bond,
+// which guarantees an OS-cached name), so this wording is ours.
 export function bondWedgeInstruction(vehicleBleName: string | null): string {
-  const name = vehicleBleName ?? 'your car';
-  return `Remove '${name}' in Settings > Bluetooth and try again`;
+  if (!vehicleBleName) return 'Forget the paired vehicle in Settings > Bluetooth and try again';
+  return `Remove '${vehicleBleName}' in Settings > Bluetooth and try again`;
 }
 
 // Do NOT retry the encrypted connect in a tight loop while wedged — every

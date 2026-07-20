@@ -78,10 +78,15 @@ test('guidance names the car by its BLUETOOTH name, not its display name', () =>
   assert.ok(!line.includes('\n'), 'single line, no wall of text');
 });
 
-test('guidance degrades sensibly when the Bluetooth name was never learned', () => {
-  // We can only learn the GAP name from a LIVE link, so a phone that has never
-  // connected has nothing to print.
-  assert.equal(bondWedgeInstruction(null), "Remove 'your car' in Settings > Bluetooth and try again");
+test('an unknown name DROPS the quoted token rather than inventing one', () => {
+  // RE #5 Q4: quoting the wrong name is worse than quoting none — that was the
+  // "Red Velvet" bug, and a placeholder like 'your car' repeats its exact shape
+  // by quoting a string Settings will never list. Tesla ships no nameless
+  // variant (their row is unreachable without a bond, which guarantees a
+  // cached name), so this wording is ours.
+  const line = bondWedgeInstruction(null);
+  assert.ok(!line.includes("'"), 'no quoted token at all when we do not know it');
+  assert.match(line, /Settings > Bluetooth/);
 });
 
 // The two failure modes need OPPOSITE remedies, and getting this backwards is

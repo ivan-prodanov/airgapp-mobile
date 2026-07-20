@@ -17,3 +17,23 @@ export function vehicleLocalName(vin: string): string {
   const first8 = digest.slice(0, 8);
   return `S${bytesToHex(first8)}C`;
 }
+
+// isDerivedScanName — true for Tesla's VIN-derived ADVERTISED local name, the
+// `S<16 hex>C` discovery token (see vehicleLocalName above).
+//
+// Why this guard exists (RE RESPONSE #5 Q3). There are four distinct "names",
+// and only ONE of them is the string iOS Settings > Bluetooth renders:
+//   (a) advertised local name  — `S<hex>C`, discovery only
+//   (b) GAP 0x2A00            — read by the OS on connect
+//   (c) OS-cached name         — CBPeripheral.name, == what Settings shows ✅
+//   (d) cloud vehicle_name     — can go stale, and airgapp can't reach it anyway
+//
+// The trap: CBPeripheral.name (and so ble-plx's Device.name) STARTS OUT as (a)
+// and only becomes (c) once CoreBluetooth has read 0x2A00 and fired
+// peripheralDidUpdateName. So a name captured too early is the scan token, and
+// telling the user to remove "S1a2b…C" from Settings is as useless as telling
+// them to remove our app-local nickname. Reject the shape and wait for a later
+// capture instead.
+export function isDerivedScanName(name: string | null | undefined): boolean {
+  return !!name && /^S[0-9A-Fa-f]{16}C$/.test(name);
+}

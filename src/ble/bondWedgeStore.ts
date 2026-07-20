@@ -21,6 +21,7 @@
 // Native modules and stays node-testable, same isolation rule as session.ts.
 
 import { createBondWedgeDetector, type BondWedgeState, type BleFailureKind } from './bondWedge';
+import { isDerivedScanName } from './bleScanName';
 
 export const BOND_WEDGE_STORAGE_KEY = 'ble.bondWedge.v1';
 
@@ -107,6 +108,12 @@ export const bondWedgeStore = {
   // shows. Callers should pass the connected device's name, not the scan's.
   noteDeviceName(name: string | null): void {
     if (!name || name === bleName) return;
+    // Reject the advertised S<hex>C token. Device.name IS that token until
+    // CoreBluetooth reads 0x2A00 and fires peripheralDidUpdateName, so an early
+    // capture would cache the discovery id and tell the user to remove
+    // "S1a2b…C" from Settings — as useless as our old app-nickname bug. Wait
+    // for a later capture instead; callers capture at several points.
+    if (isDerivedScanName(name)) return;
     bleName = name;
     publish(detector.state(), 'device-name');
   },
