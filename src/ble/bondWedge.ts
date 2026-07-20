@@ -83,7 +83,14 @@ export function createBondWedgeDetector() {
         // accumulate toward a false accusation.
         consecutive = 0;
         kind = k;
-        return { wedged: false, kind, consecutiveConnectFailures: 0 };
+        // ...but walking out of range does NOT un-break a bond. This used to
+        // return `wedged: false` unconditionally, which threw away an ALREADY
+        // PROVEN peer-removed-bond (explicit) the first time the car happened
+        // to be out of reach — and since the store publishes whatever this
+        // returns, the recovery card would vanish while state() still said
+        // wedged. Only a successful connect clears a wedge; see
+        // noteConnectSuccess.
+        return { wedged: explicit, kind, consecutiveConnectFailures: 0 };
       }
       consecutive += 1;
       kind = k;
@@ -94,10 +101,20 @@ export function createBondWedgeDetector() {
         consecutiveConnectFailures: consecutive,
       };
     },
+    // The ONLY thing that clears a wedge: the link actually worked. Not a Pi
+    // success, not a restart, not the car being out of range.
     noteConnectSuccess(): void {
       consecutive = 0;
       explicit = false;
       kind = 'other';
+    },
+    // Restore a verdict proven in an EARLIER PROCESS. A wedge lives in the OS
+    // bond table, which outlives our process — so a relaunch must not present
+    // the car as healthy when nothing has been fixed. Treated exactly like an
+    // explicit signal, because that is what it was when it was recorded.
+    markWedged(k: BleFailureKind): void {
+      explicit = true;
+      kind = k;
     },
     state(): BondWedgeState {
       return {

@@ -58,7 +58,11 @@ import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
-import { bondWedgeStore } from '@/ble/bondWedgeStore';
+import {
+  bondWedgeStore,
+  parsePersistedWedge,
+  BOND_WEDGE_STORAGE_KEY,
+} from '@/ble/bondWedgeStore';
 import { remedyFor, type RecoveryRemedy } from '@/ble/bondWedge';
 import { startPassiveEntryLink } from '@/ble/passiveEntryLink';
 import { appendDiagnostic } from '@/services/diagnosticFile';
@@ -280,6 +284,17 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // renders from it and the config loads asynchronously on mount.
   const [piConfigured, setPiConfigured] = useState(false);
 
+  // Persist every visible wedge transition, and log it with its cause. Set up
+  // before any BLE work so no transition can slip through unrecorded.
+  useEffect(() => {
+    bondWedgeStore.configure({
+      persist: (p) => {
+        void appStorage.setItem(BOND_WEDGE_STORAGE_KEY, JSON.stringify(p));
+      },
+      log: (msg, data) => logw('ble', msg, data),
+    });
+  }, []);
+
   // The bond-wedge verdict, published by the BLE transport from OUTSIDE React.
   // useSyncExternalStore is the correct primitive here: the store is mutated by
   // a non-React producer and must not tear across a concurrent render.
@@ -396,6 +411,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         cfgRef.current = cfg;
         keysRef.current = keys;
         setPiConfigured(!!cfg?.baseUrl);
+        // Restore a wedge proven in an earlier launch. Without this the app
+        // opens looking healthy while the OS bond — which outlives our process
+        // — is still broken, and the card only returns once a fresh BLE attempt
+        // happens to fail again.
+        bondWedgeStore.hydrate(parsePersistedWedge(await appStorage.getItem(BOND_WEDGE_STORAGE_KEY)));
         setLinked(!!cfg?.vin);
         setVin(cfg?.vin ?? null);
         // Rehydrate the cached telemetry BEFORE the first poll lands, so the

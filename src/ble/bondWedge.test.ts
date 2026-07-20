@@ -98,3 +98,36 @@ test('remedy: healthy state asks for nothing', () => {
   assert.equal(remedyFor({ wedged: false, keyOnWhitelist: true }), 'none');
   assert.equal(remedyFor({ wedged: false, keyOnWhitelist: null }), 'none');
 });
+
+test('walking out of range does NOT clear an already-proven wedge', () => {
+  // The 2026-07-20 regression: this branch returned wedged:false
+  // unconditionally, so one out-of-range attempt after a confirmed
+  // peer-removed-bond made the recovery card vanish while the bond was still
+  // broken. Only a successful connect may clear a wedge.
+  const d = createBondWedgeDetector();
+  assert.equal(d.noteConnectFailure({ reason: 'Peer removed pairing information' }).wedged, true);
+  const after = d.noteConnectFailure(new Error('no vehicle found — scan timed out'));
+  assert.equal(after.wedged, true, 'still wedged: the car being away fixes nothing');
+  assert.equal(d.state().wedged, true, 'and state() agrees with what was published');
+});
+
+test('a successful connect is the ONE thing that clears a wedge', () => {
+  const d = createBondWedgeDetector();
+  d.noteConnectFailure({ reason: 'Peer removed pairing information' });
+  assert.equal(d.state().wedged, true);
+  d.noteConnectSuccess();
+  assert.equal(d.state().wedged, false);
+});
+
+test('markWedged restores a verdict proven in an earlier process', () => {
+  // The OS bond table outlives our process; relaunching must not present a
+  // broken car as healthy.
+  const d = createBondWedgeDetector();
+  assert.equal(d.state().wedged, false, 'fresh process starts with no opinion');
+  d.markWedged('peer-removed-bond');
+  assert.equal(d.state().wedged, true);
+  assert.equal(d.state().kind, 'peer-removed-bond');
+  // ...and it still clears properly once the link genuinely works.
+  d.noteConnectSuccess();
+  assert.equal(d.state().wedged, false);
+});
