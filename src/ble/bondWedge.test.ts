@@ -131,3 +131,29 @@ test('markWedged restores a verdict proven in an earlier process', () => {
   d.noteConnectSuccess();
   assert.equal(d.state().wedged, false);
 });
+
+test('a bare connect timeout run trips the wedge — no iosErrorCode 14 needed', () => {
+  // THE REAL on-car case (2026-07-20, second round): iOS stops reporting
+  // peerRemovedPairingInformation after the first failures, so the wedge
+  // degrades to a plain timeout with reason:null. If this fallback cannot fire,
+  // a genuinely bricked bond is invisible — which is exactly what happened.
+  const d = createBondWedgeDetector();
+  const timeout = new Error('BLE connection closed — connect timed out after 10000ms (link wedged)');
+  assert.equal(classifyBleError(timeout), 'other', 'no explicit OS signal to lean on');
+  assert.equal(d.noteConnectFailure(timeout).wedged, false, 'one run is not yet evidence');
+  assert.equal(
+    d.noteConnectFailure(timeout).wedged,
+    true,
+    'two runs = 4 refused connects after a SUCCESSFUL scan — the car is there and saying no',
+  );
+});
+
+test('the threshold is reachable in the few attempts the selector actually grants BLE', () => {
+  // Guards the calibration itself. Once the Pi connects, the sticky selector
+  // stops trying BLE — so a threshold the counter cannot reach in a couple of
+  // attempts is a threshold that never fires at all.
+  assert.ok(
+    WEDGE_CONSECUTIVE_CONNECT_FAILURES <= 2,
+    'must trip within the ~2 BLE attempts a Pi-backed install gets',
+  );
+});

@@ -40,7 +40,20 @@ const IOS_PEER_REMOVED_PATTERNS = [
 // advertising (scan succeeds) but connect fails over and over. Out-of-range
 // looks different — the SCAN fails. This is what our 2026-07-20 logs showed:
 // "scan ok → connect timed out after 10000ms" on every attempt.
-export const WEDGE_CONSECUTIVE_CONNECT_FAILURES = 4;
+//
+// WHY 2, NOT 4. This counts calls to noteConnectFailure, and each ONE already
+// represents TWO refused connects (connectClearingStale's attempt + retry, 10s
+// timeout each) that happened AFTER a successful scan — so the car is provably
+// present and advertising. A count of 2 is therefore ~4 refusals over ~40s, not
+// two unlucky moments.
+//
+// 4 was too high to ever fire in practice, which the on-car test proved: iOS
+// stops reporting iosErrorCode 14 after the first round (the wedge degrades to
+// a bare connect timeout with reason:null), so the explicit fast path is gone
+// exactly when we need this fallback — and the sticky transport selector hands
+// BLE only a couple of attempts before the Pi takes over and BLE stops being
+// tried at all. The counter reached 2 and stalled there forever.
+export const WEDGE_CONSECUTIVE_CONNECT_FAILURES = 2;
 
 export type BleFailureKind =
   | 'peer-removed-bond' // explicit iOS signal — definitive
