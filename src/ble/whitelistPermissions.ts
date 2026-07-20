@@ -302,3 +302,9 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
   return true;
 }
+
+// findSubMessageAt exposes the internal LEN-field reader so other wire scanners
+// (passiveEntryCapture) can unwrap an envelope without duplicating varint logic.
+export function findSubMessageAt(buf: Uint8Array, fieldNumber: number): Uint8Array | null {
+  return findSubMessage(buf, fieldNumber);
+}

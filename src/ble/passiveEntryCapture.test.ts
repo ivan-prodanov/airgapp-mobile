@@ -55,3 +55,35 @@ test('a malformed frame degrades instead of throwing', () => {
   // Truncated length-delimited field — real BLE frames can be anything.
   assert.doesNotThrow(() => inspectUnsolicitedFrame(Uint8Array.from([0x0a, 0x7f])));
 });
+
+// Regression for the envelope bug: the first on-car capture flagged ALL 36
+// frames as candidates because the classifier read the OUTER RoutableMessage
+// fields (6/7/10) against FromVCSECMessage names. It must unwrap field 10 first.
+test('unwraps the RoutableMessage envelope before classifying (regression)', () => {
+  // RoutableMessage { to_destination(6), from_destination(7), payload(10) = {
+  //   FromVCSECMessage { vehicleStatus(1) } } } — a ROUTINE push.
+  const routine = Uint8Array.from([
+    0x32, 0x02, 0x08, 0x00, // f6 to_destination
+    0x3a, 0x02, 0x08, 0x02, // f7 from_destination (domain 2, VCSEC)
+    0x52, 0x04, 0x0a, 0x02, 0x08, 0x01, // f10 payload = { f1 vehicleStatus }
+  ]);
+  const r = inspectUnsolicitedFrame(routine);
+  assert.deepEqual(r.fields, [1], 'classifies the INNER message, not the envelope');
+  assert.equal(r.hasUnknown, false, 'a routine push must not be flagged');
+});
+
+test('flags the real on-car unmodelled field 3 through the envelope', () => {
+  // Verbatim bytes captured from the car 2026-07-20 during a ~1/sec burst:
+  // FromVCSECMessage.f3 { f2={f1=<20B>}, f3=2, f4=<1B> } — no proto for f3.
+  const onCar = Uint8Array.from([
+    0x32, 0x02, 0x08, 0x00,
+    0x3a, 0x02, 0x08, 0x02,
+    0x52, 0x1f, 0x1a, 0x1d, 0x12, 0x16, 0x0a, 0x14,
+    0x29, 0xd5, 0x11, 0xed, 0x01, 0xe5, 0xe9, 0x1e, 0xf4, 0xd8,
+    0x9c, 0xbe, 0x8e, 0x71, 0xa2, 0x55, 0x33, 0xdd, 0x72, 0x7e,
+    0x18, 0x02, 0x22, 0x01, 0x01,
+  ]);
+  const r = inspectUnsolicitedFrame(onCar);
+  assert.deepEqual(r.fields, [3], 'inner FromVCSECMessage field 3');
+  assert.equal(r.hasUnknown, true, 'field 3 is unmodelled → candidate challenge');
+});

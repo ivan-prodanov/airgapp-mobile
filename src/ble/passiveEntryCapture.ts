@@ -21,7 +21,15 @@
 // Pure — no imports beyond the shared wire primitives, no I/O — so it is
 // node-testable against hand-built frames. The caller owns persistence.
 
-import { dumpTopLevelFields } from './whitelistPermissions';
+import { dumpTopLevelFields, findSubMessageAt } from './whitelistPermissions';
+
+// The frames delivered to the unsolicited handler are RoutableMessage envelopes,
+// NOT bare FromVCSECMessage. An earlier version classified the OUTER fields
+// (6 = to_destination, 7 = from_destination, 10 = payload) against
+// FromVCSECMessage names, so every routine push looked like an unknown message
+// and all 36 captured frames were flagged as candidates — useless. Unwrap
+// field 10 first, then classify what is actually inside.
+const ROUTABLE_PAYLOAD_FIELD = 10;
 
 // FromVCSECMessage submessage field numbers we already understand. Anything
 // else arriving unsolicited is a CANDIDATE for the challenge we're looking for.
@@ -53,7 +61,11 @@ function toHex(b: Uint8Array, max = 256): string {
 
 // inspectUnsolicitedFrame classifies one car-initiated frame.
 export function inspectUnsolicitedFrame(frame: Uint8Array): UnsolicitedFrameReport {
-  const dumped = dumpTopLevelFields(frame);
+  // Unwrap the RoutableMessage envelope when present; classify the inner
+  // FromVCSECMessage. Falls back to the frame itself if there is no field 10,
+  // so a bare payload still classifies rather than reporting nothing.
+  const inner = findSubMessageAt(frame, ROUTABLE_PAYLOAD_FIELD) ?? frame;
+  const dumped = dumpTopLevelFields(inner);
   const fields = dumped.map((f) => f.field);
   const names = fields.map((f) => KNOWN_SUBMESSAGES[f] ?? `UNKNOWN(${f})`);
   return {

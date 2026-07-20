@@ -110,3 +110,76 @@ also our behavioural proof that the key holds `LOCAL_UNLOCK`).
 Q2 → decides native vs JS before we commit to the background work.
 Q3 → M2 background presence.
 Q4 → M3 polish and the off switch.
+
+---
+
+## ON-CAR CAPTURE (2026-07-20) — three unmodelled car→phone messages
+
+M0 ran: every unsolicited frame logged over direct BLE while walking up to the
+locked car. **36 frames, 24 distinct.** They arrive as `RoutableMessage`
+envelopes (`to_destination=6`, `from_destination=7` = domain **2 / VCSEC**,
+`payload=10`); the inner `FromVCSECMessage` field numbers seen were:
+
+| inner field | count | modelled? |
+|---|---|---|
+| 1 (`vehicleStatus`) | 9 | yes — routine closure/lock pushes |
+| **3** | 5 | **NO — primary suspect** |
+| **44** (varint) | 2 | **NO** |
+| **53** (LEN, 95B frame) | 1 | **NO** |
+
+### The primary suspect: `FromVCSECMessage` field 3
+
+Structure (consistent across all 5):
+
+```
+f3 {
+  f2 = { f1 = <20 bytes> }   // KeyIdentifier{publicKeySHA1} shape (20B = SHA1)
+  f3 = 2                     // constant across all samples
+  f4 = <1 byte: 0x08 or 0x01>
+}
+```
+
+**Timing is the strongest signal.** Nine of these arrived in a burst at roughly
+**one per second** (06:15:00.5 → 06:15:08.9) and then stopped — *before* any
+`vehicleStatus` traffic. A car-initiated message, repeated ~1 Hz and then
+abandoned, is what an **unanswered challenge being retried** looks like. We
+never replied to any of them.
+
+Five distinct 20-byte values were observed (the car holds 5 keys, slots 0–4, so
+these may be per-key identifiers — but note **none begins with our key's
+`keyId` prefix `c6 e9 af 58`**, so they may instead be per-attempt nonces).
+Resolving that ambiguity is exactly what we need the schema for.
+
+Verbatim sample (full 41-byte frame, envelope included):
+
+```
+32 02 08 00 3a 02 08 02 52 1f 1a 1d 12 16 0a 14
+29 d5 11 ed 01 e5 e9 1e f4 d8 9c be 8e 71 a2 55
+33 dd 72 7e 18 02 22 01 01
+```
+
+Other observed 20-byte values (inside `f2.f1`):
+`0c ca c7 db 46 79 e4 59 d7 b6 3f f0 a5 7d 5d 75 7e 07 f2 e6` (f4=0x08),
+`a5 0f 6f 82 38 b4 63 8a 73 ba 5f 08 30 bf df 84 df 05 79 39` (f4=0x08),
+`d8 aa ba 0a 5d a0 18 98 c5 47 5d a5 13 9a 44 6b 67 5d 16 5a` (f4=0x01),
+`e5 ae c7 66 f6 45 c6 7b 55 9e 1d 8a ad 1f 11 97 b9 b5 c4 d7` (f4=0x08).
+
+### Sharpened questions
+
+- **Q1a:** What is `FromVCSECMessage` field **3**? If it is the
+  `AuthenticationRequest`, give its full schema and the matching response
+  message + which `ToVCSECMessage` arm carries it.
+- **Q1b:** Is `f2.f1` (20 bytes) a key identifier or a per-attempt nonce? If a
+  key id, why is it 20 bytes when `InformationRequest` targeting requires the
+  **4-byte** truncation?
+- **Q1c:** What are fields **44** (varint, values 1 and 2) and **53**?
+- **Q1d:** `f3 = 2` is constant and `f4` is a single byte alternating 0x08/0x01.
+  Do either map to `AuthenticationLevel` / `AuthenticationReason`? Note 0x08 and
+  0x01 do NOT match the reason codes we already have (WALK_UP_UNLOCK=9,
+  PASSIVE_UNLOCK_*=5/6/7, UI_UNLOCK_PASSIVE_AUTH=4), so this is likely a
+  different enum — which one?
+
+**Caveat for the analyst:** the identification of field 3 as the challenge is
+inference from shape and timing, not proof. We could not correlate frames to
+exact handle-pull moments. Treat it as the strongest lead, not a settled fact,
+and say so if the binaries disagree.
