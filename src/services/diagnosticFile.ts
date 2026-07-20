@@ -63,7 +63,18 @@ async function appendDiagnosticUnsafe(title: string, lines: string[]): Promise<s
       previous = ''; // unreadable/new file — start fresh rather than lose the new block
     }
     const block = [`===== ${title} @ ${stamp()} =====`, ...lines, ''].join('\n');
-    file.write(previous ? `${previous}\n${block}` : block);
+    // Cap the file. It is rewritten in full on every append, so unbounded growth
+    // makes each write O(size) — the frame-capture run reached 90 KB and was
+    // rewriting all of it at ~1 Hz. Keep the TAIL: recent events are what a
+    // failure is diagnosed from.
+    const MAX_BYTES = 200_000;
+    let base = previous;
+    if (base.length + block.length > MAX_BYTES) {
+      base = base.slice(-Math.floor(MAX_BYTES / 2));
+      const nl = base.indexOf('\n');
+      base = `…(truncated)\n${nl >= 0 ? base.slice(nl + 1) : base}`;
+    }
+    file.write(base ? `${base}\n${block}` : block);
     return file.uri;
   } catch {
     return null;

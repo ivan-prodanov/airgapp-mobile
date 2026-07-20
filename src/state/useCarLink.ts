@@ -58,6 +58,7 @@ import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import { appendDiagnostic } from '@/services/diagnosticFile';
+import { startLogFileSink } from '@/services/logFileSink';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
@@ -819,6 +820,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     },
     [stampIntent],
   );
+
+  // Tee the logbus to the pullable diagnostics file. Without this, an on-device
+  // link failure is invisible off-device — which is exactly what turned "no blue
+  // dot" into a guessing game.
+  useEffect(() => startLogFileSink(), []);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
