@@ -89,6 +89,21 @@ message VehicleAction {
         NavigationGpsDestinationRequest navigationGpsDestinationRequest = 106;
         BatchRemovePreconditionSchedulesAction batchRemovePreconditionSchedulesAction = 107;
         BatchRemoveChargeSchedulesAction batchRemoveChargeSchedulesAction = 108;
+        // Parental Controls actions. Absent from teslamotors/vehicle-command (and from the
+        // ivan-prodanov fork), but present in the shipping app: the decompiled v4.58.0 bundle
+        // registers proto.CarServer.ParentalControls{Action,ClearPinAction,ClearPinAdminAction,
+        // EnableSettingsAction,SetSpeedLimitAction} and its activateParentalControls /
+        // clearParentalControlsPin builders wrap them in a VehicleAction — i.e. BLE-routable.
+        // Tags below come from Teslemetry's reverse-engineered descriptor (python-tesla-fleet-api
+        // car_server.proto @97d49c1), the same source this file already cites for the WebRTC
+        // fields. Cross-checked: that descriptor's drivingClearSpeedLimitPinAction=7,
+        // vehicleControlResetValetPinAction=28 and vehicleControlResetPinToDriveAction=78 all
+        // match this file exactly, and 109-113 were unused here.
+        ParentalControlsClearPinAction parentalControlsClearPinAction = 109;
+        ParentalControlsClearPinAdminAction parentalControlsClearPinAdminAction = 110;
+        ParentalControlsAction parentalControlsAction = 111;
+        ParentalControlsEnableSettingsAction parentalControlsEnableSettingsAction = 112;
+        ParentalControlsSetSpeedLimitAction parentalControlsSetSpeedLimitAction = 113;
         SetLowPowerModeAction setLowPowerModeAction = 130;
         SetKeepAccessoryPowerModeAction setKeepAccessoryPowerModeAction = 138;
     }
@@ -522,6 +537,41 @@ message VehicleControlSetPinToDriveAction {
 }
 
 message VehicleControlResetPinToDriveAction {
+}
+
+// ── Parental Controls (VehicleAction 109-113) ────────────────────────────────────────────────────
+// See the note on the oneof entries above for provenance. Shapes are Teslemetry's descriptor; they
+// line up with the app's own builders — activateParentalControls(activate, pin) maps to
+// ParentalControlsAction{activate, pin}, and clearParentalControlsPin(pin) to
+// ParentalControlsClearPinAction{pin}.
+message ParentalControlsAction {
+    bool activate = 1;
+    string pin = 2;
+}
+
+message ParentalControlsClearPinAction {
+    string pin = 1;
+}
+
+// Admin clear — no PIN required (the car authorises it by other means).
+message ParentalControlsClearPinAdminAction {
+}
+
+message ParentalControlsSetSpeedLimitAction {
+    double limit_mph = 1;
+}
+
+// Toggles one sub-setting of the "Customize Parental Controls" panel.
+message ParentalControlsEnableSettingsAction {
+    enum ParentalControlsSetting {
+        PARENTAL_CONTROLS_SETTING_UNKNOWN = 0;
+        PARENTAL_CONTROLS_SETTING_SPEED_LIMIT = 1;
+        PARENTAL_CONTROLS_SETTING_ACCELERATION = 2;
+        PARENTAL_CONTROLS_SETTING_SAFETY_FEATURES = 3;
+        PARENTAL_CONTROLS_SETTING_CURFEW = 4;
+    }
+    ParentalControlsSetting setting = 1;
+    bool enable = 2;
 }
 
 message VehicleControlResetPinToDriveAdminAction {
