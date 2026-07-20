@@ -904,3 +904,14 @@ export function vcsecGetWhitelistEntryAction(
     bytes: encodeVCSECMessage({ InformationRequest: request }),
   };
 }
+
+// peekLiveSession returns the cached, already-authenticated session for a domain
+// WITHOUT opening or handshaking — used by the passive-entry responder, which
+// must answer the car's challenge from whatever session is already warm. Returns
+// null when there is none (then we cannot sign, and must not pretend to).
+export function peekLiveSession(vin: string, domain: Domain): Session | null {
+  const entry = _domainCache.get(domain);
+  if (!entry) return null;
+  if (entry.session.vin !== vin) return null;
+  return entry.session;
+}

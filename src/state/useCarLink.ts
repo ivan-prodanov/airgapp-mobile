@@ -56,6 +56,7 @@ import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame } from '@/ble/passiveEntryCapture';
+import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
@@ -169,6 +170,19 @@ export interface CarLink extends CarLinkStatus {
 // campaign; flip OFF once the challenge format is known, since every routine
 // closure push also gets logged and the diagnostics file grows without bound.
 const PASSIVE_ENTRY_CAPTURE = true;
+
+// M1: actually ANSWER the car's challenge. This physically unlocks the car on
+// approach, so it is an explicit switch, not an emergent behaviour. The spec's
+// end state is opt-in and off by default (M3); it is ON here because M1's whole
+// purpose is to find out whether our ROLE_DRIVER key is accepted — the
+// LOCAL_UNLOCK question the whitelist read could not answer.
+const PASSIVE_ENTRY_RESPOND = true;
+
+// Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
+// detail static RE could not pin (the RE response's own #1 must-test-on-car), so
+// it is a knob: if the car refuses the first variant, change this and redeploy
+// via deploy-js.sh. A refusal is the EXPECTED first outcome, not a bug.
+const PASSIVE_ENTRY_IV_VARIANT = 'counter-last' as const;
 
 export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
@@ -392,6 +406,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     const cfg = cfgRef.current;
     const keys = keysRef.current;
     if (!cfg?.vin || !keys) return null;
+    // Capture the narrowed VIN: the closures below (make(), authResponder) lose
+    // cfg's narrowing, and `cfg.vin!` would hide a real nullability question.
+    const vin = cfg.vin;
     if (!gatewayRef.current) {
       if (!selectorRef.current) {
         const candidates: TransportCandidate[] = [];
@@ -404,6 +421,17 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
               'ble',
               new DirectBleTransport({
                 scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS,
+                // Answer passive-entry challenges on the link itself — the car
+                // gives up in ~6-10s, so a hop through React state first would
+                // eat the budget. Returns null for non-challenge frames.
+                authResponder: makeAuthResponder({
+                  vin,
+                  ivVariant: PASSIVE_ENTRY_IV_VARIANT,
+                  enabled: () => PASSIVE_ENTRY_RESPOND,
+                  log: (lines) => {
+                    void appendDiagnostic('passive-entry auth', lines);
+                  },
+                }),
                 // Route the car's unsolicited VCSEC pushes into the live apply
                 // path — closures/lock update instantly while this link is held
                 // open, with the poll as backstop.

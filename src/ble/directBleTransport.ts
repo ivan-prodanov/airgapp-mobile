@@ -156,13 +156,22 @@ export class DirectBleTransport implements CarTransport {
   // dropped (today's behavior). The consumer decodes them (vcsecPush.ts) and
   // applies closure/lock changes instantly instead of waiting for the poll.
   private readonly onUnsolicited: ((frame: Uint8Array) => void) | null;
+  // Passive-entry challenge responder. Given a raw unsolicited frame it returns
+  // the bytes to write back, or null. Injected so this file stays the pure
+  // hardware byte pipe — no crypto, no session lookup here.
+  private readonly authResponder: ((frame: Uint8Array) => Uint8Array | null) | null;
   // True only while exchange() is awaiting its reply — gates whether an inbound
   // frame is a candidate reply (buffered in the inbox for correlator matching)
   // or an unsolicited push (forwarded straight to onUnsolicited).
   private exchangeInFlight = false;
 
-  constructor(opts?: { scanTimeoutMs?: number; onUnsolicited?: (frame: Uint8Array) => void }) {
+  constructor(opts?: {
+    scanTimeoutMs?: number;
+    onUnsolicited?: (frame: Uint8Array) => void;
+    authResponder?: (frame: Uint8Array) => Uint8Array | null;
+  }) {
     this.scanTimeoutMs = opts?.scanTimeoutMs ?? SCAN_TIMEOUT_MS;
+    this.authResponder = opts?.authResponder ?? null;
     this.onUnsolicited = opts?.onUnsolicited ?? null;
   }
 
@@ -216,13 +225,45 @@ export class DirectBleTransport implements CarTransport {
         // an unsolicited car push. Surface it (the consumer filters to VCSEC
         // status frames) instead of letting it rot in the inbox to be wiped by
         // the next exchange's stale-drain.
-        for (const f of frames) this.onUnsolicited?.(f);
+        for (const f of frames) {
+          // PASSIVE ENTRY (M1): answer the car's AuthenticationRequest HERE,
+          // on the link that received it, before any hop through app state.
+          // The car retries at ~1 Hz and gives up in ~6-10 s, so latency to
+          // the reply is the whole game. Returns null for anything that is
+          // not a challenge, so routine pushes fall straight through.
+          try {
+            const reply = this.authResponder?.(f) ?? null;
+            if (reply) void this.sendRaw(reply);
+          } catch {
+            // A responder fault must never take down the notification path
+            // that instant-closures also ride on.
+          }
+          this.onUnsolicited?.(f);
+        }
       }
     });
 
     this.device = dev;
     this.sessionId = dev.id;
     return this.sessionId;
+  }
+
+  // sendRaw writes a pre-built frame and does NOT wait for a reply. Used by the
+  // passive-entry responder: an AuthenticationResponse is answered by the car
+  // acting (or not), not by a correlated reply, so waiting would just occupy the
+  // link. Deliberately does not touch exchangeInFlight — it must be safe to fire
+  // while an exchange is in progress.
+  async sendRaw(frame: Uint8Array): Promise<void> {
+    const dev = this.device;
+    if (!dev) return;
+    const chunks = frameForWrite(frame, this.blockLength);
+    for (const chunk of chunks) {
+      await dev.writeCharacteristicWithResponseForService(
+        SERVICE_UUID,
+        TX_UUID,
+        bytesToBase64(chunk),
+      );
+    }
   }
 
   // exchange sends one RoutableMessage and returns the demuxed matching
