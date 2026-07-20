@@ -1,7 +1,7 @@
 # Passive entry (walk-up unlock) — design
 
 **Date:** 2026-07-20
-**Status:** design, not yet approved for implementation
+**Status:** M0 COMPLETE; schema settled; M1 ready to implement
 **Supersedes:** roadmap C4 (proactive BLE switch-back)
 
 ## Goal
@@ -24,7 +24,36 @@ no account, no UWB.
   **behaviourally**. Do not build more read-based probes.
 - **`bluetooth-central` background mode is already shipped** (roadmap C5).
 
-## The two real unknowns
+## M0 RESULT (2026-07-20) — both unknowns closed
+
+**The car challenges us, and we never answer.** Captured on-car and confirmed by
+a control run with the official Tesla key's Bluetooth OFF (official key absent,
+car did not unlock): the car still sent 25 challenges on our session. BLE is
+point-to-point ⇒ addressed to us. **The car considers our ROLE_DRIVER key
+present and worth challenging** — the eligibility question the whitelist read
+could not answer.
+
+The RE response (`RESPONSE-passive-entry-challenge-protocol.md`) supplies the
+schema, and it decodes our independently-captured bytes EXACTLY:
+
+| token | requestedLevel | reasonsForAuth | frames |
+|---|---|---|---|
+| 20 B | 2 (DRIVE) | 1 `IDENTIFICATION` | 23 |
+| 20 B | 2 (DRIVE) | 5 `PASSIVE_UNLOCK_EXTERIOR_HANDLE_PULL` | 9 |
+| 20 B | 2 (DRIVE) | 8 `ENTERED_HIGHER_AUTH_ZONE` | 5 |
+
+We captured 9 real door-handle pulls that went unanswered. Note every request
+asks for **DRIVE(2)**, not UNLOCK(1) — a grant echoes DRIVE.
+
+**Q2 DECIDED — the response signer must be NATIVE for M2.** Both official apps
+answer 100% in native code with zero JS in the loop, *specifically because the
+challenge must be answered while the app is suspended*, via a CoreBluetooth
+state-restoration wake when Hermes is not guaranteed alive. Our pure-JS `@noble`
+signer cannot hit that window from a background wake. Per the project rule —
+match Tesla — M2 gets a native signer. **M1 (foreground) may stay in JS**, since
+the runtime is alive and M1's only job is proving the key is accepted.
+
+## The two real unknowns (BOTH NOW CLOSED — kept for history)
 
 1. **Does the car challenge us at all?** Passive entry is car-initiated: the car
    ranges nearby keys and issues an `AuthenticationRequest` to whichever
@@ -67,8 +96,32 @@ walk up to the locked car with the app open and connected and pull a door handle
 
 ### M1 — Answer the challenge, foreground only
 
-Implement decode + signed response using what M0 revealed, while the app is open
-and connected. Walking up with the app foregrounded unlocks the car.
+Implement decode + signed response, while the app is open and connected.
+Walking up with the app foregrounded unlocks the car.
+
+Recipe (RE response Q1; Android decompile is the better-evidenced source):
+
+```
+sessionKey = SHA1(ECDH_P256(phonePriv, carPub))[:16]        // we already do this
+ct, tag = AES_128_GCM(key=sessionKey, iv=<from 4-byte BE counter>,
+                      aad = <the 20-byte token>,             // bound, NOT echoed
+                      pt  = UnsignedMessage{ authenticationResponse })
+SignedMessage{ token=<empty>, protobufMessageAsBytes=ct,
+               signatureType=AES_GCM_TOKEN(3), signature=tag,
+               keyId=SHA1(pubkey)[:4], counter } → ToVCSECMessage
+```
+`AuthenticationResponse{ authenticationLevel=<echo DRIVE>, estimatedDistance=0,
+authenticationRejection=NONE }`. Reason-independent — one code path for all.
+
+**The one genuinely open crypto detail is the exact AAD/IV assembly** (the RE
+response's own #1 "must test on-car"): AAD=token is confirmed on Android, but
+the 12-byte IV construction from the counter is not pinned, and iOS may also
+echo `SignedMessage.token`. Expect to iterate against the car here; a rejected
+seal is the expected first outcome, not a bug.
+
+- **This is the definitive `LOCAL_UNLOCK` test** — the behavioural answer to the
+  question the whitelist read could not give us, and the RE response's own
+  must-test #6.
 
 - **This is the definitive `LOCAL_UNLOCK` test** — the behavioural answer to the
   question the whitelist read could not give us.
