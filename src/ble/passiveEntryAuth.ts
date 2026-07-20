@@ -121,7 +121,7 @@ export function parseAuthenticationRequest(frame: Uint8Array): AuthenticationReq
   if (!req) return null;
 
   let token: Uint8Array | null = null;
-  let requestedLevel = AUTH_LEVEL.NONE;
+  let requestedLevel: number = AUTH_LEVEL.NONE;
   const reasons: number[] = [];
 
   for (const f of dumpFields(req)) {
