@@ -270,7 +270,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               // Bluetooth — the user matches it by eye, so it must be the same
               // string, not our derived scan name.
               vehicleName={fleet.activeName}
-              compact={recovery.presentation === 'banner'}
+              piWorking={recovery.presentation === 'banner'}
             />
           ) : null}
 

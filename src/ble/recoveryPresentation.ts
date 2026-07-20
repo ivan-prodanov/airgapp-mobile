@@ -44,15 +44,11 @@ export function recoveryView(opts: {
   };
 }
 
-// The card's call to action. Kept next to the presentation rule because the two
-// are read together, and separate from bondWedge.ts's copy because a wiped key
-// is NOT a bond problem and must never inherit the forget-device wording.
+// The heading INSIDE the Set Up sheet. The Home row itself is always the
+// official app's neutral "Phone Key / Enable passive entry and remote controls"
+// — the branch happens one tap deeper, which is where naming the real remedy
+// helps instead of shouting. Kept separate from bondWedge.ts's copy because a
+// wiped key is NOT a bond problem and must never inherit forget-device wording.
 export function recoveryTitle(remedy: RecoveryRemedy): string {
   return remedy === 're-enroll-with-card' ? 'Set Up Phone Key' : 'Reconnect Bluetooth';
-}
-
-export function recoverySubtitle(remedy: RecoveryRemedy): string {
-  return remedy === 're-enroll-with-card'
-    ? 'Enable passive entry and remote controls'
-    : 'Bluetooth needs to be re-paired';
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { recoveryView, recoveryTitle, recoverySubtitle } from './recoveryPresentation';
+import { recoveryView, recoveryTitle } from './recoveryPresentation';
 
 test('a healthy phone key leaves Home completely alone', () => {
   assert.deepEqual(recoveryView({ remedy: 'none', piConfigured: true }), {
@@ -57,5 +57,4 @@ test('copy matches the remedy, never the other way round', () => {
   // A bond wedge must NOT inherit the official app's "Set Up Phone Key" framing:
   // it makes the user think their key is gone and reach for the card.
   assert.doesNotMatch(recoveryTitle('forget-bluetooth-device'), /Set Up/);
-  assert.match(recoverySubtitle('re-enroll-with-card'), /passive entry/);
 });
