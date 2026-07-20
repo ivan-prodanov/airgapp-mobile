@@ -182,7 +182,12 @@ const PASSIVE_ENTRY_RESPOND = true;
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
 // it is a knob: if the car refuses the first variant, change this and redeploy
 // via deploy-js.sh. A refusal is the EXPECTED first outcome, not a bug.
-const PASSIVE_ENTRY_IV_VARIANT = 'counter-last' as const;
+// 'cycle' rotates the IV assembly across successive challenges so ONE approach
+// tests every candidate. The first on-car run returned
+// SIGNEDMESSAGE_INFORMATION_FAULT_AES_DECRYPT_AUTH(6) — the car parsed our
+// envelope, found our keyId, and accepted the token and counter, failing ONLY
+// the GCM tag. So the envelope is right and the IV/AAD is what is left to find.
+const PASSIVE_ENTRY_IV_VARIANT = 'cycle' as const;
 
 export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a

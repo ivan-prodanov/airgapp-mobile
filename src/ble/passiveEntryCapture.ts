@@ -77,11 +77,64 @@ export function inspectUnsolicitedFrame(frame: Uint8Array): UnsolicitedFrameRepo
   };
 }
 
+// The car's verdict on a SignedMessage we sent. Values from our own proto
+// (VCSEC.SignedMessage_information_E). 6 = the AES-GCM tag failed to verify,
+// which is what the first M1 run returned: envelope, keyId, token and counter
+// all accepted, crypto refused.
+const SIGNED_MESSAGE_INFO: Record<number, string> = {
+  0: 'NONE (accepted)',
+  1: 'FAULT_UNKNOWN',
+  2: 'FAULT_NOT_ON_WHITELIST',
+  3: 'FAULT_IV_SMALLER_THAN_EXPECTED',
+  4: 'FAULT_INVALID_TOKEN',
+  5: 'FAULT_TOKEN_AND_COUNTER_INVALID',
+  6: 'FAULT_AES_DECRYPT_AUTH (IV or AAD wrong)',
+  7: 'FAULT_ECDSA_INPUT',
+  8: 'FAULT_ECDSA_SIGNATURE',
+  9: 'FAULT_LOCAL_ENTITY_START',
+};
+
+// describeCommandStatus renders the car's answer to OUR signed message. The
+// echoed counter is the join key back to the `auth ANSWERED counter=N iv=…`
+// line, which is how a verdict gets attributed to the IV variant that caused it.
+export function describeCommandStatus(frame: Uint8Array): string | null {
+  const inner = findSubMessageAt(frame, ROUTABLE_PAYLOAD_FIELD) ?? frame;
+  const status = findSubMessageAt(inner, 4);
+  if (!status) return null;
+  const signed = findSubMessageAt(status, 2);
+  if (!signed) return null;
+  let counter: number | null = null;
+  let info: number | null = null;
+  let p = 0;
+  while (p < signed.length) {
+    const tag = signed[p];
+    const field = tag >>> 3;
+    const wire = tag & 0x07;
+    p += 1;
+    if (wire !== 0) break;
+    let v = 0;
+    let sh = 0;
+    while (p < signed.length) {
+      const b = signed[p];
+      p += 1;
+      v |= (b & 0x7f) << sh;
+      if ((b & 0x80) === 0) break;
+      sh += 7;
+    }
+    if (field === 1) counter = v >>> 0;
+    else if (field === 2) info = v >>> 0;
+  }
+  if (counter === null && info === null) return null;
+  return `CAR VERDICT counter=${counter} → ${info === null ? '?' : SIGNED_MESSAGE_INFO[info] ?? `unknown(${info})`}`;
+}
+
 // formatUnsolicitedFrame renders the report for the diagnostics file. The
 // CANDIDATE marker is the whole point — it makes the frame we're hunting
 // greppable in a log that will otherwise be full of routine closure pushes.
 export function formatUnsolicitedFrame(frame: Uint8Array): string[] {
   const r = inspectUnsolicitedFrame(frame);
+  const verdict = describeCommandStatus(frame);
+  if (verdict) return [verdict, `  raw: ${r.hex}`];
   return [
     `${r.hasUnknown ? '*** CANDIDATE CHALLENGE *** ' : ''}unsolicited ${r.byteLength}B ` +
       `fields=[${r.fields.join(',')}] (${r.names.join(', ')})`,

@@ -31,14 +31,19 @@ import {
   buildAuthIv,
   describeReasons,
   AUTH_TOKEN_LENGTH,
+  IV_VARIANTS,
   type IvVariant,
 } from './passiveEntryAuth';
 
 export interface AuthResponderOptions {
   vin: string;
   // Which IV assembly to try. The exact construction is the one crypto detail
-  // static RE could not pin, so it is switchable at runtime — see IV_VARIANTS.
-  ivVariant?: IvVariant;
+  // static RE could not pin. Pass a single variant to pin it, or 'cycle' to
+  // rotate through IV_VARIANTS on successive challenges — the car sends 6-10
+  // challenges per approach, so ONE handle-pull then tests every variant, and
+  // its commandStatus echoes our counter so each verdict is attributable to the
+  // exact variant that produced it.
+  ivVariant?: IvVariant | 'cycle';
   enabled?: () => boolean;
   log?: (lines: string[]) => void;
 }
@@ -46,8 +51,9 @@ export interface AuthResponderOptions {
 export type AuthResponder = (frame: Uint8Array) => Uint8Array | null;
 
 export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
-  const ivVariant: IvVariant = opts.ivVariant ?? 'counter-last';
+  const mode = opts.ivVariant ?? 'counter-last';
   const say = (lines: string[]) => opts.log?.(lines);
+  let cycleIndex = 0;
 
   return (frame: Uint8Array): Uint8Array | null => {
     if (opts.enabled && !opts.enabled()) return null;
@@ -70,6 +76,9 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       say([`auth challenge DROPPED (no live VCSEC session) reasons=[${reasons}]`]);
       return null;
     }
+
+    const ivVariant: IvVariant =
+      mode === 'cycle' ? IV_VARIANTS[cycleIndex++ % IV_VARIANTS.length] : mode;
 
     // Monotonic anti-replay. Bump BEFORE sealing so a retry never reuses a
     // counter with the same key — nonce reuse under AES-GCM is catastrophic,
@@ -95,9 +104,11 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       counter,
     });
 
+    // counter is the JOIN KEY: the car's commandStatus echoes it back, so this
+    // line is what lets a verdict be attributed to the variant that caused it.
     say([
-      `auth challenge ANSWERED reasons=[${reasons}] level=${req.requestedLevel} ` +
-        `counter=${counter} iv=${ivVariant} out=${out.length}B`,
+      `auth ANSWERED counter=${counter} iv=${ivVariant} ` +
+        `reasons=[${reasons}] level=${req.requestedLevel} out=${out.length}B`,
       `  token: ${Array.from(req.token).map((b) => b.toString(16).padStart(2, '0')).join('')}`,
     ]);
     return out;

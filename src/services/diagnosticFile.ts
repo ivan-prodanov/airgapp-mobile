@@ -34,7 +34,22 @@ function stamp(): string {
 // sync, so `previous` was a Promise object — it stringified to "[object Object]"
 // AND silently discarded the existing log on every append, leaving only the most
 // recent block. Appending must await the read.
-export async function appendDiagnostic(title: string, lines: string[]): Promise<string | null> {
+// Appends are SERIALIZED through this chain. Each append is read-whole-file →
+// write-whole-file, so two concurrent calls both read the same `previous` and
+// the second clobbers the first — a lost update. That is not theoretical: during
+// the first M1 on-car run the passive-entry log lines were silently destroyed by
+// the ~1 Hz frame-capture appends racing them, and the most important evidence
+// of the run went missing. Serializing costs nothing at these volumes.
+let appendChain: Promise<unknown> = Promise.resolve();
+
+export function appendDiagnostic(title: string, lines: string[]): Promise<string | null> {
+  const next = appendChain.then(() => appendDiagnosticUnsafe(title, lines));
+  // Keep the chain alive even if one append rejects.
+  appendChain = next.catch(() => undefined);
+  return next;
+}
+
+async function appendDiagnosticUnsafe(title: string, lines: string[]): Promise<string | null> {
   try {
     const dir: Directory = Paths.document;
     const file = new File(dir, DIAGNOSTIC_FILENAME);
