@@ -2,6 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  parseWhitelistInfo,
+  filledSlots,
+  parseWhitelistEntryPublicKey,
+  dumpTopLevelFields,
+  dumpEntryFields,
   parseWhitelistPermissions,
   hasLocalUnlock,
   describeWhitelistPermissions,
@@ -119,4 +124,86 @@ test('hand-built frames are genuine proto (and the real decoder drops permission
   );
   // ...and the scanner recovers exactly what the proto threw away.
   assert.deepEqual(parseWhitelistPermissions(buf), [1, 2]);
+});
+
+// --- Slot enumeration + raw field dumps (whitelist-probe plan Tasks 1-2) -----
+
+test('parseWhitelistInfo reads numberOfEntries + slotMask from field 16', () => {
+  // FromVCSECMessage { whitelistInfo(16) = { numberOfEntries(1)=2, slotMask(3)=6 } }
+  // field 16 LEN tag = (16<<3)|2 = 130 → varint 0x82 0x01
+  const frame = Uint8Array.from([0x82, 0x01, 0x04, 0x08, 0x02, 0x18, 0x06]);
+  assert.deepEqual(parseWhitelistInfo(frame), { numberOfEntries: 2, slotMask: 6 });
+});
+
+test('parseWhitelistInfo returns null when no whitelistInfo is present', () => {
+  assert.equal(parseWhitelistInfo(Uint8Array.from([0x08, 0x00])), null);
+});
+
+test('filledSlots expands a slotMask bitfield to slot indices', () => {
+  assert.deepEqual(filledSlots(6), [1, 2]);
+  assert.deepEqual(filledSlots(0), []);
+  assert.deepEqual(filledSlots(1), [0]);
+  // slot 4 — the slot our own key reported on-car.
+  assert.deepEqual(filledSlots(0b10001), [0, 4]);
+});
+
+test('parseWhitelistEntryPublicKey unwraps the PublicKey message to the raw point', () => {
+  // whitelistEntryInfo(17) { publicKey(2) = PublicKey { raw(1) = 04 AA BB }, permissions(3)=[1,2] }
+  const entryBody = [
+    0x12, 0x05, 0x0a, 0x03, 0x04, 0xaa, 0xbb, // field 2 → inner field 1 → 3 bytes
+    ...permPacked(1, 2),
+  ];
+  const frame = fromVcsec(entryBody);
+  assert.deepEqual(Array.from(parseWhitelistEntryPublicKey(frame) ?? []), [0x04, 0xaa, 0xbb]);
+  // the existing scanner still reads the bits from the same frame
+  assert.deepEqual(parseWhitelistPermissions(frame), [1, 2]);
+});
+
+test('dumpTopLevelFields lists field/wireType/length of each top-level field', () => {
+  const frame = Uint8Array.from([0x82, 0x01, 0x04, 0x08, 0x02, 0x18, 0x06]);
+  assert.deepEqual(dumpTopLevelFields(frame), [{ field: 16, wireType: 2, length: 4 }]);
+});
+
+test('dumpEntryFields exposes which fields the entry actually carries', () => {
+  // This is the control-group workhorse: it answers "does field 3 exist on ANY
+  // key?" without needing a proto for the message.
+  const frame = fromVcsec([...permUnpacked(1), ...keyRole(3)]);
+  assert.deepEqual(dumpEntryFields(frame), [
+    { field: 3, wireType: 0, length: 0 },
+    { field: 7, wireType: 0, length: 0 },
+  ]);
+  assert.equal(dumpEntryFields(Uint8Array.from([0x08, 0x00])), null, 'no entry → null');
+});
+
+test('dumpEntryFields on the REAL on-car reply shows no field 3 (the finding)', () => {
+  // Verbatim bytes captured from the car (slot 4, keyRole 3). Locking this in as
+  // a regression test: it documents the actual observation the passive-entry
+  // decision rests on, so if a future change "finds" permissions here we know
+  // the parser drifted rather than the car changing.
+  const onCar = Uint8Array.from([
+    0x8a, 0x01, 0x55,
+    0x0a, 0x06, 0x0a, 0x04, 0xc6, 0xe9, 0xaf, 0x58,
+    0x12, 0x43, 0x0a, 0x41, 0x04, 0xd2, 0xa5, 0xfc, 0x6c, 0x99, 0xc2, 0xdf, 0x08,
+    0xd8, 0x42, 0x69, 0x7a, 0x7d, 0x3b, 0x47, 0x89, 0x62, 0xb8, 0x1f, 0x7d, 0xf0,
+    0x77, 0x05, 0x39, 0x96, 0x49, 0x08, 0x7b, 0x2f, 0xda, 0x95, 0xb4, 0x3f, 0xf3,
+    0xf6, 0x12, 0x9e, 0xa6, 0x33, 0x16, 0x8a, 0xad, 0xa5, 0x91, 0x7a, 0x82, 0x1b,
+    0x8f, 0x67, 0x65, 0x03, 0xa0, 0x63, 0x23, 0x74, 0x83, 0x99, 0x9a, 0xc9, 0xaa,
+    0x08, 0x29, 0x26, 0xb3,
+    0x22, 0x02, 0x08, 0x06,
+    0x30, 0x04,
+    0x38, 0x03,
+  ]);
+  const fields = dumpEntryFields(onCar);
+  assert.ok(fields, 'the car DID return an entry (field 17)');
+  assert.deepEqual(
+    fields.map((f) => f.field),
+    [1, 2, 4, 6, 7],
+    'keyId, publicKey, metadataForKey, slot, keyRole — and NO field 3 (permissions)',
+  );
+  assert.equal(parseWhitelistPermissions(onCar), null, 'permissions genuinely absent, not mis-parsed');
+  assert.equal(
+    Array.from(parseWhitelistEntryPublicKey(onCar) ?? []).length,
+    65,
+    'entry carries a full 65-byte SEC1 point we can match our key against',
+  );
 });

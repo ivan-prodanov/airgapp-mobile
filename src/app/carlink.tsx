@@ -420,6 +420,28 @@ export default function CarLinkScreen() {
       if (probe.matchedMode) {
         say(`entry via ${probe.matchedMode}: keyRole=${probe.keyRole} slot=${probe.slot}`);
       }
+
+      // CONTROL GROUP. The decisive comparison: do the car's OTHER keys (the
+      // official Tesla phone key, the NFC card — which definitely have unlock
+      // authority) report a permissions field where ours does not?
+      say(`slotMask=${probe.slotMask ?? 'n/a'} entries=${probe.numberOfEntries ?? 'n/a'}`);
+      for (const r of probe.survey) {
+        if (r.error) {
+          say(`slot ${r.slot}: ERROR ${r.error}`);
+          continue;
+        }
+        const perms = r.permissions === null ? 'none' : `[${r.permissions.join(',')}]`;
+        say(
+          `slot ${r.slot}${r.isOurs ? ' (OURS)' : ''}: role=${r.keyRole} ` +
+            `fields=[${(r.fields ?? []).join(',')}] perms=${perms}`,
+        );
+      }
+      const anyPerms = probe.survey.some((r) => r.permissions !== null && r.permissions.length > 0);
+      say(
+        anyPerms
+          ? 'CONTROL: at least one key DOES report permissions → absence on ours is meaningful'
+          : 'CONTROL: NO key on this car reports permissions over BLE → the reply never carries them',
+      );
       say(probe.summary);
       say(
         probe.localUnlock === null

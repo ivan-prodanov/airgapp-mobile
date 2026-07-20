@@ -855,26 +855,49 @@ export function vcsecGetStatusAction(): ActionPayload {
 // `KeyIdentifier.publicKeySHA1` + research §1.2 ("keyId = SHA1(pubkey)[…]")
 // make the SHA1 arms the strong candidates; the "[…]" is ambiguous about
 // truncation, hence both full and 4-byte variants.
-export type WhitelistTargetMode = 'keyId-sha1' | 'keyId-sha1-4' | 'publicKey';
+// vcsecGetWhitelistInfoAction — GET_WHITELIST_INFO(5). Returns WhitelistInfo
+// { numberOfEntries, whitelistEntries[], slotMask }, i.e. the map of which slots
+// hold keys. Needed to enumerate the car's OTHER keys as a control group: our
+// own entry comes back without a permissions field, and the only way to tell
+// "our enrollment granted nothing" from "the BLE reply never carries them" is to
+// read an official key's entry and compare.
+export function vcsecGetWhitelistInfoAction(): ActionPayload {
+  return {
+    domain: DOMAIN_VEHICLE_SECURITY,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeVCSECMessage({ InformationRequest: { informationRequestType: 5 } }),
+  };
+}
 
+export type WhitelistTargetMode = 'slot' | 'keyId-sha1' | 'keyId-sha1-4' | 'publicKey';
+
+// keyId-sha1-4 FIRST: proven on-car to be the arm this firmware accepts (a full
+// 20-byte SHA1 target faulted 10/DECODING). 'slot' is listed for the enumeration
+// path, which passes an explicit slot rather than iterating these modes.
 export const WHITELIST_TARGET_MODES: readonly WhitelistTargetMode[] = [
-  'keyId-sha1',
   'keyId-sha1-4',
+  'keyId-sha1',
   'publicKey',
 ];
 
 export function vcsecGetWhitelistEntryAction(
   publicKeyRaw: Uint8Array,
-  mode: WhitelistTargetMode = 'keyId-sha1',
+  mode: WhitelistTargetMode = 'keyId-sha1-4',
+  slot?: number,
 ): ActionPayload {
   const digest = sha1(publicKeyRaw);
-  const request =
-    mode === 'publicKey'
-      ? { informationRequestType: 6, publicKey: publicKeyRaw }
-      : {
-          informationRequestType: 6,
-          keyId: { publicKeySHA1: mode === 'keyId-sha1-4' ? digest.slice(0, 4) : digest },
-        };
+  let request: Record<string, unknown>;
+  if (mode === 'slot') {
+    if (slot === undefined) throw new Error('slot mode requires a slot index');
+    request = { informationRequestType: 6, slot };
+  } else if (mode === 'publicKey') {
+    request = { informationRequestType: 6, publicKey: publicKeyRaw };
+  } else {
+    request = {
+      informationRequestType: 6,
+      keyId: { publicKeySHA1: mode === 'keyId-sha1-4' ? digest.slice(0, 4) : digest },
+    };
+  }
   return {
     domain: DOMAIN_VEHICLE_SECURITY,
     flags: FLAG_ENCRYPT_RESPONSE_BIT,

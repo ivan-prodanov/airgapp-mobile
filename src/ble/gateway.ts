@@ -30,6 +30,7 @@ import {
   isStaleFrameError,
   vcsecGetStatusAction,
   vcsecGetWhitelistEntryAction,
+  vcsecGetWhitelistInfoAction,
   WHITELIST_TARGET_MODES,
   type WhitelistTargetMode,
   TRANSIENT_DELAY_MS,
@@ -48,6 +49,11 @@ import {
   parseWhitelistPermissions,
   describeWhitelistPermissions,
   hasLocalUnlock,
+  parseWhitelistInfo,
+  filledSlots,
+  parseWhitelistEntryPublicKey,
+  dumpEntryFields,
+  bytesEqual,
 } from './whitelistPermissions';
 import { parseVcsecStatus, parseCarServerResponse, type VcsecStatus, type InfotainmentSnapshot } from './telemetry';
 import type { Domain, DeviceKeys, PiTransport } from './types';
@@ -88,10 +94,26 @@ export interface WhitelistProbeAttempt {
   error: string | null;
 }
 
+// One slot's entry, for the control-group comparison.
+export interface WhitelistSlotSurvey {
+  slot: number;
+  // Which fields the entry actually carried, e.g. [1,2,4,6,7]. The question is
+  // whether ANY key shows field 3 (permissions).
+  fields: number[] | null;
+  permissions: number[] | null;
+  keyRole: number | null;
+  isOurs: boolean;
+  error: string | null;
+}
+
 export interface WhitelistEntryProbe {
   // Which arm the car accepted, or null if none did.
   matchedMode: WhitelistTargetMode | null;
   attempts: WhitelistProbeAttempt[];
+  // Slot map + per-slot survey (null if GET_WHITELIST_INFO gave us nothing).
+  slotMask: number | null;
+  numberOfEntries: number | null;
+  survey: WhitelistSlotSurvey[];
   permissions: number[] | null;
   // true = passive-entry eligible, false = walk-up would be refused,
   // null = couldn't tell.
@@ -468,6 +490,7 @@ export function createCarGateway({
           summary: describeWhitelistPermissions(permissions),
           matchedMode: mode,
           attempts,
+          ...(await surveyWhitelistSlots()),
         };
       }
     }
@@ -484,7 +507,83 @@ export function createCarGateway({
         'This is a REQUEST-side result, not a firmware verdict; see the per-attempt hex.',
       matchedMode: null,
       attempts,
+      slotMask: null,
+      numberOfEntries: null,
+      survey: [],
     };
+  }
+
+  // surveyWhitelistSlots is the CONTROL GROUP for the permissions question.
+  //
+  // Our own entry comes back with no permissions field. On its own that is
+  // ambiguous: either our ROLE_DRIVER enrollment materialized an empty set (a
+  // real problem we could act on), or this firmware simply never puts
+  // permissions in a BLE reply (in which case no amount of probing will help and
+  // the question must be answered behaviourally). The only way to tell them
+  // apart is to read the car's OTHER keys — the official Tesla phone key and the
+  // NFC card, which certainly DO have unlock authority — and compare.
+  //
+  // GET_WHITELIST_INFO gives the slot map; each filled slot is then read by the
+  // 'slot' oneof arm and reduced to the list of field numbers it carried.
+  async function surveyWhitelistSlots(): Promise<{
+    slotMask: number | null;
+    numberOfEntries: number | null;
+    survey: WhitelistSlotSurvey[];
+  }> {
+    let slotMask: number | null = null;
+    let numberOfEntries: number | null = null;
+    let slots: number[];
+    try {
+      const { outcome, result } = await runAction(vcsecGetWhitelistInfoAction(), 'vcsecGetWhitelistInfo');
+      const payload = outcome.ok ? result?.decryptedPayload ?? null : null;
+      const info = payload ? parseWhitelistInfo(payload) : null;
+      if (info) {
+        slotMask = info.slotMask;
+        numberOfEntries = info.numberOfEntries;
+      }
+    } catch {
+      // fall through to the sweep
+    }
+    // Fall back to a bounded sweep when the mask is unavailable: the firmware
+    // model is 20 slots (0..19), slot 0 reserved for the vehicle's own key.
+    slots = slotMask && slotMask > 0 ? filledSlots(slotMask) : Array.from({ length: 20 }, (_, i) => i);
+
+    const survey: WhitelistSlotSurvey[] = [];
+    for (const slot of slots) {
+      try {
+        const { outcome, result } = await runAction(
+          vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw, 'slot', slot),
+          `vcsecGetWhitelistEntry:slot=${slot}`,
+        );
+        if (!outcome.ok || !result?.decryptedPayload) {
+          survey.push({
+            slot,
+            fields: null,
+            permissions: null,
+            keyRole: null,
+            isOurs: false,
+            error: outcome.ok ? 'no payload' : outcome.message,
+          });
+          continue;
+        }
+        const payload = result.decryptedPayload;
+        const decoded = decodeMessage(FromVCSECMessage, payload) as {
+          whitelistEntryInfo?: { keyRole?: number };
+        };
+        const pub = parseWhitelistEntryPublicKey(payload);
+        survey.push({
+          slot,
+          fields: (dumpEntryFields(payload) ?? []).map((f) => f.field),
+          permissions: parseWhitelistPermissions(payload),
+          keyRole: decoded.whitelistEntryInfo?.keyRole ?? null,
+          isOurs: !!pub && bytesEqual(pub, deviceKeys.publicKeyRaw),
+          error: null,
+        });
+      } catch (e) {
+        survey.push({ slot, fields: null, permissions: null, keyRole: null, isOurs: false, error: errMsg(e) });
+      }
+    }
+    return { slotMask, numberOfEntries, survey };
   }
 
   async function awakeSync(): Promise<InfotainmentSnapshot> {

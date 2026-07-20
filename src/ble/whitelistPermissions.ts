@@ -188,3 +188,117 @@ export function describeWhitelistPermissions(permissions: number[] | null): stri
     : 'LOCAL_UNLOCK ABSENT → walk-up unlock would NOT be authorized';
   return `permissions: [${names}] → ${verdict}`;
 }
+
+// --- Slot enumeration + raw diagnostics (whitelist-probe plan, Tasks 1-2) ----
+//
+// Added to enable a CONTROL-GROUP experiment. Our own entry comes back with no
+// permissions field; the firmware RE says VCSEC materializes permissions[] into
+// WhitelistEntryInfo. Both can't be right — so enumerate EVERY filled slot and
+// compare our entry against the car's other keys (the official Tesla phone key,
+// the NFC card). If theirs carry permissions and ours doesn't, that is a real
+// finding about OUR enrollment. If nobody's does, the BLE reply simply omits them.
+
+const FIELD_WHITELIST_INFO = 16;
+const FIELD_NUMBER_OF_ENTRIES = 1;
+const FIELD_SLOT_MASK = 3;
+const FIELD_ENTRY_PUBLIC_KEY = 2;
+
+// parseWhitelistInfo pulls numberOfEntries + slotMask out of a FromVCSECMessage
+// carrying whitelistInfo (field 16). null if that submessage is absent.
+export function parseWhitelistInfo(
+  fromVcsecPayload: Uint8Array,
+): { numberOfEntries: number; slotMask: number } | null {
+  const info = findSubMessage(fromVcsecPayload, FIELD_WHITELIST_INFO);
+  if (!info) return null;
+  let numberOfEntries = 0;
+  let slotMask = 0;
+  const c: Cursor = { buf: info, pos: 0 };
+  while (c.pos < info.length) {
+    const tag = readVarint(c);
+    if (tag === null) break;
+    const field = tag >>> 3;
+    const wireType = tag & 0x07;
+    if (field === FIELD_NUMBER_OF_ENTRIES && wireType === 0) {
+      const v = readVarint(c);
+      if (v === null) break;
+      numberOfEntries = v;
+      continue;
+    }
+    if (field === FIELD_SLOT_MASK && wireType === 0) {
+      const v = readVarint(c);
+      if (v === null) break;
+      slotMask = v;
+      continue;
+    }
+    if (!skipField(c, wireType)) break;
+  }
+  return { numberOfEntries, slotMask };
+}
+
+// filledSlots expands a slotMask bitfield into the set slot indices.
+export function filledSlots(slotMask: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < 32; i += 1) {
+    if ((slotMask & (1 << i)) !== 0) out.push(i);
+  }
+  return out;
+}
+
+// parseWhitelistEntryPublicKey returns the entry's publicKey bytes. We identify
+// OUR slot by matching this against our own key rather than by keyId: the car
+// truncates keyIds (proven on-car — a full-SHA1 target faulted DECODING while a
+// 4-byte one worked), so a pubkey match is unambiguous where a keyId match is not.
+//
+// WhitelistEntryInfo.publicKey is a PublicKey MESSAGE wrapping the raw point in
+// its own field 1, so unwrap one more level when present.
+export function parseWhitelistEntryPublicKey(fromVcsecPayload: Uint8Array): Uint8Array | null {
+  const entry = findSubMessage(fromVcsecPayload, FIELD_WHITELIST_ENTRY_INFO);
+  if (!entry) return null;
+  const pk = findSubMessage(entry, FIELD_ENTRY_PUBLIC_KEY);
+  if (!pk) return null;
+  const inner = findSubMessage(pk, 1);
+  return inner ?? pk;
+}
+
+// dumpTopLevelFields enumerates every top-level field so a reply can be read
+// even when we have no proto for it — "which submessage did the car actually
+// send?" is usually the decisive clue.
+export function dumpTopLevelFields(
+  payload: Uint8Array,
+): Array<{ field: number; wireType: number; length: number }> {
+  const out: Array<{ field: number; wireType: number; length: number }> = [];
+  const c: Cursor = { buf: payload, pos: 0 };
+  while (c.pos < payload.length) {
+    const tag = readVarint(c);
+    if (tag === null) break;
+    const field = tag >>> 3;
+    const wireType = tag & 0x07;
+    let length = 0;
+    if (wireType === 2) {
+      const len = readVarint(c);
+      if (len === null) break;
+      length = len;
+      c.pos += len;
+    } else if (!skipField(c, wireType)) {
+      break;
+    }
+    out.push({ field, wireType, length });
+  }
+  return out;
+}
+
+// dumpEntryFields does the same one level in, for the WhitelistEntryInfo body —
+// this is what tells us whether field 3 (permissions) is present on ANY key.
+export function dumpEntryFields(
+  fromVcsecPayload: Uint8Array,
+): Array<{ field: number; wireType: number; length: number }> | null {
+  const entry = findSubMessage(fromVcsecPayload, FIELD_WHITELIST_ENTRY_INFO);
+  if (!entry) return null;
+  return dumpTopLevelFields(entry);
+}
+
+export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
