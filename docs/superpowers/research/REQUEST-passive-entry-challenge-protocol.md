@@ -183,3 +183,61 @@ Other observed 20-byte values (inside `f2.f1`):
 inference from shape and timing, not proof. We could not correlate frames to
 exact handle-pull moments. Treat it as the strongest lead, not a settled fact,
 and say so if the binaries disagree.
+
+---
+
+## CONTROL RUN (2026-07-20, 09:41 local) — Q1b ANSWERED: the 20 bytes are a NONCE
+
+Second capture with the **official Tesla app's Bluetooth disabled**, so the
+official phone key was NOT present and the car did **not** unlock.
+
+**The car still challenged us.** 25 × `f3` in three ~1 Hz bursts
+(09:41:39–43, 09:42:10–18, 09:43:22–32), plus `f53` ×8 (220B), `f45` ×3,
+`f44` ×2, `f1` ×5. Since BLE is point-to-point, these arrived on **our**
+session — they are addressed to us.
+
+### `f2.f1` is a per-attempt nonce, not a key identifier
+
+| run | distinct 20-byte values |
+|---|---|
+| Tesla app BT **on** | 6 |
+| Tesla app BT **off** | 6 — **zero overlap with the first run** |
+
+Fresh values every burst, none repeating across runs ⇒ **nonce**, not an id.
+This closes Q1b and removes the "why 20 bytes when targeting needs 4" puzzle:
+the two are unrelated.
+
+Sample nonces from the control run:
+`8007be483870be60fa9360c93a15020a39de7f22`,
+`de58544e6d7aa21b499f2c3ccbaea549741f6e50`,
+`bdd995ed356ec79575e74043654371d4cfd85d40`.
+
+### Our key identity, independently confirmed
+
+`SHA1(ourPublicKey)` = `c6e9af58 20c1c2bf b0648f6b 80fc3a96 efe7cb81`, whose
+first 4 bytes are exactly the `keyId` the car reported for our slot-4 entry.
+Confirms both the extracted pubkey and the `keyId = SHA1(pubkey)[:4]` rule.
+**No `f3` nonce matches this**, as expected for a nonce.
+
+### Working model (high confidence, still not proof)
+
+The car ranges our key on approach and issues `f3` carrying a fresh 20-byte
+nonce, ~1 Hz. We never reply. It retries ~6–10 times, gives up, and does not
+unlock. This is the M0 success outcome: **the car considers our
+`ROLE_DRIVER` key present and worth challenging**, which is as close to a
+positive eligibility answer as we can get without replying.
+
+### Remaining questions, re-scoped
+
+Q1b is answered. Still open and now higher value:
+- **Q1a** — the schema of `f3` and, above all, **the response message**: which
+  `ToVCSECMessage` arm, what is computed over the nonce (HMAC with the session
+  key? ECDSA over the nonce? AES-GCM on the existing session?), and the
+  counter/epoch/AAD rules.
+- **Q1c** — what are `f44` (varint 1/2), `f45`, and `f53` (220B, recurring
+  ~every 8s)? `f53`'s size and cadence suggest a status/beacon rather than a
+  challenge, but that is a guess.
+- **Q1d** — `f3.f3 = 2` constant and `f3.f4` = single byte `0x08`/`0x01`. Which
+  enums? (Not the `AuthenticationReason` values we hold: 4/5/6/7/9.)
+- **Q2** unchanged and now urgent: native or JS. The car retries at ~1 Hz for
+  only ~6–10 s, so the response budget is a real constraint.
