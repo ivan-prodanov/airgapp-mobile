@@ -170,7 +170,7 @@ export interface CarLink extends CarLinkStatus {
 // M0 capture switch for the passive-entry project. ON during the capture
 // campaign; flip OFF once the challenge format is known, since every routine
 // closure push also gets logged and the diagnostics file grows without bound.
-const PASSIVE_ENTRY_CAPTURE = true;
+const PASSIVE_ENTRY_CAPTURE = false;
 
 // M1: actually ANSWER the car's challenge. This physically unlocks the car on
 // approach, so it is an explicit switch, not an emergent behaviour. The spec's

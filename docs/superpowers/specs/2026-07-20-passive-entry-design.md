@@ -1,7 +1,29 @@
 # Passive entry (walk-up unlock) — design
 
 **Date:** 2026-07-20
-**Status:** M0 COMPLETE; schema settled; M1 ready to implement
+**Status:** ✅ **M1 COMPLETE — walk-up unlock works on-car (2026-07-20).**
+M0 done, schema settled, seal proven. M2 (background) next.
+
+## ✅ M1 RESULT — passive entry works
+
+Armed the 4-byte-IV seal (RE RESPONSE #2: AAD = bare token, IV = counter as a raw
+4-byte big-endian value — a non-96-bit IV, so GCM derives J0 via GHASH; see
+gcmShortIv.ts). On a locked car, a handle pull produced:
+
+```
+challenge reason=PASSIVE_UNLOCK_EXTERIOR_HANDLE_PULL(5) level=DRIVE(2)
+our seal  counter=1524 iv=4B-be
+CAR VERDICT raw 22 05 12 03 08 f4 0b → signedMessageStatus{counter=1524}, NO
+            information field → SIGNEDMESSAGE_INFORMATION_NONE → GRANTED
+→ car pushed a vehicleStatus (doors actuated) — it UNLOCKED.
+```
+
+Zero faults across the 4-byte-IV path (contrast: 32 FAULT_AES_DECRYPT_AUTH on the
+earlier 12-byte matrix). This is the behavioural LOCAL_UNLOCK proof the whitelist
+read could never give. **Our ROLE_DRIVER key holds unlock authority.**
+
+Gotcha for the next reader: proto3 omits zero fields, so a GRANT's `information`
+is ABSENT (NONE=0). Decoding absent-info as "?" hid the first success.
 **Supersedes:** roadmap C4 (proactive BLE switch-back)
 
 ## Goal
