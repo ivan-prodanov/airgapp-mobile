@@ -431,7 +431,7 @@ export default function CarLinkScreen() {
     } catch (err) {
       say(`ERROR whitelist probe: ${errMsg(err)}`);
     } finally {
-      const path = appendDiagnostic('whitelist permission probe', out);
+      const path = await appendDiagnostic('whitelist permission probe', out);
       append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
     }
   };

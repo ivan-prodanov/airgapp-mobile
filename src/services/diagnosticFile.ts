@@ -30,14 +30,23 @@ function stamp(): string {
 
 // appendDiagnostic writes one titled block of lines, timestamped. Returns the
 // file path on success, or null if anything went wrong (never throws).
-export function appendDiagnostic(title: string, lines: string[]): string | null {
+// NOTE async: File.text() returns a Promise. An earlier version treated it as
+// sync, so `previous` was a Promise object — it stringified to "[object Object]"
+// AND silently discarded the existing log on every append, leaving only the most
+// recent block. Appending must await the read.
+export async function appendDiagnostic(title: string, lines: string[]): Promise<string | null> {
   try {
     const dir: Directory = Paths.document;
     const file = new File(dir, DIAGNOSTIC_FILENAME);
     if (!file.exists) {
       file.create();
     }
-    const previous = file.text();
+    let previous = '';
+    try {
+      previous = (await file.text()) ?? '';
+    } catch {
+      previous = ''; // unreadable/new file — start fresh rather than lose the new block
+    }
     const block = [`===== ${title} @ ${stamp()} =====`, ...lines, ''].join('\n');
     file.write(previous ? `${previous}\n${block}` : block);
     return file.uri;
