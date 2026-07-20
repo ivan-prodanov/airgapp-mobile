@@ -322,3 +322,23 @@ test('honkAction / vcsecGetStatusAction target the right domains + flags', () =>
     new Uint8Array(encodeVCSECMessage({ InformationRequest: { informationRequestType: 0 } })),
   );
 });
+
+// --- KEY_NOT_ON_WHITELIST detection -----------------------------------------
+
+test('a car reporting KEY_NOT_ON_WHITELIST throws a typed, non-retryable error', async () => {
+  __resetSessionCaches();
+  const { KeyNotOnWhitelistError, SESSION_INFO_STATUS_KEY_NOT_ON_WHITELIST } = await import('./session');
+
+  // The value must match the proto, or we would silently never detect it.
+  assert.equal(SESSION_INFO_STATUS_KEY_NOT_ON_WHITELIST, 1);
+
+  const err = new KeyNotOnWhitelistError();
+  assert.equal(err.needsReEnrollment, true, 'callers can branch on this without string matching');
+  assert.match(err.message, /re-enroll/i, 'the message tells the user the ONLY thing that fixes it');
+  assert.equal(err.name, 'KeyNotOnWhitelistError');
+
+  // It must NOT look like a transport-dead / stale-frame error, or the gateway
+  // would evict-and-retry forever against a car that will never accept the key.
+  assert.equal(isTransportDeadError(err), false, 'not a transport fault — retrying cannot fix it');
+  assert.equal(isStaleFrameError(err), false);
+});

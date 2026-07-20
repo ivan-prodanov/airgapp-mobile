@@ -82,6 +82,25 @@ const COMMAND_TIMEOUT_MS = 6000;
 export const MAX_BLE_ATTEMPTS = 10;
 export const TRANSIENT_DELAY_MS = 100;
 
+// SessionInfo.status — the car's verdict on whether our key is still enrolled.
+// SESSION_INFO_STATUS_KEY_NOT_ON_WHITELIST(1) is how the official app knows to
+// prompt "Set Up Phone Key" (research doc §2.5). We decoded SessionInfo from the
+// first day and never read this field, so a de-enrolled key surfaced only as
+// mystery transport failures — exactly the 2026-07-20 incident, where the car
+// had to be restarted and the phone key re-added before ANY app worked.
+export const SESSION_INFO_STATUS_KEY_NOT_ON_WHITELIST = 1;
+
+// KeyNotOnWhitelistError is thrown when the car says our key is gone. Distinct
+// from a transport fault ON PURPOSE: retrying/reconnecting cannot fix it, only
+// re-enrollment can, so the UI must say so rather than spin.
+export class KeyNotOnWhitelistError extends Error {
+  readonly needsReEnrollment = true;
+  constructor() {
+    super('key is not on the car whitelist — re-enroll the phone key (tap the NFC card)');
+    this.name = 'KeyNotOnWhitelistError';
+  }
+}
+
 export const DOMAIN_INFOTAINMENT: Domain = 3;
 export const DOMAIN_VEHICLE_SECURITY: Domain = 2;
 
@@ -343,6 +362,8 @@ export async function openDirectSession({
       challenge,
     );
     const sessionInfo = decodeMessage(SessionInfo, sessionInfoBytes);
+  assertKeyOnWhitelist(sessionInfo);
+    assertKeyOnWhitelist(sessionInfo);
 
     if (!sessionInfo.publicKey || sessionInfo.publicKey.length !== 65) {
       throw new Error(`car returned malformed pubkey (len ${sessionInfo.publicKey?.length})`);
@@ -914,4 +935,14 @@ export function peekLiveSession(vin: string, domain: Domain): Session | null {
   if (!entry) return null;
   if (entry.session.vin !== vin) return null;
   return entry.session;
+}
+
+// assertKeyOnWhitelist surfaces the car's "your key is gone" verdict as a typed,
+// non-retryable error instead of letting the handshake continue and fail later
+// as an opaque transport problem.
+function assertKeyOnWhitelist(sessionInfo: { status?: number | null }): void {
+  if (sessionInfo?.status === SESSION_INFO_STATUS_KEY_NOT_ON_WHITELIST) {
+    console.warn('[ble] car reports KEY_NOT_ON_WHITELIST — re-enrollment required');
+    throw new KeyNotOnWhitelistError();
+  }
 }
