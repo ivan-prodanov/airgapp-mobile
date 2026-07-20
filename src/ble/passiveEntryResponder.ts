@@ -21,7 +21,7 @@
 
 import { sha1 } from '@noble/hashes/sha1';
 
-import { aesGcmEncryptWithNonce } from './crypto';
+import { aesGcmEncryptWithNonce, MetadataBlockBuilder, TAG } from './crypto';
 import { peekLiveSession, DOMAIN_VEHICLE_SECURITY } from './session';
 import {
   parseAuthenticationRequest,
@@ -32,7 +32,10 @@ import {
   describeReasons,
   AUTH_TOKEN_LENGTH,
   IV_VARIANTS,
+  AAD_VARIANTS,
+  SIGNATURE_TYPE_AES_GCM_TOKEN,
   type IvVariant,
+  type AadVariant,
 } from './passiveEntryAuth';
 
 export interface AuthResponderOptions {
@@ -44,6 +47,9 @@ export interface AuthResponderOptions {
   // its commandStatus echoes our counter so each verdict is attributable to the
   // exact variant that produced it.
   ivVariant?: IvVariant | 'cycle';
+  // AAD assembly. 'cycle' walks the IV x AAD matrix — one approach (6-10
+  // challenges) covers a good fraction of it, and each verdict is attributable.
+  aadVariant?: AadVariant | 'cycle';
   enabled?: () => boolean;
   log?: (lines: string[]) => void;
 }
@@ -52,8 +58,37 @@ export type AuthResponder = (frame: Uint8Array) => Uint8Array | null;
 
 export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
   const mode = opts.ivVariant ?? 'counter-last';
+  const aadMode = opts.aadVariant ?? 'token';
   const say = (lines: string[]) => opts.log?.(lines);
   let cycleIndex = 0;
+
+  // buildAad mirrors the WORKING command AAD (a TLV metadata block) for the
+  // 'meta-*' variants, since that construction is proven against this car —
+  // only the tag set differs. No EPOCH: the RE response is explicit that the
+  // VCSEC token path is token+counter with no epoch.
+  const buildAad = (variant: AadVariant, token: Uint8Array, counter: number, vin: string) => {
+    if (variant === 'token') return token;
+    if (variant === 'token-counter') {
+      const out = new Uint8Array(token.length + 4);
+      out.set(token, 0);
+      new DataView(out.buffer).setUint32(token.length, counter >>> 0, false);
+      return out;
+    }
+    // Mirrors buildAesGcmMetadata (our PROVEN command AAD) with CHALLENGE added
+    // and EPOCH/EXPIRES_AT omitted — the RE response is explicit that the token
+    // path is token+counter with no epoch.
+    //
+    // ASCENDING tag order is enforced by MetadataBlockBuilder (it THROWS
+    // otherwise), so COUNTER(5) must precede CHALLENGE(6).
+    const m = new MetadataBlockBuilder();
+    m.add(TAG.SIGNATURE_TYPE, new Uint8Array([SIGNATURE_TYPE_AES_GCM_TOKEN]));
+    m.add(TAG.DOMAIN, new Uint8Array([DOMAIN_VEHICLE_SECURITY]));
+    m.add(TAG.PERSONALIZATION, new TextEncoder().encode(vin));
+    m.addUint32(TAG.COUNTER, counter);
+    m.add(TAG.CHALLENGE, token);
+    // digest = how the working command path does it; raw = the same block unhashed.
+    return variant === 'meta-raw' ? m.bytes() : m.checksum(null);
+  };
 
   return (frame: Uint8Array): Uint8Array | null => {
     if (opts.enabled && !opts.enabled()) return null;
@@ -77,8 +112,15 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       return null;
     }
 
+    // Walk the IV x AAD matrix: AAD is the slow axis so each AAD is tried
+    // against every IV before moving on.
+    const n = cycleIndex++;
     const ivVariant: IvVariant =
-      mode === 'cycle' ? IV_VARIANTS[cycleIndex++ % IV_VARIANTS.length] : mode;
+      mode === 'cycle' ? IV_VARIANTS[n % IV_VARIANTS.length] : mode;
+    const aadVariant: AadVariant =
+      aadMode === 'cycle'
+        ? AAD_VARIANTS[Math.floor(n / IV_VARIANTS.length) % AAD_VARIANTS.length]
+        : aadMode;
 
     // Monotonic anti-replay. Bump BEFORE sealing so a retry never reuses a
     // counter with the same key — nonce reuse under AES-GCM is catastrophic,
@@ -91,10 +133,11 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       encodeAuthenticationResponse({ authenticationLevel: req.requestedLevel }),
     );
     // The token is the AAD — bound cryptographically, never echoed as a field.
+    const aad = buildAad(aadVariant, req.token, counter, opts.vin);
     const sealed = aesGcmEncryptWithNonce(
       session.sessionKey,
       plaintext,
-      req.token,
+      aad,
       buildAuthIv(counter, ivVariant),
     );
     const out = encodeToVcsecSignedMessage({
@@ -107,7 +150,7 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
     // counter is the JOIN KEY: the car's commandStatus echoes it back, so this
     // line is what lets a verdict be attributed to the variant that caused it.
     say([
-      `auth ANSWERED counter=${counter} iv=${ivVariant} ` +
+      `auth ANSWERED counter=${counter} iv=${ivVariant} aad=${aadVariant} ` +
         `reasons=[${reasons}] level=${req.requestedLevel} out=${out.length}B`,
       `  token: ${Array.from(req.token).map((b) => b.toString(16).padStart(2, '0')).join('')}`,
     ]);

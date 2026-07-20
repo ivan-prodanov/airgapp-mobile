@@ -432,6 +432,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
                 authResponder: makeAuthResponder({
                   vin,
                   ivVariant: PASSIVE_ENTRY_IV_VARIANT,
+                  aadVariant: 'cycle',
                   enabled: () => PASSIVE_ENTRY_RESPOND,
                   log: (lines) => {
                     void appendDiagnostic('passive-entry auth', lines);

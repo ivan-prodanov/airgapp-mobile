@@ -263,3 +263,33 @@ export function buildAuthIv(counter: number, variant: IvVariant = 'counter-last'
   else iv.set(bytes, 8);
   return iv;
 }
+
+// --- AAD variants (the other half of the unknown) ---------------------------
+//
+// The first on-car run rejected all four IV layouts with FAULT_AES_DECRYPT_AUTH
+// while using AAD = the bare token. A wrong AAD produces that exact fault
+// regardless of IV, so the AAD is at least as likely to be the culprit — and our
+// WORKING command path proves this car expects a TLV metadata block, not a bare
+// value, for AES_GCM_PERSONALIZED. The tag table's CHALLENGE(6) slot looks
+// purpose-built for a token.
+//
+// So AAD becomes a second cycled dimension. Each is tried against each IV, and
+// the car's per-attempt verdict (echoing our counter) attributes the result.
+// NOTE the digest-vs-raw distinction: our working command AAD is the SHA-256
+// CHECKSUM of the metadata block, not the block itself. Which of the two the
+// token path wants is unknown, so both are candidates.
+export type AadVariant = 'meta-digest' | 'meta-raw' | 'token' | 'token-counter';
+
+export const AAD_VARIANTS: readonly AadVariant[] = [
+  'meta-digest',    // most likely: exactly how our WORKING command AAD is built
+  'meta-raw',       // same block, un-hashed
+  'token',          // the Android reading — eliminated on 4 IVs, kept as control
+  'token-counter',  // bare token ‖ counter BE32
+];
+
+export interface AadInputs {
+  token: Uint8Array;
+  counter: number;
+  domain: number;
+  vin: string;
+}

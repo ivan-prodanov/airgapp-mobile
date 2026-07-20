@@ -167,3 +167,45 @@ test('end-to-end: real challenge → sealed response, shape is wire-valid', asyn
   // Re-parsing our own output must not look like a challenge (no infinite loop).
   assert.equal(parseAuthenticationRequest(frame), null);
 });
+
+test('AAD variants are all distinct — cycling them must actually test something', async () => {
+  // Guards the matrix search: identical "variants" would burn on-car attempts
+  // learning nothing, and a pass would be ambiguous about which one worked.
+  const { MetadataBlockBuilder, TAG } = await import('./crypto');
+  const token = Uint8Array.from(new Array(20).fill(0xab));
+  const counter = 1234;
+
+  const tokenCounter = new Uint8Array(24);
+  tokenCounter.set(token, 0);
+  new DataView(tokenCounter.buffer).setUint32(20, counter, false);
+
+  // Tags MUST ascend — COUNTER(5) before CHALLENGE(6) — or the builder throws.
+  const block = () =>
+    new MetadataBlockBuilder()
+      .add(TAG.SIGNATURE_TYPE, Uint8Array.from([3]))
+      .add(TAG.DOMAIN, Uint8Array.from([2]))
+      .add(TAG.PERSONALIZATION, new TextEncoder().encode('5YJ3E1EA1JF000000'))
+      .addUint32(TAG.COUNTER, counter)
+      .add(TAG.CHALLENGE, token);
+
+  const metaRaw = block().bytes();
+  const metaDigest = block().checksum(null);
+
+  const all = [token, tokenCounter, metaRaw, metaDigest].map((b) =>
+    Buffer.from(b).toString('hex'),
+  );
+  assert.equal(new Set(all).size, 4, 'every AAD variant produces distinct bytes');
+
+  // The RAW block must literally carry the challenge; the DIGEST binds it via
+  // SHA-256 (which is exactly how our working command AAD works), so the token
+  // must NOT appear literally there.
+  assert.ok(Buffer.from(metaRaw).includes(Buffer.from(token)), 'raw block carries the token');
+  assert.equal(metaDigest.length, 32, 'digest form is a SHA-256');
+  assert.ok(!Buffer.from(metaDigest).includes(Buffer.from(token)), 'digest binds, not embeds');
+
+  // Ascending-order rule is load-bearing: descending must throw, not silently
+  // produce a different block.
+  assert.throws(() =>
+    new MetadataBlockBuilder().add(TAG.CHALLENGE, token).addUint32(TAG.COUNTER, counter),
+  );
+});
