@@ -56,6 +56,13 @@ walk up to the locked car with the app open and connected and pull a door handle
   - **Only ordinary closure/lock pushes, no challenge** → the car is not
     selecting our key. Investigate why (ranging? role? presence?) before
     building anything.
+- **Capture over DIRECT BLE (blue dot), not Pi (amber).** Both transports route
+  unsolicited frames through the same handler, so both are logged — but passive
+  entry is decided by RADIO PROXIMITY, and over Pi the car ranges the *Pi's*
+  antenna, not the phone's. A challenge observed while relayed through the Pi
+  would say nothing about walk-up behaviour. (Noted separately: that the Pi can
+  present the phone's key identity from the Pi's physical location is a relay
+  surface worth thinking about before passive entry ships.)
 - Cost: hours. Decisiveness: total. **Do this first.**
 
 ### M1 — Answer the challenge, foreground only
@@ -90,11 +97,14 @@ Make it work with the app closed — the actual product.
 
 ## Risks, honestly stated
 
-- **JS wake latency may be disqualifying.** The car waits only briefly for a
-  challenge response. Our crypto is pure-JS (`@noble`), and after an iOS
-  suspension the RN/Hermes runtime must wake, then sign. If that is too slow,
-  the response path must move to native (Swift/ObjC), which is a materially
-  bigger project. **Measure response latency in M1 before committing to M2.**
+- **JS wake latency — DECIDED: match Tesla.** The car waits only briefly for a
+  challenge response, and our crypto is pure-JS (`@noble`). Rather than guess,
+  the rule is: **do it the way the official app does it.** If Tesla answers the
+  challenge natively, we answer natively; if they do it in their JS layer, JS is
+  proven sufficient and we stay in JS. This is an RE question, not a design
+  debate — see the research brief
+  (`docs/superpowers/research/REQUEST-passive-entry-challenge-protocol.md`).
+  Still measure the latency in M1, but the architecture follows their answer.
 - **Unknown wire format** — mitigated by M0; if the capture is unreadable, this
   needs real RE effort and the estimate changes.
 - **Security posture.** This makes the car open automatically on approach. It is

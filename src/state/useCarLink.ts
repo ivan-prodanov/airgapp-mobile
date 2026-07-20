@@ -55,6 +55,8 @@ import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
+import { formatUnsolicitedFrame } from '@/ble/passiveEntryCapture';
+import { appendDiagnostic } from '@/services/diagnosticFile';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
@@ -162,6 +164,11 @@ export interface CarLink extends CarLinkStatus {
   // stamped with a GRACE_MS intent window so the poll won't revert them.
   dispatch: (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => void;
 }
+
+// M0 capture switch for the passive-entry project. ON during the capture
+// campaign; flip OFF once the challenge format is known, since every routine
+// closure push also gets logged and the diagnostics file grows without bound.
+const PASSIVE_ENTRY_CAPTURE = true;
 
 export interface UseCarLinkOptions {
   // The PLAIN telemetry apply path (NOT the user/reconciler path) — writing a
@@ -881,6 +888,19 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // filtered out by the decoder (returns null). Only DirectBleTransport ever
   // calls this — Pi is request/response, so instant-over-Pi needs streaming.
   const handleVcsecPush = useCallback((frame: Uint8Array) => {
+    // M0 CAPTURE (passive entry). Log EVERY car-initiated frame — including the
+    // ones we cannot decode — BEFORE the VehicleStatus filter below. A
+    // passive-entry AuthenticationRequest is by definition a frame that does NOT
+    // decode as a VehicleStatus, so capturing after that filter would drop
+    // precisely the thing we are hunting. Best-effort and fire-and-forget: this
+    // must never delay or break the instant-closures path it rides on.
+    if (PASSIVE_ENTRY_CAPTURE) {
+      try {
+        void appendDiagnostic('unsolicited VCSEC frame', formatUnsolicitedFrame(frame));
+      } catch {
+        // diagnostics must never break telemetry
+      }
+    }
     const status = decodeUnsolicitedVcsecStatus(frame);
     if (!status) return;
     const now = Date.now();
