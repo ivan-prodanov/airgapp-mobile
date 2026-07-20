@@ -55,7 +55,7 @@ import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
-import { formatUnsolicitedFrame, describeCommandStatus } from '@/ble/passiveEntryCapture';
+import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { startLogFileSink } from '@/services/logFileSink';
@@ -170,7 +170,7 @@ export interface CarLink extends CarLinkStatus {
 // M0 capture switch for the passive-entry project. ON during the capture
 // campaign; flip OFF once the challenge format is known, since every routine
 // closure push also gets logged and the diagnostics file grows without bound.
-const PASSIVE_ENTRY_CAPTURE = false;
+const PASSIVE_ENTRY_CAPTURE = true;
 
 // M1: actually ANSWER the car's challenge. This physically unlocks the car on
 // approach, so it is an explicit switch, not an emergent behaviour. The spec's
@@ -941,7 +941,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     // it (stop signing before we wedge VCSEC again — the 2026-07-20 lesson).
     const verdict = describeCommandStatus(frame);
     if (verdict && authResponderRef.current) {
-      const accepted = verdict.includes('NONE (accepted)');
+      const accepted = commandStatusAccepted(frame);
       authResponderRef.current.noteVerdict(accepted);
       // Log the verdict into the SAME block as our ANSWERED line (join on the
       // echoed counter), independent of full capture — so a test run shows

@@ -87,3 +87,27 @@ test('flags the real on-car unmodelled field 3 through the envelope', () => {
   assert.deepEqual(r.fields, [3], 'inner FromVCSECMessage field 3');
   assert.equal(r.hasUnknown, true, 'field 3 is unmodelled → candidate challenge');
 });
+
+test('an accepted commandStatus (no information field) reads as NONE/accepted', async () => {
+  const { describeCommandStatus, commandStatusAccepted } = await import('./passiveEntryCapture');
+  // RoutableMessage{ payload(10) = FromVCSECMessage{ commandStatus(4) = {
+  //   operationStatus(1)=0, signedMessageStatus(2) = { counter(1)=1499 } } } }
+  // information(2) is OMITTED — proto3 drops the zero value NONE. This is the
+  // exact shape the car sends on a GRANT, and reading it as "?" hid the first
+  // successful passive-entry unlock on-car.
+  const counterVarint = [0xdb, 0x0b]; // 1499
+  const signed = [0x08, ...counterVarint]; // counter(1)=1499, NO field 2
+  const cmd = [0x08, 0x00, 0x12, signed.length, ...signed]; // opStatus(1)=0, signedMsgStatus(2)
+  const vcsec = [0x22, cmd.length, ...cmd]; // commandStatus = field 4
+  const frame = Uint8Array.from([0x52, vcsec.length, ...vcsec]); // payload = field 10
+
+  const v = describeCommandStatus(frame);
+  assert.match(v ?? '', /counter=1499 → NONE \(accepted\)/, 'absent info ⇒ NONE, not "?"');
+  assert.equal(commandStatusAccepted(frame), true);
+
+  // A rejection (information=6) must NOT read as accepted.
+  const signedRej = [0x08, ...counterVarint, 0x10, 0x06]; // + information(2)=6
+  const cmdRej = [0x08, 0x02, 0x12, signedRej.length, ...signedRej];
+  const rej = Uint8Array.from([0x52, cmdRej.length + 2, 0x22, cmdRej.length, ...cmdRej]);
+  assert.equal(commandStatusAccepted(rej), false, 'FAULT_AES_DECRYPT_AUTH is not acceptance');
+});

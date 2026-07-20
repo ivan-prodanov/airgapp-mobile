@@ -125,7 +125,21 @@ export function describeCommandStatus(frame: Uint8Array): string | null {
     else if (field === 2) info = v >>> 0;
   }
   if (counter === null && info === null) return null;
-  return `CAR VERDICT counter=${counter} → ${info === null ? '?' : SIGNED_MESSAGE_INFO[info] ?? `unknown(${info})`}`;
+  // proto3 omits zero-valued fields, and SIGNEDMESSAGE_INFORMATION_NONE = 0. So a
+  // signedMessageStatus that carries a counter but NO `information` field means
+  // NONE — the car ACCEPTED our signed message. (A rejection always carries a
+  // non-zero information, e.g. 6 = FAULT_AES_DECRYPT_AUTH.) Reading absent-info as
+  // "?" hid the very first on-car GRANT.
+  const effInfo = info ?? 0;
+  return `CAR VERDICT counter=${counter} → ${SIGNED_MESSAGE_INFO[effInfo] ?? `unknown(${effInfo})`}`;
+}
+
+// commandStatusAccepted returns true when the frame is the car's verdict on OUR
+// signed message AND it accepted it (information NONE/absent). Used to drive the
+// responder's circuit breaker and to detect the passive-entry grant.
+export function commandStatusAccepted(frame: Uint8Array): boolean {
+  const verdict = describeCommandStatus(frame);
+  return verdict != null && verdict.includes('NONE (accepted)');
 }
 
 // formatUnsolicitedFrame renders the report for the diagnostics file. The
