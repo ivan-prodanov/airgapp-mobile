@@ -27,6 +27,8 @@
 
 import { BleManager, BleErrorCode, State } from 'react-native-ble-plx';
 import type { Device, Subscription } from 'react-native-ble-plx';
+import { logw, logi } from '../services/logbus';
+import { createBondWedgeDetector } from './bondWedge';
 
 import { vehicleLocalName } from './bleScanName';
 import { BleReassembler, frameForWrite, MAX_BLE_MESSAGE_SIZE } from './bleFraming';
@@ -261,6 +263,31 @@ export class DirectBleTransport implements CarTransport {
   //
   // So: cancel any OS-level connection first, and on a wedged connect force a
   // disconnect and retry once. A second failure is a real failure.
+  // Tracks the stale-LE-bond wedge across connect attempts. Lives here because
+  // this is the only place that sees every raw connect outcome — ble-plx's
+  // BleError is WRAPPED by the time it reaches the transport logger, which
+  // discards the iOS CBError code that names peerRemovedPairingInformation.
+  private readonly bondWedge = createBondWedgeDetector();
+
+  // describeBleError pulls out every ble-plx field, because String(err) alone
+  // collapses to "Device X connection failed" and hides the actual cause.
+  private static describeBleError(e: unknown): Record<string, unknown> {
+    const b = e as {
+      message?: string; reason?: string | null; errorCode?: number;
+      iosErrorCode?: number; androidErrorCode?: number; attErrorCode?: number | null;
+      name?: string;
+    };
+    return {
+      name: b?.name,
+      message: b?.message,
+      reason: b?.reason ?? null,
+      errorCode: b?.errorCode,
+      iosErrorCode: b?.iosErrorCode,
+      androidErrorCode: b?.androidErrorCode,
+      attErrorCode: b?.attErrorCode ?? null,
+    };
+  }
+
   private async connectClearingStale(scanned: Device): Promise<Device> {
     try {
       if (await this.manager.isDeviceConnected(scanned.id)) {
@@ -270,12 +297,31 @@ export class DirectBleTransport implements CarTransport {
       // isDeviceConnected can throw on a destroyed manager — proceed anyway.
     }
     try {
-      return await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
+      const dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect');
+      this.bondWedge.noteConnectSuccess();
+      logi('ble', 'connect ok', { deviceId: scanned.id });
+      return dev;
     } catch (first) {
       await scanned.cancelConnection().catch(() => {});
       try {
-        return await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect(retry)');
-      } catch {
+        const dev = await withTimeout(scanned.connect(), CONNECT_STEP_TIMEOUT_MS, 'connect(retry)');
+        this.bondWedge.noteConnectSuccess();
+        logi('ble', 'connect ok (after retry)', { deviceId: scanned.id });
+        return dev;
+      } catch (second) {
+        // The scan already SUCCEEDED to get here, so this is car-present /
+        // connect-refused — the stale-bond signature. Log every ble-plx field:
+        // the iOS CBError code (14 = peerRemovedPairingInformation) is the
+        // definitive marker and is lost by the time the generic transport
+        // logger stringifies it.
+        const verdict = this.bondWedge.noteConnectFailure(second);
+        logw('ble', 'CONNECT FAILED (scan had succeeded)', {
+          attempt1: DirectBleTransport.describeBleError(first),
+          attempt2: DirectBleTransport.describeBleError(second),
+          wedgeVerdict: verdict.kind,
+          wedged: verdict.wedged,
+          consecutive: verdict.consecutiveConnectFailures,
+        });
         throw first; // surface the ORIGINAL error; the retry is a recovery attempt
       }
     }
