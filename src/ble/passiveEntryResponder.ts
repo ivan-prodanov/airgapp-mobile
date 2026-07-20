@@ -27,7 +27,7 @@
 import { sha1 } from '@noble/hashes/sha1';
 
 import { aesGcmEncryptShortIv, be32 } from './gcmShortIv';
-import { peekLiveSession, DOMAIN_VEHICLE_SECURITY } from './session';
+import type { Session } from './types';
 import {
   parseAuthenticationRequest,
   encodeAuthenticationResponse,
@@ -46,7 +46,14 @@ const MAX_PER_WINDOW = 12;
 const MAX_CONSECUTIVE_FAULTS = 6;
 
 export interface AuthResponderOptions {
-  vin: string;
+  // The session to sign with, supplied by whoever OWNS the link this responder
+  // answers on. Explicit rather than looked up: each handshake derives a fresh
+  // key from the car's ephemeral pubkey, so a Pi session and a direct-BLE
+  // session have DIFFERENT keys and counters. Reading a shared per-domain cache
+  // here would sign a direct-BLE challenge with the Pi's key the moment both
+  // exist — an unfixable FAULT_AES_DECRYPT_AUTH. Returns null when no session is
+  // live yet, in which case we decline rather than guess.
+  getSession: () => Session | null;
   enabled?: () => boolean;
   log?: (lines: string[]) => void;
 }
@@ -88,7 +95,7 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       return null;
     }
 
-    const session = peekLiveSession(opts.vin, DOMAIN_VEHICLE_SECURITY);
+    const session = opts.getSession();
     if (!session) {
       say([`auth DROPPED (no live VCSEC session) reasons=[${reasons}]`]);
       return null;

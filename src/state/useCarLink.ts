@@ -47,6 +47,7 @@ import {
 } from '@/ble';
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 import { DirectBleTransport } from '@/ble/directBleTransport';
+import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
 import { decodeUnsolicitedVcsecStatus } from '@/ble/vcsecPush';
@@ -57,6 +58,7 @@ import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
+import { startPassiveEntryLink } from '@/ble/passiveEntryLink';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { startLogFileSink } from '@/services/logFileSink';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
@@ -428,7 +430,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
                 // gives up in ~6-10s, so a hop through React state first would
                 // eat the budget. Returns null for non-challenge frames.
                 authResponder: (authResponderRef.current = makeAuthResponder({
-                  vin,
+                  // This responder answers on the COMMAND path's own BLE link,
+                  // so it must sign with THAT link's session — the shared cache
+                  // is correct here, and only here.
+                  getSession: () => peekLiveSession(vin, 2),
                   enabled: () => PASSIVE_ENTRY_RESPOND,
                   log: (lines) => {
                     void appendDiagnostic('passive-entry auth', lines);
@@ -815,6 +820,30 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     },
     [stampIntent],
   );
+
+  // DEDICATED passive-entry BLE link — the Tesla model. The official app keeps
+  // its own BLE connection for passive entry while other traffic (for us, the
+  // Pi) talks to the car on another central; the car holds both happily. So
+  // passive entry must not depend on which transport the command path selected,
+  // and we do NOT switch transports to make room for it.
+  //
+  // Stands down when the command path already holds a direct-BLE link, so we
+  // never open two links from one phone to one car.
+  useEffect(() => {
+    if (!linked || !vin) return;
+    const keys = keysRef.current;
+    if (!keys) return;
+    const link = startPassiveEntryLink({
+      vin,
+      deviceKeys: keys,
+      commandPathOnBle: () => selectedTransportRef.current === 'ble',
+      enabled: () => PASSIVE_ENTRY_RESPOND && AppState.currentState === 'active',
+      log: (lines) => {
+        void appendDiagnostic('passive-entry link', lines);
+      },
+    });
+    return () => link.stop();
+  }, [linked, vin]);
 
   // Tee the logbus to the pullable diagnostics file. Without this, an on-device
   // link failure is invisible off-device — which is exactly what turned "no blue
