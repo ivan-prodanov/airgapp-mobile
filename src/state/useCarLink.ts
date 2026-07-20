@@ -169,14 +169,14 @@ export interface CarLink extends CarLinkStatus {
 // M0 capture switch for the passive-entry project. ON during the capture
 // campaign; flip OFF once the challenge format is known, since every routine
 // closure push also gets logged and the diagnostics file grows without bound.
-const PASSIVE_ENTRY_CAPTURE = true;
+const PASSIVE_ENTRY_CAPTURE = false;
 
 // M1: actually ANSWER the car's challenge. This physically unlocks the car on
 // approach, so it is an explicit switch, not an emergent behaviour. The spec's
 // end state is opt-in and off by default (M3); it is ON here because M1's whole
 // purpose is to find out whether our ROLE_DRIVER key is accepted — the
 // LOCAL_UNLOCK question the whitelist read could not answer.
-const PASSIVE_ENTRY_RESPOND = true;
+const PASSIVE_ENTRY_RESPOND = false;
 
 // Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so

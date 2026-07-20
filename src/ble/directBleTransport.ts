@@ -256,14 +256,30 @@ export class DirectBleTransport implements CarTransport {
   async sendRaw(frame: Uint8Array): Promise<void> {
     const dev = this.device;
     if (!dev) return;
-    const chunks = frameForWrite(frame, this.blockLength);
-    for (const chunk of chunks) {
-      await dev.writeCharacteristicWithResponseForService(
-        SERVICE_UUID,
-        TX_UUID,
-        bytesToBase64(chunk),
-      );
-    }
+    // MUST hold the write lock. A frame is written as SEVERAL chunks, and this
+    // module's contract is one writer at a time — interleaving another writer's
+    // chunks corrupts both frames on the wire. Learned the hard way: an
+    // un-awaited sendRaw from the notification handler raced exchange()'s chunk
+    // loop and broke the session handshake, so the link stayed up (unsolicited
+    // frames kept arriving) while every poll failed and the UI never went live.
+    await this.withWriteLock(async () => {
+      for (const chunk of frameForWrite(frame, this.blockLength)) {
+        await dev.writeCharacteristicWithResponseForService(
+          SERVICE_UUID,
+          TX_UUID,
+          bytesToBase64(chunk),
+        );
+      }
+    });
+  }
+
+  // withWriteLock serialises every multi-chunk write on this link. Cheap: the
+  // only contenders are exchange() and sendRaw().
+  private writeChain: Promise<unknown> = Promise.resolve();
+  private withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.writeChain.then(fn, fn);
+    this.writeChain = run.catch(() => undefined);
+    return run;
   }
 
   // exchange sends one RoutableMessage and returns the demuxed matching
@@ -289,13 +305,22 @@ export class DirectBleTransport implements CarTransport {
     try {
       const chunks = frameForWrite(req, this.blockLength);
       try {
-        for (const chunk of chunks) {
-        // WITH response — the Go connector writes each chunk with noRsp=false
-        // (ble.go:121), i.e. an ATT Write Request the car ACKs; the Tesla TX
-        // characteristic ignores Write-Without-Response commands (they leave
-        // the car silent → our exchange times out as a "stale frame").
-        await device.writeCharacteristicWithResponseForService(SERVICE_UUID, TX_UUID, bytesToBase64(chunk));
-      }
+        // Same write lock sendRaw() takes. A one-sided lock is no lock: the
+        // passive-entry responder can fire between our chunks otherwise, and
+        // both frames land corrupted.
+        await this.withWriteLock(async () => {
+          for (const chunk of chunks) {
+            // WITH response — the Go connector writes each chunk with noRsp=false
+            // (ble.go:121), i.e. an ATT Write Request the car ACKs; the Tesla TX
+            // characteristic ignores Write-Without-Response commands (they leave
+            // the car silent → our exchange times out as a "stale frame").
+            await device.writeCharacteristicWithResponseForService(
+              SERVICE_UUID,
+              TX_UUID,
+              bytesToBase64(chunk),
+            );
+          }
+        });
     } catch (e) {
       // Any write failure on a connection we believed was live almost
       // always means the link just dropped. Surface uniformly as "BLE
