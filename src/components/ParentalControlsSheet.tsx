@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -9,6 +9,7 @@ import type { VehicleActions } from '@/state/useVehicleState';
 import type { VehicleViewState } from '@/types/vehicleTypes';
 import { Checkbox } from './Checkbox';
 import { HoldRepeatButton } from './HoldRepeatButton';
+import { SlideUpSheet } from './SlideUpSheet';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
@@ -42,9 +43,8 @@ export function ParentalControlsSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
+    <SlideUpSheet visible={visible} onDismiss={onClose}>
+      <View style={[styles.content, { paddingBottom: insets.bottom + 20 }]}>
         <Text style={styles.title}>Customize Parental Controls</Text>
         <View style={styles.divider} />
 
@@ -107,7 +107,7 @@ export function ParentalControlsSheet({
           />
         </View>
       </View>
-    </Modal>
+    </SlideUpSheet>
   );
 }
 
@@ -139,14 +139,7 @@ function Option({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheet: {
-    backgroundColor: '#141414',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+  content: {
     paddingHorizontal: 24,
     paddingTop: 20,
   },

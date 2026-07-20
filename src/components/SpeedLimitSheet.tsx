@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { clampSpeedLimit, SPEED_LIMIT_MAX, SPEED_LIMIT_MIN } from '@/state/fleet';
 import { HoldRepeatButton } from './HoldRepeatButton';
+import { SlideUpSheet } from './SlideUpSheet';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
@@ -42,9 +43,8 @@ export function SpeedLimitSheet({
   const atMax = value >= SPEED_LIMIT_MAX;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 28 }]}>
+    <SlideUpSheet visible={visible} onDismiss={onClose}>
+      <View style={[styles.content, { paddingBottom: insets.bottom + 28 }]}>
         <Text style={styles.title}>Adjust Speed Limit</Text>
         <View style={styles.divider} />
 
@@ -63,19 +63,12 @@ export function SpeedLimitSheet({
           </HoldRepeatButton>
         </View>
       </View>
-    </Modal>
+    </SlideUpSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheet: {
-    backgroundColor: '#141414',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+  content: {
     paddingHorizontal: 24,
     paddingTop: 20,
   },

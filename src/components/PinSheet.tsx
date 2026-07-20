@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
-const PIN_LENGTH = 4;
-// 3×4 keypad; '' is the empty bottom-left cell, 'back' is the backspace key (matches the Tesla layout).
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'] as const;
+import { appendPinDigit, deletePinDigit, maskPin, PIN_LENGTH } from '@/state/pinMask';
+import { SlideUpSheet } from './SlideUpSheet';
 
-// Bottom-sheet 4-digit PIN pad used by the Security & Drivers screen. Slides up over a dimmed screen;
-// tapping above the panel cancels (operation aborted). `mode` picks the prompt copy: 'set' when the user
-// is choosing a new PIN, 'enter' when they must re-enter the one saved earlier. `onSubmit` returns whether
-// the PIN was accepted — a rejected PIN shakes + clears so the user can retry without the sheet closing.
+// Layout below is the Tesla app's own PinInput StyleSheet resolved at Gutter = 10 (v4.58.0 bundle):
+//   container { paddingHorizontal: 3*G }  pinSection { alignItems:'center' }
+//   placeholderText { height: 2*G, marginTop: 4*G, marginBottom: 1*G }
+//   pad { flexDirection:'row', flexWrap:'wrap', width:'70%' }  button { width:'33%', height: 8*G }
+//   submitButton { width:'100%', height: 50, paddingHorizontal: 2*G }
+// Type ramp: the entered PIN is TextCategory.H3 (20/24, letterSpacing 0.5, Medium) and the placeholder is
+// TextCategory.BodyLabel (14/20, letterSpacing 0.1) in the Light appearance.
+const GUTTER = 10;
+// The keypad's own order, verbatim: '' is the empty bottom-left cell.
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'] as const;
+
 export function PinSheet({
   visible,
   title,
@@ -26,12 +32,17 @@ export function PinSheet({
   onCancel: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const [digits, setDigits] = useState('');
+  const [pin, setPin] = useState('');
+  // Mirrors the app's second piece of state: false right after a digit (that digit shows), true after a
+  // delete or a submit (everything masked).
+  const [maskAll, setMaskAll] = useState(false);
   const shake = useRef(new Animated.Value(0)).current;
 
-  // Fresh entry every time the sheet opens.
   useEffect(() => {
-    if (visible) setDigits('');
+    if (visible) {
+      setPin('');
+      setMaskAll(false);
+    }
   }, [visible]);
 
   const runShake = () => {
@@ -45,65 +56,66 @@ export function PinSheet({
   };
 
   const tapKey = (k: string) => {
-    if (k === 'back') {
-      if (!digits.length) return;
+    if (k === 'del') {
+      if (!pin.length) return;
       Haptics.selectionAsync().catch(() => {});
-      setDigits((d) => d.slice(0, -1));
+      setPin(deletePinDigit(pin));
+      setMaskAll(true);
       return;
     }
-    if (digits.length >= PIN_LENGTH) return; // can't tap more than 4 digits
+    if (pin.length >= PIN_LENGTH) return;
     Haptics.selectionAsync().catch(() => {});
-    setDigits((d) => d + k);
+    setPin(appendPinDigit(pin, k));
+    setMaskAll(false);
   };
 
   const submit = () => {
-    if (digits.length !== PIN_LENGTH) return;
-    const ok = onSubmit(digits);
-    if (ok) {
+    if (pin.length !== PIN_LENGTH) return;
+    setMaskAll(true);
+    if (onSubmit(pin)) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    } else {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-      runShake();
-      setDigits('');
+      return;
     }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+    runShake();
+    setPin('');
   };
 
-  const canSubmit = digits.length === PIN_LENGTH;
+  const canSubmit = pin.length === PIN_LENGTH;
   const translateX = shake.interpolate({ inputRange: [-1, 1], outputRange: [-12, 12] });
-  // Right-aligned reveal: leading dots for the empty slots, then the digits typed so far ("•••1").
-  const filled = '•'.repeat(PIN_LENGTH - digits.length) + digits;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+    <SlideUpSheet visible={visible} onDismiss={onCancel}>
+      <View style={[styles.container, { paddingBottom: insets.bottom + 16 }]}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.divider} />
 
-        <Animated.View style={[styles.display, { transform: [{ translateX }] }]}>
-          {digits.length === 0 ? (
-            <Text style={styles.prompt}>
-              {mode === 'set' ? 'Set your 4-digit PIN' : 'Enter your 4-digit PIN'}
-            </Text>
-          ) : (
-            <Text style={styles.dots}>{filled}</Text>
-          )}
-        </Animated.View>
-
-        <View style={styles.pad}>
-          {KEYS.map((k, i) =>
-            k === '' ? (
-              <View key={i} style={styles.key} />
+        <View style={styles.pinSection}>
+          <Animated.View style={{ transform: [{ translateX }] }}>
+            {pin.length === 0 ? (
+              <Text style={styles.placeholder}>
+                {mode === 'set' ? 'Set your 4-digit PIN' : 'Enter your 4-digit PIN'}
+              </Text>
             ) : (
-              <Pressable key={i} style={styles.key} hitSlop={4} onPress={() => tapKey(k)}>
-                {k === 'back' ? (
-                  <SymbolView name="delete.left" tintColor="white" size={28} weight="regular" />
-                ) : (
-                  <Text style={styles.keyText}>{k}</Text>
-                )}
-              </Pressable>
-            ),
-          )}
+              <Text style={styles.entered}>{maskPin(pin, maskAll)}</Text>
+            )}
+          </Animated.View>
+
+          <View style={styles.pad}>
+            {KEYS.map((k, i) =>
+              k === '' ? (
+                <View key={i} style={styles.key} />
+              ) : (
+                <Pressable key={i} style={styles.key} onPress={() => tapKey(k)}>
+                  {k === 'del' ? (
+                    <SymbolView name="delete.left" tintColor="white" size={26} weight="regular" />
+                  ) : (
+                    <Text style={styles.keyText}>{k}</Text>
+                  )}
+                </Pressable>
+              ),
+            )}
+          </View>
         </View>
 
         <Pressable
@@ -114,20 +126,14 @@ export function PinSheet({
           <Text style={[styles.submitText, !canSubmit && styles.submitTextDisabled]}>Submit</Text>
         </Pressable>
       </View>
-    </Modal>
+    </SlideUpSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheet: {
-    backgroundColor: '#141414',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 24,
+  container: {
+    width: '100%',
+    paddingHorizontal: 3 * GUTTER,
     paddingTop: 20,
   },
   title: {
@@ -140,54 +146,66 @@ const styles = StyleSheet.create({
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    marginHorizontal: -24,
+    marginHorizontal: -3 * GUTTER,
   },
-  display: {
-    height: 64,
+  pinSection: {
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  prompt: {
-    fontSize: 17,
+  // BodyLabel / Light.
+  placeholder: {
+    height: 2 * GUTTER,
+    marginTop: 4 * GUTTER,
+    marginBottom: GUTTER,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     fontWeight: '500',
     color: 'rgba(255,255,255,0.5)',
   },
-  dots: {
-    fontSize: 34,
-    fontWeight: '600',
+  // H3 / Default — same box as the placeholder so the keypad never shifts.
+  entered: {
+    height: 2 * GUTTER,
+    marginTop: 4 * GUTTER,
+    marginBottom: GUTTER,
+    fontSize: 20,
+    lineHeight: 24,
+    letterSpacing: 0.5,
+    fontWeight: '500',
     color: 'white',
-    letterSpacing: 10,
-    // letterSpacing pads the right edge too; nudge left so the group reads centered.
-    marginLeft: 10,
+    textAlign: 'center',
   },
   pad: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    width: '70%',
   },
   key: {
     width: '33.333%',
-    height: 68,
+    height: 8 * GUTTER,
     alignItems: 'center',
     justifyContent: 'center',
   },
   keyText: {
-    fontSize: 30,
-    fontWeight: '400',
+    fontSize: 20,
+    lineHeight: 24,
+    letterSpacing: 0.5,
+    fontWeight: '500',
     color: 'white',
   },
   submit: {
-    height: 58,
+    width: '100%',
+    height: 50,
     borderRadius: 14,
     backgroundColor: '#3E6AE1',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 14,
+    marginTop: 8,
   },
   submitDisabled: {
     backgroundColor: '#1E2A4A',
   },
   submitText: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '700',
     color: 'white',
   },
