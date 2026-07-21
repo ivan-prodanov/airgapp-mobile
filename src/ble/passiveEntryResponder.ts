@@ -47,12 +47,28 @@ const MAX_CONSECUTIVE_FAULTS = 6;
 
 export interface AuthResponderOptions {
   // The session to sign with, supplied by whoever OWNS the link this responder
-  // answers on. Explicit rather than looked up: each handshake derives a fresh
-  // key from the car's ephemeral pubkey, so a Pi session and a direct-BLE
-  // session have DIFFERENT keys and counters. Reading a shared per-domain cache
-  // here would sign a direct-BLE challenge with the Pi's key the moment both
-  // exist — an unfixable FAULT_AES_DECRYPT_AUTH. Returns null when no session is
-  // live yet, in which case we decline rather than guess.
+  // answers on. Explicit rather than looked up from a shared cache — but NOT for
+  // the reason an earlier version of this comment gave.
+  //
+  // ⚠ CORRECTION (RE RESPONSE #8, proven against authd + the decompiled app):
+  // the car's ECDH public key is STATIC/per-domain, NOT a per-handshake
+  // ephemeral. So under ONE enrolled key the Pi session and a direct-BLE session
+  // derive the SAME session key and SHARE ONE (key, epoch) counter on the car —
+  // they are the same cryptographic identity. The "different keys and counters"
+  // isolation an earlier comment claimed here does NOT exist. Real isolation
+  // between the Pi path and passive entry requires TWO DISTINCT ENROLLED KEYS.
+  //
+  // Passing the session explicitly still matters: each transport tracks its own
+  // LOCAL counter, and crossing them (signing a BLE challenge off the Pi's local
+  // counter, or vice versa) desyncs from the car's shared counter and gets
+  // rejected. But do not mistake that for cryptographic separation — it isn't.
+  //
+  // SAFETY: because the legacy passive seal uses IV = counter, two signers of
+  // legacy frames under one key that ever collide on a counter = AES-GCM nonce
+  // reuse (catastrophic). Today only THIS responder emits legacy frames and the
+  // command path is routable (random nonce), so the spaces are disjoint — but
+  // that guarantee is load-bearing. Never introduce a second legacy signer under
+  // the same key. Returns null when no session is live yet; we decline, not guess.
   getSession: () => Session | null;
   enabled?: () => boolean;
   log?: (lines: string[]) => void;

@@ -9,13 +9,15 @@
 // switching transports to "make room" for it would be inventing a mechanism
 // Tesla doesn't have.
 //
-// THE BUG THIS EXISTS TO AVOID: each handshake derives a FRESH session key from
-// the car's ephemeral pubkey, so a Pi session and a direct-BLE session have
-// DIFFERENT keys and counters. The responder previously read the shared
-// per-domain session cache (peekLiveSession), which would hand it the Pi's
-// session while signing for a direct-BLE link — signing with the wrong key,
-// producing FAULT_AES_DECRYPT_AUTH forever. This link owns its own session via
-// openDirectSession (which bypasses that cache) and hands it to the responder.
+// ⚠ FALSE PREMISE — CORRECTED (RE RESPONSE #8). An earlier version of this
+// comment claimed each handshake derives a fresh key from the car's EPHEMERAL
+// pubkey, so a Pi session and a direct-BLE session have different keys and
+// counters. That is WRONG: the car's pubkey is STATIC, so under one enrolled key
+// both derive the SAME key and SHARE one (key, epoch) counter — same identity.
+// This link owning its own local session avoids crossing local counters, but it
+// does NOT give cryptographic isolation from the Pi; only two distinct enrolled
+// keys do. (This whole dedicated link is disabled anyway — see useCarLink's
+// PASSIVE_ENTRY_DEDICATED_LINK — because two centrals on one phone contend.)
 //
 // SCOPE: only opens a link when the command path is NOT already on direct BLE.
 // If it is, passive entry rides that existing link (as it does today) — two
