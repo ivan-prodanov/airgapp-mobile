@@ -887,15 +887,27 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     [stampIntent],
   );
 
-  // DEDICATED passive-entry BLE link — the Tesla model. The official app keeps
-  // its own BLE connection for passive entry while other traffic (for us, the
-  // Pi) talks to the car on another central; the car holds both happily. So
-  // passive entry must not depend on which transport the command path selected,
-  // and we do NOT switch transports to make room for it.
+  // DEDICATED passive-entry BLE link — DISABLED 2026-07-21. The idea was the
+  // Tesla model: a second BLE connection for passive entry running alongside the
+  // Pi command path. It does NOT work on iOS and never did — the on-car
+  // diagnostics prove it: `link: UP` = 0, with 16 "Operation was cancelled" and
+  // 24 self-inflicted "link wedged" timeouts in one session. Root cause: this
+  // opens a SECOND DirectBleTransport, hence a second BleManager, and two
+  // CBCentralManagers in one app connecting to the SAME peripheral call
+  // cancelConnection on each other's link. The two managers knock each other
+  // down, which ALSO manufactured fake bond-wedges (0 real iosErrorCode 14 that
+  // whole session). The inline responder on the command BLE path (see the
+  // authResponder wired into the selector's BLE candidate) still delivers
+  // walk-up unlock whenever we're on BLE, with no contention.
   //
-  // Stands down when the command path already holds a direct-BLE link, so we
-  // never open two links from one phone to one car.
+  // The REAL end state is a NATIVE background BLE service (M2): one central,
+  // owned by native code that survives app suspension (RE #2 Q2 — Hermes is not
+  // guaranteed alive on a CoreBluetooth background wake). That is being
+  // researched (REQUEST-7) rather than assumed. Do NOT re-enable this JS link;
+  // it is kept only for reference until the native design lands.
+  const PASSIVE_ENTRY_DEDICATED_LINK = false;
   useEffect(() => {
+    if (!PASSIVE_ENTRY_DEDICATED_LINK) return;
     if (!linked || !vin) return;
     const keys = keysRef.current;
     if (!keys) return;
