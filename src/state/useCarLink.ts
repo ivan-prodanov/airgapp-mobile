@@ -197,7 +197,13 @@ const PASSIVE_ENTRY_CAPTURE = false;
 // end state is opt-in and off by default (M3); it is ON here because M1's whole
 // purpose is to find out whether our ROLE_DRIVER key is accepted — the
 // LOCAL_UNLOCK question the whitelist read could not answer.
-const PASSIVE_ENTRY_RESPOND = false;
+//
+// Re-armed 2026-07-21 after the bond-repair detour. It was flipped OFF in
+// 7cb1081 when we paused passive entry to build wedge detection, and that flip
+// is exactly why the car stopped unlocking on approach — nothing else in that
+// work touches unlock. Foreground-only (M1); M2 background still needs the
+// native signer.
+const PASSIVE_ENTRY_RESPOND = true;
 
 // Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
