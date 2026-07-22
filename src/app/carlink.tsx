@@ -31,8 +31,12 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // directly here, NOT via the src/ble façade, same isolation rule as the
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
+// Model (b): the real BLE path is the native central (BridgedBleTransport). The
+// ble-plx DirectBleTransport survives ONLY as the deliberate two-central CONTROL
+// tool (hedge probe), gated off while native passive entry holds the link.
+import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
 import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
-import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, passiveEntryHandshakeGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint } from '../../modules/expo-passive-entry';
+import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, passiveEntryHandshakeGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint, isPassiveEntryRunning } from '../../modules/expo-passive-entry';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -92,11 +96,10 @@ export default function CarLinkScreen() {
   // createSelectingTransport — matching the official Tesla app's
   // BLE-primary behavior.
   const [transport, setTransport] = useState<'auto' | 'pi' | 'ble'>('auto');
-  // ONE DirectBleTransport instance reused across button presses so the BLE
-  // connection stays warm (reconnecting per command is slow) — see
-  // directBleTransport.ts's header comment on why only one connection is
-  // ever live at a time. Reset to null when the toggle flips back to Pi.
-  const bleTransportRef = useRef<DirectBleTransport | null>(null);
+  // ONE BridgedBleTransport instance reused across button presses. The native
+  // central keeps the connection warm across sessions; this ref just holds the
+  // command-session view. Reset to null when the toggle flips back to Pi.
+  const bleTransportRef = useRef<BridgedBleTransport | null>(null);
   // The 'auto' selector is STATEFUL (createSelectingTransport remembers which
   // candidate it chose in openSession and routes exchange/closeSession there).
   // It MUST be a stable instance across button presses: the module-global
@@ -205,9 +208,9 @@ export default function CarLinkScreen() {
   };
 
   // getBleTransport returns the cached instance, creating it on first use.
-  const getBleTransport = (): DirectBleTransport => {
+  const getBleTransport = (): BridgedBleTransport => {
     if (!bleTransportRef.current) {
-      bleTransportRef.current = new DirectBleTransport();
+      bleTransportRef.current = new BridgedBleTransport();
     }
     return bleTransportRef.current;
   };
@@ -222,8 +225,8 @@ export default function CarLinkScreen() {
       append(`ERROR BLE scan test: "${vin}" is not a valid 17-char VIN`);
       return;
     }
-    const probe = new DirectBleTransport();
-    append(`BLE scan test: scanning for VIN …${vin.slice(-6)}`);
+    const probe = new BridgedBleTransport();
+    append(`BLE scan test: scanning for VIN …${vin.slice(-6)} (via native central)`);
     try {
       const sessionId = await probe.openSession(vin);
       const info = probe.getDebugInfo();
@@ -279,7 +282,14 @@ export default function CarLinkScreen() {
       append(`ERROR hedge probe: "${vin}" is not a valid 17-char VIN`);
       return;
     }
-    append('hedge probe: opening dedicated VCSEC session over BLE…');
+    // The hedge probe opens a SECOND phone central (ble-plx) — the exact
+    // two-central contention RESPONSE-12 forbids. It must NEVER run while the
+    // native passive-entry central holds the car link, or it wedges the car.
+    if (isPassiveEntryRunning()) {
+      append('BLOCKED hedge probe: native passive-entry central is running — a 2nd central would wedge the car. Stop native passive first.');
+      return;
+    }
+    append('hedge probe: opening dedicated VCSEC session over BLE (ble-plx CONTROL tool)…');
     try {
       const keys = await loadOrCreateDeviceKeys(store);
       const transport = new DirectBleTransport();
@@ -412,7 +422,7 @@ export default function CarLinkScreen() {
         if (cfg.vin) {
           candidates.push({
             name: 'ble',
-            make: () => new DirectBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
+            make: () => new BridgedBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
           });
         }
         if (cfg.baseUrl && cfg.token) {

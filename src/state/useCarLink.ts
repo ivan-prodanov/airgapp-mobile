@@ -46,7 +46,11 @@ import {
   type TransportCandidate,
 } from '@/ble';
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
-import { DirectBleTransport } from '@/ble/directBleTransport';
+// RESPONSE-12 model (b): the car BLE path goes through the ONE native central
+// (BridgedBleTransport), never a JS-owned ble-plx central — so it can never
+// contend with the native passive-entry central. DirectBleTransport (ble-plx) is
+// no longer constructed in production.
+import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
 import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
@@ -509,7 +513,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           make: () =>
             withTransportLogging(
               'ble',
-              new DirectBleTransport({
+              new BridgedBleTransport({
                 scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS,
                 // Answer passive-entry challenges on the link itself — the car
                 // gives up in ~6-10s, so a hop through React state first would

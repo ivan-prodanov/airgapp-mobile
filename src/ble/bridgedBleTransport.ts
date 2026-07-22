@@ -65,6 +65,10 @@ export class BridgedBleTransport implements CarTransport {
   private exchangeInFlight = false;
 
   constructor(opts?: {
+    // Accepted for drop-in compatibility with DirectBleTransport, but IGNORED —
+    // scanning is the native central's job (it filters on service 1122 and
+    // matches by name), so there's no JS scan budget to bound here.
+    scanTimeoutMs?: number;
     onUnsolicited?: (frame: Uint8Array) => void;
     authResponder?: (frame: Uint8Array) => Uint8Array | null;
   }) {
