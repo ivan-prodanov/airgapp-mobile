@@ -599,6 +599,54 @@ export function buildRoutablePassiveResponse(
   return { bytes, counter };
 }
 
+// buildRoutableCommandFrame — seal a command frame and RETURN THE BYTES (no
+// send), so a caller can deliver the SAME bytes over two pipes (the RE #10
+// hedge) or replay them for a probe. Mirrors sendCommand's proven build.
+//
+// `counter`/`uuid` are overridable ONLY for probes/hedging: pass an explicit
+// counter to seal two frames at the SAME counter (a duplicate-reject probe), or
+// omit to auto-take session.counter+1. When omitted the session counter is NOT
+// mutated here (unlike sendCommand) — the caller owns counter lifecycle for the
+// two-pipe single-writer discipline.
+export function buildRoutableCommandFrame(
+  session: Session,
+  payloadBytes: Uint8Array,
+  opts?: { counter?: number; uuid?: Uint8Array; flags?: number },
+): { bytes: Uint8Array; counter: number; requestUuid: Uint8Array } {
+  const wireFlags = opts?.flags ?? 0;
+  const counter = opts?.counter ?? session.counter + 1;
+  const elapsedSec = Math.floor((Date.now() - session.localBaselineMs) / 1000);
+  const expiresAt = (session.clockBase + elapsedSec + COMMAND_LIFETIME_SEC) >>> 0;
+  const aadDigest = buildAesGcmMetadata({
+    domain: session.domain,
+    verifierName: session.vin,
+    epoch: session.epoch,
+    expiresAt,
+    counter,
+    flags: wireFlags,
+  });
+  const env = aesGcmEncrypt(session.sessionKey, payloadBytes, aadDigest);
+  const requestUuid = opts?.uuid ?? randomBytes(16);
+  const bytes = encodeMessage(RoutableMessage, {
+    toDestination: { domain: session.domain },
+    fromDestination: { routingAddress: session.routingAddress },
+    protobufMessageAsBytes: env.ciphertext,
+    signatureData: {
+      signerIdentity: { publicKey: session.myPubRaw },
+      AES_GCM_PersonalizedData: {
+        epoch: session.epoch,
+        nonce: env.nonce,
+        counter,
+        expiresAt,
+        tag: env.tag,
+      },
+    },
+    uuid: requestUuid,
+    flags: wireFlags,
+  });
+  return { bytes, counter, requestUuid };
+}
+
 // sendCommand ships a pre-encoded inner payload through the byte forwarder.
 // The caller supplies the encoded bytes (VCSEC and Infotainment use different
 // proto wrappers inside the ciphertext, so this path is domain-agnostic once

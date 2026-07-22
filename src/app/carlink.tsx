@@ -31,6 +31,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // directly here, NOT via the src/ble façade, same isolation rule as the
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
+import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -228,6 +229,30 @@ export default function CarLinkScreen() {
       append('BLE scan test: disconnected');
     } catch (err) {
       append(`ERROR BLE scan test: ${errMsg(err)}`);
+    }
+  };
+
+  // handleHedgeProbe runs the RE #10 duplicate-counter-reject probe over a
+  // dedicated BLE VCSEC session: seals two GET_STATUS frames at the same counter
+  // (distinct uuids), delivers leg-1 (accept) then leg-2 (duplicate → reject),
+  // and logs both raw+decoded replies so we can see whether the reject attaches
+  // a SignedSessionInfo (the hedge landed-guard's foundation) and the exact fault
+  // code/namespace. Idempotent (GET_STATUS = a read); safe.
+  const handleHedgeProbe = async () => {
+    if (!isValidVin(vin)) {
+      append(`ERROR hedge probe: "${vin}" is not a valid 17-char VIN`);
+      return;
+    }
+    append('hedge probe: opening dedicated VCSEC session over BLE…');
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      const transport = new DirectBleTransport();
+      const lines = await runDuplicateRejectProbe({ transport, vin, deviceKeys: keys });
+      for (const l of lines) append(l);
+      await appendDiagnostic('hedge probe', lines);
+      append('hedge probe: written to diagnostics (pull the log).');
+    } catch (err) {
+      append(`ERROR hedge probe: ${errMsg(err)}`);
     }
   };
 
@@ -568,6 +593,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Check Pi" onPress={handleCheckPi} theme={theme} />
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
+              <ActionButton label="Hedge probe (dup reject)" onPress={handleHedgeProbe} theme={theme} />
               <ActionButton label="Enrol over BLE" onPress={handleEnrolOverBle} theme={theme} />
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
