@@ -64,16 +64,17 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate {
     log("stop")
   }
 
+  // The car ADVERTISES the 16-bit service UUID 1122 (confirmed on-car
+  // 2026-07-22: `advServices=[1122]`), NOT the full GATT service 00000211. This
+  // is the filter to scan on — and crucially it works in the BACKGROUND, where
+  // iOS forbids nil-scan. (The GATT service 00000211 is still what we read/write
+  // characteristics on once connected; it just isn't in the advert.)
+  static let advertisedServiceUUID = CBUUID(string: "1122")
+
   private func beginScan() {
     guard wantScan else { return }
-    // Scan-ALL (withServices: nil) + match by name — the car advertises its
-    // local name but NOT the GATT service UUID, so a service filter finds
-    // nothing (matches how DirectBleTransport scans: startDeviceScan(null)).
-    // NOTE: nil-scan does NOT work in the background (iOS requires a service
-    // filter there) — the background path will need the ADVERTISED service UUID,
-    // which we log on discovery below to find out what it is.
-    log("scanning (all peripherals, match by name)…")
-    central?.scanForPeripherals(withServices: nil, options: nil)
+    log("scanning (service 1122, match by name)…")
+    central?.scanForPeripherals(withServices: [PassiveEntryCentral.advertisedServiceUUID], options: nil)
   }
 
   // MARK: - CBCentralManagerDelegate

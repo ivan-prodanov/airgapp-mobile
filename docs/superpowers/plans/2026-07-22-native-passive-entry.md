@@ -28,6 +28,7 @@ These are settled by on-car evidence + RE. A task that contradicts one of these 
 3. **Commands are not touched by this plan.** They go Pi (away) / BLE (near) exactly as today. This plan is *only* the background passive-entry responder.
 4. **Single-writer by lifecycle.** Background → native is the sole signer (JS suspended, so it isn't driving the Pi, so nothing else signs). Foreground → native stands down, JS inline responder handles passive. Each side reads the car's current counter (via a `SessionInfoRequest`) before it signs, so their local counters never need syncing.
 5. **Car tolerates Pi central + phone BLE central simultaneously** (probe-confirmed 2026-07-22). So native BLE and the Pi command path coexist with no eviction.
+6. **Background scan filter = service UUID `1122`.** On-car 2026-07-22 the car advertises the 16-bit service `1122` (NOT the full GATT `00000211`). Background scanning (which forbids nil-scan) filters on `CBUUID(string:"1122")`. Confirmed connect-and-hold works (Task 2, held ~8 min with zero JS).
 
 ## Open question routed to RE (do NOT improvise — blocks Phase 4 only)
 
