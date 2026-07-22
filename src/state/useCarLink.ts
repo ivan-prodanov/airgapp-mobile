@@ -95,6 +95,12 @@ import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 // car isn't in range we fall back to the Pi in ~6s instead of waiting out
 // DirectBleTransport's full default scan. Matches carlink.tsx.
 const AUTO_BLE_SCAN_TIMEOUT_MS = 6000;
+// How long the native BLE link must hold before we drop a cached Pi session to
+// re-select onto BLE. The selector only re-picks a transport on a NEW openSession,
+// so without this a live link never displaces a cached Pi session mid-poll. The
+// wait keeps a marginal, flapping link (edge of range) from repeatedly yanking
+// commands off the stable Pi path.
+const NATIVE_LINK_STABLE_MS = 6000;
 
 // Persisted name of the last transport that connected, so a cold start seeds the
 // selector's preference (see lastGoodTransportRef). Non-secret → appStorage.
@@ -1012,8 +1018,35 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // follow the real link. Native emits 'connected' on GATT-subscribe and
   // 'disconnected' on drop; the subscription is a no-op when native is absent.
   useEffect(() => {
+    let stableTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearStable = () => {
+      if (stableTimer) {
+        clearTimeout(stableTimer);
+        stableTimer = null;
+      }
+    };
     const unsub = onPassiveEntryConnectionState((e) => {
-      nativeLinkUpRef.current = e.state === 'connected';
+      const up = e.state === 'connected';
+      nativeLinkUpRef.current = up;
+      clearStable();
+      if (!up) return;
+      // The link came up. If it HOLDS for NATIVE_LINK_STABLE_MS and commands are
+      // still pinned to a cached Pi session, force a clean re-selection: rebuild
+      // the gateway so the next poll opens a fresh session and preferred() picks
+      // the now-live BLE link (dot → blue). Only when foreground + currently Pi,
+      // so we don't disturb an already-BLE session or churn while backgrounded.
+      // teardownWhenIdle keeps the native central (it owns the link) and defers
+      // if a command is in flight.
+      stableTimer = setTimeout(() => {
+        if (
+          nativeLinkUpRef.current &&
+          selectedTransportRef.current === 'pi' &&
+          AppState.currentState === 'active'
+        ) {
+          logi('ble', 'native BLE link stable — re-selecting to prefer BLE');
+          teardownWhenIdle();
+        }
+      }, NATIVE_LINK_STABLE_MS);
     });
     // Seed from the current state once armed (safe — the central already exists).
     if (nativePassiveArmedRef.current) {
@@ -1023,8 +1056,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // native absent — leave false.
       }
     }
-    return unsub;
-  }, [linked]);
+    return () => {
+      clearStable();
+      unsub();
+    };
+  }, [linked, teardownWhenIdle]);
 
   // Tee the logbus to the pullable diagnostics file. Without this, an on-device
   // link failure is invisible off-device — which is exactly what turned "no blue
