@@ -330,6 +330,7 @@ export async function openDirectSession({
   vin,
   deviceKeys,
   domain,
+  dedicated,
 }: SessionParams): Promise<Session> {
   if (!vin) throw new Error('openDirectSession: vin required');
   if (!deviceKeys?.publicKeyRaw || !deviceKeys?.privateScalar) {
@@ -338,11 +339,13 @@ export async function openDirectSession({
 
   const myPubRaw = deviceKeys.publicKeyRaw;
 
-  // 1. Get or create the Pi-side BLE session for this VIN. Both domains
-  //    share the same Pi sessionId; _bindPiSession bumps the refcount, and
-  //    close()/the error path call _piSessionRelease which only tears down
-  //    the Pi session when the last domain releases.
-  const sessionId = await _bindPiSession(transport, vin);
+  // 1. Get the transport session. `dedicated` opens a FRESH one on THIS
+  //    transport (no cache scan) so a caller's own central isn't handed another
+  //    transport's cached session for the same VIN — the hedge-probe bug. Normal
+  //    callers share one Pi session per VIN across domains via the refcount cache.
+  const sessionId = dedicated ? await transport.openSession(vin) : await _bindPiSession(transport, vin);
+  const releaseSession = () =>
+    dedicated ? transport.closeSession(sessionId) : _piSessionRelease(transport, sessionId);
   const localBaselineMs = Date.now();
 
   try {
@@ -394,16 +397,17 @@ export async function openDirectSession({
       clockBase: sessionInfo.clockTime || 0,
       localBaselineMs,
       close: async () => {
-        await _piSessionRelease(transport, sessionId);
+        await releaseSession();
       },
     };
 
     _persistSessionMetadata(session);
     return session;
   } catch (e) {
-    // Best-effort refcounted cleanup so we don't tear down a Pi session
-    // another domain still holds.
-    await _piSessionRelease(transport, sessionId).catch(() => {});
+    // Best-effort cleanup. For a shared session this is refcounted so we don't
+    // tear one down another domain still holds; for a dedicated session it just
+    // closes this transport's own link.
+    await Promise.resolve(releaseSession()).catch(() => {});
     throw e;
   }
 }

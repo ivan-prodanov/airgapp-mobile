@@ -100,4 +100,9 @@ export interface SessionParams {
   vin: string;
   deviceKeys: DeviceKeys;
   domain: Domain;
+  // When true, open a session that BYPASSES the shared per-VIN cache — a fresh
+  // transport.openSession on THIS transport, closed directly (not refcounted).
+  // Needed when a caller wants its OWN link (the hedge probe's second central),
+  // not to be handed another transport's cached session for the same VIN.
+  dedicated?: boolean;
 }

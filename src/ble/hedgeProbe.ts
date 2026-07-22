@@ -57,6 +57,9 @@ export async function runDuplicateRejectProbe(opts: {
       vin: opts.vin,
       deviceKeys: opts.deviceKeys,
       domain: DOMAIN_VEHICLE_SECURITY,
+      // Our OWN link — do NOT reuse the main app's cached (Pi) session for this
+      // VIN, or exchange() runs against a session this transport never opened.
+      dedicated: true,
     });
   } catch (e) {
     lines.push(`openDirectSession FAILED: ${e instanceof Error ? e.message : String(e)}`);
