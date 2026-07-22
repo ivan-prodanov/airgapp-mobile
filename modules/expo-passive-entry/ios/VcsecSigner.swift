@@ -133,6 +133,23 @@ enum VcsecSigner {
     return nil
   }
 
+  // First occurrence of a varint field's value (nil if absent).
+  static func extractVarintField(_ b: [UInt8], _ field: Int) -> Int? {
+    var i = 0
+    while i < b.count {
+      let (tag, ni) = readVarint(b, i); i = ni
+      let f = tag >> 3, wt = tag & 7
+      switch wt {
+      case 0: let (v, nj) = readVarint(b, i); i = nj; if f == field { return v }
+      case 2: let (ln, nj) = readVarint(b, i); i = nj; i += ln
+      case 5: i += 4
+      case 1: i += 8
+      default: return nil
+      }
+    }
+    return nil
+  }
+
   // MARK: - SessionInfoRequest handshake
 
   // The outgoing SessionInfoRequest frame (RoutableMessage). uuid doubles as the

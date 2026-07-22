@@ -41,6 +41,15 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   private var sessionKey: [UInt8]?
   private var counter: UInt32 = 0
   private var epoch = [UInt8]()
+  private var clockBase: UInt32 = 0
+  private var handshakeWallSec: UInt32 = 0
+  private var myPubRaw = [UInt8]()
+  private var routingAddress = [UInt8](repeating: 0xab, count: 16)
+  // Safety cap: stop answering after this many in one connection, so a wrong
+  // seal can't flood VCSEC (the 2026-07-20 wedge lesson). A correct answer
+  // unlocks and the car stops challenging well before this.
+  private var answersGiven = 0
+  private let maxAnswers = 20
 
   init(onLog: @escaping (String) -> Void) {
     self.onLog = onLog
@@ -190,21 +199,55 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   }
 
   private func handleReply(_ frame: [UInt8]) {
-    // RoutableMessage: sessionInfo(15) bytes + signatureData(13).sessionInfoTag(6).tag(1).
-    guard let siBytes = VcsecSigner.extractLenField(frame, 15) else {
-      log("reply has no sessionInfo(15) — \(VcsecSigner.hex(frame).prefix(40))"); return
+    // A SessionInfo reply (field 15) completes the handshake…
+    if let siBytes = VcsecSigner.extractLenField(frame, 15) {
+      completeHandshake(frame, siBytes); return
     }
+    // …otherwise a payload(10) carrying an authenticationRequest(3) is a
+    // passive-entry CHALLENGE — answer it.
+    if let payload = VcsecSigner.extractLenField(frame, 10),
+       let authReq = VcsecSigner.extractLenField(payload, 3) {
+      answerChallenge(authReq); return
+    }
+    // else: routine push (vehicleStatus etc.) — ignore.
+  }
+
+  private func completeHandshake(_ frame: [UInt8], _ siBytes: [UInt8]) {
     let sig = VcsecSigner.extractLenField(frame, 13)
     let tagField = sig.flatMap { VcsecSigner.extractLenField($0, 6) }.flatMap { VcsecSigner.extractLenField($0, 1) }
     guard let si = VcsecSigner.parseSessionInfo(siBytes),
           let keyHex = KeychainKey.getKeyHex(),
-          let sk = VcsecSigner.ecdhSessionKey(myPriv: VcsecSigner.unhex(keyHex), peerPub: si.publicKey) else {
-      log("reply parse/ECDH failed"); return
+          let sk = VcsecSigner.ecdhSessionKey(myPriv: VcsecSigner.unhex(keyHex), peerPub: si.publicKey),
+          let myPub = VcsecSigner.devicePublicKey(privHex: keyHex) else {
+      log("handshake parse/ECDH failed"); return
     }
     let want = VcsecSigner.sessionInfoHmac(sessionKey: sk, vin: vin, challenge: challenge, sessionInfoBytes: siBytes)
     let hmacOK = tagField != nil && VcsecSigner.hex(want) == VcsecSigner.hex(tagField!)
     sessionKey = sk; counter = si.counter; epoch = si.epoch
+    clockBase = si.clockTime; handshakeWallSec = UInt32(Date().timeIntervalSince1970)
+    myPubRaw = myPub; answersGiven = 0
     log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(si.counter) clock=\(si.clockTime) hmacOK=\(hmacOK)")
+  }
+
+  private func answerChallenge(_ authReq: [UInt8]) {
+    guard let sk = sessionKey, let p = peripheral else { return }
+    guard answersGiven < maxAnswers else { return }
+    // requestedLevel (field 3 of AuthenticationRequest); default DRIVE(2).
+    let level = VcsecSigner.extractVarintField(authReq, 3) ?? 2
+    counter += 1
+    let elapsed = UInt32(Date().timeIntervalSince1970) &- handshakeWallSec
+    let expiresAt = clockBase &+ elapsed &+ 5
+    // inner = UnsignedMessage{ authenticationResponse{ level, distance=0, rejection=0 } }
+    let inner: [UInt8] = [0x1a, 0x06, 0x08, UInt8(truncatingIfNeeded: level), 0x10, 0x00, 0x18, 0x00]
+    var nonce = [UInt8](repeating: 0, count: 12); _ = SecRandomCopyBytes(kSecRandomDefault, 12, &nonce)
+    guard let r = VcsecSigner.sealFrame(sessionKey: sk, vin: vin, epoch: epoch, counter: counter,
+                                        expiresAt: expiresAt, routingAddress: routingAddress, myPubRaw: myPubRaw,
+                                        nonce: nonce, flags: 0, uuid: [0x00], inner: inner) else {
+      log("challenge seal failed"); return
+    }
+    answersGiven += 1
+    log("auth ANSWERED #\(answersGiven) counter=\(counter) level=\(level) out=\(r.frame.count)B")
+    writeFramed(r.frame, to: p)
   }
 
   func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
