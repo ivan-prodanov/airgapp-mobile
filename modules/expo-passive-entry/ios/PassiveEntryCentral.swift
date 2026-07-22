@@ -66,8 +66,14 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate {
 
   private func beginScan() {
     guard wantScan else { return }
-    log("scanning for VCSEC service…")
-    central?.scanForPeripherals(withServices: [PassiveEntryCentral.serviceUUID], options: nil)
+    // Scan-ALL (withServices: nil) + match by name — the car advertises its
+    // local name but NOT the GATT service UUID, so a service filter finds
+    // nothing (matches how DirectBleTransport scans: startDeviceScan(null)).
+    // NOTE: nil-scan does NOT work in the background (iOS requires a service
+    // filter there) — the background path will need the ADVERTISED service UUID,
+    // which we log on discovery below to find out what it is.
+    log("scanning (all peripherals, match by name)…")
+    central?.scanForPeripherals(withServices: nil, options: nil)
   }
 
   // MARK: - CBCentralManagerDelegate
@@ -81,7 +87,11 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate {
                       advertisementData: [String: Any], rssi RSSI: NSNumber) {
     let advName = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? p.name
     guard let target = targetName, advName == target else { return }
-    log("discovered \(advName ?? "?") rssi=\(RSSI) → connecting")
+    // Log what the car ACTUALLY advertises — the service UUID(s) here are what a
+    // background scan will have to filter on (nil-scan is foreground-only).
+    let advServices = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?
+      .map { $0.uuidString }.joined(separator: ",") ?? "none"
+    log("discovered \(advName ?? "?") rssi=\(RSSI) advServices=[\(advServices)] → connecting")
     c.stopScan()
     peripheral = p
     p.delegate = nil // GATT wiring lands in a later task
