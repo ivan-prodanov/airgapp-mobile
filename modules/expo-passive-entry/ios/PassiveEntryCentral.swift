@@ -79,6 +79,9 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // unlocks and the car stops challenging well before this.
   private var answersGiven = 0
   private let maxAnswers = 20
+  // RESPONSE-11: assert a STANDING DRIVE authorization once per connect (like the
+  // official app's connectionEstablished/G0). Gated so it can be disabled.
+  private let assertStandingDriveOnConnect = true
 
   override init() {
     super.init()
@@ -355,6 +358,10 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     clockBase = si.clockTime; handshakeWallSec = UInt32(Date().timeIntervalSince1970)
     myPubRaw = myPub; answersGiven = 0
     log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(si.counter) clock=\(si.clockTime) hmacOK=true")
+    // RESPONSE-11: proactively assert a standing DRIVE authorization on connect,
+    // matching the official app. Harmless when exterior (the car ignores an
+    // out-of-zone DRIVE); pre-authorizes drive once it localizes us inside.
+    assertStandingDrive()
   }
 
   private func answerChallenge(_ authReq: [UInt8]) {
@@ -375,6 +382,27 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     }
     answersGiven += 1
     log("auth ANSWERED #\(answersGiven) counter=\(counter) level=\(level) out=\(r.frame.count)B")
+    writeFramed(r.frame, to: p)
+  }
+
+  // RESPONSE-11: the proactive standing-DRIVE assertion (VCSEC q1.java G0). One
+  // byte from the unlock inner — authenticationLevel = DRIVE(2). The car holds it
+  // as our standing level and enables drive once it localizes us inside + a drive
+  // trigger (brake). Uses the same routable seal as the challenge answer.
+  private func assertStandingDrive() {
+    guard assertStandingDriveOnConnect, let sk = sessionKey, let p = peripheral else { return }
+    counter += 1
+    let elapsed = UInt32(Date().timeIntervalSince1970) &- handshakeWallSec
+    let expiresAt = clockBase &+ elapsed &+ 5
+    // UnsignedMessage{ authenticationResponse{ level=DRIVE(2), distance=0, rejection=0 } }
+    let inner: [UInt8] = [0x1a, 0x06, 0x08, 0x02, 0x10, 0x00, 0x18, 0x00]
+    var nonce = [UInt8](repeating: 0, count: 12); _ = SecRandomCopyBytes(kSecRandomDefault, 12, &nonce)
+    guard let r = VcsecSigner.sealFrame(sessionKey: sk, vin: vin, epoch: epoch, counter: counter,
+                                        expiresAt: expiresAt, routingAddress: routingAddress, myPubRaw: myPubRaw,
+                                        nonce: nonce, flags: 0, uuid: [0x00], inner: inner) else {
+      log("standing DRIVE seal failed"); return
+    }
+    log("standing DRIVE asserted counter=\(counter) out=\(r.frame.count)B")
     writeFramed(r.frame, to: p)
   }
 

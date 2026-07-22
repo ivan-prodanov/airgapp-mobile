@@ -27,6 +27,9 @@ import {
   type TransportCandidate,
 } from '@/ble';
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
+// RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
+// DRIVE assertion is the unlock passive response with level = DRIVE(2).
+import { openDirectSession, buildStandingDriveAssertion, DOMAIN_VEHICLE_SECURITY } from '@/ble/session';
 // DirectBleTransport imports react-native-ble-plx (RN-only) — imported
 // directly here, NOT via the src/ble façade, same isolation rule as the
 // secure-store adapter above (see directBleTransport.ts's header comment).
@@ -237,6 +240,36 @@ export default function CarLinkScreen() {
       append('BLE scan test: disconnected');
     } catch (err) {
       append(`ERROR BLE scan test: ${errMsg(err)}`);
+    }
+  };
+
+  // handleAssertDrive (RESPONSE-11) fires the proactive standing-DRIVE the
+  // official app sends on connect — the unlock passive response with level
+  // DRIVE(2). Opens a dedicated BLE session (via the native central) so it can
+  // sign with a live session, then writes the assertion. To actually drive:
+  // sit INSIDE with the app foreground so the car localizes you in-cabin, tap
+  // this, then press the brake. (Exterior → the car ignores it, harmless.)
+  const handleAssertDrive = async () => {
+    if (!isValidVin(vin)) {
+      append(`ERROR assert DRIVE: "${vin}" is not a valid 17-char VIN`);
+      return;
+    }
+    append('assert DRIVE: opening BLE session (standing DRIVE)…');
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      const t = getBleTransport();
+      const session = await openDirectSession({
+        transport: t,
+        vin,
+        deviceKeys: keys,
+        domain: DOMAIN_VEHICLE_SECURITY,
+        dedicated: true,
+      });
+      const { bytes, counter } = buildStandingDriveAssertion(session);
+      await t.sendRaw(bytes);
+      append(`assert DRIVE ✓ standing DRIVE sent counter=${counter} (${bytes.length}B). Sit inside + press brake.`);
+    } catch (err) {
+      append(`ERROR assert DRIVE: ${errMsg(err)}`);
     }
   };
 
@@ -639,6 +672,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Check Pi" onPress={handleCheckPi} theme={theme} />
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
+              <ActionButton label="Assert DRIVE (seated)" onPress={handleAssertDrive} theme={theme} />
               <ActionButton label="Hedge probe (dup reject)" onPress={handleHedgeProbe} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />

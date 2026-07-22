@@ -146,6 +146,7 @@ export class BridgedBleTransport implements CarTransport {
   // pipe instead of a ble-plx notification.
   private onNativeFrame(bytes: Uint8Array): void {
     const frames = this.reassembler.push(bytes, Date.now());
+    logi('ble', 'pipe rx', { bytes: bytes.length, msgs: frames.length, inFlight: this.exchangeInFlight });
     if (frames.length === 0) return;
     if (this.exchangeInFlight) {
       this.inbox.push(...frames);
@@ -234,6 +235,7 @@ export class BridgedBleTransport implements CarTransport {
     return this.withWriteLock(async () => {
       const framed = frameMessage(payload);
       const ok = passiveEntryWriteFrame(bytesToBase64(framed));
+      logi('ble', 'pipe tx', { bytes: framed.length, ok });
       if (!ok) throw new Error('BLE connection closed — native writeFrame failed');
     });
   }

@@ -54,6 +54,11 @@ import {
   decodeMessage,
 } from './proto';
 import { bytesToBase64, base64ToBytes } from './bytes';
+import {
+  encodeUnsignedAuthResponse,
+  encodeAuthenticationResponse,
+  AUTH_LEVEL,
+} from './passiveEntryAuth';
 import type { Domain, DeviceKeys, PiTransport, Session, SessionParams } from './types';
 
 // DEBUG gates the non-security-critical success chatter. Kept false: RN
@@ -601,6 +606,22 @@ export function buildRoutablePassiveResponse(
   });
 
   return { bytes, counter };
+}
+
+// buildStandingDriveAssertion (RESPONSE-11) — the proactive standing-DRIVE the
+// official app sends unprompted on connect (q1.java connectionEstablished/G0).
+// It's the passive UNLOCK response with authenticationLevel = DRIVE(2) instead of
+// UNLOCK(1) — the whole delta is that one varint (08 02 vs 08 01) — sealed with
+// the same routable envelope. The car holds it as our standing level and enables
+// drive once it localizes us inside + a drive trigger (brake). Harmless when
+// exterior (the car ignores an out-of-zone DRIVE).
+export function buildStandingDriveAssertion(
+  session: Session,
+): { bytes: Uint8Array; counter: number } {
+  const inner = encodeUnsignedAuthResponse(
+    encodeAuthenticationResponse({ authenticationLevel: AUTH_LEVEL.DRIVE }),
+  );
+  return buildRoutablePassiveResponse(session, inner);
 }
 
 // buildRoutableCommandFrame — seal a command frame and RETURN THE BYTES (no
