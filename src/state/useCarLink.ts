@@ -75,6 +75,16 @@ import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
 import { beginBackgroundTask, endBackgroundTask } from '../../modules/expo-bg-task';
+import { bytesToHex } from '@/ble/bytes';
+// RESPONSE-12 model (b): arm the ONE native central once enrolled, and drive the
+// single-writer foreground/background gate (setForegroundResponderActive) so the
+// JS responder signs in the foreground and native self-signs while suspended.
+import {
+  startPassiveEntry,
+  stopPassiveEntry,
+  setPassiveEntryDeviceKey,
+  setPassiveEntryForegroundActive,
+} from '../../modules/expo-passive-entry';
 import { appStorage } from './appStorage';
 import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
@@ -947,6 +957,42 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     return () => link.stop();
   }, [linked, vin]);
 
+  // NATIVE background passive entry (RESPONSE-12 model (b)) — the real end state
+  // the dead link above was a placeholder for. Once enrolled, the ONE native
+  // central owns the car BLE link full-time and answers walk-up challenges while
+  // the app is suspended. Arm it here (give native its own background-readable
+  // copy of the key + persist the VIN), and seed the single-writer gate from the
+  // current app state. The fg/bg FLIP is driven by the AppState listener below.
+  const PASSIVE_ENTRY_NATIVE = true;
+  const nativePassiveArmedRef = useRef(false);
+  useEffect(() => {
+    if (!PASSIVE_ENTRY_NATIVE) return;
+    if (linked && vin && keysRef.current) {
+      const keys = keysRef.current;
+      // Idempotent: native stores its own copy of the private scalar under a
+      // background-readable Keychain item (AfterFirstUnlockThisDeviceOnly).
+      try {
+        setPassiveEntryDeviceKey(bytesToHex(keys.privateScalar));
+      } catch {
+        // Non-fatal — native absent (old binary) or Keychain hiccup; passive
+        // entry just won't be available until it succeeds.
+      }
+      // Arm the native central for this VIN. Persists the VIN so a background
+      // relaunch resumes with no JS. Idempotent with BridgedBleTransport's start.
+      startPassiveEntry(vin);
+      // Seed the gate: foreground → JS signs via the pipe; background → native.
+      setPassiveEntryForegroundActive(AppState.currentState === 'active');
+      nativePassiveArmedRef.current = true;
+      // NO stopPassiveEntry on cleanup: the central MUST persist into the
+      // background (that's the whole point). Disarm is the explicit unlink below.
+    } else if (nativePassiveArmedRef.current) {
+      // Unlinked (or keys/vin cleared) → disarm: stop holding + clear the VIN so
+      // a future relaunch stays idle.
+      stopPassiveEntry();
+      nativePassiveArmedRef.current = false;
+    }
+  }, [linked, vin]);
+
   // Tee the logbus to the pullable diagnostics file. Without this, an on-device
   // link failure is invisible off-device — which is exactly what turned "no blue
   // dot" into a guessing game.
@@ -962,7 +1008,15 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       if (next === 'active') {
         deferredTeardownRef.current = false;
         prunePending();
+        // Single-writer gate: foreground → JS owns passive entry (native becomes
+        // a dumb pipe, TS signs via the inline responder). Only touch native once
+        // armed, so we never instantiate the central (and its BLE prompt) early.
+        if (nativePassiveArmedRef.current) setPassiveEntryForegroundActive(true);
       } else if (next === 'background') {
+        // Background → native self-signs (JS is about to suspend). This is THE
+        // handoff: flip BEFORE suspension so a walk-up challenge is answered
+        // natively. The native central keeps holding the link (not torn down).
+        if (nativePassiveArmedRef.current) setPassiveEntryForegroundActive(false);
         // Backgrounding CANCELS a user-requested wake, exactly as the official
         // app's `cancelAllDataRequests()` does on APP_BACKGROUND (findings §3).
         // Without this the spinner survives the round trip: iOS suspends JS
