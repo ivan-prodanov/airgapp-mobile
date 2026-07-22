@@ -46,6 +46,16 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // Foreground event sink (set by the JS module). nil in a background relaunch,
   // where JS isn't running — then only the file log records events.
   var onLog: ((String) -> Void)?
+  // Byte-pipe event sinks (model (b)): in FOREGROUND (pipe mode) native forwards
+  // every raw 0213 notification to TS via onFrame and reports link state via
+  // onConnectionState; TS runs all command crypto and the passive responder.
+  var onFrame: (([UInt8]) -> Void)?
+  var onConnectionState: ((String, Int) -> Void)?
+  // Single-writer gate (RESPONSE-12 bridge surface). true = FOREGROUND: native
+  // is a dumb byte-pipe, TS signs. false = BACKGROUND: native self-signs the
+  // AuthenticationResponse (Hermes is suspended). Default false so a background
+  // restoration relaunch is autonomous with no JS.
+  private var foregroundActive = false
   private let fileQueue = DispatchQueue(label: "airgapp.passiveentry.filelog")
 
   // GATT + handshake state
@@ -137,6 +147,50 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     log("stop")
   }
 
+  // MARK: - byte-pipe surface (RESPONSE-12 model (b): native moves bytes, TS signs)
+
+  // The single-writer gate. true = FOREGROUND (TS drives crypto via the pipe);
+  // false = BACKGROUND (native self-signs). Driven by whoMaySign/AppState in JS.
+  func setForegroundResponderActive(_ active: Bool) {
+    guard foregroundActive != active else { return }
+    foregroundActive = active
+    log("foregroundResponderActive=\(active)")
+    // Flipping to background while already connected: native needs its OWN
+    // session to answer (TS's session key isn't shared), so re-handshake now.
+    if !active, let p = peripheral, p.state == .connected, txChar != nil, rxChar != nil {
+      sessionKey = nil
+      startHandshake(p)
+    }
+  }
+
+  // Raw write to 0212 for the TS byte-pipe. `bytes` are ALREADY framed (2-byte BE
+  // length prefix) by TS bleFraming — native adds NOTHING, just splits to the
+  // negotiated write size and writes .withResponse.
+  func writeRaw(_ bytes: [UInt8]) {
+    guard let tx = txChar, let p = peripheral, p.state == .connected else {
+      log("writeRaw: no connected tx"); return
+    }
+    var off = 0
+    while off < bytes.count {
+      let end = min(off + blockLength, bytes.count)
+      p.writeValue(Data(bytes[off..<end]), for: tx, type: .withResponse)
+      off = end
+    }
+  }
+
+  // (state, mtu) for TS to gate its handshake + seed blockLength. `mtu` is the
+  // negotiated ATT MTU (write-payload-max + 3) so TS's existing `mtu-3` math
+  // lands on the correct chunk size.
+  func connectionSnapshot() -> (state: String, mtu: Int) {
+    let ready = peripheral?.state == .connected && txChar != nil && rxChar != nil
+    return (ready ? "connected" : stateName(central?.state), blockLength + 3)
+  }
+
+  private func reportConnectionState() {
+    let s = connectionSnapshot()
+    onConnectionState?(s.state, s.mtu)
+  }
+
   // The car ADVERTISES the 16-bit service UUID 1122 (confirmed on-car
   // 2026-07-22: `advServices=[1122]`), NOT the full GATT service 00000211. This
   // is the filter to scan on — and crucially it works in the BACKGROUND, where
@@ -206,7 +260,13 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor ch: CBCharacteristic, error: Error?) {
     guard ch.uuid == PassiveEntryCentral.rxUUID else { return }
     if let e = error { log("notify subscribe FAILED: \(e.localizedDescription)"); return }
-    startHandshake(p)
+    // Link is up. Tell TS (it seeds blockLength from mtu and drives its own
+    // handshake for commands).
+    reportConnectionState()
+    // Pipe mode (foreground): TS owns all crypto — do NOT self-handshake.
+    // Autonomous mode (background): native is self-sufficient — handshake now so
+    // it's ready to answer a walk-up challenge with zero JS.
+    if !foregroundActive { startHandshake(p) }
   }
 
   private func startHandshake(_ p: CBPeripheral) {
@@ -238,7 +298,15 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   func peripheral(_ p: CBPeripheral, didUpdateValueFor ch: CBCharacteristic, error: Error?) {
     guard ch.uuid == PassiveEntryCentral.rxUUID, let data = ch.value else { return }
-    rxBuffer += [UInt8](data)
+    let bytes = [UInt8](data)
+    // Pipe mode (foreground): forward EVERY raw 0213 notification to TS, which
+    // runs the BleReassembler + correlator. Native does no reassembly here.
+    if foregroundActive {
+      onFrame?(bytes)
+      return
+    }
+    // Autonomous mode (background): native reassembles + handles itself.
+    rxBuffer += bytes
     // Read the 2-byte BE length once we have the prefix.
     if rxExpected < 0 && rxBuffer.count >= 2 {
       rxExpected = Int(rxBuffer[0]) << 8 | Int(rxBuffer[1])
@@ -317,6 +385,8 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
     log("disconnected: \(error?.localizedDescription ?? "clean") → rescanning")
+    txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1; sessionKey = nil
+    onConnectionState?("disconnected", blockLength + 3)
     if wantScan { beginScan() }
   }
 

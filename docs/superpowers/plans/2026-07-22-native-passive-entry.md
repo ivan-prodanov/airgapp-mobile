@@ -35,7 +35,15 @@ These are settled by on-car evidence + RE. A task that contradicts one of these 
 5. **Car tolerates Pi central + phone BLE central simultaneously** (probe-confirmed 2026-07-22). So native BLE and the Pi command path coexist with no eviction.
 6. **Background scan filter = service UUID `1122`.** On-car 2026-07-22 the car advertises the 16-bit service `1122` (NOT the full GATT `00000211`). Background scanning (which forbids nil-scan) filters on `CBUUID(string:"1122")`. Confirmed connect-and-hold works (Task 2, held ~8 min with zero JS).
 
-## Open question routed to RE (do NOT improvise — blocks Phase 4 only)
+## Phase 4 = model (b), decided by RESPONSE-12 (RE disassembled the real Tesla binary)
+
+**One native `CBCentralManager` owns the car link FULL-TIME (fg+bg via State Restoration); the JS command path submits BLE _bytes_ through a byte-pipe bridge.** Model (a) lifecycle-handoff is REJECTED — CoreBluetooth has no way to transfer a live connection between centrals, so any handoff is forced into a gap (challenge unanswered) XOR overlap (the fatal two-central contention). Tesla's own app is (b) at disassembly level (one `BLEVehicle._centralManager` multiplexes commands + passive challenges; its Hermes bundle opens ZERO centrals, reaches BLE only via native bridge selectors passing bytes).
+
+**Keep ALL command crypto in TS** (proven sealing/framing/counter/correlation). Native owns ONLY CoreBluetooth + the BACKGROUND passive signer (Hermes is dead while suspended). (b) fixes central ownership, NOT the shared per-key counter — that stays with `whoMaySign` + routable's recoverable reject (RE #8/#10), orthogonal.
+
+Bridge surface (byte-pipe): native `writeFrame(b64)`→0212 raw, `connectionState()→{state,mtu}`, `setForegroundResponderActive(active)`, events `onFrame({dataB64})` (every raw 0213) + `onConnectionState`. TS `BridgedBleTransport implements CarTransport` reuses directBleTransport's correlator/responder/router verbatim; feeds `onFrame` into `BleReassembler`. Cutover: `'ble'` factory returns the bridge transport; **structurally remove the `react-native-ble-plx` import from the car path** (only `directBleTransport.ts` imports it; the "6 sites" are all `new DirectBleTransport()` callers) so a 2nd phone central is impossible to construct. Gate the hedge probe off while `PassiveEntry.isRunning()`. Tasks 4.1–4.5 (see task list). Full analysis: `docs/superpowers/research/RESPONSE-12-foreground-background-ble-handoff.md`.
+
+## Open question routed to RE — RESOLVED by RESPONSE-12 (see Phase 4 block above)
 
 **REQUEST-12 (to write in Task 0):** the exact foreground↔background handoff. In the foreground the JS command path may hold its own `DirectBleTransport` central; native must take over BLE on background *without* a moment where both hold a central to the car. Precisely: (a) does iOS `willResignActive`/`didEnterBackground` reliably fire before suspension so JS can drop its central first; (b) should native instead own the ONE central full-time (foreground + background) with JS bridging BLE commands through it (RESPONSE-7 L1's model), making the handoff moot; (c) the state-restoration timing relative to JS teardown. Phases 1–3 do not depend on this; Phase 4 does.
 

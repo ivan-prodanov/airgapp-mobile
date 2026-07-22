@@ -16,15 +16,42 @@ public class PassiveEntryModule: Module {
   public func definition() -> ModuleDefinition {
     Name("PassiveEntry")
 
-    Events("log")
+    Events("log", "frame", "connectionState")
 
-    // Wire the foreground event sink. When JS is running, native log lines also
-    // stream to the harness; in a background relaunch onLog stays nil (JS is
-    // suspended) and only the file log records — by design.
+    // Wire the foreground event sinks. When JS is running, native log lines and
+    // the byte-pipe streams reach the JS transport; in a background relaunch
+    // these stay nil (JS is suspended) and only the file log records — by design.
     OnCreate {
       PassiveEntryCentral.shared.onLog = { [weak self] line in
         self?.sendEvent("log", ["line": line])
       }
+      // model (b) byte-pipe: every raw 0213 notification (foreground pipe mode).
+      PassiveEntryCentral.shared.onFrame = { [weak self] bytes in
+        self?.sendEvent("frame", ["dataB64": Data(bytes).base64EncodedString()])
+      }
+      PassiveEntryCentral.shared.onConnectionState = { [weak self] state, mtu in
+        self?.sendEvent("connectionState", ["state": state, "mtu": mtu])
+      }
+    }
+
+    // Byte-pipe write: `frameB64` is already framed+chunked by TS bleFraming;
+    // native writes it raw to 0212 (.withResponse), split to the negotiated MTU.
+    Function("writeFrame") { (frameB64: String) -> Bool in
+      guard let data = Data(base64Encoded: frameB64) else { return false }
+      PassiveEntryCentral.shared.writeRaw([UInt8](data))
+      return true
+    }
+
+    // Link state for the TS transport to gate its handshake + seed blockLength.
+    Function("connectionState") { () -> [String: Any] in
+      let s = PassiveEntryCentral.shared.connectionSnapshot()
+      return ["state": s.state, "mtu": s.mtu]
+    }
+
+    // The single-writer gate: true = foreground (TS signs via the pipe),
+    // false = background (native self-signs). Driven by whoMaySign/AppState.
+    Function("setForegroundResponderActive") { (active: Bool) in
+      PassiveEntryCentral.shared.setForegroundResponderActive(active)
     }
 
     Function("start") { (vin: String) in

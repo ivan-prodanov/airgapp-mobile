@@ -1,4 +1,10 @@
-import PassiveEntryModule, { type PassiveEntryLogEvent } from './src/PassiveEntryModule';
+import PassiveEntryModule, {
+  type PassiveEntryLogEvent,
+  type PassiveEntryFrameEvent,
+  type PassiveEntryConnectionEvent,
+} from './src/PassiveEntryModule';
+
+export type { PassiveEntryConnectionEvent } from './src/PassiveEntryModule';
 
 // Native background passive-entry responder. iOS-only; every export no-ops
 // gracefully when the native module isn't present (old binary / non-iOS), so a
@@ -44,5 +50,40 @@ export function passiveEntryDeviceFingerprint(): string {
 // when the native module is absent).
 export function onPassiveEntryLog(listener: (line: string) => void): () => void {
   const sub = PassiveEntryModule?.addListener('log', (e: PassiveEntryLogEvent) => listener(e.line));
+  return () => sub?.remove();
+}
+
+// ── model (b) byte-pipe: native owns the ONE central; TS moves bytes ──────────
+
+// Write an already-framed (2-byte BE length prefix) message to 0212 via the
+// native central. Returns false when the native module is absent.
+export function passiveEntryWriteFrame(frameB64: string): boolean {
+  return PassiveEntryModule?.writeFrame(frameB64) ?? false;
+}
+
+// Current link state + negotiated MTU (TS seeds blockLength = mtu-3).
+export function passiveEntryConnectionState(): PassiveEntryConnectionEvent {
+  return PassiveEntryModule?.connectionState() ?? { state: 'absent', mtu: 23 };
+}
+
+// The single-writer gate: true = foreground (TS signs via the pipe),
+// false = background (native self-signs).
+export function setPassiveEntryForegroundActive(active: boolean): void {
+  PassiveEntryModule?.setForegroundResponderActive(active);
+}
+
+// Subscribe to raw 0213 notifications (foreground pipe mode). Returns unsubscribe.
+export function onPassiveEntryFrame(listener: (dataB64: string) => void): () => void {
+  const sub = PassiveEntryModule?.addListener('frame', (e: PassiveEntryFrameEvent) =>
+    listener(e.dataB64),
+  );
+  return () => sub?.remove();
+}
+
+// Subscribe to native link-state changes. Returns unsubscribe.
+export function onPassiveEntryConnectionState(
+  listener: (e: PassiveEntryConnectionEvent) => void,
+): () => void {
+  const sub = PassiveEntryModule?.addListener('connectionState', listener);
   return () => sub?.remove();
 }
