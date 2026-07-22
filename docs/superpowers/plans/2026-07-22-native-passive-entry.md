@@ -35,7 +35,8 @@ These are settled by on-car evidence + RE. A task that contradicts one of these 
 
 ## Gating
 
-- **Phase 1 (spike) gates Phases 2–4.** If iOS background-wake latency on Ivan's phone is unusable (e.g. minutes, or force-quit never relaunches beyond expectation), the whole native approach is reconsidered before investing in the full responder.
+- **No wake-latency spike.** The official Tesla app ships this exact mechanism (CoreBluetooth State Restoration + `bluetooth-central`), so "does iOS wake a suspended app on a BLE event" is settled — it does; force-quit is the known ceiling; reboot relaunches via restoration. Re-measuring that pre-build gives no decision-relevant data. Build the responder directly.
+- **The one real latency unknown is measured on the working build, not before:** when native wakes COLD (session dropped), does re-handshake (`SessionInfoRequest`) + seal fit the car's ~6 s window? This is the acceptance test of Task 7 (background answer). **Fallback if too slow: keep the session warm** (avoid the cold re-handshake) — a standard technique the official app likely uses. Not a gate; a known mitigation.
 - **REQUEST-11 (drive vs unlock) shapes ROI.** If drive is UWB-gated (unlock-only ceiling), passive entry is "unlock only" — still worth it, but the user should know before Phase 2. Not a hard block.
 
 ---
@@ -59,9 +60,9 @@ These are settled by on-car evidence + RE. A task that contradicts one of these 
 
 ---
 
-## Phase 1 — Native wake-latency spike (do this FIRST; gates everything)
+## Phase 1 — Native module + connect-and-hold central
 
-**Purpose:** measure, on Ivan's actual phone, how fast iOS wakes a suspended `bluetooth-central` app on a car BLE event, and whether it survives force-quit. No crypto, no signing — just connect-and-hold + timestamped wake logging. This is a few hours of native work that de-risks the entire build.
+**Purpose:** stand up the native module and hold a BLE link to the car. These are the load-bearing building blocks of the responder, not a throwaway spike — the mechanism is already proven by the shipping Tesla app, so we build straight toward answering a challenge.
 
 ### Task 1: Scaffold the native module (no logic yet)
 
@@ -102,15 +103,11 @@ Expected: build succeeds; no dyld/symbol errors at launch. (Watch the `ExpoModul
 
 - [ ] **Step 2: Log the launch reason + wake deltas.** In `PassiveEntryModule` init (which runs on app launch, including background relaunch), log the process start time and — from the app delegate or `ProcessInfo` — whether this launch is a background BLE/location wake. Emit these as `log` events; ALSO append them to the diagnostics file directly from native (write to the same `Documents/airgapp-diagnostics.log`) so they survive when JS isn't running.
 
-- [ ] **Step 3: `willRestoreState`** — implement `centralManager(_:willRestoreState:)`: read `CBCentralManagerRestoredStatePeripheralsKey`, re-adopt the peripheral, log `"restored N peripherals at <t>"`.
+- [ ] **Step 3: `willRestoreState`** — implement `centralManager(_:willRestoreState:)`: read `CBCentralManagerRestoredStatePeripheralsKey`, re-adopt the peripheral, log `"restored N peripherals at <t>"`. (Restoration is required infrastructure for the background answer in Task 7; wire it now while the central is fresh in context.)
 
-- [ ] **Step 4: Build, deploy, on-car measurement run A (suspend).** Start the central (foreground, near car, connected). Background the app (home button), pocket the phone, walk away ~1 min, walk back. Pull the diagnostics log. **Record:** did iOS relaunch/wake the app on re-approach? What was the delta from re-approach to the wake callback?
+- [ ] **Step 4: Build, deploy, foreground sanity check.** Near the car, start the central from the harness; confirm the log shows `didConnect` and the link holds (a `didDisconnect` only when you walk out of range). This proves connect-and-hold works — enough to move to the signer.
 
-- [ ] **Step 5: On-car measurement run B (force-quit).** Force-quit the app from the switcher, walk up. Pull the log. **Record:** did iOS relaunch it at all? (Expected: no — confirms the "closed too long / force-quit" ceiling.)
-
-- [ ] **Step 6: On-car measurement run C (reboot).** Reboot the phone, do NOT open the app, walk up. Pull the log. **Record:** did a `bluetooth-central` restore relaunch fire?
-
-- [ ] **Step 7: Commit + write the findings.** `git commit -m "feat(native): connect-and-hold central + wake-latency logging (spike)"`. Append a short `docs/superpowers/research/SPIKE-native-wake-latency.md` with the three measured numbers. **THIS IS THE PHASE-1 GATE:** if the numbers are unusable, stop and reconsider before Phase 2.
+- [ ] **Step 5: Commit.** `git commit -m "feat(native): connect-and-hold central + state restoration"`
 
 ---
 
@@ -200,11 +197,12 @@ export function whoMaySign(state: { appActive: boolean; nativeUp: boolean }): 'n
 - [ ] **Step 2: On-car, FOREGROUND, official-app Bluetooth OFF:** with the native central holding the link (JS passive disabled for this test), walk up and pull the handle. Expect the car to unlock and a routable ack (the frame decoded 2026-07-22). Pull the log; confirm `GRANTED`.
 - [ ] **Step 3: Commit.** `git commit -m "feat(native): answer passive challenge natively (foreground proof)"`
 
-### Task 7: Background wake → answer (the payoff)
+### Task 7: Background wake → answer (the payoff + the one real latency measurement)
 
-- [ ] **Step 1:** Ensure the challenge path runs from a `willRestoreState` cold wake: on restore, re-adopt the peripheral, re-handshake if the session is cold (native session cache is RAM-only; a cold wake re-runs `SessionInfoRequest`), then answer. All native, no JS.
+- [ ] **Step 1:** Ensure the challenge path runs from a `willRestoreState` cold wake: on restore, re-adopt the peripheral, re-handshake if the session is cold (native session cache is RAM-only; a cold wake re-runs `SessionInfoRequest`), then answer. All native, no JS. **Log timestamps** at: wake, handshake-done, `0213`-challenge-received, `0212`-answer-written.
 - [ ] **Step 2: On-car, BACKGROUNDED, phone in pocket, official-app BT OFF:** walk up, pull handle. Expect unlock. Pull the log (native wrote it). Confirm the wake→answer path fired with no JS.
-- [ ] **Step 3: Commit.** `git commit -m "feat(native): background-wake passive unlock (M2 payoff)"`
+- [ ] **Step 3: Read the measured latency** (challenge-received → answer-written, and whether a cold re-handshake was needed). **This is the one real latency unknown.** If a cold wake answers within the car window → done. If it's too slow → apply the keep-warm mitigation: hold the session across the wake (don't drop the `sharedSecret`/counter on background), so the wake only pays the ~one-seal cost, not a full re-handshake. Re-measure.
+- [ ] **Step 4: Commit.** `git commit -m "feat(native): background-wake passive unlock (M2 payoff)"`
 
 ---
 
@@ -222,6 +220,6 @@ Do not start until REQUEST-12 answers the foreground↔background BLE-ownership 
 
 ## Self-review notes
 
-- **Spec coverage:** background wake (Phase 1 + Task 7), native signer verified vs proven TS (Task 4), single-writer rule (Task 3), handshake/counter (Task 5), foreground proof (Task 6), lifecycle wiring (Task 8). One key / routable / no-Pi-command-change are pinned in Global Constraints + Confirmed Decisions.
+- **Spec coverage:** connect-and-hold central (Task 2), native signer verified vs proven TS (Task 4), single-writer rule (Task 3), handshake/counter (Task 5), foreground proof (Task 6), background wake + the one real latency measurement (Task 7), lifecycle wiring (Task 8). One key / routable / no-Pi-command-change are pinned in Global Constraints + Confirmed Decisions.
 - **Known gaps by design:** the exact foreground BLE-ownership handoff (REQUEST-12, blocks Phase 4 only); whether drive is achievable (REQUEST-11, ROI only); Android (out of scope — iOS first, Android mirrors later per RESPONSE-7).
 - **Anti-thrash:** the "Confirmed decisions" section is the anchor. Any task that reintroduces a second key, moves commands onto Pi as a requirement, or has JS open a second BLE central is a plan violation.
