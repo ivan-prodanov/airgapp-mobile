@@ -21,6 +21,7 @@ declare class PassiveEntryModule {
   // Native seal golden self-test (pure crypto; returns MATCH/MISMATCH).
   sealGolden(): string;
   ecdhGolden(): string;
+  handshakeGolden(): string;
   setDeviceKey(privHex: string): boolean;
   deviceFingerprint(): string;
   // Native → JS diagnostics stream.

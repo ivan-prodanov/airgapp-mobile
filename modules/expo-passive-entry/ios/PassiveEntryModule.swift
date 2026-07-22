@@ -43,6 +43,10 @@ public class PassiveEntryModule: Module {
       VcsecSigner.ecdhGoldenSelfTest()
     }
 
+    Function("handshakeGolden") { () -> String in
+      VcsecSigner.handshakeGoldenSelfTest()
+    }
+
     // Hand native its own durable, background-readable copy of the enrolled key
     // (32-byte private scalar as hex). Call once from the foreground.
     Function("setDeviceKey") { (privHex: String) -> Bool in

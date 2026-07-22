@@ -105,6 +105,107 @@ enum VcsecSigner {
     return (a, sealed, frame)
   }
 
+  // MARK: - protobuf reading (for parsing the car's reply)
+
+  static func readVarint(_ b: [UInt8], _ start: Int) -> (Int, Int) {
+    var v = 0, s = 0, i = start
+    while i < b.count { let x = b[i]; i += 1; v |= Int(x & 0x7f) << s; if x & 0x80 == 0 { break }; s += 7 }
+    return (v, i)
+  }
+  // First occurrence of a length-delimited field's bytes (nil if absent).
+  static func extractLenField(_ b: [UInt8], _ field: Int) -> [UInt8]? {
+    var i = 0
+    while i < b.count {
+      let (tag, ni) = readVarint(b, i); i = ni
+      let f = tag >> 3, wt = tag & 7
+      switch wt {
+      case 0: let (_, nj) = readVarint(b, i); i = nj
+      case 5: i += 4
+      case 1: i += 8
+      case 2:
+        let (ln, nj) = readVarint(b, i); i = nj
+        if i + ln > b.count { return nil }
+        let val = Array(b[i..<i + ln]); i += ln
+        if f == field { return val }
+      default: return nil
+      }
+    }
+    return nil
+  }
+
+  // MARK: - SessionInfoRequest handshake
+
+  // The outgoing SessionInfoRequest frame (RoutableMessage). uuid doubles as the
+  // HMAC challenge. Fields: toDestination(6), fromDestination(7),
+  // sessionInfoRequest(14){publicKey(1)}, uuid(51).
+  static func sessionInfoRequestFrame(myPubRaw: [UInt8], routingAddress: [UInt8], challenge: [UInt8]) -> [UInt8] {
+    var f = [UInt8]()
+    f += lenField(6, varintField(1, 2))          // toDestination.domain = 2
+    f += lenField(7, lenField(2, routingAddress)) // fromDestination.routingAddress
+    f += lenField(14, lenField(1, myPubRaw))      // sessionInfoRequest.publicKey
+    f += lenField(51, challenge)                  // uuid = challenge
+    return f
+  }
+
+  struct ParsedSessionInfo { let counter: UInt32; let publicKey: [UInt8]; let epoch: [UInt8]; let clockTime: UInt32 }
+
+  // Signatures.SessionInfo: counter(1 varint), publicKey(2), epoch(3), clockTime(4 fixed32 LE).
+  static func parseSessionInfo(_ b: [UInt8]) -> ParsedSessionInfo? {
+    var counter: UInt32 = 0, clock: UInt32 = 0, pub = [UInt8](), epoch = [UInt8]()
+    var i = 0
+    while i < b.count {
+      let (tag, ni) = readVarint(b, i); i = ni
+      let f = tag >> 3, wt = tag & 7
+      switch wt {
+      case 0: let (v, nj) = readVarint(b, i); i = nj; if f == 1 { counter = UInt32(truncatingIfNeeded: v) }
+      case 2:
+        let (ln, nj) = readVarint(b, i); i = nj
+        if i + ln > b.count { return nil }
+        let val = Array(b[i..<i + ln]); i += ln
+        if f == 2 { pub = val } else if f == 3 { epoch = val }
+      case 5:
+        if i + 4 > b.count { return nil }
+        if f == 4 { clock = UInt32(b[i]) | UInt32(b[i+1]) << 8 | UInt32(b[i+2]) << 16 | UInt32(b[i+3]) << 24 }
+        i += 4
+      case 1: i += 8
+      default: return nil
+      }
+    }
+    return ParsedSessionInfo(counter: counter, publicKey: pub, epoch: epoch, clockTime: clock)
+  }
+
+  // The car authenticates SessionInfo with HMAC: subkey = HMAC(sessionKey,
+  // "session info"); tag = HMAC(subkey, metaTLV[SIG_TYPE=HMAC(6),
+  // PERSONALIZATION=vin, CHALLENGE=challenge] ‖ 0xff ‖ sessionInfoBytes).
+  static func sessionInfoHmac(sessionKey: [UInt8], vin: String, challenge: [UInt8], sessionInfoBytes: [UInt8]) -> [UInt8] {
+    let subkey = HMAC<SHA256>.authenticationCode(for: Data("session info".utf8), using: SymmetricKey(data: Data(sessionKey)))
+    var meta = [UInt8]()
+    func entry(_ tag: UInt8, _ v: [UInt8]) { meta.append(tag); meta.append(UInt8(v.count)); meta += v }
+    entry(0, [6])              // SIGNATURE_TYPE = HMAC
+    entry(2, Array(vin.utf8))  // PERSONALIZATION
+    entry(6, challenge)        // CHALLENGE
+    meta.append(0xff)
+    meta += sessionInfoBytes
+    return Array(HMAC<SHA256>.authenticationCode(for: Data(meta), using: SymmetricKey(data: Data(subkey))))
+  }
+
+  static func handshakeGoldenSelfTest() -> String {
+    let myPub = unhex("04" + String(repeating: "11", count: 64))
+    let routing = unhex(String(repeating: "ab", count: 16))
+    let challenge = unhex(String(repeating: "cc", count: 16))
+    let reqExpected = "320208023a121210abababababababababababababababab72430a4104111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111119a0310cccccccccccccccccccccccccccccccc"
+    let siBytes = unhex("088202124104222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222221a1007070707070707070707070707070707253f420f00")
+    let hmacExpected = "d94c42e7791044578ce847d7b6013a8690857106eaed7da7bb4c1e7c27aa6ff8"
+    let sessionKey = unhex(String(repeating: "42", count: 16))
+    let vin = "5YJ3E1EA1AAA00001"
+
+    let reqOK = hex(sessionInfoRequestFrame(myPubRaw: myPub, routingAddress: routing, challenge: challenge)) == reqExpected
+    let hmacOK = hex(sessionInfoHmac(sessionKey: sessionKey, vin: vin, challenge: challenge, sessionInfoBytes: siBytes)) == hmacExpected
+    let si = parseSessionInfo(siBytes)
+    let parseOK = si?.counter == 258 && si?.clockTime == 999999 && si?.epoch.count == 16 && si?.publicKey.count == 65
+    return (reqOK && hmacOK && parseOK) ? "HANDSHAKE: ✅ MATCH" : "HANDSHAKE: ❌ req=\(reqOK) hmac=\(hmacOK) parse=\(parseOK)"
+  }
+
   // MARK: - ECDH + device key (session key derivation)
 
   // sessionKey = SHA1( ECDH_X(myPriv, peerPub) )[:16]. ECDH_X is the raw 32-byte

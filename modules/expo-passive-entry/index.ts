@@ -26,6 +26,10 @@ export function passiveEntryEcdhGolden(): string {
   return PassiveEntryModule?.ecdhGolden() ?? 'native module absent';
 }
 
+export function passiveEntryHandshakeGolden(): string {
+  return PassiveEntryModule?.handshakeGolden() ?? 'native module absent';
+}
+
 // Hand native its own background-readable copy of the enrolled key (once).
 export function setPassiveEntryDeviceKey(privHex: string): boolean {
   return PassiveEntryModule?.setDeviceKey(privHex) ?? false;

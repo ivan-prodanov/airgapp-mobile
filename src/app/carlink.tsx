@@ -32,7 +32,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
-import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint } from '../../modules/expo-passive-entry';
+import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, passiveEntryHandshakeGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint } from '../../modules/expo-passive-entry';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -258,6 +258,7 @@ export default function CarLinkScreen() {
   const handleNativeSealGolden = () => {
     append(`native seal golden: ${passiveEntrySealGolden()}`);
     append(`native ecdh golden: ${passiveEntryEcdhGolden()}`);
+    append(`native handshake golden: ${passiveEntryHandshakeGolden()}`);
   };
 
   // Pass the real device key to native, then compare native's fingerprint to JS's.
