@@ -16,7 +16,7 @@ public class PassiveEntryModule: Module {
   public func definition() -> ModuleDefinition {
     Name("PassiveEntry")
 
-    Events("log", "frame", "connectionState")
+    Events("log", "frame", "connectionState", "bondRemoved")
 
     // Wire the foreground event sinks. When JS is running, native log lines and
     // the byte-pipe streams reach the JS transport; in a background relaunch
@@ -31,6 +31,10 @@ public class PassiveEntryModule: Module {
       }
       PassiveEntryCentral.shared.onConnectionState = { [weak self] state, mtu in
         self?.sendEvent("connectionState", ["state": state, "mtu": mtu])
+      }
+      // The car's LE bond was removed (user forgot the device) — JS flips to Set-Up.
+      PassiveEntryCentral.shared.onBondRemoved = { [weak self] in
+        self?.sendEvent("bondRemoved", [:])
       }
     }
 

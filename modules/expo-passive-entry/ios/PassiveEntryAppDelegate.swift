@@ -28,4 +28,16 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
     PassiveEntryCentral.shared.startIfConfigured()
     return true
   }
+
+  // The app is terminating — remind the user that passive entry needs the app
+  // running. iOS delivers this on a foreground quit and on a swipe-kill of an
+  // app that is actively running in the background (our bluetooth-central case),
+  // though NOT reliably for a long-suspended app the user swipes away — that's an
+  // OS limitation no app can beat. Only nag if passive entry was armed.
+  public func applicationWillTerminate(_ application: UIApplication) {
+    guard PassiveEntryCentral.isArmed() else { return }
+    Notifier.post(id: PassiveEntryCentral.appClosedNotifId,
+                  title: "", // empty → iOS shows the app name as the header
+                  body: "Keep the Tesla app running for the best Phone Key and Live Activity experience")
+  }
 }

@@ -86,6 +86,7 @@ import {
   setPassiveEntryForegroundActive,
   onPassiveEntryConnectionState,
   passiveEntryConnectionState,
+  onPassiveEntryBondRemoved,
 } from '../../modules/expo-passive-entry';
 import { appStorage } from './appStorage';
 import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
@@ -1061,6 +1062,18 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       unsub();
     };
   }, [linked, teardownWhenIdle]);
+
+  // The car's LE bond was removed (user forgot the device in iOS Settings). The
+  // native central sees peerRemovedPairingInformation and posts the "set up Phone
+  // Key" reminder itself (works while suspended); here we flip the app into the
+  // Set-Up state by wedging the bond store, so the PhoneKeyRecoveryCard appears.
+  useEffect(() => {
+    const unsub = onPassiveEntryBondRemoved(() => {
+      logw('ble', 'native reported bond removed — flipping to Set-Up', {});
+      bondWedgeStore.noteBondRemoved();
+    });
+    return unsub;
+  }, []);
 
   // Tee the logbus to the pullable diagnostics file. Without this, an on-device
   // link failure is invisible off-device — which is exactly what turned "no blue

@@ -132,6 +132,15 @@ export const bondWedgeStore = {
     detector.noteConnectSuccess();
     publish(detector.state(), 'connect-success');
   },
+  // The native central saw peerRemovedPairingInformation (code 14) — the user
+  // forgot the device in iOS Settings. Definitive, so wedge immediately (explicit)
+  // rather than waiting for the connect-failure heuristic. This restores wedge
+  // detection now that production BLE runs through the native central, not the
+  // ble-plx DirectBleTransport that used to feed noteConnectFailure.
+  noteBondRemoved(): void {
+    detector.markWedged('peer-removed-bond');
+    publish(detector.state(), 'bond-removed-native');
+  },
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
     return () => listeners.delete(listener);

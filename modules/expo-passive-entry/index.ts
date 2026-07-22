@@ -87,3 +87,10 @@ export function onPassiveEntryConnectionState(
   const sub = PassiveEntryModule?.addListener('connectionState', listener);
   return () => sub?.remove();
 }
+
+// Subscribe to the car's LE bond being removed (user forgot the device in iOS
+// Settings — peerRemovedPairingInformation). Returns unsubscribe.
+export function onPassiveEntryBondRemoved(listener: () => void): () => void {
+  const sub = PassiveEntryModule?.addListener('bondRemoved', () => listener());
+  return () => sub?.remove();
+}

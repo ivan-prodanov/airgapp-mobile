@@ -48,6 +48,7 @@ declare class PassiveEntryModule {
     event: 'connectionState',
     listener: (e: PassiveEntryConnectionEvent) => void,
   ): EventSubscription;
+  addListener(event: 'bondRemoved', listener: () => void): EventSubscription;
 }
 
 // Optional on purpose: iOS-only, and a JS-only deploy onto a binary built before

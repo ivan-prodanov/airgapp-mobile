@@ -22,6 +22,11 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   static let txUUID = CBUUID(string: "00000212-b2d1-43f0-9b88-960cebf8b91e") // write
   static let rxUUID = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e") // notify
   static let restoreId = "airgapp.passiveentry"
+  // Stable notification ids so a re-post replaces rather than stacks, and so we
+  // can withdraw the BT reminder when Bluetooth comes back.
+  static let btOffNotifId = "airgapp.notif.bluetooth-off"
+  static let bondRemovedNotifId = "airgapp.notif.bond-removed"
+  static let appClosedNotifId = "airgapp.notif.app-closed"
 
   // Singleton: the CBCentralManager (with restore id) must be re-created at APP
   // LAUNCH for iOS state restoration to relaunch us in the background — so the
@@ -51,6 +56,12 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // onConnectionState; TS runs all command crypto and the passive responder.
   var onFrame: (([UInt8]) -> Void)?
   var onConnectionState: ((String, Int) -> Void)?
+  // Fired when the car's LE bond is gone (peerRemovedPairingInformation) — the
+  // user forgot the device in iOS Settings. JS flips to the Set-Up state.
+  var onBondRemoved: (() -> Void)?
+  // Debounce: native keeps retrying, so peerRemoved recurs; report it once until
+  // a successful connect clears it.
+  private var bondRemovedReported = false
   // Single-writer gate (RESPONSE-12 bridge surface). true = FOREGROUND: native
   // is a dumb byte-pipe, TS signs. false = BACKGROUND: native self-signs the
   // AuthenticationResponse (Hermes is suspended). Default false so a background
@@ -136,6 +147,9 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // Persist the VIN so a background relaunch (JS suspended) can resume via
     // startIfConfigured() without anyone calling start() again.
     UserDefaults.standard.set(vin, forKey: PassiveEntryCentral.vinKey)
+    // Ask for notification permission now (foreground), so a later BACKGROUND
+    // reminder (BT off, bond removed) already has the grant.
+    Notifier.requestAuthIfNeeded()
     log("start vin=…\(vin.suffix(6)) target=\(targetName ?? "?") state=\(stateName(central?.state))")
     if central?.state == .poweredOn { beginScan() }
   }
@@ -214,7 +228,21 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   func centralManagerDidUpdateState(_ c: CBCentralManager) {
     log("state=\(stateName(c.state))")
-    if c.state == .poweredOn { beginScan() }
+    switch c.state {
+    case .poweredOn:
+      // BT is back — withdraw the "Bluetooth Disabled" reminder if it's showing.
+      Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
+      beginScan()
+    case .poweredOff:
+      // Only remind if passive entry is actually armed — otherwise it's noise.
+      if PassiveEntryCentral.isArmed() {
+        Notifier.post(id: PassiveEntryCentral.btOffNotifId,
+                      title: "Bluetooth Disabled",
+                      body: "Phone Key will not work until Bluetooth is enabled")
+      }
+    default:
+      break
+    }
   }
 
   func centralManager(_ c: CBCentralManager, didDiscover p: CBPeripheral,
@@ -234,6 +262,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
     log("CONNECTED \(p.name ?? "?") — discovering GATT")
+    bondRemovedReported = false // a real connect means the bond is back
     p.delegate = self
     txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1
     p.discoverServices([PassiveEntryCentral.serviceUUID])
@@ -408,6 +437,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
     log("connect FAILED: \(error?.localizedDescription ?? "?") → rescanning")
+    if isPeerRemoved(error) { handleBondRemoved() }
     beginScan()
   }
 
@@ -415,7 +445,26 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     log("disconnected: \(error?.localizedDescription ?? "clean") → rescanning")
     txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1; sessionKey = nil
     onConnectionState?("disconnected", blockLength + 3)
+    if isPeerRemoved(error) { handleBondRemoved() }
     if wantScan { beginScan() }
+  }
+
+  // CBError.peerRemovedPairingInformation (code 14) — the user forgot this device
+  // in iOS Settings > Bluetooth, so the LE bond is gone. The enrolled KEY is
+  // still on the car; only the OS pairing was removed.
+  private func isPeerRemoved(_ error: Error?) -> Bool {
+    guard let e = error as NSError? else { return false }
+    return e.domain == CBErrorDomain && e.code == CBError.Code.peerRemovedPairingInformation.rawValue
+  }
+
+  private func handleBondRemoved() {
+    guard !bondRemovedReported else { return } // debounce — retries recur
+    bondRemovedReported = true
+    log("BOND REMOVED (peerRemovedPairingInformation) — user forgot the device")
+    onBondRemoved?() // JS flips to the Set-Up state
+    Notifier.post(id: PassiveEntryCentral.bondRemovedNotifId,
+                  title: "Phone Key",
+                  body: "Set up your Phone Key to lock, unlock, and start your car")
   }
 
   func centralManager(_ c: CBCentralManager, willRestoreState dict: [String: Any]) {
