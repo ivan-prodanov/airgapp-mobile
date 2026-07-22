@@ -32,6 +32,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
+import { startPassiveEntry, onPassiveEntryLog } from '../../modules/expo-passive-entry';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -230,6 +231,18 @@ export default function CarLinkScreen() {
     } catch (err) {
       append(`ERROR BLE scan test: ${errMsg(err)}`);
     }
+  };
+
+  // handleNativePassiveStart verifies the JS↔native round-trip of the new
+  // expo-passive-entry module (Task 1 scaffold): subscribe to its native `log`
+  // stream, then call start(vin). Success = the echoed scaffold line appears in
+  // the harness log, proving the native module is present and callable.
+  const handleNativePassiveStart = () => {
+    append('native passive-entry: subscribing + start(vin)…');
+    const unsub = onPassiveEntryLog((line) => append(`[native] ${line}`));
+    // Keep the subscription briefly so the echo lands, then drop it.
+    setTimeout(unsub, 4000);
+    startPassiveEntry(vin || 'NO-VIN');
   };
 
   // handleHedgeProbe runs the RE #10 duplicate-counter-reject probe over a
@@ -594,6 +607,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
               <ActionButton label="Hedge probe (dup reject)" onPress={handleHedgeProbe} theme={theme} />
+              <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Enrol over BLE" onPress={handleEnrolOverBle} theme={theme} />
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
