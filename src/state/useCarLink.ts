@@ -212,7 +212,15 @@ const PASSIVE_ENTRY_RESPOND = true;
 // on-car-MEASURED grant (RE #8), kept as the fallback. We start ROUTABLE to run
 // RE #9's single-frame probe: one clean walk-up, then read the diagnostics for
 // GRANT. If the car refuses routable on this VIN, flip to 'legacy' and redeploy.
-const PASSIVE_ENTRY_SEAL: PassiveSealModality = 'routable';
+// PROBE RESULT 2026-07-22: routable did NOT grant on this VIN. Two clean
+// handle-pulls answered routable (counters 48, 74) → car stayed locked, no
+// verdict, where every legacy answer unlocked + GRANTED in ~87ms. Reverted to
+// the proven legacy seal to keep walk-up unlock working. Routable stays built
+// (behind this flag) pending: (1) a verdict decoder that can read a
+// routable-wrapped fault — right now we're blind to WHY the car refused — and
+// (2) an RE follow-up (does this car require legacy for the auth response
+// despite being routable for commands, or is a frame detail off?).
+const PASSIVE_ENTRY_SEAL: PassiveSealModality = 'legacy';
 
 // Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
