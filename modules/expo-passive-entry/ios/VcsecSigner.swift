@@ -105,6 +105,42 @@ enum VcsecSigner {
     return (a, sealed, frame)
   }
 
+  // MARK: - ECDH + device key (session key derivation)
+
+  // sessionKey = SHA1( ECDH_X(myPriv, peerPub) )[:16]. ECDH_X is the raw 32-byte
+  // X-coordinate — CryptoKit's P256 SharedSecret IS that X (not HKDF'd), matching
+  // noble's point[1:33] in crypto.ts deriveSessionKey.
+  static func ecdhSessionKey(myPriv: [UInt8], peerPub: [UInt8]) -> [UInt8]? {
+    guard
+      let priv = try? P256.KeyAgreement.PrivateKey(rawRepresentation: Data(myPriv)),
+      let pub = try? P256.KeyAgreement.PublicKey(x963Representation: Data(peerPub)),
+      let shared = try? priv.sharedSecretFromKeyAgreement(with: pub)
+    else { return nil }
+    let x = shared.withUnsafeBytes { Data($0) } // 32-byte X-coordinate
+    return Array(Insecure.SHA1.hash(data: x).prefix(16))
+  }
+
+  // The 65-byte SEC1 uncompressed public key (0x04||X||Y) for a private scalar —
+  // matches noble p256.getPublicKey(priv, false).
+  static func devicePublicKey(privHex: String) -> [UInt8]? {
+    guard let priv = try? P256.KeyAgreement.PrivateKey(rawRepresentation: Data(unhex(privHex))) else { return nil }
+    return Array(priv.publicKey.x963Representation)
+  }
+
+  // deviceKeyFingerprint: SHA256(publicKeyRaw)[:8], colon-hex — matches
+  // keystore.ts deviceKeyFingerprint, so native can prove it holds the same key.
+  static func fingerprint(pub: [UInt8]) -> String {
+    Array(SHA256.hash(data: Data(pub)).prefix(8)).map { String(format: "%02x", $0) }.joined(separator: ":")
+  }
+
+  static func ecdhGoldenSelfTest() -> String {
+    let myPriv = unhex(String(repeating: "11", count: 32))
+    let peerPub = unhex("04d65a93977caa3d1b081852ff57a79e465f1660577304baead505dd3a48589cf350185e895372df6221ea3a137557e473fddb6755f05bd507c3c533fce9c91285")
+    let expected = "b628048f414afe9a606f6c97195bb2e4"
+    guard let sk = ecdhSessionKey(myPriv: myPriv, peerPub: peerPub) else { return "ECDH: derive nil" }
+    return hex(sk) == expected ? "ECDH: ✅ MATCH" : "ECDH: ❌ MISMATCH got=\(hex(sk)) want=\(expected)"
+  }
+
   // MARK: - golden self-test (FIXED inputs identical to gen-routable-golden.ts)
 
   static func goldenSelfTest() -> String {

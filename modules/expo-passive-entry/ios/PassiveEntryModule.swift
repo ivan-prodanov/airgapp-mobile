@@ -37,5 +37,25 @@ public class PassiveEntryModule: Module {
     Function("sealGolden") { () -> String in
       VcsecSigner.goldenSelfTest()
     }
+
+    // Verify native P-256 ECDH + SHA1-KDF matches TS. Pure crypto, no car.
+    Function("ecdhGolden") { () -> String in
+      VcsecSigner.ecdhGoldenSelfTest()
+    }
+
+    // Hand native its own durable, background-readable copy of the enrolled key
+    // (32-byte private scalar as hex). Call once from the foreground.
+    Function("setDeviceKey") { (privHex: String) -> Bool in
+      KeychainKey.setKeyHex(privHex)
+    }
+
+    // Read the stored key back, derive its public key, and return the fingerprint
+    // (SHA256(pub)[:8] colon-hex) — must equal JS deviceKeyFingerprint to prove
+    // native holds the same key. Returns "no key" when none is stored.
+    Function("deviceFingerprint") { () -> String in
+      guard let hex = KeychainKey.getKeyHex(),
+            let pub = VcsecSigner.devicePublicKey(privHex: hex) else { return "no key" }
+      return VcsecSigner.fingerprint(pub: pub)
+    }
   }
 }

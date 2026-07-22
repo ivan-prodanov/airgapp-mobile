@@ -32,7 +32,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
-import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden } from '../../modules/expo-passive-entry';
+import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint } from '../../modules/expo-passive-entry';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -55,6 +55,10 @@ import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/pi
 type Theme = ReturnType<typeof useTheme>;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Local hex helper (avoid importing crypto internals into the harness).
+const bytesToHexLocal = (b: Uint8Array): string =>
+  Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 
 // AUTO_BLE_SCAN_TIMEOUT_MS is the short scan budget the 'auto' transport
 // mode gives DirectBleTransport (vs. the module's own 20s default) so that
@@ -253,6 +257,20 @@ export default function CarLinkScreen() {
   // code/namespace. Idempotent (GET_STATUS = a read); safe.
   const handleNativeSealGolden = () => {
     append(`native seal golden: ${passiveEntrySealGolden()}`);
+    append(`native ecdh golden: ${passiveEntryEcdhGolden()}`);
+  };
+
+  // Pass the real device key to native, then compare native's fingerprint to JS's.
+  const handleNativeKeyCheck = async () => {
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      const jsFp = deviceKeyFingerprint(keys);
+      const stored = setPassiveEntryDeviceKey(bytesToHexLocal(keys.privateScalar));
+      const nativeFp = passiveEntryDeviceFingerprint();
+      append(`key check: stored=${stored} jsFp=${jsFp} nativeFp=${nativeFp} → ${jsFp === nativeFp ? 'MATCH ✅' : 'MISMATCH ❌'}`);
+    } catch (err) {
+      append(`ERROR key check: ${errMsg(err)}`);
+    }
   };
 
   const handleHedgeProbe = async () => {
@@ -613,6 +631,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Hedge probe (dup reject)" onPress={handleHedgeProbe} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />
+              <ActionButton label="Native key check" onPress={handleNativeKeyCheck} theme={theme} />
               <ActionButton label="Enrol over BLE" onPress={handleEnrolOverBle} theme={theme} />
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />

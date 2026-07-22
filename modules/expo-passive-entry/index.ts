@@ -21,6 +21,21 @@ export function passiveEntrySealGolden(): string {
   return PassiveEntryModule?.sealGolden() ?? 'native module absent';
 }
 
+// Verify native P-256 ECDH + SHA1-KDF matches the TS golden.
+export function passiveEntryEcdhGolden(): string {
+  return PassiveEntryModule?.ecdhGolden() ?? 'native module absent';
+}
+
+// Hand native its own background-readable copy of the enrolled key (once).
+export function setPassiveEntryDeviceKey(privHex: string): boolean {
+  return PassiveEntryModule?.setDeviceKey(privHex) ?? false;
+}
+
+// Native's fingerprint of the stored key — compare to JS deviceKeyFingerprint.
+export function passiveEntryDeviceFingerprint(): string {
+  return PassiveEntryModule?.deviceFingerprint() ?? 'native module absent';
+}
+
 // Subscribe to the native diagnostics stream. Returns an unsubscribe fn (no-op
 // when the native module is absent).
 export function onPassiveEntryLog(listener: (line: string) => void): () => void {

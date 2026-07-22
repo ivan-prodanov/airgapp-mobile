@@ -20,6 +20,9 @@ declare class PassiveEntryModule {
   isRunning(): boolean;
   // Native seal golden self-test (pure crypto; returns MATCH/MISMATCH).
   sealGolden(): string;
+  ecdhGolden(): string;
+  setDeviceKey(privHex: string): boolean;
+  deviceFingerprint(): string;
   // Native → JS diagnostics stream.
   addListener(event: 'log', listener: (e: PassiveEntryLogEvent) => void): EventSubscription;
 }
