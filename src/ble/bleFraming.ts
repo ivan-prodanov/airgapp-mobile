@@ -33,20 +33,30 @@ export const MAX_BLE_MESSAGE_SIZE = 1024;
 // that's an inbound corruption guard, not an outbound constraint — but a
 // payload whose length can't fit the 2-byte prefix (> 0xffff) is a
 // programming error and throws.
-export function frameForWrite(payload: Uint8Array, blockLength: number): Uint8Array[] {
-  if (blockLength <= 0) {
-    throw new Error(`frameForWrite: blockLength must be positive, got ${blockLength}`);
-  }
+// frameMessage prepends the 2-byte big-endian length prefix to payload and
+// returns the whole (prefix+payload) buffer WITHOUT chunking. Used by the
+// native byte-pipe (bridgedBleTransport): TS builds the framed message, native
+// splits it to the negotiated MTU. Same prefix as frameForWrite (which chunks
+// on top of this).
+export function frameMessage(payload: Uint8Array): Uint8Array {
   if (payload.length > 0xffff) {
     throw new Error(
-      `frameForWrite: payload length ${payload.length} exceeds the 2-byte length-prefix range (0xffff)`,
+      `frameMessage: payload length ${payload.length} exceeds the 2-byte length-prefix range (0xffff)`,
     );
   }
-
   const framed = new Uint8Array(2 + payload.length);
   framed[0] = (payload.length >> 8) & 0xff;
   framed[1] = payload.length & 0xff;
   framed.set(payload, 2);
+  return framed;
+}
+
+export function frameForWrite(payload: Uint8Array, blockLength: number): Uint8Array[] {
+  if (blockLength <= 0) {
+    throw new Error(`frameForWrite: blockLength must be positive, got ${blockLength}`);
+  }
+
+  const framed = frameMessage(payload);
 
   const chunks: Uint8Array[] = [];
   for (let offset = 0; offset < framed.length; offset += blockLength) {
