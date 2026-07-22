@@ -1,6 +1,7 @@
 import CoreBluetooth
 import CryptoKit
 import Foundation
+import UIKit
 
 // PassiveEntryCentral — the restorable CoreBluetooth central that holds the link
 // to the car for background passive entry (plan Task 2: connect-and-hold only;
@@ -22,11 +23,29 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   static let rxUUID = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e") // notify
   static let restoreId = "airgapp.passiveentry"
 
+  // Singleton: the CBCentralManager (with restore id) must be re-created at APP
+  // LAUNCH for iOS state restoration to relaunch us in the background — so the
+  // AppDelegate subscriber and the JS module both reach the SAME instance here,
+  // not a per-call one.
+  static let shared = PassiveEntryCentral()
+  private static let vinKey = "airgapp.passiveentry.vin"
+
+  // Whether passive entry has ever been armed — readable WITHOUT instantiating
+  // the central (and thus without creating a CBCentralManager, which would prompt
+  // for Bluetooth). The AppDelegate checks this before touching `.shared`, so a
+  // fresh install that never armed passive entry gets no launch-time BLE manager.
+  static func isArmed() -> Bool {
+    let vin = UserDefaults.standard.string(forKey: vinKey)
+    return vin?.isEmpty == false
+  }
+
   private var central: CBCentralManager?
   private var peripheral: CBPeripheral?
   private var targetName: String?
   private var wantScan = false
-  private let onLog: (String) -> Void
+  // Foreground event sink (set by the JS module). nil in a background relaunch,
+  // where JS isn't running — then only the file log records events.
+  var onLog: ((String) -> Void)?
   private let fileQueue = DispatchQueue(label: "airgapp.passiveentry.filelog")
 
   // GATT + handshake state
@@ -51,16 +70,40 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   private var answersGiven = 0
   private let maxAnswers = 20
 
-  init(onLog: @escaping (String) -> Void) {
-    self.onLog = onLog
+  override init() {
     super.init()
     // Create the manager up front WITH the restore identifier so restoration is
-    // armed. (Background relaunch re-creation is wired in a later task.)
+    // armed. When this instance is built at APP LAUNCH (by the AppDelegate
+    // subscriber, before JS), iOS can hand back the restored peripheral via
+    // willRestoreState on a background relaunch.
     central = CBCentralManager(
       delegate: self,
       queue: nil,
       options: [CBCentralManagerOptionRestoreIdentifierKey: PassiveEntryCentral.restoreId]
     )
+  }
+
+  // True only when iOS woke us into the background (a CoreBluetooth relaunch is
+  // delivered with applicationState == .background; a normal user launch is
+  // .inactive → .active). This is the single-writer discriminator.
+  private var isBackground: Bool { UIApplication.shared.applicationState == .background }
+
+  // Called at app launch (foreground OR background relaunch) by the AppDelegate
+  // subscriber. Single-writer by lifecycle: native drives BLE ONLY while
+  // backgrounded — on a foreground launch it stays idle so the JS command path
+  // owns the one link (two phone centrals to the car = fatal contention). On a
+  // background CoreBluetooth relaunch (JS suspended) it resumes with no JS.
+  func startIfConfigured() {
+    guard let vin = UserDefaults.standard.string(forKey: PassiveEntryCentral.vinKey), !vin.isEmpty else {
+      log("startIfConfigured: no armed vin — idle")
+      return
+    }
+    guard isBackground else {
+      log("startIfConfigured: foreground launch — deferring to JS (armed for …\(vin.suffix(6)))")
+      return
+    }
+    log("startIfConfigured: background relaunch, armed for vin=…\(vin.suffix(6))")
+    start(vin: vin)
   }
 
   // The VIN-derived advertised local name: "S" + hex(SHA1(utf8(vin))[0:8]) + "C".
@@ -77,12 +120,17 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     self.vin = vin
     targetName = PassiveEntryCentral.vehicleLocalName(vin)
     wantScan = true
+    // Persist the VIN so a background relaunch (JS suspended) can resume via
+    // startIfConfigured() without anyone calling start() again.
+    UserDefaults.standard.set(vin, forKey: PassiveEntryCentral.vinKey)
     log("start vin=…\(vin.suffix(6)) target=\(targetName ?? "?") state=\(stateName(central?.state))")
     if central?.state == .poweredOn { beginScan() }
   }
 
   func stop() {
     wantScan = false
+    // Disarm: clear the persisted VIN so a later relaunch stays idle.
+    UserDefaults.standard.removeObject(forKey: PassiveEntryCentral.vinKey)
     central?.stopScan()
     if let p = peripheral { central?.cancelPeripheralConnection(p) }
     peripheral = nil
@@ -98,6 +146,9 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   private func beginScan() {
     guard wantScan else { return }
+    // Don't scan while a peripheral is already live/pending — restoration may have
+    // handed us a connected one, and a redundant scan wastes background radio time.
+    if let p = peripheral, p.state == .connected || p.state == .connecting { return }
     log("scanning (service 1122, match by name)…")
     central?.scanForPeripherals(withServices: [PassiveEntryCentral.advertisedServiceUUID], options: nil)
   }
@@ -262,18 +313,44 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   func centralManager(_ c: CBCentralManager, willRestoreState dict: [String: Any]) {
     let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
-    log("willRestoreState: \(restored.count) peripherals")
-    if let p = restored.first {
-      peripheral = p
-      p.delegate = nil
-      log("re-adopted \(p.name ?? "?") state=\(p.state.rawValue)")
+    log("willRestoreState: \(restored.count) peripherals bg=\(isBackground)")
+    guard let p = restored.first else { return }
+    // Foreground restore: DON'T drive it. Release so the JS command path owns the
+    // single link (two phone centrals to the car = fatal contention).
+    guard isBackground else {
+      log("foreground restore — releasing \(p.name ?? "?") to JS")
+      c.cancelPeripheralConnection(p)
+      peripheral = nil
+      return
+    }
+    // Background: this restored peripheral IS our passive-entry link. Make sure
+    // we're armed (the restore callback can beat startIfConfigured), then resume.
+    if vin.isEmpty, let saved = UserDefaults.standard.string(forKey: PassiveEntryCentral.vinKey) {
+      vin = saved
+      targetName = PassiveEntryCentral.vehicleLocalName(saved)
+    }
+    wantScan = true
+    peripheral = p
+    p.delegate = self
+    log("re-adopted \(p.name ?? "?") state=\(p.state.rawValue)")
+    // The live session (sessionKey/counter) does NOT survive relaunch, so a warm
+    // connection still needs a fresh handshake before it can answer. Kick GATT
+    // rediscovery now; if it dropped, reconnect (or fall through to scan).
+    switch p.state {
+    case .connected:
+      txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1
+      p.discoverServices([PassiveEntryCentral.serviceUUID])
+    case .connecting:
+      break // iOS will deliver didConnect
+    default:
+      c.connect(p, options: nil)
     }
   }
 
   // MARK: - logging
 
   private func log(_ line: String) {
-    onLog(line)
+    onLog?(line)
     appendNativeFile(line)
   }
 

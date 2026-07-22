@@ -1,6 +1,7 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["PassiveEntryModule"]
+    "modules": ["PassiveEntryModule"],
+    "appDelegateSubscribers": ["PassiveEntryAppDelegate"]
   }
 }

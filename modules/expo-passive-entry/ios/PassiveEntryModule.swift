@@ -8,28 +8,35 @@ import ExpoModulesCore
 // written to airgapp-native.log (survives JS suspension). Challenge answering +
 // signing land in later tasks.
 public class PassiveEntryModule: Module {
-  private var central: PassiveEntryCentral?
+  // The central is a process-wide singleton (PassiveEntryCentral.shared) so the
+  // AppDelegate subscriber can create it at launch for state restoration; the
+  // module just streams its log to JS while the app is in the foreground.
+  private var central: PassiveEntryCentral { PassiveEntryCentral.shared }
 
   public func definition() -> ModuleDefinition {
     Name("PassiveEntry")
 
     Events("log")
 
-    Function("start") { (vin: String) in
-      if self.central == nil {
-        self.central = PassiveEntryCentral(onLog: { [weak self] line in
-          self?.sendEvent("log", ["line": line])
-        })
+    // Wire the foreground event sink. When JS is running, native log lines also
+    // stream to the harness; in a background relaunch onLog stays nil (JS is
+    // suspended) and only the file log records — by design.
+    OnCreate {
+      PassiveEntryCentral.shared.onLog = { [weak self] line in
+        self?.sendEvent("log", ["line": line])
       }
-      self.central?.start(vin: vin)
+    }
+
+    Function("start") { (vin: String) in
+      self.central.start(vin: vin)
     }
 
     Function("stop") {
-      self.central?.stop()
+      self.central.stop()
     }
 
     Function("isRunning") { () -> Bool in
-      self.central?.isRunning ?? false
+      self.central.isRunning
     }
 
     // Verify the native routable seal reproduces the TS golden byte-for-byte.
