@@ -63,17 +63,23 @@ export class BridgedBleTransport implements CarTransport {
   private readonly onUnsolicited: ((frame: Uint8Array) => void) | null;
   private readonly authResponder: ((frame: Uint8Array) => Uint8Array | null) | null;
   private exchangeInFlight = false;
+  // How long openSession waits for a connected native link before failing to the
+  // Pi fallback. The native central is ALWAYS trying to hold the link, so if it
+  // isn't connected within this budget the car is out of range — fail fast so the
+  // selector reaches Pi promptly (the selector passes its short AUTO budget).
+  private readonly connectBudgetMs: number;
 
   constructor(opts?: {
-    // Accepted for drop-in compatibility with DirectBleTransport, but IGNORED —
-    // scanning is the native central's job (it filters on service 1122 and
-    // matches by name), so there's no JS scan budget to bound here.
+    // The connect budget for openSession (the selector passes its short AUTO
+    // scan budget). Not a JS scan — native scans — just how long to wait for the
+    // native link before falling back to Pi.
     scanTimeoutMs?: number;
     onUnsolicited?: (frame: Uint8Array) => void;
     authResponder?: (frame: Uint8Array) => Uint8Array | null;
   }) {
     this.authResponder = opts?.authResponder ?? null;
     this.onUnsolicited = opts?.onUnsolicited ?? null;
+    this.connectBudgetMs = opts?.scanTimeoutMs ?? CONNECT_TIMEOUT_MS;
   }
 
   // openSession puts the native central into foreground pipe mode, arms it for
@@ -88,7 +94,7 @@ export class BridgedBleTransport implements CarTransport {
     this.inbox = [];
     this.waiters = [];
     startPassiveEntry(vin);
-    await this.awaitConnected(CONNECT_TIMEOUT_MS);
+    await this.awaitConnected(this.connectBudgetMs);
     const snap = passiveEntryConnectionState();
     this.blockLength = Math.min(snap.mtu, MAX_BLE_MESSAGE_SIZE) - 3;
     logi('ble', 'bridged link up', { mtu: snap.mtu, blockLength: this.blockLength });

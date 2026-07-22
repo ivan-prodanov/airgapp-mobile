@@ -84,6 +84,8 @@ import {
   stopPassiveEntry,
   setPassiveEntryDeviceKey,
   setPassiveEntryForegroundActive,
+  onPassiveEntryConnectionState,
+  passiveEntryConnectionState,
 } from '../../modules/expo-passive-entry';
 import { appStorage } from './appStorage';
 import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
@@ -278,6 +280,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // re-paying BLE's ~10s connect timeout when the car is out of range. Survives
   // teardown (which nulls selectorRef) because it lives here, not in the selector.
   const lastGoodTransportRef = useRef<'ble' | 'pi' | null>(null);
+  // Whether the native passive-entry central is holding a live BLE link to the
+  // car RIGHT NOW (model (b)). Drives the selector's `preferred`: while it's up,
+  // commands go BLE (it's live + instant); when it drops, they fall to Pi — so
+  // the transport (and the blue/amber dot) tracks the real link, not a stale
+  // sticky memory. Updated from the native connectionState event stream.
+  const nativeLinkUpRef = useRef(false);
   // Pi event-stream lifecycle (P3): the stop fn for the currently-open
   // WebSocket stream and the Pi sessionId it's bound to, plus any pending
   // reconnect timer. Refs (not state) — managing the stream must never
@@ -570,7 +578,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // syncStream would otherwise only close on the next poll.
             if (txp === 'ble') stopStreamRef.current?.();
           },
-          { initialLastGood: lastGoodTransportRef.current },
+          {
+            initialLastGood: lastGoodTransportRef.current,
+            // While the native central holds the BLE link, prefer BLE outright —
+            // it's live and openSession is instant. When it's down, this returns
+            // 'pi' so we don't pay a doomed BLE probe. Keeps the chosen transport
+            // honest to the real link (and the blue/amber dot with it).
+            preferred: () => (nativeLinkUpRef.current ? 'ble' : 'pi'),
+          },
         );
       }
       gatewayRef.current = createCarGateway({
@@ -992,6 +1007,24 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       nativePassiveArmedRef.current = false;
     }
   }, [linked, vin]);
+
+  // Track the native BLE link state so the selector's `preferred` (and the dot)
+  // follow the real link. Native emits 'connected' on GATT-subscribe and
+  // 'disconnected' on drop; the subscription is a no-op when native is absent.
+  useEffect(() => {
+    const unsub = onPassiveEntryConnectionState((e) => {
+      nativeLinkUpRef.current = e.state === 'connected';
+    });
+    // Seed from the current state once armed (safe — the central already exists).
+    if (nativePassiveArmedRef.current) {
+      try {
+        nativeLinkUpRef.current = passiveEntryConnectionState().state === 'connected';
+      } catch {
+        // native absent — leave false.
+      }
+    }
+    return unsub;
+  }, [linked]);
 
   // Tee the logbus to the pullable diagnostics file. Without this, an on-device
   // link failure is invisible off-device — which is exactly what turned "no blue

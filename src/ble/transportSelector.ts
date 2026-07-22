@@ -37,6 +37,13 @@ export interface SelectingTransportOptions {
   // this, every cold start / post-teardown rebuild re-pays the BLE timeout even
   // though Pi was the only thing that worked last session.
   initialLastGood?: string | null;
+  // Dynamic preference consulted on EVERY open, tried FIRST when it returns a
+  // known candidate name — overriding the sticky last-good memory. Use it to
+  // steer selection off a live signal, e.g. "the native BLE link is connected
+  // right now, so prefer 'ble' this instant" — which keeps the chosen transport
+  // (and any UI derived from it) honest to what's actually reachable, without
+  // waiting for the periodic re-probe. Returning null falls back to last-good.
+  preferred?: () => string | null;
 }
 
 function errMsg(e: unknown): string {
@@ -66,9 +73,20 @@ export function createSelectingTransport(
   // forces the next open back to the declared order.
   let opensSinceReprobe = 0;
 
-  // The candidate order for THIS open: last-good first (if remembered and not due
-  // for a re-probe), else the declared preference order.
+  // The candidate order for THIS open: a live `preferred()` wins outright (tried
+  // first, no re-probe accounting); else last-good first (if remembered and not
+  // due for a re-probe); else the declared preference order.
   function orderFor(): { ordered: TransportCandidate[]; reprobing: boolean } {
+    const want = opts?.preferred?.() ?? null;
+    if (want !== null) {
+      const head = candidates.find((c) => c.name === want);
+      if (head) {
+        // Preferred first, then the rest as fallbacks. `reprobing: true` so a
+        // success doesn't get charged against the sticky counter — the live
+        // signal, not the counter, is driving this open.
+        return { ordered: [head, ...candidates.filter((c) => c.name !== want)], reprobing: true };
+      }
+    }
     if (lastGood === null || opensSinceReprobe >= reprobeEvery) {
       return { ordered: candidates, reprobing: true };
     }
