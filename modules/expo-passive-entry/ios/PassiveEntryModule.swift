@@ -31,5 +31,11 @@ public class PassiveEntryModule: Module {
     Function("isRunning") { () -> Bool in
       self.central?.isRunning ?? false
     }
+
+    // Verify the native routable seal reproduces the TS golden byte-for-byte.
+    // Pure crypto — no car, no key — so it's safe to run anywhere.
+    Function("sealGolden") { () -> String in
+      VcsecSigner.goldenSelfTest()
+    }
   }
 }

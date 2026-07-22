@@ -16,6 +16,11 @@ export function isPassiveEntryRunning(): boolean {
   return PassiveEntryModule?.isRunning() ?? false;
 }
 
+// Verify the native routable seal matches the TS golden byte-for-byte.
+export function passiveEntrySealGolden(): string {
+  return PassiveEntryModule?.sealGolden() ?? 'native module absent';
+}
+
 // Subscribe to the native diagnostics stream. Returns an unsubscribe fn (no-op
 // when the native module is absent).
 export function onPassiveEntryLog(listener: (line: string) => void): () => void {

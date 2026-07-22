@@ -32,7 +32,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // secure-store adapter above (see directBleTransport.ts's header comment).
 import { DirectBleTransport } from '@/ble/directBleTransport';
 import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
-import { startPassiveEntry, onPassiveEntryLog } from '../../modules/expo-passive-entry';
+import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden } from '../../modules/expo-passive-entry';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -251,6 +251,10 @@ export default function CarLinkScreen() {
   // and logs both raw+decoded replies so we can see whether the reject attaches
   // a SignedSessionInfo (the hedge landed-guard's foundation) and the exact fault
   // code/namespace. Idempotent (GET_STATUS = a read); safe.
+  const handleNativeSealGolden = () => {
+    append(`native seal golden: ${passiveEntrySealGolden()}`);
+  };
+
   const handleHedgeProbe = async () => {
     if (!isValidVin(vin)) {
       append(`ERROR hedge probe: "${vin}" is not a valid 17-char VIN`);
@@ -608,6 +612,7 @@ export default function CarLinkScreen() {
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
               <ActionButton label="Hedge probe (dup reject)" onPress={handleHedgeProbe} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
+              <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />
               <ActionButton label="Enrol over BLE" onPress={handleEnrolOverBle} theme={theme} />
               <ActionButton label="Lock" onPress={() => runCarCommand('lock', { type: 'lock' })} theme={theme} />
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />

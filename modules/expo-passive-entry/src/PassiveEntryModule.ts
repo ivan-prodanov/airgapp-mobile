@@ -18,6 +18,8 @@ declare class PassiveEntryModule {
   stop(): void;
   // Whether the native central is currently holding a link.
   isRunning(): boolean;
+  // Native seal golden self-test (pure crypto; returns MATCH/MISMATCH).
+  sealGolden(): string;
   // Native → JS diagnostics stream.
   addListener(event: 'log', listener: (e: PassiveEntryLogEvent) => void): EventSubscription;
 }
