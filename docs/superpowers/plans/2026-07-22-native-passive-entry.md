@@ -4,6 +4,8 @@
 
 **Goal:** Unlock the car on walk-up while the phone is in the user's pocket and the app is suspended — the way the official Tesla app does — by running the VCSEC passive-entry responder in a native iOS module that iOS can wake in the background.
 
+> **STATUS 2026-07-22:** Phase 1 DONE + verified on-car — module builds/loads (Task 1), CoreBluetooth connect-and-hold central holds the car link with zero JS (Task 2; car advertises service `1122`, held ~8 min), single-writer rule (Task 3). Phase 2 Task 4 DONE — the Swift routable signer reproduces the on-car-proven TS seal **byte-for-byte** (golden self-test ✅ MATCH, 169B frame, no car needed). NEXT: Task 5 — native P-256 ECDH + Keychain key read + SessionInfoRequest handshake (needs the car), then Tasks 6–7 answer a real challenge foreground→background.
+
 **Architecture:** A native `CBCentralManager` (Swift) with CoreBluetooth State Preservation & Restoration holds/re-adopts the BLE link to the car and answers the car's `authenticationRequest` challenge natively, without the JS runtime. It signs with the **existing** enrolled key (read from the shared Keychain) using the **routable** seal already proven on-car. Foreground passive entry keeps using the existing JS inline responder; native only runs while backgrounded — so the two never sign concurrently (single-writer by lifecycle). Commands are unchanged (Pi when away, BLE when near); this plan does not alter them.
 
 **Tech Stack:** Expo SDK 56 custom native module (Swift, no `expo prebuild`), CoreBluetooth (`bluetooth-central` + `location` background modes, State Restoration), CryptoKit (P-256 ECDH) + the routable AES-GCM seal, Keychain (shared access group with expo-secure-store), existing `src/ble` TS for the foreground path.
