@@ -169,3 +169,20 @@ test('the threshold is reachable in the few attempts the selector actually grant
     'must trip within the ~2 BLE attempts a Pi-backed install gets',
   );
 });
+
+test('only a REAL peer-removed-bond is explicit — the timeout heuristic is not (no spurious persist)', () => {
+  // The connect-timeout run can trip `wedged` in-session, but it must NOT be
+  // `explicit`, so bondWedgeStore never persists it — persisting it made the
+  // recovery card show at launch when merely far from the car.
+  const d = createBondWedgeDetector();
+  const timeout = new Error('BLE connection closed — connect timed out after 10000ms (link wedged)');
+  d.noteConnectFailure(timeout);
+  const s = d.noteConnectFailure(timeout);
+  assert.equal(s.wedged, true, 'timeout run still surfaces a wedge in-session');
+  assert.equal(s.explicit, false, 'but it is NOT explicit → not persisted');
+
+  const d2 = createBondWedgeDetector();
+  const real = d2.noteConnectFailure({ reason: 'Peer removed pairing information' });
+  assert.equal(real.wedged, true);
+  assert.equal(real.explicit, true, 'the definitive OS signal IS explicit → persisted');
+});

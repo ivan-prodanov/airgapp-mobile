@@ -77,6 +77,12 @@ export interface BondWedgeState {
   wedged: boolean;
   kind: BleFailureKind;
   consecutiveConnectFailures: number;
+  // True only for the DEFINITIVE OS signal (peer-removed-bond / iosErrorCode 14),
+  // never for the connect-timeout heuristic. ONLY an explicit wedge is worth
+  // PERSISTING across launches: a couple of connect timeouts are ordinary link
+  // flakiness that clears on the next connect, and persisting them made the
+  // recovery card show spuriously at launch (e.g. when merely far from the car).
+  explicit: boolean;
 }
 
 // createBondWedgeDetector tracks connect outcomes and decides when to surface
@@ -103,7 +109,7 @@ export function createBondWedgeDetector() {
         // returns, the recovery card would vanish while state() still said
         // wedged. Only a successful connect clears a wedge; see
         // noteConnectSuccess.
-        return { wedged: explicit, kind, consecutiveConnectFailures: 0 };
+        return { wedged: explicit, kind, consecutiveConnectFailures: 0, explicit };
       }
       consecutive += 1;
       kind = k;
@@ -112,6 +118,7 @@ export function createBondWedgeDetector() {
         wedged: explicit || consecutive >= WEDGE_CONSECUTIVE_CONNECT_FAILURES,
         kind,
         consecutiveConnectFailures: consecutive,
+        explicit,
       };
     },
     // The ONLY thing that clears a wedge: the link actually worked. Not a Pi
@@ -134,6 +141,7 @@ export function createBondWedgeDetector() {
         wedged: explicit || consecutive >= WEDGE_CONSECUTIVE_CONNECT_FAILURES,
         kind,
         consecutiveConnectFailures: consecutive,
+        explicit,
       };
     },
   };

@@ -76,7 +76,12 @@ function publish(state: BondWedgeState, cause: string): void {
     to: { wedged: next.wedged, kind: next.kind },
     consecutive: next.consecutiveConnectFailures,
   });
-  persist?.({ wedged: next.wedged, kind: next.kind, at: Date.now(), bleName });
+  // Persist ONLY a definitive (explicit) wedge. The connect-timeout heuristic is
+  // ordinary link flakiness that clears on the next connect; persisting it made
+  // the recovery card appear spuriously at launch (e.g. when merely far from the
+  // car). A non-explicit wedge is written as NOT wedged so a stale explicit one
+  // in storage is cleared, while the bleName is still refreshed.
+  persist?.({ wedged: next.wedged && next.explicit, kind: next.kind, at: Date.now(), bleName });
   listeners.forEach((l) => l());
 }
 
