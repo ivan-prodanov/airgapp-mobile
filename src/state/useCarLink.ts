@@ -57,7 +57,7 @@ import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted } from '@/ble/passiveEntryCapture';
-import { makeAuthResponder } from '@/ble/passiveEntryResponder';
+import { makeAuthResponder, type PassiveSealModality } from '@/ble/passiveEntryResponder';
 import {
   bondWedgeStore,
   parsePersistedWedge,
@@ -204,6 +204,15 @@ const PASSIVE_ENTRY_CAPTURE = false;
 // work touches unlock. Foreground-only (M1); M2 background still needs the
 // native signer.
 const PASSIVE_ENTRY_RESPOND = true;
+
+// Which seal to answer passive-entry challenges with. ROUTABLE is what the
+// official app actually sends (RE #9, decompile-proven) and makes ONE shared
+// enrolled key safe — random nonce, so a Pi/phone counter collision is a
+// recoverable reject, never AES-GCM nonce reuse. LEGACY (IV=counter) is our only
+// on-car-MEASURED grant (RE #8), kept as the fallback. We start ROUTABLE to run
+// RE #9's single-frame probe: one clean walk-up, then read the diagnostics for
+// GRANT. If the car refuses routable on this VIN, flip to 'legacy' and redeploy.
+const PASSIVE_ENTRY_SEAL: PassiveSealModality = 'routable';
 
 // Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
@@ -501,6 +510,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
                   // is correct here, and only here.
                   getSession: () => peekLiveSession(vin, 2),
                   enabled: () => PASSIVE_ENTRY_RESPOND,
+                  modality: () => PASSIVE_ENTRY_SEAL,
                   log: (lines) => {
                     void appendDiagnostic('passive-entry auth', lines);
                   },

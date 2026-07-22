@@ -529,6 +529,76 @@ export interface CommandResult {
   decryptedPayload: Uint8Array | null;
 }
 
+// buildRoutablePassiveResponse builds the ROUTABLE passive-entry answer — the
+// modality the official app actually uses (RE RESPONSE #9, decompile-proven).
+// It is the SAME AES_GCM_Personalized seal + RoutableMessage envelope as
+// sendCommand (random nonce, NOT the legacy IV=counter), differing only in the
+// inner payload (UnsignedMessage{authenticationResponse}) and two envelope
+// fields. Returning bytes (not awaiting a reply) mirrors the passive-entry
+// contract: the car answers by ACTING (unlocking) + an unsolicited commandStatus
+// echoing our counter, not by a correlated reply — so this is sync, like the
+// legacy responder it replaces.
+//
+// WHY ROUTABLE > LEGACY for us (RE #8 + #9): under one shared enrolled key the Pi
+// and this responder share ONE (key,epoch) counter. The legacy seal's IV = the
+// counter, so a counter collision would be AES-GCM nonce reuse (catastrophic).
+// The routable seal's random 12-byte nonce makes the same collision a RECOVERABLE
+// counter reject instead — which is why one enrolled key is now safe.
+//
+// Envelope specifics from RESPONSE #9 Q3: to.domain=VEHICLE_SECURITY;
+// from.routing_address=<ours>; uuid={0x00} (the challenge uuid is NOT echoed);
+// NO token anywhere (routable freshness is counter+epoch+expiresAt only; the
+// AAD's TAG_CHALLENGE stays unset). flags=0 here so the car's status reply is
+// plaintext (readable verdict) and TAG_FLAGS is omitted from the AAD.
+export function buildRoutablePassiveResponse(
+  session: Session,
+  innerUnsignedMessageBytes: Uint8Array,
+): { bytes: Uint8Array; counter: number } {
+  if (session.counter >= 0xfffffffe) {
+    throw new Error('session counter rolled over — close and re-open');
+  }
+  session.counter += 1;
+  const counter = session.counter;
+
+  const elapsedSec = Math.floor((Date.now() - session.localBaselineMs) / 1000);
+  const expiresAt = (session.clockBase + elapsedSec + COMMAND_LIFETIME_SEC) >>> 0;
+
+  // flags=0 → not encrypt-response → plaintext status reply; buildAesGcmMetadata
+  // omits TAG_FLAGS when 0, matching the car (RESPONSE #9 Q3).
+  const flags = 0;
+  const aadDigest = buildAesGcmMetadata({
+    domain: session.domain,
+    verifierName: session.vin,
+    epoch: session.epoch,
+    expiresAt,
+    counter,
+    flags,
+  });
+
+  const env = aesGcmEncrypt(session.sessionKey, innerUnsignedMessageBytes, aadDigest);
+
+  const bytes = encodeMessage(RoutableMessage, {
+    toDestination: { domain: session.domain },
+    fromDestination: { routingAddress: session.routingAddress },
+    protobufMessageAsBytes: env.ciphertext,
+    signatureData: {
+      signerIdentity: { publicKey: session.myPubRaw },
+      AES_GCM_PersonalizedData: {
+        epoch: session.epoch,
+        nonce: env.nonce,
+        counter,
+        expiresAt,
+        tag: env.tag,
+      },
+    },
+    // Single 0x00 byte — the app does NOT echo the challenge uuid (RESPONSE #9).
+    uuid: new Uint8Array([0x00]),
+    flags,
+  });
+
+  return { bytes, counter };
+}
+
 // sendCommand ships a pre-encoded inner payload through the byte forwarder.
 // The caller supplies the encoded bytes (VCSEC and Infotainment use different
 // proto wrappers inside the ciphertext, so this path is domain-agnostic once

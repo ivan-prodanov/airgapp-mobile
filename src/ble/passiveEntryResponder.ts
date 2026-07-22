@@ -27,6 +27,7 @@
 import { sha1 } from '@noble/hashes/sha1';
 
 import { aesGcmEncryptShortIv, be32 } from './gcmShortIv';
+import { buildRoutablePassiveResponse } from './session';
 import type { Session } from './types';
 import {
   parseAuthenticationRequest,
@@ -36,6 +37,13 @@ import {
   describeReasons,
   AUTH_TOKEN_LENGTH,
 } from './passiveEntryAuth';
+
+// Which seal to answer with. ROUTABLE is what the official app actually uses
+// (RE #9, decompile-proven) and makes one shared key safe (random nonce, no
+// nonce-reuse). LEGACY (IV=counter) is our only ON-CAR-MEASURED grant (RE #8),
+// so it stays as the fallback until the single-frame probe confirms the car
+// GRANTs routable on this VIN — then legacy + gcmShortIv can be retired.
+export type PassiveSealModality = 'routable' | 'legacy';
 
 // Never sign more than this many responses per window. The car challenges at
 // ~1 Hz for 6-10 frames per approach; this bounds a runaway well above that.
@@ -71,6 +79,9 @@ export interface AuthResponderOptions {
   // the same key. Returns null when no session is live yet; we decline, not guess.
   getSession: () => Session | null;
   enabled?: () => boolean;
+  // Seal modality. Defaults to 'routable' (RE #9's answer). Set 'legacy' to fall
+  // back to the on-car-proven IV=counter seal if the routable probe ever fails.
+  modality?: () => PassiveSealModality;
   log?: (lines: string[]) => void;
 }
 
@@ -117,27 +128,43 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       return null;
     }
 
-    // Monotonic anti-replay. Bump BEFORE sealing so a retry never reuses a
-    // counter — the IV is derived from it, and AES-GCM nonce reuse is fatal.
-    session.counter += 1;
-    const counter = session.counter;
-
+    // The inner UnsignedMessage{authenticationResponse} is IDENTICAL for both
+    // seals (RE #9 Q3 confirmed our encoding is byte-correct): echo the
+    // challenge's requestedLevel, distance 0, rejection NONE.
     const plaintext = encodeUnsignedAuthResponse(
       encodeAuthenticationResponse({ authenticationLevel: req.requestedLevel }),
     );
-    const sealed = aesGcmEncryptShortIv(session.sessionKey, be32(counter), req.token, plaintext);
-    const out = encodeToVcsecSignedMessage({
-      ciphertext: sealed.ciphertext,
-      tag: sealed.tag,
-      keyId: sha1(session.myPubRaw).slice(0, 4),
-      counter,
-    });
+
+    const modality = opts.modality?.() ?? 'routable';
+
+    let out: Uint8Array;
+    let counter: number;
+    if (modality === 'routable') {
+      // The app's real modality. Random-nonce AES_GCM_Personalized in a
+      // RoutableMessage — buildRoutablePassiveResponse bumps the counter and
+      // seals. No token bound (routable is freshness-only).
+      const built = buildRoutablePassiveResponse(session, plaintext);
+      out = built.bytes;
+      counter = built.counter;
+    } else {
+      // Legacy fallback. Bump BEFORE sealing so a retry never reuses a counter —
+      // here the IV IS the counter, and AES-GCM nonce reuse is fatal.
+      session.counter += 1;
+      counter = session.counter;
+      const sealed = aesGcmEncryptShortIv(session.sessionKey, be32(counter), req.token, plaintext);
+      out = encodeToVcsecSignedMessage({
+        ciphertext: sealed.ciphertext,
+        tag: sealed.tag,
+        keyId: sha1(session.myPubRaw).slice(0, 4),
+        counter,
+      });
+    }
 
     recentTimes.push(now);
     // counter is the JOIN KEY: the car's commandStatus echoes it, so this line
     // ties the eventual CAR VERDICT back to this exact attempt.
     say([
-      `auth ANSWERED counter=${counter} iv=4B-be reasons=[${reasons}] ` +
+      `auth ANSWERED counter=${counter} seal=${modality} reasons=[${reasons}] ` +
         `level=${req.requestedLevel} out=${out.length}B`,
     ]);
     return out;
