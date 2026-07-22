@@ -56,7 +56,7 @@ import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
-import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted } from '@/ble/passiveEntryCapture';
+import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
 import { makeAuthResponder, type PassiveSealModality } from '@/ble/passiveEntryResponder';
 import {
   bondWedgeStore,
@@ -190,11 +190,9 @@ export interface CarLink extends CarLinkStatus {
 // M0 capture switch for the passive-entry project. ON during the capture
 // campaign; flip OFF once the challenge format is known, since every routine
 // closure push also gets logged and the diagnostics file grows without bound.
-// Temporarily ON (2026-07-22) to capture the car's RAW reply to our routable
-// auth response — we need the real bytes to build a routable verdict decoder
-// (our current one only reads the legacy commandStatus). Flip back to false
-// after the capture run; it logs every ~1 Hz unsolicited frame otherwise.
-const PASSIVE_ENTRY_CAPTURE = true;
+// Off in normal operation. The routable verdict decoder is built from the
+// 2026-07-22 capture; flip true only to grab raw frames for a new question.
+const PASSIVE_ENTRY_CAPTURE = false;
 
 // M1: actually ANSWER the car's challenge. This physically unlocks the car on
 // approach, so it is an explicit switch, not an emergent behaviour. The spec's
@@ -1068,13 +1066,18 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     // Feed the car's verdict on OUR passive-entry response back into the
     // responder's circuit breaker: an accept clears it, a run of rejects opens
     // it (stop signing before we wedge VCSEC again — the 2026-07-20 lesson).
-    const verdict = describeCommandStatus(frame);
+    // Two verdict shapes: the LEGACY commandStatus (counter-echoing, inside the
+    // payload) and the ROUTABLE ack (top-level RoutableMessage from VCSEC echoing
+    // our requestUuid). Whichever seal we answered with, feed the matching one
+    // into the circuit breaker + log it.
+    const legacyVerdict = describeCommandStatus(frame);
+    const routableVerdict = legacyVerdict ? null : describeRoutableVerdict(frame);
+    const verdict = legacyVerdict ?? routableVerdict;
     if (verdict && authResponderRef.current) {
-      const accepted = commandStatusAccepted(frame);
+      const accepted = legacyVerdict ? commandStatusAccepted(frame) : routableVerdictAccepted(frame);
       authResponderRef.current.noteVerdict(accepted);
-      // Log the verdict into the SAME block as our ANSWERED line (join on the
-      // echoed counter), independent of full capture — so a test run shows
-      // attempt→verdict without the ~1 Hz frame-capture spam.
+      // Log the verdict into the SAME block as our ANSWERED line — so a test run
+      // shows attempt→verdict without the ~1 Hz frame-capture spam.
       void appendDiagnostic('passive-entry auth', [verdict + (accepted ? '  *** GRANTED ***' : '')]);
     }
     const status = decodeUnsolicitedVcsecStatus(frame);

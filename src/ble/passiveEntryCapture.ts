@@ -22,6 +22,7 @@
 // node-testable against hand-built frames. The caller owns persistence.
 
 import { dumpTopLevelFields, findSubMessageAt } from './whitelistPermissions';
+import { decodeMessage, RoutableMessage } from './proto';
 
 // The frames delivered to the unsolicited handler are RoutableMessage envelopes,
 // NOT bare FromVCSECMessage. An earlier version classified the OUTER fields
@@ -140,6 +141,53 @@ export function describeCommandStatus(frame: Uint8Array): string | null {
 export function commandStatusAccepted(frame: Uint8Array): boolean {
   const verdict = describeCommandStatus(frame);
   return verdict != null && verdict.includes('NONE (accepted)');
+}
+
+// describeRoutableVerdict — the car's answer to a ROUTABLE auth response, which
+// is shaped completely differently from the legacy commandStatus above.
+//
+// Captured on-car 2026-07-22: after a routable authenticationResponse the car
+// replies with a top-level RoutableMessage FROM DOMAIN_VEHICLE_SECURITY, TO our
+// routing address, echoing our `requestUuid`, with an EMPTY payload and NO
+// signedMessageStatus — i.e. an ack with no fault. A rejection would instead
+// carry `signedMessageStatus` = MessageStatus{ operationStatus, signedMessageFault }.
+//
+// requestUuid is what separates a reply-to-us from the car's broadcast status
+// pushes (which carry a payload and no requestUuid). We answer with uuid={0x00}
+// so every ack echoes 0x00; correlation to the exact attempt is temporal (one
+// answer in flight at a time), not by uuid value.
+export function describeRoutableVerdict(frame: Uint8Array): string | null {
+  let rm: ReturnType<typeof RoutableMessage.decode>;
+  try {
+    rm = decodeMessage(RoutableMessage, frame);
+  } catch {
+    return null;
+  }
+  const from = rm.fromDestination as { domain?: unknown } | null | undefined;
+  // Accept the enum in either numeric (2) or string form, depending on decode.
+  const isVcsec = from?.domain === 2 || from?.domain === 'DOMAIN_VEHICLE_SECURITY';
+  if (!isVcsec) return null;
+  const uuid = rm.requestUuid as Uint8Array | null | undefined;
+  if (!uuid || uuid.length === 0) return null; // a status push, not a reply to us
+
+  const st = rm.signedMessageStatus as
+    | { operationStatus?: unknown; signedMessageFault?: unknown }
+    | null
+    | undefined;
+  const opErr = st?.operationStatus === 1 || st?.operationStatus === 'OPERATIONSTATUS_ERROR';
+  const fault = st?.signedMessageFault;
+  const hasFault = fault != null && fault !== 0 && fault !== 'MESSAGEFAULT_ERROR_NONE';
+  if (opErr || hasFault) {
+    return `CAR VERDICT (routable) → REJECTED opStatus=${String(st?.operationStatus)} fault=${String(fault)}`;
+  }
+  return 'CAR VERDICT (routable) → NONE (accepted)';
+}
+
+// routableVerdictAccepted — true when the frame is the car's ack of OUR routable
+// auth response with no fault. Feeds the same circuit breaker as the legacy path.
+export function routableVerdictAccepted(frame: Uint8Array): boolean {
+  const v = describeRoutableVerdict(frame);
+  return v != null && v.includes('NONE (accepted)');
 }
 
 // formatUnsolicitedFrame renders the report for the diagnostics file. The
