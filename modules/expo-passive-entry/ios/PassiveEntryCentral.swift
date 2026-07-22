@@ -274,10 +274,19 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     }
     let want = VcsecSigner.sessionInfoHmac(sessionKey: sk, vin: vin, challenge: challenge, sessionInfoBytes: siBytes)
     let hmacOK = tagField != nil && VcsecSigner.hex(want) == VcsecSigner.hex(tagField!)
+    // Only adopt session state from an AUTHENTICATED SessionInfo (HMAC bound to
+    // the challenge WE sent). The car also pushes unsolicited SessionInfo frames
+    // whose HMAC won't match our challenge — adopting their counter/epoch would
+    // desync us and make the next answer fail (or be a push-based desync vector).
+    // Keep the verified session; wait for a real handshake reply.
+    guard hmacOK else {
+      log("SessionInfo REJECTED (hmac mismatch) counter=\(si.counter) — keeping current session")
+      return
+    }
     sessionKey = sk; counter = si.counter; epoch = si.epoch
     clockBase = si.clockTime; handshakeWallSec = UInt32(Date().timeIntervalSince1970)
     myPubRaw = myPub; answersGiven = 0
-    log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(si.counter) clock=\(si.clockTime) hmacOK=\(hmacOK)")
+    log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(si.counter) clock=\(si.clockTime) hmacOK=true")
   }
 
   private func answerChallenge(_ authReq: [UInt8]) {
