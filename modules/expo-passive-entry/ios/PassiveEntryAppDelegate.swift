@@ -25,6 +25,9 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
     // anything to restore post-enrollment anyway. isArmed() reads persistence
     // without instantiating anything.
     guard PassiveEntryCentral.isArmed() else { return true }
+    // Make sure notification permission is in hand well before a terminate/BT-off
+    // reminder needs it (idempotent — iOS prompts only once).
+    Notifier.requestAuthIfNeeded()
     PassiveEntryCentral.shared.startIfConfigured()
     return true
   }
@@ -36,8 +39,10 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
   // OS limitation no app can beat. Only nag if passive entry was armed.
   public func applicationWillTerminate(_ application: UIApplication) {
     guard PassiveEntryCentral.isArmed() else { return }
-    Notifier.post(id: PassiveEntryCentral.appClosedNotifId,
-                  title: "", // empty → iOS shows the app name as the header
-                  body: "Keep the Tesla app running for the best Phone Key and Live Activity experience")
+    // postAndWait — block until the daemon accepts it, or the app dies first and
+    // the notification is lost (the this-morning symptom).
+    Notifier.postAndWait(id: PassiveEntryCentral.appClosedNotifId,
+                         title: "", // empty → iOS shows the app name as the header
+                         body: "Keep the Tesla app running for the best Phone Key and Live Activity experience")
   }
 }

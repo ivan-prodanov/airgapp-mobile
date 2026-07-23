@@ -28,6 +28,23 @@ enum Notifier {
     UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
   }
 
+  // Post and BLOCK until the notification daemon has accepted the request (or a
+  // short timeout). add(...) is asynchronous, so during applicationWillTerminate
+  // the app can die before the request reaches usernotificationsd — losing the
+  // notification. Waiting on the completion handler guarantees the hand-off
+  // completes while we still have the ~5s termination window. Safe to block the
+  // main thread here: the completion fires on a background queue, so no deadlock.
+  static func postAndWait(id: String, title: String, body: String, timeout: TimeInterval = 3.0) {
+    let content = UNMutableNotificationContent()
+    if !title.isEmpty { content.title = title }
+    content.body = body
+    content.sound = nil
+    let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+    let sem = DispatchSemaphore(value: 0)
+    UNUserNotificationCenter.current().add(req) { _ in sem.signal() }
+    _ = sem.wait(timeout: .now() + timeout)
+  }
+
   // Withdraw a previously-posted notification by id (e.g. clear the "Bluetooth
   // Disabled" reminder once BT comes back on).
   static func clear(id: String) {
