@@ -25,6 +25,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // Stable notification ids so a re-post replaces rather than stacks, and so we
   // can withdraw the BT reminder when Bluetooth comes back.
   static let btOffNotifId = "airgapp.notif.bluetooth-off"
+  static let btOffRepeatId = "airgapp.notif.bluetooth-off.repeat"
   static let bondRemovedNotifId = "airgapp.notif.bond-removed"
   static let appClosedNotifId = "airgapp.notif.app-closed"
 
@@ -34,9 +35,13 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // not a per-call one.
   static let shared = PassiveEntryCentral()
   private static let vinKey = "airgapp.passiveentry.vin"
-  // Persisted "already warned for this BT-off episode" flag — survives relaunch so
-  // the reminder fires ONCE per off-episode, not on every app wake (anti-spam).
-  private static let btOffNotifiedKey = "airgapp.passiveentry.btOffNotified"
+  // Persisted "the repeating BT-off reminder is already scheduled" flag. Survives
+  // relaunch so we schedule the repeat ONCE per off-episode — re-adding the same
+  // request each app wake would reset its timer and it might never fire.
+  private static let btOffRepeatScheduledKey = "airgapp.passiveentry.btOffRepeatScheduled"
+  // How often the proactive "Bluetooth Disabled" reminder repeats while BT is off,
+  // like the official app (posts several times a day even with no interaction).
+  private static let btOffRepeatSec: TimeInterval = 4 * 3600
 
   // Whether passive entry has ever been armed — readable WITHOUT instantiating
   // the central (and thus without creating a CBCentralManager, which would prompt
@@ -233,30 +238,34 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     log("state=\(stateName(c.state))")
     switch c.state {
     case .poweredOn:
-      // BT is back — withdraw the reminder and RE-ARM: the next off-episode may
-      // post once again.
+      // BT is back — withdraw both reminders (the immediate + the repeating one)
+      // and RE-ARM so the next off-episode schedules a fresh proactive reminder.
       Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
-      UserDefaults.standard.set(false, forKey: PassiveEntryCentral.btOffNotifiedKey)
+      Notifier.clear(id: PassiveEntryCentral.btOffRepeatId)
+      UserDefaults.standard.set(false, forKey: PassiveEntryCentral.btOffRepeatScheduledKey)
       beginScan()
     case .poweredOff, .unauthorized:
       // Both mean Phone Key can't use Bluetooth. Tesla fires the SAME copy for
       // .poweredOff(4) AND .unauthorized(3) (BLE permission denied) — RESPONSE-13.
       //
-      // ONCE PER OFF-EPISODE — deliberately NOT like Tesla, which re-posts on
-      // every app wake and spams several times a day. `.poweredOff` also fires on
-      // the initial state callback each time the central is (re)created (every app
-      // launch/relaunch), so a naive post here would spam too. A persisted flag
-      // gates it: post once when BT goes off, stay silent until it comes back on.
-      let already = UserDefaults.standard.bool(forKey: PassiveEntryCentral.btOffNotifiedKey)
-      if PassiveEntryCentral.isArmed() && !already {
-        Notifier.post(id: PassiveEntryCentral.btOffNotifId,
-                      title: "Bluetooth Disabled",
-                      body: "Phone Key will not work until Bluetooth is enabled")
-        UserDefaults.standard.set(true, forKey: PassiveEntryCentral.btOffNotifiedKey)
+      // PROACTIVE like the official app: one reminder immediately, plus a REPEATING
+      // notification iOS delivers on its own every few hours — so it shows several
+      // times a day even when the app isn't running/interacted with. Scheduled ONCE
+      // per off-episode (a persisted flag), because `.poweredOff` also fires on the
+      // initial state callback each launch and re-scheduling would reset the repeat
+      // timer. Cleared + re-armed when BT returns.
+      let scheduled = UserDefaults.standard.bool(forKey: PassiveEntryCentral.btOffRepeatScheduledKey)
+      if PassiveEntryCentral.isArmed() && !scheduled {
+        let body = "Phone Key will not work until Bluetooth is enabled"
+        Notifier.post(id: PassiveEntryCentral.btOffNotifId, title: "Bluetooth Disabled", body: body)
+        Notifier.scheduleRepeating(id: PassiveEntryCentral.btOffRepeatId,
+                                   title: "Bluetooth Disabled", body: body,
+                                   intervalSec: PassiveEntryCentral.btOffRepeatSec)
+        UserDefaults.standard.set(true, forKey: PassiveEntryCentral.btOffRepeatScheduledKey)
       }
     default:
-      // resetting / unknown / unsupported — transient; leave the reminder + flag
-      // untouched (don't clear, or a flip back to off would re-notify).
+      // resetting / unknown / unsupported — transient; leave the reminders + flag
+      // untouched (don't clear, or a flip back to off would re-schedule).
       break
     }
   }

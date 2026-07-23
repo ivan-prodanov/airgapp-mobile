@@ -48,6 +48,22 @@ enum Notifier {
     _ = sem.wait(timeout: .now() + timeout)
   }
 
+  // Schedule a REPEATING local notification (iOS delivers it every `intervalSec`
+  // on its own, even while the app isn't running) — for the proactive
+  // "Bluetooth Disabled" reminder the official app shows several times a day.
+  // Re-adding the same id replaces the schedule, so callers guard against
+  // resetting the timer. Withdraw with clear(id:).
+  static func scheduleRepeating(id: String, title: String, body: String, intervalSec: TimeInterval) {
+    NotifDelegate.shared.install()
+    let content = UNMutableNotificationContent()
+    if !title.isEmpty { content.title = title }
+    content.body = body
+    content.sound = nil
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: intervalSec, repeats: true)
+    let req = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+    UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+  }
+
   // Withdraw a previously-posted notification by id (e.g. clear the "Bluetooth
   // Disabled" reminder once BT comes back on).
   static func clear(id: String) {
