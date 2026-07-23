@@ -34,6 +34,9 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // not a per-call one.
   static let shared = PassiveEntryCentral()
   private static let vinKey = "airgapp.passiveentry.vin"
+  // Persisted "already warned for this BT-off episode" flag — survives relaunch so
+  // the reminder fires ONCE per off-episode, not on every app wake (anti-spam).
+  private static let btOffNotifiedKey = "airgapp.passiveentry.btOffNotified"
 
   // Whether passive entry has ever been armed — readable WITHOUT instantiating
   // the central (and thus without creating a CBCentralManager, which would prompt
@@ -230,21 +233,31 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     log("state=\(stateName(c.state))")
     switch c.state {
     case .poweredOn:
-      // BT is back — withdraw the "Bluetooth Disabled" reminder if it's showing.
+      // BT is back — withdraw the reminder and RE-ARM: the next off-episode may
+      // post once again.
       Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
+      UserDefaults.standard.set(false, forKey: PassiveEntryCentral.btOffNotifiedKey)
       beginScan()
     case .poweredOff, .unauthorized:
       // Both mean Phone Key can't use Bluetooth. Tesla fires the SAME copy for
       // .poweredOff(4) AND .unauthorized(3) (BLE permission denied) — RESPONSE-13.
-      // Only remind if passive entry is actually armed — otherwise it's noise.
-      if PassiveEntryCentral.isArmed() {
+      //
+      // ONCE PER OFF-EPISODE — deliberately NOT like Tesla, which re-posts on
+      // every app wake and spams several times a day. `.poweredOff` also fires on
+      // the initial state callback each time the central is (re)created (every app
+      // launch/relaunch), so a naive post here would spam too. A persisted flag
+      // gates it: post once when BT goes off, stay silent until it comes back on.
+      let already = UserDefaults.standard.bool(forKey: PassiveEntryCentral.btOffNotifiedKey)
+      if PassiveEntryCentral.isArmed() && !already {
         Notifier.post(id: PassiveEntryCentral.btOffNotifId,
                       title: "Bluetooth Disabled",
                       body: "Phone Key will not work until Bluetooth is enabled")
+        UserDefaults.standard.set(true, forKey: PassiveEntryCentral.btOffNotifiedKey)
       }
     default:
-      // resetting / unknown / unsupported — withdraw the reminder (transient).
-      Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
+      // resetting / unknown / unsupported — transient; leave the reminder + flag
+      // untouched (don't clear, or a flip back to off would re-notify).
+      break
     }
   }
 
