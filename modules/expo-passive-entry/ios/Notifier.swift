@@ -13,6 +13,7 @@ enum Notifier {
   // the first time. Call from the foreground (arming) so a background post later
   // already has the grant.
   static func requestAuthIfNeeded() {
+    NotifDelegate.shared.install()
     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
   }
 
@@ -20,6 +21,7 @@ enum Notifier {
   // replaces the pending/last one rather than stacking duplicates (e.g. BT
   // toggled off twice).
   static func post(id: String, title: String, body: String) {
+    NotifDelegate.shared.install() // ensure foreground banners present
     let content = UNMutableNotificationContent()
     if !title.isEmpty { content.title = title }
     content.body = body
@@ -35,6 +37,7 @@ enum Notifier {
   // completes while we still have the ~5s termination window. Safe to block the
   // main thread here: the completion fires on a background queue, so no deadlock.
   static func postAndWait(id: String, title: String, body: String, timeout: TimeInterval = 3.0) {
+    NotifDelegate.shared.install()
     let content = UNMutableNotificationContent()
     if !title.isEmpty { content.title = title }
     content.body = body
@@ -51,5 +54,49 @@ enum Notifier {
     let center = UNUserNotificationCenter.current()
     center.removePendingNotificationRequests(withIdentifiers: [id])
     center.removeDeliveredNotifications(withIdentifiers: [id])
+  }
+}
+
+// NotifDelegate — makes our reminders present while the app is in the FOREGROUND.
+//
+// iOS suppresses a notification banner for the active app UNLESS a
+// UNUserNotificationCenterDelegate returns presentation options from
+// willPresent. expo-notifications installs its own delegate (routing to the JS
+// setNotificationHandler) at launch; when it's active our native-posted
+// reminders present fine backgrounded but are swallowed foreground. We chain in
+// front of it: install() right before each post (idempotent, self-healing if
+// expo ever re-claims the delegate), always show the banner (every reminder here
+// is worth showing), and forward taps to the previous delegate so expo's
+// response handling still works.
+final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
+  static let shared = NotifDelegate()
+  private weak var previous: UNUserNotificationCenterDelegate?
+
+  func install() {
+    let center = UNUserNotificationCenter.current()
+    if center.delegate === self { return }
+    previous = center.delegate
+    center.delegate = self
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .list, .sound])
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    if let prev = previous,
+       prev.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:didReceive:withCompletionHandler:))) {
+      prev.userNotificationCenter?(center, didReceive: response, withCompletionHandler: completionHandler)
+    } else {
+      completionHandler()
+    }
   }
 }
