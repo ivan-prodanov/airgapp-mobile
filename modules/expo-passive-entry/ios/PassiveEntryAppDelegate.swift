@@ -41,8 +41,12 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
     guard PassiveEntryCentral.isArmed() else { return }
     // postAndWait — block until the daemon accepts it, or the app dies first and
     // the notification is lost (the this-morning symptom).
+    // Body = Tesla's phone-key-only variant (phone_key_notification_user_kill_body,
+    // RESPONSE-13). The "…Phone Key and Live Activity experience" wording is Tesla's
+    // LIVE-ACTIVITY variant, shown only when areActivitiesEnabled — we ship no Live
+    // Activity, so this plain variant is the honest match.
     Notifier.postAndWait(id: PassiveEntryCentral.appClosedNotifId,
                          title: "", // empty → iOS shows the app name as the header
-                         body: "Keep the Tesla app running for the best Phone Key and Live Activity experience")
+                         body: "Keep the Tesla app running for the best phone key experience")
   }
 }

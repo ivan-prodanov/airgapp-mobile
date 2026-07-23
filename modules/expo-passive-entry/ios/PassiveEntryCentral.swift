@@ -233,7 +233,9 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
       // BT is back — withdraw the "Bluetooth Disabled" reminder if it's showing.
       Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
       beginScan()
-    case .poweredOff:
+    case .poweredOff, .unauthorized:
+      // Both mean Phone Key can't use Bluetooth. Tesla fires the SAME copy for
+      // .poweredOff(4) AND .unauthorized(3) (BLE permission denied) — RESPONSE-13.
       // Only remind if passive entry is actually armed — otherwise it's noise.
       if PassiveEntryCentral.isArmed() {
         Notifier.post(id: PassiveEntryCentral.btOffNotifId,
@@ -241,7 +243,8 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
                       body: "Phone Key will not work until Bluetooth is enabled")
       }
     default:
-      break
+      // resetting / unknown / unsupported — withdraw the reminder (transient).
+      Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
     }
   }
 
