@@ -54,7 +54,7 @@ import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
 import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
-import { decodeUnsolicitedVcsecStatus } from '@/ble/vcsecPush';
+import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from '@/ble/vcsecPush';
 import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
@@ -86,6 +86,7 @@ import {
   onPassiveEntryConnectionState,
   passiveEntryConnectionState,
   onPassiveEntryBondRemoved,
+  passiveEntryPostCpdWarning,
 } from '../../modules/expo-passive-entry';
 import { appStorage } from './appStorage';
 import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
@@ -1174,6 +1175,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       // shows attempt→verdict without the ~1 Hz frame-capture spam.
       void appendDiagnostic('passive-entry auth', [verdict + (accepted ? '  *** GRANTED ***' : '')]);
     }
+    // CHILD PRESENCE DETECTION (safety) — a CPD warning rides the same push
+    // channel. In the foreground the frame reaches JS here (native self-posts in
+    // the background); post the same alert natively so it presents identically.
+    if (decodeCpdWarning(frame) > 0) passiveEntryPostCpdWarning();
+
     const status = decodeUnsolicitedVcsecStatus(frame);
     if (!status) return;
     const now = Date.now();

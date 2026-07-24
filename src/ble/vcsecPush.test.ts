@@ -4,8 +4,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { decodeUnsolicitedVcsecStatus } from './vcsecPush';
+import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from './vcsecPush';
 import { RoutableMessage, FromVCSECMessage, encodeMessage } from './proto';
+
+// A CPD push: FromVCSECMessage{ CPDMessage(55){ CPDNotification(1)=level } }.
+// Our proto doesn't model field 55, so hand-encode it (tag 55<<3|2 = 442 = 0xba 0x03).
+function cpdFrame(level: number): Uint8Array {
+  const cpdMsg = Uint8Array.from([0x08, level]); // field 1 varint = level
+  const payload = Uint8Array.from([0xba, 0x03, cpdMsg.length, ...cpdMsg]); // field 55 len-delimited
+  return encodeMessage(RoutableMessage, {
+    fromDestination: { domain: 2 },
+    protobufMessageAsBytes: payload,
+  });
+}
+
+test('decodeCpdWarning extracts the CPD level from field 55 → field 1', () => {
+  assert.equal(decodeCpdWarning(cpdFrame(1)), 1); // INITIAL_WARNING
+  assert.equal(decodeCpdWarning(cpdFrame(2)), 2); // ESCALATED_WARNING
+  assert.equal(decodeCpdWarning(cpdFrame(0)), 0); // NONE
+});
+
+test('decodeCpdWarning returns 0 for a non-CPD VCSEC push and for garbage', () => {
+  const status = encodeMessage(RoutableMessage, {
+    fromDestination: { domain: 2 },
+    protobufMessageAsBytes: encodeMessage(FromVCSECMessage, { vehicleStatus: { vehicleLockState: 1 } }),
+  });
+  assert.equal(decodeCpdWarning(status), 0);
+  assert.equal(decodeCpdWarning(Uint8Array.from([0xff, 0xff, 0xff])), 0);
+});
 
 // Build a plaintext VCSEC push: a RoutableMessage FROM the VCSEC domain (2), no
 // request_uuid, carrying an unencrypted FromVCSECMessage{vehicleStatus} payload.

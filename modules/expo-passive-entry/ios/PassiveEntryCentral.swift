@@ -102,6 +102,11 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // RESPONSE-11: assert a STANDING DRIVE authorization once per connect (like the
   // official app's connectionEstablished/G0). Gated so it can be disabled.
   private let assertStandingDriveOnConnect = true
+  // Throttle: at the edge of range the link flaps and re-handshakes every ~30s,
+  // which would re-assert DRIVE each time (chatty VCSEC traffic + counter churn).
+  // Re-assert at most once per this window; the car holds the standing level.
+  private var lastDriveAssertSec: UInt32 = 0
+  private let driveAssertCooldownSec: UInt32 = 180
 
   override init() {
     super.init()
@@ -470,6 +475,12 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // trigger (brake). Uses the same routable seal as the challenge answer.
   private func assertStandingDrive() {
     guard assertStandingDriveOnConnect, let sk = sessionKey, let p = peripheral else { return }
+    // Throttle: skip if we asserted within the cooldown (a reconnect re-uses the
+    // standing DRIVE the car already holds). The reactive echo still answers a
+    // real DRIVE challenge when seated, so nothing is lost.
+    let now = UInt32(Date().timeIntervalSince1970)
+    if lastDriveAssertSec != 0 && now &- lastDriveAssertSec < driveAssertCooldownSec { return }
+    lastDriveAssertSec = now
     counter += 1
     let elapsed = UInt32(Date().timeIntervalSince1970) &- handshakeWallSec
     let expiresAt = clockBase &+ elapsed &+ 5
