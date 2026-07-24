@@ -21,6 +21,7 @@
 // intent-grace window covers.
 
 import type { CarCommand } from './commands';
+import type { ParentalSetting } from './builders';
 import type { SeatPosition, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 
 export interface ReconciledCommand {
@@ -53,6 +54,14 @@ const COP_TEMP_LEVEL: Record<'30' | '35' | '40', 'low' | 'medium' | 'high'> = {
   '40': 'high',
 };
 
+// The four "Customize Parental Controls" checkboxes → the car's ParentalControlsSetting enum name.
+const PARENTAL_SETTING_KEYS: ReadonlyArray<readonly [VehicleStateKey, ParentalSetting]> = [
+  ['parentalLimitSpeed', 'speedLimit'],
+  ['parentalReduceAccel', 'acceleration'],
+  ['parentalRequireSafety', 'safetyFeatures'],
+  ['parentalCurfewNotify', 'curfew'],
+];
+
 export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): ReconciledCommand[] {
   const out: ReconciledCommand[] = [];
   const emit = (cmd: CarCommand, ...keys: VehicleStateKey[]) => out.push({ cmd, keys });
@@ -72,6 +81,90 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   }
   if (prev.sentryEnabled !== next.sentryEnabled) {
     emit({ type: 'sentry', on: next.sentryEnabled }, 'sentryEnabled');
+  }
+
+  // ── Security & Drivers: PIN-gated toggles ──────────────────────────────────
+  // Each feature emits on TWO independent transitions: the on/off toggle, and a
+  // pin cleared (prev pin non-null → next null, the "Clear PIN" row action). They
+  // never coincide — enabling sets a pin (null → value, not → null) and clearing
+  // leaves the feature off — so the `else if` can't drop a real command. Enabling
+  // reads the pin from `next` (it may have been set in the same patch, so the
+  // command owns both keys and a failed enable reverts the pin too); clearing
+  // reads it from `prev` (the value being removed). Off carries no pin — the car
+  // wants an empty password for Valet/PIN-to-Drive off, and the builders/handlers
+  // supply it.
+  if (prev.valetMode !== next.valetMode) {
+    if (next.valetMode) {
+      emit(
+        { type: 'valet', on: true, pin: next.valetPin ?? undefined },
+        ...(next.valetPin !== prev.valetPin ? (['valetMode', 'valetPin'] as const) : (['valetMode'] as const)),
+      );
+    } else {
+      emit({ type: 'valet', on: false }, 'valetMode');
+    }
+  } else if (prev.valetPin && !next.valetPin) {
+    emit({ type: 'valetClearPin' }, 'valetPin');
+  }
+
+  if (prev.pinToDrive !== next.pinToDrive) {
+    if (next.pinToDrive) {
+      emit(
+        { type: 'pinToDrive', on: true, pin: next.pinToDrivePin ?? undefined },
+        ...(next.pinToDrivePin !== prev.pinToDrivePin
+          ? (['pinToDrive', 'pinToDrivePin'] as const)
+          : (['pinToDrive'] as const)),
+      );
+    } else {
+      emit({ type: 'pinToDrive', on: false }, 'pinToDrive');
+    }
+  } else if (prev.pinToDrivePin && !next.pinToDrivePin) {
+    emit({ type: 'pinToDriveClearPin' }, 'pinToDrivePin');
+  }
+
+  // Speed Limit Mode: activate/deactivate (both verify the PIN) + the mph setpoint
+  // (edited live from the "…" panel, coalesced like the charge sliders) + clear-PIN.
+  if (prev.speedLimitMode !== next.speedLimitMode) {
+    if (next.speedLimitMode) {
+      emit(
+        { type: 'speedLimit', action: 'activate', pin: next.speedLimitPin ?? undefined },
+        ...(next.speedLimitPin !== prev.speedLimitPin
+          ? (['speedLimitMode', 'speedLimitPin'] as const)
+          : (['speedLimitMode'] as const)),
+      );
+    } else {
+      emit({ type: 'speedLimit', action: 'deactivate', pin: next.speedLimitPin ?? undefined }, 'speedLimitMode');
+    }
+  } else if (prev.speedLimitPin && !next.speedLimitPin) {
+    emit({ type: 'speedLimit', action: 'clearPin', pin: prev.speedLimitPin }, 'speedLimitPin');
+  }
+  if (prev.speedLimitMph !== next.speedLimitMph) {
+    emit({ type: 'speedLimit', action: 'set', mph: next.speedLimitMph }, 'speedLimitMph');
+  }
+
+  // Parental Controls: activate/deactivate (verify PIN) + clear-PIN, the "Customize
+  // Parental Controls" sub-settings, and that panel's own mph limit.
+  if (prev.parentalControls !== next.parentalControls) {
+    if (next.parentalControls) {
+      emit(
+        { type: 'parental', action: 'activate', pin: next.parentalPin ?? undefined },
+        ...(next.parentalPin !== prev.parentalPin
+          ? (['parentalControls', 'parentalPin'] as const)
+          : (['parentalControls'] as const)),
+      );
+    } else {
+      emit({ type: 'parental', action: 'deactivate', pin: next.parentalPin ?? undefined }, 'parentalControls');
+    }
+  } else if (prev.parentalPin && !next.parentalPin) {
+    emit({ type: 'parental', action: 'clearPin', pin: prev.parentalPin }, 'parentalPin');
+  }
+  if (prev.parentalLimitSpeedMph !== next.parentalLimitSpeedMph) {
+    emit({ type: 'parental', action: 'setSpeedLimit', mph: next.parentalLimitSpeedMph }, 'parentalLimitSpeedMph');
+  }
+  for (const [key, setting] of PARENTAL_SETTING_KEYS) {
+    // Every key in PARENTAL_SETTING_KEYS is a boolean field; the cast narrows the state-value union.
+    if (prev[key] !== next[key]) {
+      emit({ type: 'parental', action: 'setSetting', setting, enable: next[key] as boolean }, key);
+    }
   }
 
   // ── Windows: one UI toggle flips all four, so any-open → vent, none-open →

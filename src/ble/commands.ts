@@ -236,7 +236,8 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
     case 'sentry':
       return fromPayload(cmd.on ? sentryOnAction() : sentryOffAction());
     case 'valet':
-      return fromPayload(setValetModeAction(cmd.on, requirePin(cmd.pin, 'valet')));
+      // Enabling carries the PIN; disabling sends an empty password (see setValetModeAction).
+      return fromPayload(setValetModeAction(cmd.on, cmd.on ? requirePin(cmd.pin, 'valet') : ''));
     case 'speedLimit':
       switch (cmd.action) {
         case 'activate':

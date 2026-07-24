@@ -208,3 +208,68 @@ test('Seat AUTO emits NOTHING over BLE (no command exists — must not send a st
   const next: VehicleViewState = { ...base, seatClimateModes: { ...base.seatClimateModes, frontLeft: { mode: 'auto', level: 3 } } };
   assert.equal(diffToCommands(prev, next).length, 0);
 });
+
+// ── Security & Drivers: PIN-gated toggles ────────────────────────────────────
+// The transitions below mirror exactly what src/app/security.tsx patches.
+
+test('Valet first-enable sets the PIN + turns on; command owns both keys', () => {
+  // security.tsx: patch({ valetPin: pin, valetMode: true })
+  expect(s({ valetMode: false, valetPin: null }), s({ valetMode: true, valetPin: '1234' }), [
+    { cmd: { type: 'valet', on: true, pin: '1234' }, keys: ['valetMode', 'valetPin'] },
+  ]);
+});
+
+test('Valet off carries NO pin (empty password) and does not clear the stored PIN', () => {
+  expect(s({ valetMode: true, valetPin: '1234' }), s({ valetMode: false, valetPin: '1234' }), [
+    { cmd: { type: 'valet', on: false }, keys: ['valetMode'] },
+  ]);
+});
+
+test('Valet Clear PIN (pin → null while off) emits valetClearPin, not an off command', () => {
+  expect(s({ valetMode: false, valetPin: '1234' }), s({ valetMode: false, valetPin: null }), [
+    { cmd: { type: 'valetClearPin' }, keys: ['valetPin'] },
+  ]);
+});
+
+test('PIN to Drive off keeps the PIN (empty password); clearing is a separate verb', () => {
+  expect(s({ pinToDrive: true, pinToDrivePin: '4321' }), s({ pinToDrive: false, pinToDrivePin: '4321' }), [
+    { cmd: { type: 'pinToDrive', on: false }, keys: ['pinToDrive'] },
+  ]);
+  expect(s({ pinToDrive: false, pinToDrivePin: '4321' }), s({ pinToDrive: false, pinToDrivePin: null }), [
+    { cmd: { type: 'pinToDriveClearPin' }, keys: ['pinToDrivePin'] },
+  ]);
+});
+
+test('Speed Limit: verify-enable (pin already set) does not re-own the pin key', () => {
+  // security.tsx verifyEnable path: setFeature(true) only — pin unchanged.
+  expect(s({ speedLimitMode: false, speedLimitPin: '1111' }), s({ speedLimitMode: true, speedLimitPin: '1111' }), [
+    { cmd: { type: 'speedLimit', action: 'activate', pin: '1111' }, keys: ['speedLimitMode'] },
+  ]);
+});
+
+test('Speed Limit deactivate carries the PIN; Clear PIN reads the pin being removed', () => {
+  expect(s({ speedLimitMode: true, speedLimitPin: '1111' }), s({ speedLimitMode: false, speedLimitPin: '1111' }), [
+    { cmd: { type: 'speedLimit', action: 'deactivate', pin: '1111' }, keys: ['speedLimitMode'] },
+  ]);
+  expect(s({ speedLimitMode: false, speedLimitPin: '1111' }), s({ speedLimitMode: false, speedLimitPin: null }), [
+    { cmd: { type: 'speedLimit', action: 'clearPin', pin: '1111' }, keys: ['speedLimitPin'] },
+  ]);
+});
+
+test('Speed Limit mph setpoint emits a set command (coalesced like the charge sliders)', () => {
+  expect(s({ speedLimitMph: 85 }), s({ speedLimitMph: 86 }), [
+    { cmd: { type: 'speedLimit', action: 'set', mph: 86 }, keys: ['speedLimitMph'] },
+  ]);
+});
+
+test('Parental activate/deactivate carry the PIN; sub-settings + mph map to their own actions', () => {
+  expect(s({ parentalControls: false, parentalPin: '2468' }), s({ parentalControls: true, parentalPin: '2468' }), [
+    { cmd: { type: 'parental', action: 'activate', pin: '2468' }, keys: ['parentalControls'] },
+  ]);
+  expect(s({ parentalReduceAccel: true }), s({ parentalReduceAccel: false }), [
+    { cmd: { type: 'parental', action: 'setSetting', setting: 'acceleration', enable: false }, keys: ['parentalReduceAccel'] },
+  ]);
+  expect(s({ parentalLimitSpeedMph: 85 }), s({ parentalLimitSpeedMph: 90 }), [
+    { cmd: { type: 'parental', action: 'setSpeedLimit', mph: 90 }, keys: ['parentalLimitSpeedMph'] },
+  ]);
+});
