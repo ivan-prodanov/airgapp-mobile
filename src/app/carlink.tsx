@@ -30,16 +30,11 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
 // DRIVE assertion is the unlock passive response with level = DRIVE(2).
 import { openDirectSession, buildStandingDriveAssertion, DOMAIN_VEHICLE_SECURITY } from '@/ble/session';
-// DirectBleTransport imports react-native-ble-plx (RN-only) — imported
-// directly here, NOT via the src/ble façade, same isolation rule as the
-// secure-store adapter above (see directBleTransport.ts's header comment).
-import { DirectBleTransport } from '@/ble/directBleTransport';
-// Model (b): the real BLE path is the native central (BridgedBleTransport). The
-// ble-plx DirectBleTransport survives ONLY as the deliberate two-central CONTROL
-// tool (hedge probe), gated off while native passive entry holds the link.
+// Model (b): the real BLE path is the native central (BridgedBleTransport) — the
+// ONLY phone-central path. react-native-ble-plx (DirectBleTransport) was removed
+// 2026-07-23, so a second phone central is impossible to construct.
 import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
-import { runDuplicateRejectProbe } from '@/ble/hedgeProbe';
-import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, passiveEntryHandshakeGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint, isPassiveEntryRunning } from '../../modules/expo-passive-entry';
+import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEntryEcdhGolden, passiveEntryHandshakeGolden, setPassiveEntryDeviceKey, passiveEntryDeviceFingerprint } from '../../modules/expo-passive-entry';
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
@@ -285,12 +280,6 @@ export default function CarLinkScreen() {
     startPassiveEntry(vin || 'NO-VIN');
   };
 
-  // handleHedgeProbe runs the RE #10 duplicate-counter-reject probe over a
-  // dedicated BLE VCSEC session: seals two GET_STATUS frames at the same counter
-  // (distinct uuids), delivers leg-1 (accept) then leg-2 (duplicate → reject),
-  // and logs both raw+decoded replies so we can see whether the reject attaches
-  // a SignedSessionInfo (the hedge landed-guard's foundation) and the exact fault
-  // code/namespace. Idempotent (GET_STATUS = a read); safe.
   const handleNativeSealGolden = () => {
     append(`native seal golden: ${passiveEntrySealGolden()}`);
     append(`native ecdh golden: ${passiveEntryEcdhGolden()}`);
@@ -307,31 +296,6 @@ export default function CarLinkScreen() {
       append(`key check: stored=${stored} jsFp=${jsFp} nativeFp=${nativeFp} → ${jsFp === nativeFp ? 'MATCH ✅' : 'MISMATCH ❌'}`);
     } catch (err) {
       append(`ERROR key check: ${errMsg(err)}`);
-    }
-  };
-
-  const handleHedgeProbe = async () => {
-    if (!isValidVin(vin)) {
-      append(`ERROR hedge probe: "${vin}" is not a valid 17-char VIN`);
-      return;
-    }
-    // The hedge probe opens a SECOND phone central (ble-plx) — the exact
-    // two-central contention RESPONSE-12 forbids. It must NEVER run while the
-    // native passive-entry central holds the car link, or it wedges the car.
-    if (isPassiveEntryRunning()) {
-      append('BLOCKED hedge probe: native passive-entry central is running — a 2nd central would wedge the car. Stop native passive first.');
-      return;
-    }
-    append('hedge probe: opening dedicated VCSEC session over BLE (ble-plx CONTROL tool)…');
-    try {
-      const keys = await loadOrCreateDeviceKeys(store);
-      const transport = new DirectBleTransport();
-      const lines = await runDuplicateRejectProbe({ transport, vin, deviceKeys: keys });
-      for (const l of lines) append(l);
-      await appendDiagnostic('hedge probe', lines);
-      append('hedge probe: written to diagnostics (pull the log).');
-    } catch (err) {
-      append(`ERROR hedge probe: ${errMsg(err)}`);
     }
   };
 
@@ -673,7 +637,6 @@ export default function CarLinkScreen() {
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
               <ActionButton label="Assert DRIVE (seated)" onPress={handleAssertDrive} theme={theme} />
-              <ActionButton label="Hedge probe (dup reject)" onPress={handleHedgeProbe} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />
               <ActionButton label="Native key check" onPress={handleNativeKeyCheck} theme={theme} />

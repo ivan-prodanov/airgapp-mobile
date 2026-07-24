@@ -68,7 +68,6 @@ import {
   BOND_WEDGE_STORAGE_KEY,
 } from '@/ble/bondWedgeStore';
 import { remedyFor, type RecoveryRemedy } from '@/ble/bondWedge';
-import { startPassiveEntryLink } from '@/ble/passiveEntryLink';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { startLogFileSink } from '@/services/logFileSink';
 import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
@@ -930,41 +929,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     [stampIntent],
   );
 
-  // DEDICATED passive-entry BLE link — DISABLED 2026-07-21. The idea was the
-  // Tesla model: a second BLE connection for passive entry running alongside the
-  // Pi command path. It does NOT work on iOS and never did — the on-car
-  // diagnostics prove it: `link: UP` = 0, with 16 "Operation was cancelled" and
-  // 24 self-inflicted "link wedged" timeouts in one session. Root cause: this
-  // opens a SECOND DirectBleTransport, hence a second BleManager, and two
-  // CBCentralManagers in one app connecting to the SAME peripheral call
-  // cancelConnection on each other's link. The two managers knock each other
-  // down, which ALSO manufactured fake bond-wedges (0 real iosErrorCode 14 that
-  // whole session). The inline responder on the command BLE path (see the
-  // authResponder wired into the selector's BLE candidate) still delivers
-  // walk-up unlock whenever we're on BLE, with no contention.
-  //
-  // The REAL end state is a NATIVE background BLE service (M2): one central,
-  // owned by native code that survives app suspension (RE #2 Q2 — Hermes is not
-  // guaranteed alive on a CoreBluetooth background wake). That is being
-  // researched (REQUEST-7) rather than assumed. Do NOT re-enable this JS link;
-  // it is kept only for reference until the native design lands.
-  const PASSIVE_ENTRY_DEDICATED_LINK = false;
-  useEffect(() => {
-    if (!PASSIVE_ENTRY_DEDICATED_LINK) return;
-    if (!linked || !vin) return;
-    const keys = keysRef.current;
-    if (!keys) return;
-    const link = startPassiveEntryLink({
-      vin,
-      deviceKeys: keys,
-      commandPathOnBle: () => selectedTransportRef.current === 'ble',
-      enabled: () => PASSIVE_ENTRY_RESPOND && AppState.currentState === 'active',
-      log: (lines) => {
-        void appendDiagnostic('passive-entry link', lines);
-      },
-    });
-    return () => link.stop();
-  }, [linked, vin]);
+  // NOTE: the DEDICATED passive-entry BLE link (a 2nd ble-plx central for passive
+  // entry) was removed 2026-07-23 — it was disabled 2026-07-21 (two phone centrals
+  // = fatal contention) and fully superseded by the native central below.
 
   // NATIVE background passive entry (RESPONSE-12 model (b)) — the real end state
   // the dead link above was a placeholder for. Once enrolled, the ONE native
