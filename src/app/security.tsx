@@ -10,8 +10,17 @@ import { PinSheet } from '@/components/PinSheet';
 import { SpeedLimitSheet } from '@/components/SpeedLimitSheet';
 import { Toggle } from '@/components/Toggle';
 import { controlHaptic } from '@/state/controlHaptic';
-import { useVehicle } from '@/state/VehicleProvider';
+import { useCarLinkStatus, useVehicle } from '@/state/VehicleProvider';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
+
+// The four "Customize Parental Controls" sub-settings we model (the app has 7, incl. Restricted-Apps
+// browser/theater/arcade — we don't surface those). Enabling Parental Controls needs at least one on.
+const PARENTAL_SETTING_KEYS: VehicleStateKey[] = [
+  'parentalLimitSpeed',
+  'parentalReduceAccel',
+  'parentalRequireSafety',
+  'parentalCurfewNotify',
+];
 
 // The four PIN-gated toggles and their INDEPENDENT per-feature PINs (the real Tesla app keeps a separate
 // PIN per feature, not one shared), copied exactly from the decompiled Tesla bundle:
@@ -50,6 +59,10 @@ type PinPurpose = 'set' | 'verifyEnable' | 'verifyDisable' | 'clearVerify';
 export default function SecurityScreen() {
   const router = useRouter();
   const [state, actions] = useVehicle();
+  // The car's whitelist has no key for us (a genuine wipe, remedy 're-enroll-with-card') — the faithful
+  // analog of the app's `phone_key_required`. A mere BT bond wedge ('forget-bluetooth-device') leaves the
+  // key intact, so it does NOT count as "no phone key". Reads the shared status context (no 2nd BLE link).
+  const phoneKeyMissing = useCarLinkStatus().recoveryRemedy === 're-enroll-with-card';
 
   // Which protected toggle is awaiting a PIN, and why (set new / verify to enable / verify to disable /
   // verify to clear); null = no prompt.
@@ -69,6 +82,16 @@ export default function SecurityScreen() {
     controlHaptic();
     const on = state[key];
     const pinSet = state[PIN_FIELD[key]] != null;
+    // Enabling Parental Controls with every customizable setting off is refused BEFORE the PIN prompt —
+    // exactly as the app does (setErrorData, no modal, no activation). Copy verified in v4.58.0.
+    if (key === 'parentalControls' && !on && !PARENTAL_SETTING_KEYS.some((k) => state[k])) {
+      Alert.alert(
+        'Failed to Activate Parental Controls',
+        'Enable at least one customizable setting to activate Parental Controls',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
     if (ENABLE_ALWAYS_SET.has(key)) {
       // Valet & PIN to Drive: enabling always (re)sets the PIN; disabling is free (no prompt).
       if (!on) setPinFor({ key, purpose: 'set' });
@@ -125,16 +148,17 @@ export default function SecurityScreen() {
   };
 
   // Cross-feature gates, read off the `disabled` flags the decompiled row builder sets (only three of the
-  // rows set one at all — Valet and Sentry are never gated):
-  //   • PIN to Drive  disabled = valetModeOn        — and its subtitle is replaced by the reason.
+  // rows set one at all — Valet and Sentry are never gated). Each is `noPhoneKey ? true : <feature term>`:
+  //   • PIN to Drive  disabled = valetModeOn        — its subtitle is replaced by the reason.
   //   • Speed Limit   disabled = parentalOn         — Parental Controls owns speed limiting while it's on.
+  //     (Speed Limit is NOT phone-key gated in the app — only Parental & PIN to Drive are.)
   //   • Parental      disabled = speedLimitOn && !parentalOn — mutually exclusive with Speed Limit, but the
   //     `&& !parentalOn` term means whichever is already ON stays switchable, so neither can trap the other.
-  // (The app also gates Parental + PIN to Drive on having a Phone Key; we have no phone-key state, so that
-  // half is not modelled.)
-  const gatedParental = state.speedLimitMode && !state.parentalControls;
+  // Parental + PIN to Drive additionally gate on a phone key being set up (verified: only those two rows
+  // carry the `phone_key_required` branch). The phone-key reason wins the subtitle over the feature reason.
+  const gatedParental = phoneKeyMissing || (state.speedLimitMode && !state.parentalControls);
   const gatedSpeedLimit = state.parentalControls;
-  const gatedPinToDrive = state.valetMode;
+  const gatedPinToDrive = phoneKeyMissing || state.valetMode;
 
   const pinMode: 'set' | 'enter' = pinFor?.purpose === 'set' ? 'set' : 'enter';
   const pinSetFor = (key: ProtectedKey) => state[PIN_FIELD[key]] != null;
@@ -177,6 +201,7 @@ export default function SecurityScreen() {
             pinSet={pinSetFor('parentalControls')}
             onClearPin={() => requestClearPin('parentalControls')}
             disabled={gatedParental}
+            gateSubtitle={phoneKeyMissing ? 'Please set up Phone Key' : undefined}
           />
           <ToggleRow
             symbol="speedometer"
@@ -198,7 +223,9 @@ export default function SecurityScreen() {
             pinSet={pinSetFor('pinToDrive')}
             onClearPin={() => requestClearPin('pinToDrive')}
             disabled={gatedPinToDrive}
-            gateSubtitle={gatedPinToDrive ? 'Disable Valet Mode to enable' : undefined}
+            gateSubtitle={
+              phoneKeyMissing ? 'Please set up Phone Key' : state.valetMode ? 'Disable Valet Mode to enable' : undefined
+            }
           />
         </ScrollView>
       </SafeAreaView>
