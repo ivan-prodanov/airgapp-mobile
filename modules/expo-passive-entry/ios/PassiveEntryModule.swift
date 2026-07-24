@@ -58,6 +58,12 @@ public class PassiveEntryModule: Module {
       PassiveEntryCentral.shared.setForegroundResponderActive(active)
     }
 
+    // Post the CPD "Child detected in car" alert. Called by JS when it decodes a
+    // CPDMessage on the FOREGROUND pipe (native self-handles it in background).
+    Function("postCpdWarning") { () in
+      PassiveEntryCentral.postCpdWarning()
+    }
+
     Function("start") { (vin: String) in
       self.central.start(vin: vin)
     }

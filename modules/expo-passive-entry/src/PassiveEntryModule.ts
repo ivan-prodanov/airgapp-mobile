@@ -41,6 +41,9 @@ declare class PassiveEntryModule {
   connectionState(): PassiveEntryConnectionEvent;
   // Single-writer gate: true = foreground (TS signs), false = background (native).
   setForegroundResponderActive(active: boolean): void;
+  // Post the CPD "Child detected in car" alert (foreground path; native
+  // self-posts in background).
+  postCpdWarning(): void;
   // Native → JS streams.
   addListener(event: 'log', listener: (e: PassiveEntryLogEvent) => void): EventSubscription;
   addListener(event: 'frame', listener: (e: PassiveEntryFrameEvent) => void): EventSubscription;

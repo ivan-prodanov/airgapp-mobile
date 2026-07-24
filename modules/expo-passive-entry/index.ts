@@ -72,6 +72,12 @@ export function setPassiveEntryForegroundActive(active: boolean): void {
   PassiveEntryModule?.setForegroundResponderActive(active);
 }
 
+// Post the CPD "Child detected in car" alert — called by the JS foreground path
+// when it decodes a CPDMessage; native self-posts in the background.
+export function passiveEntryPostCpdWarning(): void {
+  PassiveEntryModule?.postCpdWarning();
+}
+
 // Subscribe to raw 0213 notifications (foreground pipe mode). Returns unsubscribe.
 export function onPassiveEntryFrame(listener: (dataB64: string) => void): () => void {
   const sub = PassiveEntryModule?.addListener('frame', (e: PassiveEntryFrameEvent) =>

@@ -28,6 +28,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   static let btOffRepeatId = "airgapp.notif.bluetooth-off.repeat"
   static let bondRemovedNotifId = "airgapp.notif.bond-removed"
   static let appClosedNotifId = "airgapp.notif.app-closed"
+  static let cpdNotifId = "airgapp.notif.cpd-warning"
 
   // Singleton: the CBCentralManager (with restore id) must be re-created at APP
   // LAUNCH for iOS state restoration to relaunch us in the background — so the
@@ -379,13 +380,37 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     if let siBytes = VcsecSigner.extractLenField(frame, 15) {
       completeHandshake(frame, siBytes); return
     }
-    // …otherwise a payload(10) carrying an authenticationRequest(3) is a
-    // passive-entry CHALLENGE — answer it.
-    if let payload = VcsecSigner.extractLenField(frame, 10),
-       let authReq = VcsecSigner.extractLenField(payload, 3) {
+    // A payload(10) is a FromVCSECMessage. Two things we care about inside it:
+    guard let payload = VcsecSigner.extractLenField(frame, 10) else { return }
+    // (a) Child Presence Detection warning (SAFETY) — FromVCSECMessage.CPDMessage
+    // = field 55, whose CPDNotification = field 1 is an enum (1=INITIAL,
+    // 2=ESCALATED, 0=NONE). Wire format from the HW4 decompile (vc0.w0/y/a0). The
+    // car pushes this over BLE when it detects a child left in the cabin.
+    if let cpd = VcsecSigner.extractLenField(payload, 55),
+       let level = VcsecSigner.extractVarintField(cpd, 1), level != 0 {
+      handleCpdWarning(Int(level))
+    }
+    // (b) an authenticationRequest(3) is a passive-entry CHALLENGE — answer it.
+    if let authReq = VcsecSigner.extractLenField(payload, 3) {
       answerChallenge(authReq); return
     }
     // else: routine push (vehicleStatus etc.) — ignore.
+  }
+
+  private func handleCpdWarning(_ level: Int) {
+    log("CPD WARNING level=\(level) (1=initial,2=escalated) — child detected in car")
+    PassiveEntryCentral.postCpdWarning()
+  }
+
+  // Post the "Child detected in car" alert (RESPONSE-13 copy). Stable id → a
+  // repeat/escalation replaces + re-alerts; NO debounce (a child-in-car warning
+  // SHOULD keep nagging). Static so the JS foreground path posts identically.
+  // (The official app uses the critical-alerts entitlement to pierce silent/DND;
+  // we don't hold it, so this is a normal high-priority notification.)
+  static func postCpdWarning() {
+    Notifier.post(id: cpdNotifId,
+                  title: "Child detected in car",
+                  body: "Return to your vehicle immediately.")
   }
 
   private func completeHandshake(_ frame: [UInt8], _ siBytes: [UInt8]) {

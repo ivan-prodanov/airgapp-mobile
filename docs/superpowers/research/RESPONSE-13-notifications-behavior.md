@@ -1,5 +1,13 @@
 # RE RESPONSE #13 — the official app's Phone-Key / passive-entry notifications (LOCAL vs PUSH)
 
+> **CORRECTION 2026-07-23 (Ivan's device outranks the doc): the car is HW4 Ryzen, NOT pre-Ryzen Intel MCU2.** RESPONSE-11's "pre-Ryzen MCU2" premise was wrong, so the "car lacks CPD radar" blocker was invalid — an HW4 car HAS the cabin-presence radar and CAN emit CPD. CPD is therefore BUILT (native). **Wire format extracted from the HW4 decompile (jadx), all PROVEN:**
+> - `FromVCSECMessage.CPDMessage = field 55` (vc0/w0.java:109/297, `getVCSEC_CPDMessage`), a `CPDMessage` submessage (vc0/y.java).
+> - `CPDMessage.CPDNotification = field 1` — enum `CPDNotification_E` (vc0/a0.java): **NONE=0, INITIAL_WARNING=1, ESCALATED_WARNING=2**.
+> - Phone ACK: `ToVCSECMessage.CpdResponse = field 62` (vc0/e3.java:302) carrying `CPDNotificationResponse_E` (vc0/b0.java, tag 1) — OPTIONAL, not built in v1.
+> - Delivery = unsolicited VCSEC push (RoutableMessage→field10 payload=FromVCSECMessage→field55→field1), same channel as vehicleStatus.
+> - Detection = field55 present && field1 ∈ {1,2} → post "Child detected in car" / "Return to your vehicle immediately." (id CPD_WARNING_NOTIFICATION). Native handles it in the background (autonomous handleReply); JS foreground path (postCpdWarning + a manual proto scanner in vcsecPush) is a follow-up. NB: official app uses the `critical-alerts` entitlement (pierces silent/DND) — we don't hold it, so ours is a normal notification.
+
+
 **Answers:** `REQUEST-13-notifications-behavior.md` (Q1–Q3 + the table).
 **Method:** static RE of the official iOS `TeslaV4` 4.57.5 (arm64) Mach-O + its decoded `.strings` binary-plists (`plutil -convert json`) + Hermes bundle + Android jadx + airgapp source. **4 trace finders → 2 adversarial-refutation verifiers → completeness critic**, plus an independent re-read of airgapp's shipped copy.
 **Verdicts:** T1/T2/T3/T4 all **HIGH**; V1 LOCAL-vs-PUSH **PARTIALLY_SUPPORTED/HIGH** (found one classification error — CPD — and fixed it); V2 keep-running + copy **SUPPORTED/HIGH** (byte-exact strings).
