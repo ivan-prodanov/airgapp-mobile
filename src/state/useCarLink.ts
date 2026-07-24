@@ -61,7 +61,7 @@ import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
-import { makeAuthResponder, type PassiveSealModality } from '@/ble/passiveEntryResponder';
+import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import {
   bondWedgeStore,
   parsePersistedWedge,
@@ -230,22 +230,10 @@ const PASSIVE_ENTRY_CAPTURE = false;
 // native signer.
 const PASSIVE_ENTRY_RESPOND = true;
 
-// Which seal to answer passive-entry challenges with. ROUTABLE is what the
-// official app actually sends (RE #9, decompile-proven) and makes ONE shared
-// enrolled key safe — random nonce, so a Pi/phone counter collision is a
-// recoverable reject, never AES-GCM nonce reuse. LEGACY (IV=counter) is our only
-// on-car-MEASURED grant (RE #8), kept as the fallback. We start ROUTABLE to run
-// RE #9's single-frame probe: one clean walk-up, then read the diagnostics for
-// GRANT. If the car refuses routable on this VIN, flip to 'legacy' and redeploy.
-// PROBE RESULT 2026-07-22 (corrected): routable WORKS. With the official Tesla
-// app's Bluetooth OFF (no confound), two clean handle-pulls answered routable
-// (counters 48, 74) → the car UNLOCKED. My first read ("didn't grant") was
-// wrong — it was a measurement gap: our verdict decoder only parses the legacy
-// commandStatus, so a routable grant reply is invisible, and the 20s poll missed
-// the transient unlock (car auto-re-locks). One key + routable is viable (RE #9).
-// Capture is ON below for the next run to grab the car's raw routable reply so
-// we can build a proper routable verdict decoder from real bytes.
-const PASSIVE_ENTRY_SEAL: PassiveSealModality = 'routable';
+// Passive-entry challenges are answered ROUTABLE only — what the official app
+// sends (RE #9), GRANTed on-car 2026-07-22/23 (drive + unlock). The legacy
+// IV=counter seal was retired 2026-07-23 (nonce-reuse hazard; our car accepts
+// routable). See passiveEntryResponder.ts.
 
 // Which IV assembly to use for the AES_GCM_TOKEN seal. This is the ONE crypto
 // detail static RE could not pin (the RE response's own #1 must-test-on-car), so
@@ -549,7 +537,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
                   // is correct here, and only here.
                   getSession: () => peekLiveSession(vin, 2),
                   enabled: () => PASSIVE_ENTRY_RESPOND,
-                  modality: () => PASSIVE_ENTRY_SEAL,
                   log: (lines) => {
                     void appendDiagnostic('passive-entry auth', lines);
                   },

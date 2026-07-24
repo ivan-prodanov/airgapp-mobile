@@ -24,26 +24,24 @@
 //     answering until reset; a persistent reject means our seal is wrong and
 //     retrying only risks another lockout. Feed verdicts back via noteVerdict().
 
-import { sha1 } from '@noble/hashes/sha1';
-
-import { aesGcmEncryptShortIv, be32 } from './gcmShortIv';
 import { buildRoutablePassiveResponse } from './session';
 import type { Session } from './types';
 import {
   parseAuthenticationRequest,
   encodeAuthenticationResponse,
   encodeUnsignedAuthResponse,
-  encodeToVcsecSignedMessage,
   describeReasons,
   AUTH_TOKEN_LENGTH,
 } from './passiveEntryAuth';
 
-// Which seal to answer with. ROUTABLE is what the official app actually uses
-// (RE #9, decompile-proven) and makes one shared key safe (random nonce, no
-// nonce-reuse). LEGACY (IV=counter) is our only ON-CAR-MEASURED grant (RE #8),
-// so it stays as the fallback until the single-frame probe confirms the car
-// GRANTs routable on this VIN — then legacy + gcmShortIv can be retired.
-export type PassiveSealModality = 'routable' | 'legacy';
+// The seal is ROUTABLE only — `RoutableMessage{ AES_GCM_Personalized }` with a
+// RANDOM 12-byte nonce, exactly what the official app uses (RE #9, decompile-
+// proven) and GRANTed on-car (drive + unlock, 2026-07-22/23). The old legacy
+// `SignedMessage{AES_GCM_TOKEN}` seal (IV=counter) was retired 2026-07-23: it
+// carried a catastrophic nonce-reuse hazard (two same-key signers colliding on a
+// counter) and our car accepts routable, so there is nothing to fall back to.
+// Tesla only keeps legacy for pre-~apiVersion-80 firmware (ob0.d.c), which our
+// routable-proven car isn't.
 
 // Never sign more than this many responses per window. The car challenges at
 // ~1 Hz for 6-10 frames per approach; this bounds a runaway well above that.
@@ -71,17 +69,12 @@ export interface AuthResponderOptions {
   // counter, or vice versa) desyncs from the car's shared counter and gets
   // rejected. But do not mistake that for cryptographic separation — it isn't.
   //
-  // SAFETY: because the legacy passive seal uses IV = counter, two signers of
-  // legacy frames under one key that ever collide on a counter = AES-GCM nonce
-  // reuse (catastrophic). Today only THIS responder emits legacy frames and the
-  // command path is routable (random nonce), so the spaces are disjoint — but
-  // that guarantee is load-bearing. Never introduce a second legacy signer under
-  // the same key. Returns null when no session is live yet; we decline, not guess.
+  // Both the command path and this responder now seal ROUTABLE (random nonce), so
+  // there is no nonce-reuse hazard even under one shared key — the reason the
+  // legacy IV=counter seal was retired. Returns null when no session is live yet;
+  // we decline, not guess.
   getSession: () => Session | null;
   enabled?: () => boolean;
-  // Seal modality. Defaults to 'routable' (RE #9's answer). Set 'legacy' to fall
-  // back to the on-car-proven IV=counter seal if the routable probe ever fails.
-  modality?: () => PassiveSealModality;
   log?: (lines: string[]) => void;
 }
 
@@ -135,36 +128,16 @@ export function makeAuthResponder(opts: AuthResponderOptions): AuthResponder {
       encodeAuthenticationResponse({ authenticationLevel: req.requestedLevel }),
     );
 
-    const modality = opts.modality?.() ?? 'routable';
-
-    let out: Uint8Array;
-    let counter: number;
-    if (modality === 'routable') {
-      // The app's real modality. Random-nonce AES_GCM_Personalized in a
-      // RoutableMessage — buildRoutablePassiveResponse bumps the counter and
-      // seals. No token bound (routable is freshness-only).
-      const built = buildRoutablePassiveResponse(session, plaintext);
-      out = built.bytes;
-      counter = built.counter;
-    } else {
-      // Legacy fallback. Bump BEFORE sealing so a retry never reuses a counter —
-      // here the IV IS the counter, and AES-GCM nonce reuse is fatal.
-      session.counter += 1;
-      counter = session.counter;
-      const sealed = aesGcmEncryptShortIv(session.sessionKey, be32(counter), req.token, plaintext);
-      out = encodeToVcsecSignedMessage({
-        ciphertext: sealed.ciphertext,
-        tag: sealed.tag,
-        keyId: sha1(session.myPubRaw).slice(0, 4),
-        counter,
-      });
-    }
+    // Random-nonce AES_GCM_Personalized in a RoutableMessage —
+    // buildRoutablePassiveResponse bumps the counter and seals. No token bound
+    // (routable is freshness-only). This is the sole seal (legacy retired).
+    const { bytes: out, counter } = buildRoutablePassiveResponse(session, plaintext);
 
     recentTimes.push(now);
     // counter is the JOIN KEY: the car's commandStatus echoes it, so this line
     // ties the eventual CAR VERDICT back to this exact attempt.
     say([
-      `auth ANSWERED counter=${counter} seal=${modality} reasons=[${reasons}] ` +
+      `auth ANSWERED counter=${counter} reasons=[${reasons}] ` +
         `level=${req.requestedLevel} out=${out.length}B`,
     ]);
     return out;

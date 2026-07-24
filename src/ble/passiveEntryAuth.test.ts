@@ -5,12 +5,10 @@ import {
   parseAuthenticationRequest,
   encodeAuthenticationResponse,
   encodeUnsignedAuthResponse,
-  encodeToVcsecSignedMessage,
   describeReasons,
   AUTH_LEVEL,
   AUTH_REJECTION,
   AUTH_TOKEN_LENGTH,
-  SIGNATURE_TYPE_AES_GCM_TOKEN,
 } from './passiveEntryAuth';
 
 // A VERBATIM challenge captured from the car 2026-07-20, reason 5
@@ -92,55 +90,19 @@ test('wraps the response in UnsignedMessage field 3', () => {
   assert.deepEqual(Array.from(encodeUnsignedAuthResponse(inner)), [0x1a, 0x02, 0xaa, 0xbb]);
 });
 
-test('builds ToVCSECMessage{SignedMessage} with an EMPTY token field', () => {
-  const out = encodeToVcsecSignedMessage({
-    ciphertext: Uint8Array.from([0x11, 0x22]),
-    tag: Uint8Array.from(new Array(16).fill(0xcc)),
-    keyId: Uint8Array.from([0xc6, 0xe9, 0xaf, 0x58]),
-    counter: 7,
-  });
-  // ToVCSECMessage.signedMessage(1)
-  assert.equal(out[0], 0x0a);
-  const signed = out.subarray(2);
-  // token(1) must be ABSENT — the token is bound as AAD, not echoed.
-  assert.equal(signed[0], 0x12, 'first field is protobufMessageAsBytes(2), not token(1)');
-  // signatureType(3) = AES_GCM_TOKEN(3)
-  const i = signed.indexOf(0x18);
-  assert.equal(signed[i + 1], SIGNATURE_TYPE_AES_GCM_TOKEN);
-  // keyId(5) is our 4-byte SHA1 prefix
-  assert.ok(
-    Buffer.from(signed).includes(Buffer.from([0x2a, 0x04, 0xc6, 0xe9, 0xaf, 0x58])),
-    'keyId(5) = SHA1(pubkey)[:4]',
-  );
-});
-
-
 test('describeReasons names the codes we actually saw on-car', () => {
   assert.match(describeReasons([5]), /PASSIVE_UNLOCK_EXTERIOR_HANDLE_PULL\(5\)/);
   assert.match(describeReasons([1, 8]), /IDENTIFICATION\(1\), ENTERED_HIGHER_AUTH_ZONE\(8\)/);
 });
 
-test('end-to-end: real challenge → sealed response with the CONFIRMED 4-byte IV', async () => {
-  const { aesGcmEncryptShortIv, be32 } = await import('./gcmShortIv');
+test('end-to-end: real challenge → routable sealed response is not itself a challenge', () => {
   const req = parseAuthenticationRequest(REAL_HANDLE_PULL);
   assert.ok(req);
-
-  const sessionKey = Uint8Array.from(new Array(16).fill(0x42));
-  const counter = 5;
+  // The inner plaintext the routable responder seals (echo requestedLevel).
   const plaintext = encodeUnsignedAuthResponse(
     encodeAuthenticationResponse({ authenticationLevel: req.requestedLevel }),
   );
-  // The seal RE RESPONSE #2 confirmed: 4-byte BE counter IV, AAD = bare token.
-  const sealed = aesGcmEncryptShortIv(sessionKey, be32(counter), req.token, plaintext);
-  const frame = encodeToVcsecSignedMessage({
-    ciphertext: sealed.ciphertext,
-    tag: sealed.tag,
-    keyId: Uint8Array.from([0xc6, 0xe9, 0xaf, 0x58]),
-    counter,
-  });
-
-  assert.equal(sealed.tag.length, 16, 'GCM tag is 16 bytes');
-  assert.ok(frame.length > 20 && frame[0] === 0x0a, 'ToVCSECMessage.signedMessage');
-  assert.equal(parseAuthenticationRequest(frame), null, 'our own output is not a challenge');
+  // Sanity: our own answer plaintext must never re-parse as a challenge.
+  assert.equal(parseAuthenticationRequest(plaintext), null, 'our own output is not a challenge');
 });
 

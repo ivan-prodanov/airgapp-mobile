@@ -52,13 +52,19 @@ test('circuit breaker OPENS after consecutive faults and STAYS open until reset'
 // forever — the exact hazard that appears the moment both links coexist.
 test('signs with the session it is GIVEN, not a globally cached one', async () => {
   const { makeAuthResponder } = await import('./passiveEntryResponder');
-  const { encodeToVcsecSignedMessage } = await import('./passiveEntryAuth');
 
+  // A complete session so the routable seal (buildRoutablePassiveResponse) runs.
   const mkSession = (fill: number) =>
     ({
       sessionKey: new Uint8Array(16).fill(fill),
       myPubRaw: new Uint8Array(65).fill(fill),
       counter: 10,
+      localBaselineMs: 0,
+      clockBase: 1000,
+      domain: 2,
+      vin: 'XP7YGCELXTB844019',
+      epoch: new Uint8Array(16).fill(0xab),
+      routingAddress: new Uint8Array(16).fill(0xcd),
     }) as never;
 
   // A real captured handle-pull challenge.
@@ -73,5 +79,4 @@ test('signs with the session it is GIVEN, not a globally cached one', async () =
   const b = makeAuthResponder({ getSession: () => mkSession(0x22) })(challenge);
   assert.ok(a && b, 'both should answer');
   assert.notDeepEqual(a, b, 'different sessions MUST produce different sealed bytes');
-  assert.ok(encodeToVcsecSignedMessage, 'encoder present');
 });

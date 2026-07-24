@@ -56,10 +56,6 @@ export const AUTH_REASON_NAMES: Record<number, string> = {
   10: 'IMMOBILIZER',
 };
 
-// VCSEC.SignatureType — only the passive-auth value is load-bearing here. Both
-// app platforms agree on 3; the firmware descriptor has a superset.
-export const SIGNATURE_TYPE_AES_GCM_TOKEN = 3;
-
 // The car's token is exactly 20 bytes on this firmware (q1.java:643, and all 37
 // of our captured frames). A different length means we mis-parsed, or the
 // firmware changed — either way, don't sign it.
@@ -212,35 +208,6 @@ export function encodeUnsignedAuthResponse(responseBytes: Uint8Array): Uint8Arra
   return Uint8Array.from(lenField(3, responseBytes));
 }
 
-// SignedMessage + ToVCSECMessage. `token` is left EMPTY on this path: the
-// challenge token is bound cryptographically as AES-GCM AAD, not echoed as a
-// field (Android z.java:24 — the better-evidenced of the two platforms).
-export function encodeToVcsecSignedMessage(opts: {
-  ciphertext: Uint8Array;
-  tag: Uint8Array;
-  keyId: Uint8Array;
-  counter: number;
-}): Uint8Array {
-  const signed: number[] = [
-    ...lenField(2, opts.ciphertext),
-    ...varintField(3, SIGNATURE_TYPE_AES_GCM_TOKEN),
-    ...lenField(4, opts.tag),
-    ...lenField(5, opts.keyId),
-    ...varintField(6, opts.counter),
-  ];
-  return Uint8Array.from(lenField(1, Uint8Array.from(signed)));
-}
-
-// --- the IV, which is the ONE genuinely unknown piece -----------------------
-//
-// SignedMessage has NO nonce field, so unlike our command path (which sends a
-// random 12-byte nonce inside SignatureData) the IV here MUST be derived from
-// the counter. The RE response confirms "derived from the 4-byte big-endian
-// counter" but explicitly could not pin the 12-byte assembly — it is that
-// report's own #1 "must test on-car".
-//
-// So this is deliberately a switchable strategy rather than a guess baked into
-// the signer: the first on-car attempt is EXPECTED to be rejected, and we want
-// to cycle variants without a rebuild. `counter-last` is the default because a
-// right-aligned invocation counter in a zero-padded block is the conventional
-// deterministic-IV construction.
+// NOTE: the legacy `SignedMessage{AES_GCM_TOKEN}` encoder (IV=counter) lived here
+// and was retired 2026-07-23 along with gcmShortIv.ts — routable is the sole seal
+// (RE #9, on-car GRANTed). See passiveEntryResponder.ts.
