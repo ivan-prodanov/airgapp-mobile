@@ -91,11 +91,13 @@ export interface VehicleViewState {
   parentalPin: string | null;
   speedLimitPin: string | null;
   pinToDrivePin: string | null;
-  // Speed Limit Mode's cap (km/h), clamped SPEED_LIMIT_MIN..SPEED_LIMIT_MAX. Edited via the row's "…" panel.
-  speedLimitKph: number;
+  // Speed Limit Mode's cap in MPH — the car's own unit (DrivingSetSpeedLimitAction.limitMph); the UI
+  // converts to km/h for display. Clamped SPEED_LIMIT_MIN_MPH..SPEED_LIMIT_MAX_MPH. Edited via the "…" panel.
+  speedLimitMph: number;
   // "Customize Parental Controls" panel sub-options (all non-renderer sheet state).
   parentalLimitSpeed: boolean;
-  parentalLimitSpeedKph: number;
+  // Also MPH (ParentalControlsSetSpeedLimitAction.limitMph), converted to km/h only for display.
+  parentalLimitSpeedMph: number;
   parentalReduceAccel: boolean;
   parentalRequireSafety: boolean;
   parentalCurfewNotify: boolean;
@@ -188,9 +190,9 @@ export const initialVehicleState: VehicleViewState = {
   parentalPin: null,
   speedLimitPin: null,
   pinToDrivePin: null,
-  speedLimitKph: 137, // Tesla's default current limit ≈ 85 mph
+  speedLimitMph: 85, // Tesla's default ≈ 137 km/h (what the UI shows)
   parentalLimitSpeed: true,
-  parentalLimitSpeedKph: 137,
+  parentalLimitSpeedMph: 85,
   parentalReduceAccel: true,
   parentalRequireSafety: true,
   parentalCurfewNotify: true,

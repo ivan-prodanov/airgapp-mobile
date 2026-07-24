@@ -40,9 +40,9 @@ test('climate/charging setpoints and comfort toggles never trigger a renderer up
   assert.equal(changed({ parentalPin: '1234' }), false);
   assert.equal(changed({ speedLimitPin: '1234' }), false);
   assert.equal(changed({ pinToDrivePin: '1234' }), false);
-  assert.equal(changed({ speedLimitKph: 120 }), false);
+  assert.equal(changed({ speedLimitMph: 75 }), false);
   assert.equal(changed({ parentalLimitSpeed: false }), false);
-  assert.equal(changed({ parentalLimitSpeedKph: 150 }), false);
+  assert.equal(changed({ parentalLimitSpeedMph: 90 }), false);
   assert.equal(changed({ parentalReduceAccel: false }), false);
   assert.equal(changed({ parentalRequireSafety: false }), false);
   assert.equal(changed({ parentalCurfewNotify: false }), false);

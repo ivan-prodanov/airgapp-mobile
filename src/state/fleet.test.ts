@@ -7,7 +7,13 @@ import {
   addVehicle,
   AMP_MAX,
   AMP_MIN,
+  clampSpeedLimitMph,
   createInitialFleet,
+  kmhToMph,
+  mphToKmh,
+  speedLimitDisplayKmh,
+  SPEED_LIMIT_MAX_MPH,
+  SPEED_LIMIT_MIN_MPH,
   HI_TEMP,
   LIMIT_MAX,
   LIMIT_MIN,
@@ -348,4 +354,17 @@ test('activeIsLive: only the enrolled car on screen counts as live', () => {
   assert.equal(activeIsLive('VIN_B', 'VIN_A', true), false, 'a different car');
   assert.equal(activeIsLive('VIN_A', null, false), false, 'nothing enrolled');
   assert.equal(activeIsLive(undefined, null, false), false, 'pure demo app');
+});
+
+test('speed-limit unit conversion round-trips and clamps in mph', () => {
+  // Default 85 mph must read as 137 km/h — the value shown in the Tesla screenshot.
+  assert.equal(speedLimitDisplayKmh(85), 137);
+  // km/h↔mph are inverses within rounding.
+  assert.equal(Math.round(mphToKmh(kmhToMph(137))), 137);
+  assert.ok(Math.abs(kmhToMph(193) - 120) < 0.5, '193 km/h ≈ 120 mph');
+  assert.ok(Math.abs(kmhToMph(80) - 50) < 0.5, '80 km/h ≈ 50 mph');
+  // Clamp holds the mph domain and rounds to whole mph.
+  assert.equal(clampSpeedLimitMph(SPEED_LIMIT_MIN_MPH - 5), SPEED_LIMIT_MIN_MPH);
+  assert.equal(clampSpeedLimitMph(SPEED_LIMIT_MAX_MPH + 5), SPEED_LIMIT_MAX_MPH);
+  assert.equal(clampSpeedLimitMph(85.4), 85);
 });

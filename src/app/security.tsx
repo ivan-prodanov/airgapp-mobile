@@ -212,8 +212,8 @@ export default function SecurityScreen() {
       />
       <SpeedLimitSheet
         visible={speedOpen}
-        value={state.speedLimitKph}
-        onChange={(kph) => actions.patch({ speedLimitKph: kph })}
+        mph={state.speedLimitMph}
+        onChange={(mph) => actions.patch({ speedLimitMph: mph })}
         onClose={() => setSpeedOpen(false)}
       />
       <ParentalControlsSheet

@@ -4,43 +4,49 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
-import { clampSpeedLimit, SPEED_LIMIT_MAX, SPEED_LIMIT_MIN } from '@/state/fleet';
+import {
+  clampSpeedLimitMph,
+  speedLimitDisplayKmh,
+  SPEED_LIMIT_MAX_MPH,
+  SPEED_LIMIT_MIN_MPH,
+} from '@/state/fleet';
 import { HoldRepeatButton } from './HoldRepeatButton';
 import { SlideUpSheet } from './SlideUpSheet';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
 // "Adjust Speed Limit" bottom sheet (Speed Limit Mode's "…"). Slides up over a dimmed screen; tapping
-// above the panel closes it. The value edits live (each step patches state) between 80 and 193 km/h, and
-// the </> buttons repeat while held.
+// above the panel closes it. The value is stored in MPH (the car's unit) and shown in km/h; the </>
+// buttons step one MPH at a time and repeat while held, so the km/h reading moves in ~1.6 jumps — the
+// honest consequence of MPH being the source of truth (two km/h values would otherwise collide on one MPH).
 export function SpeedLimitSheet({
   visible,
-  value,
+  mph,
   onChange,
   onClose,
 }: {
   visible: boolean;
-  value: number;
-  onChange: (kph: number) => void;
+  mph: number;
+  onChange: (mph: number) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
   // Mirror the value in a ref so a held button advances from the live value, not the press-in snapshot.
-  const valueRef = useRef(value);
+  const mphRef = useRef(mph);
   useEffect(() => {
-    valueRef.current = value;
-  }, [value]);
+    mphRef.current = mph;
+  }, [mph]);
 
   const step = (dir: -1 | 1) => {
-    const next = clampSpeedLimit(valueRef.current + dir);
-    if (next === valueRef.current) return; // at a bound
-    valueRef.current = next;
+    const next = clampSpeedLimitMph(mphRef.current + dir);
+    if (next === mphRef.current) return; // at a bound
+    mphRef.current = next;
     Haptics.selectionAsync().catch(() => {});
     onChange(next);
   };
 
-  const atMin = value <= SPEED_LIMIT_MIN;
-  const atMax = value >= SPEED_LIMIT_MAX;
+  const atMin = mph <= SPEED_LIMIT_MIN_MPH;
+  const atMax = mph >= SPEED_LIMIT_MAX_MPH;
 
   return (
     <SlideUpSheet visible={visible} onDismiss={onClose}>
@@ -54,7 +60,7 @@ export function SpeedLimitSheet({
           </HoldRepeatButton>
 
           <View style={styles.valueCol}>
-            <Text style={styles.value}>{value}</Text>
+            <Text style={styles.value}>{speedLimitDisplayKmh(mph)}</Text>
             <Text style={styles.unit}>km/h</Text>
           </View>
 

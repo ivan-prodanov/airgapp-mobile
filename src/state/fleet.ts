@@ -298,15 +298,24 @@ export const LIMIT_MAX = 100;
 // Charging current stepper domain, per spec: 5 A … 16 A.
 export const AMP_MIN = 5;
 export const AMP_MAX = 16;
-// Speed-limit domain (km/h) — shared by Speed Limit Mode and the Parental Controls "Limit Speed" stepper.
-export const SPEED_LIMIT_MIN = 80;
-export const SPEED_LIMIT_MAX = 193;
+// Speed-limit domain, stored in MPH — the unit the car's command takes (DrivingSetSpeedLimitAction
+// .limitMph). Like rangeMiles, the raw value is kept in the app's native/protocol unit and converted to
+// km/h only for display, so no rounding drift accumulates in state. 50–120 mph ≈ 80–193 km/h — the range
+// the UI showed before this moved to mph; the reference vehicle-command imposes no bound of its own.
+export const SPEED_LIMIT_MIN_MPH = 50;
+export const SPEED_LIMIT_MAX_MPH = 120;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
-// Clamp + round a km/h value into the speed-limit domain. Used by both speed steppers.
-export const clampSpeedLimit = (kph: number): number =>
-  clamp(Math.round(kph), SPEED_LIMIT_MIN, SPEED_LIMIT_MAX);
+const MI_PER_KM = 0.621371;
+export const kmhToMph = (kmh: number): number => kmh * MI_PER_KM;
+export const mphToKmh = (mph: number): number => mph / MI_PER_KM;
+// The km/h value shown in the UI for a stored mph value (whole km/h — the unit the steppers move in).
+export const speedLimitDisplayKmh = (mph: number): number => Math.round(mphToKmh(mph));
+
+// Clamp + round an MPH value into the speed-limit domain. Used by both speed steppers and the BLE builder.
+export const clampSpeedLimitMph = (mph: number): number =>
+  clamp(Math.round(mph), SPEED_LIMIT_MIN_MPH, SPEED_LIMIT_MAX_MPH);
 
 export function setTargetTempState(state: VehicleViewState, tempC: number): VehicleViewState {
   // Round to the nearest half-degree BEFORE clamping so the dial can only ever land on a real detent.

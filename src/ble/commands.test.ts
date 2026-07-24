@@ -198,8 +198,10 @@ test('valet / speed-limit PIN-protected actions validate + encode the PIN', () =
 
   const setMph = decodeAction(setSpeedLimitMphAction(65).bytes);
   assert.equal(setMph.vehicleAction?.drivingSetSpeedLimitAction?.limitMph, 65);
-  assert.throws(() => setSpeedLimitMphAction(49), /50\.\.90/);
-  assert.throws(() => setSpeedLimitMphAction(91), /50\.\.90/);
+  // Domain widened to 50..120 mph (≈ 80..193 km/h); 120 is now in range, 121 is not.
+  assert.equal(decodeAction(setSpeedLimitMphAction(120).bytes).vehicleAction?.drivingSetSpeedLimitAction?.limitMph, 120);
+  assert.throws(() => setSpeedLimitMphAction(49), /50\.\.120/);
+  assert.throws(() => setSpeedLimitMphAction(121), /50\.\.120/);
 });
 
 test('PIN validation rejects a non-4-digit pin', () => {

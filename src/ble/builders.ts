@@ -322,7 +322,9 @@ export function clearSpeedLimitPinAction(pin: string): ActionPayload {
 }
 export function setSpeedLimitMphAction(mph: number): ActionPayload {
   const m = Number(mph);
-  if (!Number.isFinite(m) || m < 50 || m > 90) throw new Error('speed limit must be 50..90 mph');
+  // 50..120 mph (≈ 80..193 km/h) — mirrors the UI's SPEED_LIMIT_*_MPH domain. The old 90 cap was ours,
+  // not the protocol's (the reference vehicle-command passes limitMph straight through, unbounded).
+  if (!Number.isFinite(m) || m < 50 || m > 120) throw new Error('speed limit must be 50..120 mph');
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ drivingSetSpeedLimitAction: { limitMph: m } }),
