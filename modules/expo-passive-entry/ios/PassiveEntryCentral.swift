@@ -99,14 +99,12 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // unlocks and the car stops challenging well before this.
   private var answersGiven = 0
   private let maxAnswers = 20
-  // RESPONSE-11: assert a STANDING DRIVE authorization once per connect (like the
-  // official app's connectionEstablished/G0). Gated so it can be disabled.
+  // RESPONSE-11: assert a STANDING DRIVE authorization on EVERY connect, exactly
+  // like the official app (q1.java connectionEstablished→G0, gated only on
+  // whitelist, NO throttle — confirmed in the decompile). Gated so it can be
+  // disabled. (A 3-min throttle was tried 2026-07-23 then removed for parity: the
+  // edge-of-range chattiness it fought is harmless, and Tesla re-asserts freely.)
   private let assertStandingDriveOnConnect = true
-  // Throttle: at the edge of range the link flaps and re-handshakes every ~30s,
-  // which would re-assert DRIVE each time (chatty VCSEC traffic + counter churn).
-  // Re-assert at most once per this window; the car holds the standing level.
-  private var lastDriveAssertSec: UInt32 = 0
-  private let driveAssertCooldownSec: UInt32 = 180
 
   override init() {
     super.init()
@@ -475,12 +473,6 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // trigger (brake). Uses the same routable seal as the challenge answer.
   private func assertStandingDrive() {
     guard assertStandingDriveOnConnect, let sk = sessionKey, let p = peripheral else { return }
-    // Throttle: skip if we asserted within the cooldown (a reconnect re-uses the
-    // standing DRIVE the car already holds). The reactive echo still answers a
-    // real DRIVE challenge when seated, so nothing is lost.
-    let now = UInt32(Date().timeIntervalSince1970)
-    if lastDriveAssertSec != 0 && now &- lastDriveAssertSec < driveAssertCooldownSec { return }
-    lastDriveAssertSec = now
     counter += 1
     let elapsed = UInt32(Date().timeIntervalSince1970) &- handshakeWallSec
     let expiresAt = clockBase &+ elapsed &+ 5

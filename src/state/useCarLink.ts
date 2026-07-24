@@ -51,6 +51,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // contend with the native passive-entry central. DirectBleTransport (ble-plx) is
 // no longer constructed in production.
 import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
+import { foregroundBleLink } from '@/ble/foregroundBleLink';
 import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
@@ -523,30 +524,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // fallback when a base URL + token are configured.
         candidates.push({
           name: 'ble',
+          // A thin command transport over the ONE persistent foregroundBleLink,
+          // which owns the always-on passive responder + VCSEC-push routing (set
+          // in the foreground lifecycle effect below), not per-transport.
           make: () =>
-            withTransportLogging(
-              'ble',
-              new BridgedBleTransport({
-                scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS,
-                // Answer passive-entry challenges on the link itself — the car
-                // gives up in ~6-10s, so a hop through React state first would
-                // eat the budget. Returns null for non-challenge frames.
-                authResponder: (authResponderRef.current = makeAuthResponder({
-                  // This responder answers on the COMMAND path's own BLE link,
-                  // so it must sign with THAT link's session — the shared cache
-                  // is correct here, and only here.
-                  getSession: () => peekLiveSession(vin, 2),
-                  enabled: () => PASSIVE_ENTRY_RESPOND,
-                  log: (lines) => {
-                    void appendDiagnostic('passive-entry auth', lines);
-                  },
-                })),
-                // Route the car's unsolicited VCSEC pushes into the live apply
-                // path — closures/lock update instantly while this link is held
-                // open, with the poll as backstop.
-                onUnsolicited: handleVcsecPushRef.current,
-              }),
-            ),
+            withTransportLogging('ble', new BridgedBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS })),
         });
         if (cfg.baseUrl && cfg.token) {
           candidates.push({
@@ -960,11 +942,36 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       // Seed the gate: foreground → JS signs via the pipe; background → native.
       setPassiveEntryForegroundActive(AppState.currentState === 'active');
       nativePassiveArmedRef.current = true;
+
+      // Wire the ALWAYS-ON foreground responder (matches the official app's single
+      // persistent receive handler). foregroundBleLink runs the passive responder +
+      // VCSEC-push/CPD routing on every idle frame, independent of command sessions;
+      // the command path borrows the same link for exchanges (one signer, one
+      // counter). Handlers are set here; the link is started in the foreground.
+      if (!authResponderRef.current) {
+        authResponderRef.current = makeAuthResponder({
+          // Signs with the shared VS session — the command path and this responder
+          // must never overlap the counter (guaranteed: passive answers only fire
+          // on IDLE frames, never mid-exchange). getSession is the shared cache.
+          getSession: () => peekLiveSession(vin, 2),
+          enabled: () => PASSIVE_ENTRY_RESPOND,
+          log: (lines) => {
+            void appendDiagnostic('passive-entry auth', lines);
+          },
+        });
+      }
+      foregroundBleLink.setHandlers({
+        authResponder: authResponderRef.current,
+        onUnsolicited: (frame) => handleVcsecPushRef.current?.(frame),
+      });
+      if (AppState.currentState === 'active') foregroundBleLink.start(vin);
       // NO stopPassiveEntry on cleanup: the central MUST persist into the
       // background (that's the whole point). Disarm is the explicit unlink below.
     } else if (nativePassiveArmedRef.current) {
       // Unlinked (or keys/vin cleared) → disarm: stop holding + clear the VIN so
       // a future relaunch stays idle.
+      foregroundBleLink.stop();
+      authResponderRef.current = null;
       stopPassiveEntry();
       nativePassiveArmedRef.current = false;
     }
@@ -1046,14 +1053,21 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         deferredTeardownRef.current = false;
         prunePending();
         // Single-writer gate: foreground → JS owns passive entry (native becomes
-        // a dumb pipe, TS signs via the inline responder). Only touch native once
-        // armed, so we never instantiate the central (and its BLE prompt) early.
-        if (nativePassiveArmedRef.current) setPassiveEntryForegroundActive(true);
+        // a dumb pipe, TS signs via the always-on foreground responder). Only
+        // touch native once armed, so we never instantiate the central early.
+        if (nativePassiveArmedRef.current) {
+          setPassiveEntryForegroundActive(true);
+          const v = cfgRef.current?.vin;
+          if (v) foregroundBleLink.start(v); // resume the always-on foreground responder
+        }
       } else if (next === 'background') {
         // Background → native self-signs (JS is about to suspend). This is THE
         // handoff: flip BEFORE suspension so a walk-up challenge is answered
         // natively. The native central keeps holding the link (not torn down).
-        if (nativePassiveArmedRef.current) setPassiveEntryForegroundActive(false);
+        if (nativePassiveArmedRef.current) {
+          setPassiveEntryForegroundActive(false);
+          foregroundBleLink.stop(); // native takes over passive; drop the JS listener
+        }
         // Backgrounding CANCELS a user-requested wake, exactly as the official
         // app's `cancelAllDataRequests()` does on APP_BACKGROUND (findings §3).
         // Without this the spinner survives the round trip: iOS suspends JS
