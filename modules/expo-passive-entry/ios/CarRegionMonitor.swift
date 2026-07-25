@@ -58,6 +58,7 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
     ensureManager()
     guard let m = manager else { return }
     let status = m.authorizationStatus
+    PassiveEntryCentral.shared.logExternal("car region: auth status=\(status.rawValue) (3=always, 4=whenInUse) — requesting always")
     if status == .notDetermined {
       m.requestWhenInUseAuthorization() // must precede Always
     }
@@ -87,7 +88,13 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
   // Called at APP LAUNCH (foreground, background, or a region-entry relaunch) and
   // whenever the position changes. Idempotent.
   func startIfConfigured() {
-    guard PassiveEntryCentral.isArmed(), CarRegionMonitor.hasCarLocation() else { return }
+    guard PassiveEntryCentral.isArmed() else { return }
+    // Log WHY we're not armed — this is the first thing to check when a post-reboot
+    // walk-up misses, and silence here is indistinguishable from "code never ran".
+    guard CarRegionMonitor.hasCarLocation() else {
+      PassiveEntryCentral.shared.logExternal("car region: no car position yet — open the app near the car once")
+      return
+    }
     ensureManager()
     guard let m = manager else { return }
     guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else {
