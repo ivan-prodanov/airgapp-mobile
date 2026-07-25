@@ -29,6 +29,11 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
     // reminder needs it (idempotent — iOS prompts only once).
     Notifier.requestAuthIfNeeded()
     PassiveEntryCentral.shared.startIfConfigured()
+    // Re-arm the geographic wake source. MUST happen at launch: when iOS relaunches
+    // us for a region entry — the only wake that survives a phone REBOOT, which
+    // CoreBluetooth restoration alone does not — the event is delivered to a freshly
+    // created CLLocationManager whose delegate must already be set.
+    CarRegionMonitor.shared.startIfConfigured()
     return true
   }
 

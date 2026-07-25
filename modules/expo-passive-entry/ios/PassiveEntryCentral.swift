@@ -180,6 +180,19 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     log("stop")
   }
 
+  // Let sibling components (CarRegionMonitor) write into the same native log file —
+  // it's the only record that survives JS suspension and a background relaunch.
+  func logExternal(_ line: String) { log(line) }
+
+  // A geographic region entry (CarRegionMonitor) means the car is near AND iOS has
+  // just relaunched/woken us — including after a REBOOT, which CoreBluetooth
+  // restoration alone can't survive. Re-arm the link so the walk-up is answered.
+  func wakeForRegionEntry() {
+    guard let vin = UserDefaults.standard.string(forKey: PassiveEntryCentral.vinKey), !vin.isEmpty else { return }
+    // start() is idempotent: sets wantScan + re-arms the standing pending connect.
+    start(vin: vin)
+  }
+
   // MARK: - byte-pipe surface (RESPONSE-12 model (b): native moves bytes, TS signs)
 
   // The single-writer gate. true = FOREGROUND (TS drives crypto via the pipe);

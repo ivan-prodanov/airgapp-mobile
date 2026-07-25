@@ -64,6 +64,15 @@ public class PassiveEntryModule: Module {
       PassiveEntryCentral.postCpdWarning()
     }
 
+    // Geographic wake source (survives a phone reboot, unlike CB restoration).
+    // Feed the car's parked position from telemetry; ask for Location Always once.
+    Function("setCarLocation") { (lat: Double, lon: Double) in
+      CarRegionMonitor.shared.setCarLocation(lat: lat, lon: lon)
+    }
+    Function("requestAlwaysLocation") { () in
+      CarRegionMonitor.shared.requestAlwaysAuthorization()
+    }
+
     Function("start") { (vin: String) in
       self.central.start(vin: vin)
     }

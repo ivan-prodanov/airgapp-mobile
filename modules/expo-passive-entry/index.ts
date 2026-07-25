@@ -100,3 +100,17 @@ export function onPassiveEntryBondRemoved(listener: () => void): () => void {
   const sub = PassiveEntryModule?.addListener('bondRemoved', () => listener());
   return () => sub?.remove();
 }
+
+// ── geographic wake source (survives a phone reboot; CB restoration doesn't) ──
+
+// Feed the car's parked position (from telemetry) so native can monitor a region
+// around it and re-arm BLE on arrival.
+export function setPassiveEntryCarLocation(lat: number, lon: number): void {
+  PassiveEntryModule?.setCarLocation(lat, lon);
+}
+
+// Ask for Location "Always" — required for a region entry to wake a terminated
+// app. Call from the foreground once passive entry is armed.
+export function requestPassiveEntryAlwaysLocation(): void {
+  PassiveEntryModule?.requestAlwaysLocation();
+}

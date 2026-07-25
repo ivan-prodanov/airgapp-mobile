@@ -44,6 +44,9 @@ declare class PassiveEntryModule {
   // Post the CPD "Child detected in car" alert (foreground path; native
   // self-posts in background).
   postCpdWarning(): void;
+  // Geographic wake source (reboot-surviving).
+  setCarLocation(lat: number, lon: number): void;
+  requestAlwaysLocation(): void;
   // Native → JS streams.
   addListener(event: 'log', listener: (e: PassiveEntryLogEvent) => void): EventSubscription;
   addListener(event: 'frame', listener: (e: PassiveEntryFrameEvent) => void): EventSubscription;

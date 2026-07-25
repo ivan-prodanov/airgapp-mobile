@@ -88,6 +88,8 @@ import {
   passiveEntryConnectionState,
   onPassiveEntryBondRemoved,
   passiveEntryPostCpdWarning,
+  setPassiveEntryCarLocation,
+  requestPassiveEntryAlwaysLocation,
 } from '../../modules/expo-passive-entry';
 import { appStorage } from './appStorage';
 import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
@@ -309,7 +311,22 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
   const applyTelemetryRef = useRef(applyTelemetry);
-  applyTelemetryRef.current = applyTelemetry;
+  // Wrapped so EVERY telemetry patch that carries a fresh car position also feeds
+  // the native geographic wake source (one hook covers poll, push and stream).
+  // That region is what relaunches us after a phone REBOOT — CoreBluetooth
+  // restoration alone can't survive one. Native ignores jitter and only re-arms
+  // when the car has actually moved.
+  applyTelemetryRef.current = (patch) => {
+    const loc = (patch as { carLocation?: { lat: number; lon: number } }).carLocation;
+    if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)) {
+      try {
+        setPassiveEntryCarLocation(loc.lat, loc.lon);
+      } catch {
+        // Non-fatal — never let the wake source break the telemetry path.
+      }
+    }
+    applyTelemetry(patch);
+  };
   const hydrateTelemetryRef = useRef(hydrateTelemetry);
   hydrateTelemetryRef.current = hydrateTelemetry;
   const getActiveStateRef = useRef(getActiveState);
@@ -941,6 +958,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       startPassiveEntry(vin);
       // Seed the gate: foreground → JS signs via the pipe; background → native.
       setPassiveEntryForegroundActive(AppState.currentState === 'active');
+      // Location ALWAYS powers the geographic wake source — the ONLY wake that
+      // survives a phone reboot (CoreBluetooth restoration does not). Asked once,
+      // from the foreground, and only after enrollment so the prompt has context.
+      try {
+        requestPassiveEntryAlwaysLocation();
+      } catch {
+        // Non-fatal: without Always we simply lose the reboot wake, not the app.
+      }
       nativePassiveArmedRef.current = true;
 
       // Wire the ALWAYS-ON foreground responder (matches the official app's single
