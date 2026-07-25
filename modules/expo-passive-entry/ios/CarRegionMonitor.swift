@@ -30,6 +30,32 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
   private static let latKey = "airgapp.passiveentry.carLat"
   private static let lonKey = "airgapp.passiveentry.carLon"
   private static let regionId = "airgapp.car.region"
+
+  // ── The iBeacon region: the wake source that actually carries the REBOOT case ──
+  //
+  // RESPONSE-16 found the flaw in the circular region alone: iOS relaunches a
+  // terminated app for a CLCircularRegion only on a BOUNDARY CROSSING, and a 150 m
+  // circle centred on a car parked at home swallows the whole house. Reboot
+  // overnight → you are already INSIDE → walking to the car crosses nothing → no
+  // relaunch. A CLBeaconRegion's boundary is BLE detection range (metres), so the
+  // walk-up genuinely IS a crossing.
+  //
+  // proximityUUID is a HARDCODED compile-time constant in the official app — not
+  // cloud-provisioned, not VIN-derived (both branches of `BLEBeaconRegion
+  // initFromVIN:` store the same string), so an air-gapped client can use it.
+  // Verified twice by the miner at file offset 0x342c35d.
+  //
+  // UUID-ONLY on purpose: the app constrains major/minor per-VIN, but a
+  // right-UUID/wrong-major region fires NOTHING, silently. Tesla itself uses a
+  // UUID-only constraint for ranging, so this shape is supported. Tighten only
+  // after a sniffer confirms the derivation.
+  private static let beaconUUID = UUID(uuidString: "74278BDA-B644-4520-8F0C-720EAF059935")!
+  private static let beaconRegionId = "airgapp.car.beacon"
+  // UUID-only matching means we also wake near OTHER Teslas. Harmless (re-arming a
+  // pending connect for an absent peripheral is a no-op) but don't let a parking
+  // lot thrash relaunches.
+  private static let beaconDebounceSec: TimeInterval = 30
+  private var lastBeaconWakeSec: TimeInterval = 0
   // Big enough that we're woken well BEFORE BLE range (so the pending connect is
   // already armed when the user reaches the car), small enough to be meaningful.
   // iOS silently enforces a floor of ~100 m on region radius anyway.
@@ -89,25 +115,53 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
   // whenever the position changes. Idempotent.
   func startIfConfigured() {
     guard PassiveEntryCentral.isArmed() else { return }
-    // Log WHY we're not armed — this is the first thing to check when a post-reboot
-    // walk-up misses, and silence here is indistinguishable from "code never ran".
+    ensureManager()
+    guard let m = manager else { return }
+    let status = m.authorizationStatus
+    guard status == .authorizedAlways else {
+      // WhenInUse can't deliver the reboot wake — say so plainly in the log rather
+      // than registering regions that will never fire while we're terminated.
+      // (RESPONSE-16 Q6: the official app also gates region monitoring on Always.)
+      PassiveEntryCentral.shared.logExternal("car region: NOT armed — need Location Always (status=\(status.rawValue))")
+      return
+    }
+    // TWO INDEPENDENT WAKE SOURCES with disjoint failure sets (RESPONSE-16: "ship
+    // both"). One relaunch of ANY kind re-arms the standing CoreBluetooth connect,
+    // which iOS then holds until the next reboot — so independent triggers multiply.
+    // The official app has a third backstop we structurally cannot have (silent
+    // push), which is exactly why an air-gapped client should run two local ones.
+    armBeaconRegion(m)   // no car position needed — works from a cold install
+    armCircularRegion(m) // needs a parked position; gives 150 m of lead time
+  }
+
+  // The beacon region — carries the reboot case. Needs NO bootstrap: no car
+  // position, no prior sighting. Fires at BLE range, so a walk-up is a real
+  // boundary crossing even when the phone rebooted inside the house.
+  private func armBeaconRegion(_ m: CLLocationManager) {
+    guard CLLocationManager.isMonitoringAvailable(for: CLBeaconRegion.self) else {
+      PassiveEntryCentral.shared.logExternal("car beacon: monitoring unavailable on this device")
+      return
+    }
+    let r = CLBeaconRegion(uuid: CarRegionMonitor.beaconUUID, identifier: CarRegionMonitor.beaconRegionId)
+    r.notifyOnEntry = true
+    r.notifyOnExit = true
+    // A launch trigger CLCircularRegion has no equivalent for: turning the screen
+    // on while already inside BLE range re-delivers the state.
+    r.notifyEntryStateOnDisplay = true
+    for existing in m.monitoredRegions where existing.identifier == CarRegionMonitor.beaconRegionId {
+      m.stopMonitoring(for: existing)
+    }
+    m.startMonitoring(for: r)
+    m.requestState(for: r)
+    PassiveEntryCentral.shared.logExternal("car beacon: ARMED uuid=74278BDA… (UUID-only)")
+  }
+
+  private func armCircularRegion(_ m: CLLocationManager) {
     guard CarRegionMonitor.hasCarLocation() else {
       PassiveEntryCentral.shared.logExternal("car region: no car position yet — open the app near the car once")
       return
     }
-    ensureManager()
-    guard let m = manager else { return }
-    guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else {
-      PassiveEntryCentral.shared.logExternal("car region: monitoring unavailable on this device")
-      return
-    }
-    let status = m.authorizationStatus
-    guard status == .authorizedAlways else {
-      // WhenInUse can't deliver the reboot wake — say so plainly in the log rather
-      // than registering a region that will never fire while we're terminated.
-      PassiveEntryCentral.shared.logExternal("car region: NOT armed — need Location Always (status=\(status.rawValue))")
-      return
-    }
+    guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
     guard let r = region() else { return }
     // Re-registering the same identifier replaces it; stop first so we never stack.
     for existing in m.monitoredRegions where existing.identifier == CarRegionMonitor.regionId {
@@ -115,7 +169,9 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
     }
     m.startMonitoring(for: r)
     // We may ALREADY be inside the region at launch (parked at home) — iOS only
-    // reports transitions, so ask for the current state explicitly.
+    // reports transitions, so ask for the current state explicitly. NOTE: this only
+    // helps once the app is alive; it cannot relaunch a terminated app, which is
+    // precisely why the beacon exists.
     m.requestState(for: r)
     PassiveEntryCentral.shared.logExternal("car region: ARMED r=\(Int(CarRegionMonitor.radiusMeters))m")
   }
@@ -146,14 +202,37 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
   // MARK: - CLLocationManagerDelegate
 
   func locationManager(_ m: CLLocationManager, didEnterRegion region: CLRegion) {
-    guard region.identifier == CarRegionMonitor.regionId else { return }
-    PassiveEntryCentral.shared.logExternal("car region: ENTERED → re-arming BLE")
-    PassiveEntryCentral.shared.wakeForRegionEntry()
+    handleRegionWake(region.identifier, event: "ENTERED")
   }
 
   func locationManager(_ m: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
-    guard region.identifier == CarRegionMonitor.regionId, state == .inside else { return }
-    PassiveEntryCentral.shared.logExternal("car region: already INSIDE → re-arming BLE")
+    guard state == .inside else { return }
+    handleRegionWake(region.identifier, event: "already INSIDE")
+  }
+
+  // NOTE: we deliberately do NOT implement didExitRegion. Exit must never
+  // disconnect — the official app only clears its in-region flag on exit and keeps
+  // the link (RESPONSE-16 Q4).
+  //
+  // Each source is logged under its own name so field data answers the one thing
+  // the miner could not prove statically: whether the car emits an iBeacon frame
+  // at all, and whether that emission is sleep-gated. If `car beacon: ENTERED`
+  // never appears in a week of real use, the car isn't beaconing (or only does so
+  // while awake) and the circular region is carrying everything.
+  private func handleRegionWake(_ identifier: String, event: String) {
+    switch identifier {
+    case CarRegionMonitor.regionId:
+      PassiveEntryCentral.shared.logExternal("car region: \(event) → re-arming BLE")
+    case CarRegionMonitor.beaconRegionId:
+      // UUID-only matching wakes us near ANY Tesla — debounce so a parking lot
+      // can't thrash relaunches.
+      let now = Date().timeIntervalSince1970
+      guard now - lastBeaconWakeSec >= CarRegionMonitor.beaconDebounceSec else { return }
+      lastBeaconWakeSec = now
+      PassiveEntryCentral.shared.logExternal("car beacon: \(event) → re-arming BLE")
+    default:
+      return // someone else's region
+    }
     PassiveEntryCentral.shared.wakeForRegionEntry()
   }
 
