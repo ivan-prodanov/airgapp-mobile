@@ -5,10 +5,10 @@ import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import {
-  clampSpeedLimitMph,
   speedLimitDisplayKmh,
-  SPEED_LIMIT_MAX_MPH,
-  SPEED_LIMIT_MIN_MPH,
+  speedLimitKmhToStoredMph,
+  SPEED_LIMIT_MAX_KMH,
+  SPEED_LIMIT_MIN_KMH,
 } from '@/state/fleet';
 import type { VehicleActions } from '@/state/useVehicleState';
 import type { VehicleViewState } from '@/types/vehicleTypes';
@@ -33,18 +33,18 @@ export function ParentalControlsSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const mph = state.parentalLimitSpeedMph;
-  const mphRef = useRef(mph);
+  const kmh = speedLimitDisplayKmh(state.parentalLimitSpeedMph);
+  const kmhRef = useRef(kmh);
   useEffect(() => {
-    mphRef.current = mph;
-  }, [mph]);
+    kmhRef.current = kmh;
+  }, [kmh]);
 
   const step = (dir: -1 | 1) => {
-    const next = clampSpeedLimitMph(mphRef.current + dir);
-    if (next === mphRef.current) return;
-    mphRef.current = next;
+    const nextKmh = kmhRef.current + dir;
+    if (nextKmh < SPEED_LIMIT_MIN_KMH || nextKmh > SPEED_LIMIT_MAX_KMH) return;
+    kmhRef.current = nextKmh;
     Haptics.selectionAsync().catch(() => {});
-    actions.patch({ parentalLimitSpeedMph: next });
+    actions.patch({ parentalLimitSpeedMph: speedLimitKmhToStoredMph(nextKmh) });
   };
 
   return (
@@ -63,27 +63,27 @@ export function ParentalControlsSheet({
               <View style={styles.stepper}>
                 <HoldRepeatButton
                   onStep={() => step(-1)}
-                  disabled={mph <= SPEED_LIMIT_MIN_MPH}
+                  disabled={kmh <= SPEED_LIMIT_MIN_KMH}
                   hitSlop={10}
                   style={styles.stepBtn}
                 >
                   <SymbolView
                     name="chevron.left"
-                    tintColor={mph <= SPEED_LIMIT_MIN_MPH ? DIM : 'white'}
+                    tintColor={kmh <= SPEED_LIMIT_MIN_KMH ? DIM : 'white'}
                     size={22}
                     weight="medium"
                   />
                 </HoldRepeatButton>
-                <Text style={styles.stepValue}>{speedLimitDisplayKmh(mph)} km/h</Text>
+                <Text style={styles.stepValue}>{kmh} km/h</Text>
                 <HoldRepeatButton
                   onStep={() => step(1)}
-                  disabled={mph >= SPEED_LIMIT_MAX_MPH}
+                  disabled={kmh >= SPEED_LIMIT_MAX_KMH}
                   hitSlop={10}
                   style={styles.stepBtn}
                 >
                   <SymbolView
                     name="chevron.right"
-                    tintColor={mph >= SPEED_LIMIT_MAX_MPH ? DIM : 'white'}
+                    tintColor={kmh >= SPEED_LIMIT_MAX_KMH ? DIM : 'white'}
                     size={22}
                     weight="medium"
                   />

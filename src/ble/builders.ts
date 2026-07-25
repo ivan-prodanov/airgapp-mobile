@@ -321,10 +321,12 @@ export function clearSpeedLimitPinAction(pin: string): ActionPayload {
   };
 }
 export function setSpeedLimitMphAction(mph: number): ActionPayload {
-  const m = Number(mph);
-  // 50..120 mph (≈ 80..193 km/h) — mirrors the UI's SPEED_LIMIT_*_MPH domain. The old 90 cap was ours,
-  // not the protocol's (the reference vehicle-command passes limitMph straight through, unbounded).
-  if (!Number.isFinite(m) || m < 50 || m > 120) throw new Error('speed limit must be 50..120 mph');
+  const raw = Number(mph);
+  if (!Number.isFinite(raw)) throw new Error('speed limit must be a number');
+  // The UI stores the exact km/h→mph value (e.g. 80 km/h = 49.7 mph); the car resolves whole mph, so
+  // round at dispatch. Range 50..120 mph ≈ 80..193 km/h. The old 90 cap was ours, not the protocol's.
+  const m = Math.round(raw);
+  if (m < 50 || m > 120) throw new Error('speed limit must be 50..120 mph');
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ drivingSetSpeedLimitAction: { limitMph: m } }),
@@ -565,8 +567,10 @@ export function clearParentalControlsPinAction(pin: string): ActionPayload {
   };
 }
 export function setParentalSpeedLimitAction(mph: number): ActionPayload {
-  const m = Number(mph);
-  if (!Number.isFinite(m) || m < 50 || m > 120) throw new Error('parental speed limit must be 50..120 mph');
+  const raw = Number(mph);
+  if (!Number.isFinite(raw)) throw new Error('parental speed limit must be a number');
+  const m = Math.round(raw); // stored as exact km/h→mph; the car resolves whole mph
+  if (m < 50 || m > 120) throw new Error('parental speed limit must be 50..120 mph');
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ parentalControlsSetSpeedLimitAction: { limitMph: m } }),

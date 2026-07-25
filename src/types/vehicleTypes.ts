@@ -91,8 +91,8 @@ export interface VehicleViewState {
   parentalPin: string | null;
   speedLimitPin: string | null;
   pinToDrivePin: string | null;
-  // Speed Limit Mode's cap in MPH — the car's own unit (DrivingSetSpeedLimitAction.limitMph); the UI
-  // converts to km/h for display. Clamped SPEED_LIMIT_MIN_MPH..SPEED_LIMIT_MAX_MPH. Edited via the "…" panel.
+  // Speed Limit Mode's cap in MPH — the car's own unit (DrivingSetSpeedLimitAction.limitMph). Stored as the
+  // EXACT km/h→mph value so the km/h shown in the "…" panel steps by 1 cleanly (see fleet.ts speed helpers).
   speedLimitMph: number;
   // "Customize Parental Controls" panel sub-options (all non-renderer sheet state).
   parentalLimitSpeed: boolean;

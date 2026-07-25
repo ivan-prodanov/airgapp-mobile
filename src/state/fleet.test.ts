@@ -7,13 +7,14 @@ import {
   addVehicle,
   AMP_MAX,
   AMP_MIN,
-  clampSpeedLimitMph,
+  clampSpeedLimitKmh,
   createInitialFleet,
   kmhToMph,
   mphToKmh,
   speedLimitDisplayKmh,
-  SPEED_LIMIT_MAX_MPH,
-  SPEED_LIMIT_MIN_MPH,
+  speedLimitKmhToStoredMph,
+  SPEED_LIMIT_MAX_KMH,
+  SPEED_LIMIT_MIN_KMH,
   HI_TEMP,
   LIMIT_MAX,
   LIMIT_MIN,
@@ -356,15 +357,20 @@ test('activeIsLive: only the enrolled car on screen counts as live', () => {
   assert.equal(activeIsLive(undefined, null, false), false, 'pure demo app');
 });
 
-test('speed-limit unit conversion round-trips and clamps in mph', () => {
-  // Default 85 mph must read as 137 km/h — the value shown in the Tesla screenshot.
+test('speed-limit km/h stepping round-trips exactly (no 116→114 skip)', () => {
+  // Default 85 mph reads as 137 km/h — the value shown in the Tesla screenshot.
   assert.equal(speedLimitDisplayKmh(85), 137);
-  // km/h↔mph are inverses within rounding.
-  assert.equal(Math.round(mphToKmh(kmhToMph(137))), 137);
+  // THE fix: storing the exact km/h→mph value means every whole km/h in the domain displays back as
+  // itself, so a 1-km/h step moves the reading by exactly 1 (never skips, never collapses).
+  for (let k = SPEED_LIMIT_MIN_KMH; k <= SPEED_LIMIT_MAX_KMH; k += 1) {
+    assert.equal(speedLimitDisplayKmh(speedLimitKmhToStoredMph(k)), k, `${k} km/h must round-trip`);
+  }
+  // The specific case from the bug report: 116 km/h then one step down is 115, not 114.
+  assert.equal(speedLimitDisplayKmh(speedLimitKmhToStoredMph(116)) - 1, 115);
+  // km/h clamp holds the domain.
+  assert.equal(clampSpeedLimitKmh(SPEED_LIMIT_MIN_KMH - 5), SPEED_LIMIT_MIN_KMH);
+  assert.equal(clampSpeedLimitKmh(SPEED_LIMIT_MAX_KMH + 5), SPEED_LIMIT_MAX_KMH);
+  // Conversion sanity.
   assert.ok(Math.abs(kmhToMph(193) - 120) < 0.5, '193 km/h ≈ 120 mph');
-  assert.ok(Math.abs(kmhToMph(80) - 50) < 0.5, '80 km/h ≈ 50 mph');
-  // Clamp holds the mph domain and rounds to whole mph.
-  assert.equal(clampSpeedLimitMph(SPEED_LIMIT_MIN_MPH - 5), SPEED_LIMIT_MIN_MPH);
-  assert.equal(clampSpeedLimitMph(SPEED_LIMIT_MAX_MPH + 5), SPEED_LIMIT_MAX_MPH);
-  assert.equal(clampSpeedLimitMph(85.4), 85);
+  assert.ok(Math.abs(mphToKmh(50) - 80) < 1, '50 mph ≈ 80 km/h');
 });

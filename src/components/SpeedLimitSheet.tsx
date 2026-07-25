@@ -5,10 +5,10 @@ import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import {
-  clampSpeedLimitMph,
   speedLimitDisplayKmh,
-  SPEED_LIMIT_MAX_MPH,
-  SPEED_LIMIT_MIN_MPH,
+  speedLimitKmhToStoredMph,
+  SPEED_LIMIT_MAX_KMH,
+  SPEED_LIMIT_MIN_KMH,
 } from '@/state/fleet';
 import { HoldRepeatButton } from './HoldRepeatButton';
 import { SlideUpSheet } from './SlideUpSheet';
@@ -16,9 +16,8 @@ import { SlideUpSheet } from './SlideUpSheet';
 const DIM = 'rgba(255,255,255,0.25)';
 
 // "Adjust Speed Limit" bottom sheet (Speed Limit Mode's "…"). Slides up over a dimmed screen; tapping
-// above the panel closes it. The value is stored in MPH (the car's unit) and shown in km/h; the </>
-// buttons step one MPH at a time and repeat while held, so the km/h reading moves in ~1.6 jumps — the
-// honest consequence of MPH being the source of truth (two km/h values would otherwise collide on one MPH).
+// above the panel closes it. Stored in MPH (the car's unit) but stepped in km/h by 1 — matching the Tesla
+// app's stepper — so the reading moves 116→115→114, not the jumpy 116→114 you'd get stepping MPH.
 export function SpeedLimitSheet({
   visible,
   mph,
@@ -31,22 +30,23 @@ export function SpeedLimitSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  // Mirror the value in a ref so a held button advances from the live value, not the press-in snapshot.
-  const mphRef = useRef(mph);
+  const kmh = speedLimitDisplayKmh(mph);
+  // Mirror the km/h reading in a ref so a held button advances from the live value, not the press-in snapshot.
+  const kmhRef = useRef(kmh);
   useEffect(() => {
-    mphRef.current = mph;
-  }, [mph]);
+    kmhRef.current = kmh;
+  }, [kmh]);
 
   const step = (dir: -1 | 1) => {
-    const next = clampSpeedLimitMph(mphRef.current + dir);
-    if (next === mphRef.current) return; // at a bound
-    mphRef.current = next;
+    const nextKmh = kmhRef.current + dir;
+    if (nextKmh < SPEED_LIMIT_MIN_KMH || nextKmh > SPEED_LIMIT_MAX_KMH) return; // at a bound
+    kmhRef.current = nextKmh;
     Haptics.selectionAsync().catch(() => {});
-    onChange(next);
+    onChange(speedLimitKmhToStoredMph(nextKmh));
   };
 
-  const atMin = mph <= SPEED_LIMIT_MIN_MPH;
-  const atMax = mph >= SPEED_LIMIT_MAX_MPH;
+  const atMin = kmh <= SPEED_LIMIT_MIN_KMH;
+  const atMax = kmh >= SPEED_LIMIT_MAX_KMH;
 
   return (
     <SlideUpSheet visible={visible} onDismiss={onClose}>
