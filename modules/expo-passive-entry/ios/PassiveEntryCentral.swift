@@ -44,6 +44,19 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // it with retrievePeripherals(withIdentifiers:) and hold a STANDING PENDING
   // CONNECT instead of re-scanning — see reestablish().
   private static let peripheralIdKey = "airgapp.passiveentry.peripheralId"
+  // WARM SESSION (RESPONSE-15's one actionable link gap). Tesla persists
+  // VehicleSessionInfo{epoch, counter, clockTime} per (vin,key,domain) across
+  // disconnect AND process death; we threw it away, so every reconnect paid a full
+  // ECDH + SessionInfoRequest round trip (~300-600 ms) ON THE CRITICAL PATH of a
+  // walk-up. Measured 2026-07-25: a reconnect couldn't answer for 89 s because the
+  // handshake waits on the GATT subscribe. Restoring lets us answer IMMEDIATELY.
+  // No key material is stored — only the car's PUBLIC key + counters — so
+  // UserDefaults (same at-rest protection as the container) is sufficient.
+  private static let sessEpochKey = "airgapp.passiveentry.sess.epoch"
+  private static let sessCounterKey = "airgapp.passiveentry.sess.counter"
+  private static let sessClockKey = "airgapp.passiveentry.sess.clockBase"
+  private static let sessWallKey = "airgapp.passiveentry.sess.clockWall"
+  private static let sessCarPubKey = "airgapp.passiveentry.sess.carPub"
   // How often the proactive "Bluetooth Disabled" reminder repeats while BT is off,
   // like the official app (posts several times a day even with no interaction).
   private static let btOffRepeatSec: TimeInterval = 4 * 3600
@@ -381,7 +394,13 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // Pipe mode (foreground): TS owns all crypto — do NOT self-handshake.
     // Autonomous mode (background): native is self-sufficient — handshake now so
     // it's ready to answer a walk-up challenge with zero JS.
-    if !foregroundActive { startHandshake(p) }
+    if !foregroundActive {
+      // Warm session FIRST: a challenge can arrive before the handshake completes
+      // (measured: the handshake waits on this very subscribe, which stalled 89 s
+      // on a weak link). Restoring lets us answer that challenge immediately.
+      restoreWarmSession()
+      startHandshake(p)
+    }
   }
 
   private func startHandshake(_ p: CBPeripheral) {
@@ -458,6 +477,8 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // A drive engage that takes seconds while we answer nothing is exactly when we
     // need to know what the car is asking for and how often.
     logUnhandledFields(payload)
+    // The car asks for our capabilities (field 44) repeatedly until answered.
+    if VcsecSigner.topLevelFieldNumbers(payload).contains(44) { sendAppDeviceInfo() }
   }
 
   // Fields we already understand; everything else is worth seeing while we chase
@@ -481,6 +502,48 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
       }
     }
     log("car PROBE (unanswered): [\(names.joined(separator: ", "))]")
+  }
+
+  // MARK: - warm session (persist / restore across disconnect + process death)
+
+  private var carPubRaw = [UInt8]()
+
+  private func persistSession() {
+    guard !epoch.isEmpty, !carPubRaw.isEmpty else { return }
+    let d = UserDefaults.standard
+    d.set(VcsecSigner.hex(epoch), forKey: PassiveEntryCentral.sessEpochKey)
+    d.set(Int(counter), forKey: PassiveEntryCentral.sessCounterKey)
+    d.set(Int(clockBase), forKey: PassiveEntryCentral.sessClockKey)
+    d.set(Int(handshakeWallSec), forKey: PassiveEntryCentral.sessWallKey)
+    d.set(VcsecSigner.hex(carPubRaw), forKey: PassiveEntryCentral.sessCarPubKey)
+  }
+
+  // Rebuild a signing-capable session from disk so a challenge arriving BEFORE the
+  // fresh handshake completes can still be answered. The handshake still runs and
+  // re-anchors everything (see completeHandshake's merge) — this only wins the race.
+  //
+  // Deliberately conservative: if the car rotated its epoch or its clock moved
+  // differently from wall time, our early answer is simply rejected and the car
+  // re-challenges at ~1 Hz, by which point the fresh session has landed. That is
+  // never worse than today's behaviour (no answer at all until the handshake).
+  private func restoreWarmSession() {
+    guard sessionKey == nil else { return }
+    let d = UserDefaults.standard
+    guard let epochHex = d.string(forKey: PassiveEntryCentral.sessEpochKey),
+          let carPubHex = d.string(forKey: PassiveEntryCentral.sessCarPubKey),
+          let keyHex = KeychainKey.getKeyHex(),
+          let myPub = VcsecSigner.devicePublicKey(privHex: keyHex) else { return }
+    let carPub = VcsecSigner.unhex(carPubHex)
+    guard let sk = VcsecSigner.ecdhSessionKey(myPriv: VcsecSigner.unhex(keyHex), peerPub: carPub) else { return }
+    sessionKey = sk
+    carPubRaw = carPub
+    myPubRaw = myPub
+    epoch = VcsecSigner.unhex(epochHex)
+    counter = UInt32(max(0, d.integer(forKey: PassiveEntryCentral.sessCounterKey)))
+    clockBase = UInt32(max(0, d.integer(forKey: PassiveEntryCentral.sessClockKey)))
+    handshakeWallSec = UInt32(max(0, d.integer(forKey: PassiveEntryCentral.sessWallKey)))
+    answersGiven = 0
+    log("warm session restored epoch=\(epochHex.prefix(8)) counter=\(counter) — can answer before handshake")
   }
 
   private func handleCpdWarning(_ level: Int) {
@@ -519,35 +582,84 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
       log("SessionInfo REJECTED (hmac mismatch) counter=\(si.counter) — keeping current session")
       return
     }
-    sessionKey = sk; counter = si.counter; epoch = si.epoch
+    // MERGE with any warm session (RESPONSE-15 / P1-3): take the HIGHER counter
+    // only when the epoch is byte-identical; on an epoch change adopt the car's
+    // values WHOLESALE. A naive max() across a rotation is the one thing that
+    // would break signing.
+    var mergedCounter = si.counter
+    if !epoch.isEmpty, epoch == si.epoch, counter > si.counter {
+      mergedCounter = counter
+      log("warm merge: keeping local counter \(counter) > car \(si.counter) (same epoch)")
+    }
+    sessionKey = sk; counter = mergedCounter; epoch = si.epoch
     clockBase = si.clockTime; handshakeWallSec = UInt32(Date().timeIntervalSince1970)
-    myPubRaw = myPub; answersGiven = 0
+    myPubRaw = myPub; carPubRaw = si.publicKey; answersGiven = 0
+    persistSession()
     log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(si.counter) clock=\(si.clockTime) hmacOK=true")
     // RESPONSE-11: proactively assert a standing DRIVE authorization on connect,
     // matching the official app. Harmless when exterior (the car ignores an
     // out-of-zone DRIVE); pre-authorizes drive once it localizes us inside.
     assertStandingDrive()
+    // Answer the capability probe the car keeps sending (measured 6+/session).
+    sendAppDeviceInfo()
   }
 
   private func answerChallenge(_ authReq: [UInt8]) {
-    guard let sk = sessionKey, let p = peripheral else { return }
+    guard sessionKey != nil, peripheral != nil else { return }
     guard answersGiven < maxAnswers else { return }
     // requestedLevel (field 3 of AuthenticationRequest); default DRIVE(2).
     let level = VcsecSigner.extractVarintField(authReq, 3) ?? 2
+    // inner = UnsignedMessage{ authenticationResponse{ level, distance=0, rejection=0 } }
+    let inner: [UInt8] = [0x1a, 0x06, 0x08, UInt8(truncatingIfNeeded: level), 0x10, 0x00, 0x18, 0x00]
+    answersGiven += 1
+    sendSealed(inner: inner, label: "auth ANSWERED #\(answersGiven) level=\(level)")
+  }
+
+  // AppDeviceInfo — answer the car's capability probe (RESPONSE-15 item 7).
+  //
+  // MEASURED on-car 2026-07-25: the car asks us for this repeatedly (FromVCSEC
+  // field 44, 6+ times per session) and we never replied, so it kept asking. We
+  // declare UWB unavailable so it stops waiting on a ranging session that will
+  // never come (we never bond, so background NI ranging is out — by choice).
+  //
+  // Wire shape from the HW4 decompile, all field numbers verified, none guessed:
+  //   UnsignedMessage.appDeviceInfo = 40                     (vc0/e3.java:290)
+  //   AppDeviceInfo{ 2=os, 3=UWBAvailable, 5=batchedNISessions } (vc0/f.java)
+  //   AppOperatingSystem.IOS = 2                              (vc0/k.java)
+  //   UWBAvailability.UNAVAILABLE_UNSUPPORTED_DEVICE = 2      (vc0/b3.java)
+  // batchedNISessionsSupported=false is the proto identity → omitted on the wire.
+  private func sendAppDeviceInfo() {
+    guard sessionKey != nil, peripheral != nil else { return }
+    // AppDeviceInfo{ os=IOS(2), UWBAvailable=UNSUPPORTED_DEVICE(2) }
+    let info: [UInt8] = [0x10, 0x02, 0x18, 0x02]
+    // UnsignedMessage{ appDeviceInfo(40) = info } — tag 40<<3|2 = 322 → 0xc2 0x02
+    var inner: [UInt8] = [0xc2, 0x02, UInt8(info.count)]
+    inner += info
+    sendSealed(inner: inner, label: "AppDeviceInfo (UWB unsupported)")
+  }
+
+  // Seal `inner` with the live session and write it. Shared by the standing-DRIVE
+  // assert, the challenge answer and AppDeviceInfo so the counter bump + persist
+  // happen in exactly one place.
+  @discardableResult
+  private func sendSealed(inner: [UInt8], label: String) -> Bool {
+    guard let sk = sessionKey, let p = peripheral else { return false }
     counter += 1
     let elapsed = UInt32(Date().timeIntervalSince1970) &- handshakeWallSec
     let expiresAt = clockBase &+ elapsed &+ 5
-    // inner = UnsignedMessage{ authenticationResponse{ level, distance=0, rejection=0 } }
-    let inner: [UInt8] = [0x1a, 0x06, 0x08, UInt8(truncatingIfNeeded: level), 0x10, 0x00, 0x18, 0x00]
     var nonce = [UInt8](repeating: 0, count: 12); _ = SecRandomCopyBytes(kSecRandomDefault, 12, &nonce)
     guard let r = VcsecSigner.sealFrame(sessionKey: sk, vin: vin, epoch: epoch, counter: counter,
-                                        expiresAt: expiresAt, routingAddress: routingAddress, myPubRaw: myPubRaw,
-                                        nonce: nonce, flags: 0, uuid: [0x00], inner: inner) else {
-      log("challenge seal failed"); return
+                                        expiresAt: expiresAt, routingAddress: routingAddress,
+                                        myPubRaw: myPubRaw, nonce: nonce, flags: 0, uuid: [0x00],
+                                        inner: inner) else {
+      log("\(label): seal failed"); return false
     }
-    answersGiven += 1
-    log("auth ANSWERED #\(answersGiven) counter=\(counter) level=\(level) out=\(r.frame.count)B")
+    // Persist the bumped counter BEFORE the write goes out (RESPONSE-15) so a
+    // crash mid-write can never replay it.
+    persistSession()
+    log("\(label) sent counter=\(counter) out=\(r.frame.count)B")
     writeFramed(r.frame, to: p)
+    return true
   }
 
   // RESPONSE-11: the proactive standing-DRIVE assertion (VCSEC q1.java G0). One
@@ -555,20 +667,10 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // as our standing level and enables drive once it localizes us inside + a drive
   // trigger (brake). Uses the same routable seal as the challenge answer.
   private func assertStandingDrive() {
-    guard assertStandingDriveOnConnect, let sk = sessionKey, let p = peripheral else { return }
-    counter += 1
-    let elapsed = UInt32(Date().timeIntervalSince1970) &- handshakeWallSec
-    let expiresAt = clockBase &+ elapsed &+ 5
+    guard assertStandingDriveOnConnect else { return }
     // UnsignedMessage{ authenticationResponse{ level=DRIVE(2), distance=0, rejection=0 } }
     let inner: [UInt8] = [0x1a, 0x06, 0x08, 0x02, 0x10, 0x00, 0x18, 0x00]
-    var nonce = [UInt8](repeating: 0, count: 12); _ = SecRandomCopyBytes(kSecRandomDefault, 12, &nonce)
-    guard let r = VcsecSigner.sealFrame(sessionKey: sk, vin: vin, epoch: epoch, counter: counter,
-                                        expiresAt: expiresAt, routingAddress: routingAddress, myPubRaw: myPubRaw,
-                                        nonce: nonce, flags: 0, uuid: [0x00], inner: inner) else {
-      log("standing DRIVE seal failed"); return
-    }
-    log("standing DRIVE asserted counter=\(counter) out=\(r.frame.count)B")
-    writeFramed(r.frame, to: p)
+    sendSealed(inner: inner, label: "standing DRIVE asserted")
   }
 
   func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
