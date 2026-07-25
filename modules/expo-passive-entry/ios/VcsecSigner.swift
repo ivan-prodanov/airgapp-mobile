@@ -134,6 +134,27 @@ enum VcsecSigner {
   }
 
   // First occurrence of a varint field's value (nil if absent).
+  // Every top-level field number present in a protobuf message, in wire order.
+  // Diagnostics only — used to surface car requests we don't yet answer.
+  static func topLevelFieldNumbers(_ b: [UInt8]) -> [Int] {
+    var out: [Int] = []
+    var i = 0
+    while i < b.count {
+      let (tag, ni) = readVarint(b, i); i = ni
+      let field = tag >> 3, wire = tag & 7
+      if field == 0 { break } // malformed
+      if !out.contains(field) { out.append(field) }
+      switch wire {
+      case 0: let (_, n) = readVarint(b, i); i = n
+      case 1: i += 8
+      case 2: let (len, n) = readVarint(b, i); i = n + len
+      case 5: i += 4
+      default: return out // group/unknown wire — stop rather than misparse
+      }
+    }
+    return out
+  }
+
   static func extractVarintField(_ b: [UInt8], _ field: Int) -> Int? {
     var i = 0
     while i < b.count {

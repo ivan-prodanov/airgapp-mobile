@@ -451,7 +451,36 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     if let authReq = VcsecSigner.extractLenField(payload, 3) {
       answerChallenge(authReq); return
     }
-    // else: routine push (vehicleStatus etc.) — ignore.
+    // (c) MEASUREMENT ONLY (no behaviour change): log any OTHER top-level field the
+    // car sends us. RESPONSE-15 says we silently ignore the car's probes —
+    // AppDeviceInfo (44) and the NI/UWB set (47/48/53/19) — and that the cost of
+    // ignoring them is "genuinely unmeasured … bound it by logging before acting".
+    // A drive engage that takes seconds while we answer nothing is exactly when we
+    // need to know what the car is asking for and how often.
+    logUnhandledFields(payload)
+  }
+
+  // Fields we already understand; everything else is worth seeing while we chase
+  // the drive-engage latency.
+  private static let knownPayloadFields: Set<Int> = [1 /*vehicleStatus*/, 3 /*authRequest*/,
+                                                     4 /*commandStatus*/, 55 /*CPDMessage*/]
+
+  private func logUnhandledFields(_ payload: [UInt8]) {
+    let fields = VcsecSigner.topLevelFieldNumbers(payload)
+      .filter { !PassiveEntryCentral.knownPayloadFields.contains($0) }
+    guard !fields.isEmpty else { return }
+    let names = fields.map { f -> String in
+      switch f {
+      case 44: return "44=AppDeviceInfoRequest"
+      case 47: return "47=NISessionRequest"
+      case 48: return "48=NISessionStop"
+      case 53: return "53=NIBatchRequest"
+      case 19: return "19=FiraCapabilitiesRequest"
+      case 39: return "39=UnsecureNotification"
+      default: return "\(f)"
+      }
+    }
+    log("car PROBE (unanswered): [\(names.joined(separator: ", "))]")
   }
 
   private func handleCpdWarning(_ level: Int) {
