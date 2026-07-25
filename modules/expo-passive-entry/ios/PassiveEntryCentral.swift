@@ -40,6 +40,10 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // relaunch so we schedule the repeat ONCE per off-episode — re-adding the same
   // request each app wake would reset its timer and it might never fire.
   private static let btOffRepeatScheduledKey = "airgapp.passiveentry.btOffRepeatScheduled"
+  // The car's CBPeripheral identifier, saved on first connect. Lets us re-acquire
+  // it with retrievePeripherals(withIdentifiers:) and hold a STANDING PENDING
+  // CONNECT instead of re-scanning — see reestablish().
+  private static let peripheralIdKey = "airgapp.passiveentry.peripheralId"
   // How often the proactive "Bluetooth Disabled" reminder repeats while BT is off,
   // like the official app (posts several times a day even with no interaction).
   private static let btOffRepeatSec: TimeInterval = 4 * 3600
@@ -163,7 +167,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // reminder (BT off, bond removed) already has the grant.
     Notifier.requestAuthIfNeeded()
     log("start vin=…\(vin.suffix(6)) target=\(targetName ?? "?") state=\(stateName(central?.state))")
-    if central?.state == .poweredOn { beginScan() }
+    if central?.state == .poweredOn { reestablish() }
   }
 
   func stop() {
@@ -227,6 +231,39 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // characteristics on once connected; it just isn't in the advert.)
   static let advertisedServiceUUID = CBUUID(string: "1122")
 
+  // reestablish — get the link back UP. Prefers a STANDING PENDING CONNECT over a
+  // scan, which is the whole ballgame in the background.
+  //
+  // WHY (measured on-car 2026-07-25): re-scanning after every disconnect left us
+  // DISCONNECTED 72% of the time, with reconnect gaps of 1-8 MINUTES (64/130 over
+  // 60s) — because iOS heavily throttles/coalesces background `scanForPeripherals`.
+  // A walk-up during a gap can't be answered, which is exactly the "app was in the
+  // background and the car didn't unlock" failure.
+  //
+  // `connect(peripheral)` has NO timeout and is NOT scan-throttled: iOS keeps the
+  // pending connection and delivers didConnect the instant the car is in range,
+  // even while suspended (with bluetooth-central). This is the documented pattern
+  // for reconnecting to a KNOWN peripheral, and the official app does the same —
+  // RESPONSE-12 found `retrievePeripheralsWithIdentifiers:` in its binary, i.e. it
+  // re-acquires by saved UUID rather than rescanning.
+  //
+  // Scanning stays as the FIRST-EVER-discovery fallback (no saved identifier yet).
+  private func reestablish() {
+    guard wantScan else { return }
+    if let p = peripheral, p.state == .connected || p.state == .connecting { return }
+    if let idStr = UserDefaults.standard.string(forKey: PassiveEntryCentral.peripheralIdKey),
+       let uuid = UUID(uuidString: idStr),
+       let known = central?.retrievePeripherals(withIdentifiers: [uuid]).first {
+      peripheral = known
+      known.delegate = self
+      central?.stopScan() // a pending connect supersedes any in-flight scan
+      log("pending connect (standing, no scan) → \(known.name ?? String(idStr.prefix(8)))")
+      central?.connect(known, options: nil)
+      return
+    }
+    beginScan() // never connected before — discover by advert
+  }
+
   private func beginScan() {
     guard wantScan else { return }
     // Don't scan while a peripheral is already live/pending — restoration may have
@@ -247,7 +284,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
       Notifier.clear(id: PassiveEntryCentral.btOffNotifId)
       Notifier.clear(id: PassiveEntryCentral.btOffRepeatId)
       UserDefaults.standard.set(false, forKey: PassiveEntryCentral.btOffRepeatScheduledKey)
-      beginScan()
+      reestablish()
     case .poweredOff, .unauthorized:
       // Both mean Phone Key can't use Bluetooth. Tesla fires the SAME copy for
       // .poweredOff(4) AND .unauthorized(3) (BLE permission denied) — RESPONSE-13.
@@ -292,6 +329,10 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
     log("CONNECTED \(p.name ?? "?") — discovering GATT")
     bondRemovedReported = false // a real connect means the bond is back
+    c.stopScan() // we're in; a lingering scan only burns background radio time
+    // Remember the peripheral so every future re-establish is a STANDING PENDING
+    // CONNECT (not a throttled background scan) — see reestablish().
+    UserDefaults.standard.set(p.identifier.uuidString, forKey: PassiveEntryCentral.peripheralIdKey)
     p.delegate = self
     txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1
     p.discoverServices([PassiveEntryCentral.serviceUUID])
@@ -489,17 +530,17 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   }
 
   func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
-    log("connect FAILED: \(error?.localizedDescription ?? "?") → rescanning")
+    log("connect FAILED: \(error?.localizedDescription ?? "?") → re-arming pending connect")
     if isPeerRemoved(error) { handleBondRemoved() }
-    beginScan()
+    reestablish()
   }
 
   func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
-    log("disconnected: \(error?.localizedDescription ?? "clean") → rescanning")
+    log("disconnected: \(error?.localizedDescription ?? "clean") → re-arming pending connect")
     txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1; sessionKey = nil
     onConnectionState?("disconnected", blockLength + 3)
     if isPeerRemoved(error) { handleBondRemoved() }
-    if wantScan { beginScan() }
+    if wantScan { reestablish() }
   }
 
   // CBError.peerRemovedPairingInformation (code 14) — the user forgot this device

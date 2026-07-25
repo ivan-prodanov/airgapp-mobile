@@ -172,12 +172,26 @@ class ForegroundBleLink {
     } else {
       // ALWAYS-ON: answer challenges + run CPD/status pushes on every idle frame.
       for (const f of frames) {
-        try {
-          const reply = this.authResponder?.(f) ?? null;
-          if (reply) void this.sendRaw(reply);
-        } catch {
-          // A responder fault must never take down the notification path.
-        }
+        // RESPONSE-14 refinement #2: SIGN INSIDE THE LOCK. The seal consumes the
+        // shared VS counter, so signing outside it could interleave with a
+        // command's seal→write and reach the car OUT OF ORDER (→ hard counter
+        // reject). Holding the lock across sign→write makes the counter
+        // read→increment→write atomic w.r.t. the command path. Deferring queue
+        // (not drop-on-contention), and the critical section stays short so the
+        // answer still fits the car's ~6 s challenge window.
+        void this.withWriteLock(async () => {
+          let reply: Uint8Array | null = null;
+          try {
+            reply = this.authResponder?.(f) ?? null;
+          } catch {
+            return; // a responder fault must never take down the notify path
+          }
+          if (!reply || !this.isConnected()) return;
+          const framed = frameMessage(reply);
+          if (!passiveEntryWriteFrame(bytesToBase64(framed))) {
+            logi('ble', 'passive answer write failed (link dropped)');
+          }
+        });
         this.onUnsolicited?.(f);
       }
     }
