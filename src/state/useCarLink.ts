@@ -63,6 +63,7 @@ import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
 import { observeVdsFrame } from '@/ble/vdsProbe';
+import { planForCameraMode } from '@/ble/viewFocusReads';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import {
   bondWedgeStore,
@@ -308,6 +309,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // Last INFOTAINMENT (charge/range) read. Throttles the heavy domain-3 poll so
   // it can't block interactive commands — see the poll tick.
   const lastInfotainmentAtRef = useRef(0);
+  // Separate clock for the FOCUSED read (see viewFocusReads.ts). Kept apart
+  // from lastInfotainmentAtRef so the cheap scoped read and the expensive
+  // four-state read never throttle each other.
+  const lastFocusedAtRef = useRef(0);
   const deferredTeardownRef = useRef(false);
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
@@ -1360,6 +1365,47 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // a still-asleep car (caught below), matching the Tesla app, which fetches
         // vehicle_data on pull-to-refresh. The automatic poll keeps the awake gate.
         const now = Date.now();
+        // FOCUSED READ — the official app's real BLE strategy (viewFocusReads.ts).
+        // ONE state, chosen by the visible panel, at ~5s. This is what makes the
+        // status line live: speed and the blue "Driving" label come from
+        // DriveState, which previously only arrived on the 60s tick or a
+        // pull-to-refresh.
+        //
+        // Same awake + nothing-in-flight gates as the full read below, so it can
+        // never contend with a user command. It is simply much cheaper — one
+        // round trip instead of four — and the per-tick COST, not the interval,
+        // is what forced the 60s throttle in the first place.
+        const focusPlan = planForCameraMode(getActiveStateRef.current()?.cameraMode);
+        if (
+          patch.awake === true &&
+          inFlightRef.current === 0 &&
+          now - lastFocusedAtRef.current >= focusPlan.intervalMs &&
+          // Skip when the full read is due anyway: it is a superset, so running
+          // both back to back would just double the traffic for no new data.
+          now - lastInfotainmentAtRef.current < INFOTAINMENT_MS - focusPlan.intervalMs
+        ) {
+          try {
+            const focusSnap = await gw.awakeSync({ states: focusPlan.states });
+            if (stopped || paused) return;
+            lastFocusedAtRef.current = Date.now();
+            const focusPatch = filterPatchUnderIntent(
+              infotainmentToPatch(focusSnap),
+              intentRef.current,
+              Date.now(),
+              getActiveStateRef.current(),
+            );
+            if (Object.keys(focusPatch).length) {
+              applyTelemetryRef.current(focusPatch);
+              cacheInfotainment(focusPatch);
+            }
+          } catch {
+            // Best-effort, exactly like the full read: the VCSEC half above is
+            // what 'online' means, so a scoped read failing must not change it.
+            // Stamped on failure too, so a persistently faulting read backs off
+            // to its interval instead of retrying every tick.
+            lastFocusedAtRef.current = Date.now();
+          }
+        }
         if (
           (patch.awake === true || opts?.forceInfotainment === true) &&
           inFlightRef.current === 0 &&

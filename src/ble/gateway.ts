@@ -124,13 +124,16 @@ export interface WhitelistEntryProbe {
   summary: string;
 }
 
+// The state slices awakeSync can read, named so a caller can ask for a subset.
+export type InfotainmentStateKey = 'charge' | 'climate' | 'drive' | 'location';
+
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
   runCommand(cmd: CarCommand, opts?: { signal?: AbortSignal }): Promise<CommandOutcome>;
   readVcsecStatus(): Promise<VcsecStatus>;
   // Passive-entry precondition probe — see readWhitelistEntry's implementation.
   readWhitelistEntry(): Promise<WhitelistEntryProbe>;
-  awakeSync(): Promise<InfotainmentSnapshot>;
+  awakeSync(opts?: { states?: InfotainmentStateKey[] }): Promise<InfotainmentSnapshot>;
   wake(): Promise<CommandOutcome>;
   // EXPERIMENT-ONLY escape hatch: drive one hand-built ActionPayload through the
   // normal seal/retry/session machinery and hand back the raw reply. It exists
@@ -593,16 +596,27 @@ export function createCarGateway({
     return { slotMask, numberOfEntries, survey };
   }
 
-  async function awakeSync(): Promise<InfotainmentSnapshot> {
-    // Four state reads on ONE warm INFOTAINMENT session (single handshake).
+  async function awakeSync(opts?: { states?: InfotainmentStateKey[] }): Promise<InfotainmentSnapshot> {
+    // State reads on ONE warm INFOTAINMENT session (single handshake).
     // Does NOT wake — the caller wakes first if the car is asleep; on an
     // asleep car these reads fault, which surfaces via the thrown error.
-    const reads: ActionPayload[] = [
-      getChargeStateAction(),
-      getClimateStateAction(),
-      getDriveStateAction(),
-      getLocationStateAction(),
-    ];
+    //
+    // `states` scopes the read. That is what makes a fast cadence affordable:
+    // each entry is a full command round-trip, so the default four-state read
+    // costs 4x a scoped one, and it is the per-tick COST — not the interval —
+    // that forced the 60s throttle. The official app never pays this: over BLE
+    // it fetches ONE state chosen by the visible screen
+    // ('on controls screen, fetching drive state' / 'on climate screen,
+    // fetching climate only'). See viewFocusReads.ts.
+    const byKey: Record<InfotainmentStateKey, () => ActionPayload> = {
+      charge: getChargeStateAction,
+      climate: getClimateStateAction,
+      drive: getDriveStateAction,
+      location: getLocationStateAction,
+    };
+    const keys = opts?.states ?? (['charge', 'climate', 'drive', 'location'] as InfotainmentStateKey[]);
+    if (keys.length === 0) throw new Error('awakeSync: states must not be empty');
+    const reads: ActionPayload[] = keys.map((k) => byKey[k]());
     const domain: Domain = reads[0].domain;
     const { out: slices, sawFault: anyFault } = await queue.enqueue(vin, () =>
       withCachedSession({ transport, vin, deviceKeys, domain }, async (session) => {

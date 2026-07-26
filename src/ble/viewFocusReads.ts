@@ -1,0 +1,82 @@
+// viewFocusReads — which state to read, and how often, for the panel on screen.
+//
+// This is the official app's real BLE strategy, and it is NOT the vehicle-data
+// subscription. RESPONSE-15 was explicit that over BLE the app polls per-state
+// reads; the streaming subscription is pinned to Hermes and kill-switched in
+// 4.58.0. (Our own probes showed the CAR will stream over BLE anyway — see
+// vdsProbe.ts — but that path is blocked on per-state rate tags we refuse to
+// guess, and it is not what Tesla ships.)
+//
+// The shape comes from `startBleVehicleUpdates` (tesla-live-status-push-FINDINGS
+// §Q1, iOS-verified with byte offsets): a loop that fetches ONE state chosen by
+// the visible screen —
+//
+//     'on security screen, fetching closures & parental controls state'   1250 ms
+//     'on controls screen, fetching drive state'
+//     'on climate screen, fetching climate only'
+//
+// — with inline delay constants of 1250, 1650, 2500 and 5000 ms, gated on
+// 'is paired and connected!'.
+//
+// WHY THE SCOPING MATTERS MORE THAN THE INTERVAL. Our own read was four states
+// per tick, each a full command round-trip, throttled to 60 s because the
+// per-tick COST was the problem — an every-20s four-state read was blocking user
+// commands in the shared FIFO for ~8 s at a time. Simply lowering that interval
+// would have made it worse, which is exactly why the first attempt at "make the
+// speed live" (a 5 s driving-only constant) was the wrong fix. Reading ONE state
+// is what buys the cadence.
+//
+// ⚠ RESIDUAL UNKNOWN, deliberately not guessed. Of the four recovered delays,
+// only 1250 ms is unambiguously tied to a screen (security). We therefore use
+// 5000 ms — the slowest of the candidates, and the figure independently quoted
+// as the app's "online" rate — for every focus below. It is inside the measured
+// range and errs toward less link load. REQUEST-19 Q5 asks which delay goes with
+// which screen; tighten this when it lands, and not before.
+
+import type { InfotainmentStateKey } from './gateway';
+
+// The panels the app actually presents. Derived from cameraMode, which the
+// vehicle state already carries — no new plumbing, and it cannot drift out of
+// sync with what is rendered because it IS what selects the render.
+export type ViewFocus = 'home' | 'controls' | 'climate';
+
+export interface FocusReadPlan {
+  states: InfotainmentStateKey[];
+  intervalMs: number;
+}
+
+// See the residual-unknown note above before changing this.
+export const FOCUS_INTERVAL_MS = 5000;
+
+export function focusFromCameraMode(cameraMode: string | null | undefined): ViewFocus {
+  // Mirrors app/index.tsx's own `mode` derivation exactly. Kept as a function
+  // (not a map) so an unrecognised mode falls back to 'home' rather than
+  // producing an undefined plan.
+  if (cameraMode === 'CLIMATE') return 'climate';
+  if (cameraMode === 'TOP_DOWN') return 'controls';
+  return 'home';
+}
+
+export function readPlanFor(focus: ViewFocus): FocusReadPlan {
+  switch (focus) {
+    case 'climate':
+      // 'on climate screen, fetching climate only' — climate ONLY, per the app.
+      return { states: ['climate'], intervalMs: FOCUS_INTERVAL_MS };
+    case 'controls':
+      // 'on controls screen, fetching drive state'.
+      return { states: ['drive'], intervalMs: FOCUS_INTERVAL_MS };
+    case 'home':
+    default:
+      // Home has no literal in the recovered strings, but it is where the
+      // status line lives — the speed and the blue "Driving" label are rendered
+      // by VehicleStatusText on Home — and those fields come from DriveState.
+      // This is the case the whole change exists to fix: that line previously
+      // moved only on pull-to-refresh, because DriveState rode the 60s read.
+      return { states: ['drive'], intervalMs: FOCUS_INTERVAL_MS };
+  }
+}
+
+// planForCameraMode — the one call site's convenience wrapper.
+export function planForCameraMode(cameraMode: string | null | undefined): FocusReadPlan {
+  return readPlanFor(focusFromCameraMode(cameraMode));
+}
