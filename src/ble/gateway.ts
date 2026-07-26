@@ -398,7 +398,7 @@ export function createCarGateway({
           // the same dead link would just re-fail, so evict (full teardown) and
           // let the next attempt cold-handshake a fresh Pi session.
           if (isTransportDeadError(e) && attempt < MAX_BLE_ATTEMPTS) {
-            await evictSession(vin, action.domain).catch(() => {});
+            await evictSession(vin, action.domain, { reason: 'transport-dead' }).catch(() => {});
             continue;
           }
           // Stale Pi frame (or decrypt-fail-as-stale-frame): the link is fine, a

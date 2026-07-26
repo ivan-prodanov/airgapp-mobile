@@ -1029,7 +1029,7 @@ export async function withCachedSession<T>(
       // fall through to a fresh handshake. Any OTHER error bubbles up.
       if (isTransportDeadError(e)) {
         console.warn('[ble] cached session transport dead — evicting + opening fresh:', errMsg(e));
-        await evictSession(vin, domain);
+        await evictSession(vin, domain, { reason: 'cached-session-transport-dead' });
       } else {
         throw e;
       }
@@ -1045,7 +1045,7 @@ export async function withCachedSession<T>(
   } catch (e) {
     if (!isTransportDeadError(e)) throw e;
     console.warn('[ble] cold-start hit stale Pi sessionId — evict + retry:', errMsg(e));
-    await evictSession(vin, domain);
+    await evictSession(vin, domain, { reason: 'cold-start-stale-session' });
     session = await openDirectSession({ transport, vin, deviceKeys, domain });
   }
   _domainCache.set(domain, { session });
@@ -1076,7 +1076,7 @@ export async function refreshCachedSession({
     return true;
   } catch (e) {
     console.warn('[ble] in-place refresh failed, falling back to full evict:', errMsg(e));
-    await evictSession(vin, domain);
+    await evictSession(vin, domain, { reason: 'session-refresh-failed' });
     return false;
   }
 }
@@ -1096,7 +1096,7 @@ export type EvictScope =
 export async function evictSession(
   vin: string,
   domain: Domain,
-  opts?: { scope?: EvictScope },
+  opts?: { scope?: EvictScope; reason?: string },
 ): Promise<void> {
   // SCOPED EVICTION. Measured 2026-07-26 (PE-4): a domain-3 read timing out was
   // tearing down the domain-2 session too, so the next lock/unlock paid a full
@@ -1113,7 +1113,13 @@ export async function evictSession(
       // Deliberately NOT clearing _piSessionRefcounts here: the sessionId is
       // shared with the other domain, which is still using it. _evict's
       // session.close() decrements our reference and leaves theirs intact.
-      console.warn('[ble] evicted domain', domain, 'for vin', vin.slice(-6), '· link presumed alive');
+      console.warn(
+        '[ble] evicted domain',
+        domain,
+        'for vin',
+        vin.slice(-6),
+        '· link presumed alive · reason=' + (opts?.reason ?? 'unspecified'),
+      );
     }
     return;
   }
@@ -1133,6 +1139,13 @@ export async function evictSession(
     '· dropped domains:',
     victims.map((v) => v.d).join(',') || '(none cached)',
     '· trigger=' + domain,
+    // WHICH caller tore this down. Measured 2026-07-26: a LINK-scoped eviction
+    // fired at 18:37:33 and cost a user command 2131ms in a cold handshake —
+    // while the link was demonstrably fine, re-opening in 2ms and exchanging at
+    // 73ms immediately after. Three call sites can land here (transport-dead,
+    // unreachable, timeout) and the log could not distinguish them, so the next
+    // question — was the link REALLY dead? — was unanswerable from the record.
+    '· reason=' + (opts?.reason ?? 'unspecified'),
   );
 }
 
