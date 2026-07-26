@@ -29,7 +29,14 @@ import {
 import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
 // DRIVE assertion is the unlock passive response with level = DRIVE(2).
-import { openDirectSession, buildStandingDriveAssertion, DOMAIN_VEHICLE_SECURITY } from '@/ble/session';
+import {
+  openDirectSession,
+  buildStandingDriveAssertion,
+  buildRoutableCommandFrame,
+  DOMAIN_VEHICLE_SECURITY,
+  DOMAIN_INFOTAINMENT,
+} from '@/ble/session';
+import { navigateWaypointsAction } from '@/ble/builders';
 // Model (b): the real BLE path is the native central (BridgedBleTransport) — the
 // ONLY phone-central path. react-native-ble-plx (DirectBleTransport) was removed
 // 2026-07-23, so a second phone central is impossible to construct.
@@ -86,6 +93,8 @@ export default function CarLinkScreen() {
   const [baseUrl, setBaseUrl] = useState('');
   const [token, setToken] = useState('');
   const [vin, setVin] = useState('');
+  // Raw waypoints string, so format variants can be tried on-car without a rebuild.
+  const [waypointsRaw, setWaypointsRaw] = useState('42.697700,23.321900;42.700000,23.330000');
   const [enrolLink, setEnrolLink] = useState('');
   const [log, setLog] = useState<string[]>([]);
   // transport: which CarTransport lock/unlock/read/wake route through.
@@ -235,6 +244,38 @@ export default function CarLinkScreen() {
       append('BLE scan test: disconnected');
     } catch (err) {
       append(`ERROR BLE scan test: ${errMsg(err)}`);
+    }
+  };
+
+  // handleSendWaypointsRaw sends the waypoints STRING EXACTLY as typed — no
+  // formatting, no validation. The car ACCEPTS our generated coordinate string
+  // ("lat,lon;lat,lon") and then ignores it, so the format (or a capability gate)
+  // is wrong and we cannot tell which from our side. This lets a variant be tried
+  // per tap instead of per rebuild: fewer decimals, a trailing ';', the origin
+  // included, "refId:" Place IDs, etc. Watch the car screen; the log records the
+  // exact bytes and the car's reply.
+  const handleSendWaypointsRaw = async () => {
+    const raw = waypointsRaw.trim();
+    if (!raw) {
+      append('ERROR waypoints: string is empty');
+      return;
+    }
+    append(`waypoints RAW → "${raw}"`);
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      const t = getBleTransport();
+      const session = await openDirectSession({
+        transport: t,
+        vin,
+        deviceKeys: keys,
+        domain: DOMAIN_INFOTAINMENT,
+        dedicated: true,
+      });
+      const { bytes } = buildRoutableCommandFrame(session, navigateWaypointsAction(raw).bytes);
+      await t.sendRaw(bytes);
+      append('waypoints RAW: sent — watch the car screen');
+    } catch (err) {
+      append(`ERROR waypoints RAW: ${errMsg(err)}`);
     }
   };
 
@@ -637,6 +678,15 @@ export default function CarLinkScreen() {
               <ActionButton label="Generate + enrol key" onPress={handleGenerateAndEnrol} theme={theme} />
               <ActionButton label="BLE scan test" onPress={handleBleScanTest} theme={theme} />
               <ActionButton label="Assert DRIVE (seated)" onPress={handleAssertDrive} theme={theme} />
+              <Field
+                label="Waypoints string (raw, sent verbatim)"
+                value={waypointsRaw}
+                onChangeText={setWaypointsRaw}
+                placeholder="lat,lon;lat,lon"
+                autoCapitalize="none"
+                theme={theme}
+              />
+              <ActionButton label="Send waypoints (raw)" onPress={handleSendWaypointsRaw} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />
               <ActionButton label="Native key check" onPress={handleNativeKeyCheck} theme={theme} />
