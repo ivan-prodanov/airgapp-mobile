@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createCarGateway, MAX_BLE_ATTEMPTS, evictScopeFor } from './gateway';
+import { createCarGateway, MAX_BLE_ATTEMPTS, evictScopeFor, BACKGROUND_READ_TIMEOUT_MS } from './gateway';
 import {
   __resetSessionCaches,
   DOMAIN_INFOTAINMENT,
@@ -600,4 +600,16 @@ test('evictScopeFor defaults to the SAFE side for anything unrecognised', () => 
   for (const kind of ['auth', 'fault', 'cancelled', '', 'something-new']) {
     assert.equal(evictScopeFor(kind), 'link', `${kind} must not be narrowed`);
   }
+});
+
+test('BACKGROUND_READ_TIMEOUT_MS bounds what a user command can wait behind', () => {
+  // The priority queue cannot preempt an in-flight exchange, so a tap's worst
+  // case IS the in-flight job's duration. With the normal 4-6s command timeout
+  // that is seconds; PE-4 measured a domain-3 read timing out at 4000ms in
+  // ordinary conditions. A background read is speculative and the next tick
+  // re-reads anyway, so it must give up fast.
+  assert.ok(BACKGROUND_READ_TIMEOUT_MS <= 1500, 'a tap must never wait seconds behind a readout');
+  // But not so tight that a healthy read (~180ms observed) fails routinely —
+  // that would turn every poll into a retry storm.
+  assert.ok(BACKGROUND_READ_TIMEOUT_MS >= 600, 'must comfortably clear a healthy ~180ms read');
 });

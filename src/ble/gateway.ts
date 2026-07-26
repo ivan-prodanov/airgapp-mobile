@@ -206,6 +206,21 @@ export const DEFAULT_COMMAND_DEADLINE_MS = 25_000;
 // VCSEC normally right after a domain-3 read timed out — so it must take only
 // the domain that failed. Evicting both made a background readout capable of
 // adding 4 seconds to the next unlock.
+// How long a BACKGROUND read may hold the queue.
+//
+// The priority queue lets a user command jump QUEUED background work, but not
+// the one already on the wire — a BLE exchange cannot be abandoned mid-counter.
+// So the true worst case for a tap is however long the in-flight job runs, and
+// with the normal 4-6s command timeout that is FOUR TO SIX SECONDS, not the
+// ~180ms a healthy read takes. PE-4 hit exactly that: a domain-3 warm-up read
+// timed out at 4000ms in ordinary conditions.
+//
+// A background read is speculative and discardable — nothing is waiting on it,
+// and the next tick re-reads anyway. So it gets a tight deadline: give up fast
+// and let the queue move rather than sit on the link hoping. This is what bounds
+// a user command's wait to something a person will accept.
+export const BACKGROUND_READ_TIMEOUT_MS = 1200;
+
 export function evictScopeFor(kind: string): EvictScope {
   return kind === "timeout" ? "domain" : "link";
 }
