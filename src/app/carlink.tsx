@@ -609,6 +609,50 @@ export default function CarLinkScreen() {
     }
   };
 
+  // extractPiiEnvelope — pull VehicleData field 11 out of a decrypted push.
+  // Uses the generated decoder's unknown-field retention where available and
+  // falls back to a direct scan, because field 11 is deliberately NOT declared
+  // in our proto (we have measured its shape, not its semantics).
+  const extractPiiEnvelope = (plain: Uint8Array): Uint8Array | null => {
+    const readVarint = (b: Uint8Array, p: number): [number, number] => {
+      let v = 0;
+      let shift = 0;
+      let i = p;
+      while (i < b.length) {
+        const byte = b[i++];
+        v += (byte & 0x7f) * Math.pow(2, shift);
+        if ((byte & 0x80) === 0) break;
+        shift += 7;
+      }
+      return [v, i];
+    };
+    const findField = (buf: Uint8Array, want: number): Uint8Array | null => {
+      let p = 0;
+      while (p < buf.length) {
+        const [tag, afterTag] = readVarint(buf, p);
+        p = afterTag;
+        const field = tag >>> 3;
+        const wire = tag & 0x07;
+        if (wire === 2) {
+          const [len, afterLen] = readVarint(buf, p);
+          p = afterLen;
+          if (p + len > buf.length) return null;
+          if (field === want) return buf.subarray(p, p + len);
+          p += len;
+        } else if (wire === 0) {
+          const [, next] = readVarint(buf, p);
+          p = next;
+        } else if (wire === 5) p += 4;
+        else if (wire === 1) p += 8;
+        else return null;
+      }
+      return null;
+    };
+    // Response field 2 = vehicleData; VehicleData field 11 = the envelope.
+    const vehicleData = findField(plain, 2);
+    return vehicleData ? findField(vehicleData, 11) : null;
+  };
+
   // VDS-M2 — find the pii_key_request encoding, using the CAR as the oracle.
   //
   // Established by VDS-M1 (measured, 2026-07-26): the car pushes state over BLE
@@ -637,6 +681,8 @@ export default function CarLinkScreen() {
       Array.from(b)
         .map((c) => (c >= 0x20 && c < 0x7f ? String.fromCharCode(c) : '.'))
         .join('');
+    const hex = (b: Uint8Array | null | undefined) =>
+      b ? Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ') : null;
     let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
     try {
       const keys = await loadOrCreateDeviceKeys(store);
@@ -663,14 +709,23 @@ export default function CarLinkScreen() {
           `vds-pii-${c.label}`,
         );
         const reply = sub.result?.decryptedPayload ?? null;
-        const replyText = reply ? ascii(reply) : '(no payload)';
-        const noPii = replyText.includes('No PII request');
         say('');
         say(`candidate "${c.label}" — pii_key_request ${piiKeyRequest.length}B`);
-        say(`  reply: ${replyText}`);
-        // THE ORACLE. Still "No PII request" ⇒ the car did not parse our
-        // sub-message and fell through to the same branch as an absent field.
-        say(`  → ${noPii ? 'REJECTED (car still took the no-PII branch)' : '*** PARSED — reply changed ***'}`);
+        // ALWAYS the hex. Sweep run 1 logged the reply as ASCII only, so the one
+        // byte string that distinguished the candidates had to be reconstructed
+        // afterwards from a four-character rendering. Never log evidence through
+        // a lossy view.
+        say(`  reply hex  : ${hex(reply) ?? '(none)'}`);
+        say(`  reply ascii: ${reply ? ascii(reply) : '(no payload)'}`);
+        // Three outcomes, not two. Run 1 collapsed "no payload" into PARSED,
+        // which is backwards: an empty reply means the car did NOT answer, and
+        // the zero pushes that followed confirmed the subscription never armed.
+        const outcome = !reply
+          ? 'ERROR — no response payload; the action itself failed to parse'
+          : ascii(reply).includes('No PII request')
+            ? 'REJECTED — car still took the no-PII branch, so our sub-message did not parse'
+            : 'PARSED — the car left the no-PII branch';
+        say(`  → ${outcome}`);
 
         // Whether location actually arrives is the outcome that matters; the
         // string only tells us the car got as far as looking.
@@ -678,17 +733,38 @@ export default function CarLinkScreen() {
         await wait(WATCH_MS);
         const seen = disarmVdsCapture();
         let populated = 0;
+        let piiOpened = 0;
         for (const o of seen) {
           const opened = sub.result?.decryptPush?.(o.raw);
           if (!opened) continue;
           const desc = describePlaintext(opened.plaintext);
-          if (desc.includes('location={}') || desc.includes('no recognised')) continue;
-          populated++;
-          if (populated === 1) say(`  PUSH DECODED: ${desc}`);
+          if (!desc.includes('location={}') && !desc.includes('no recognised')) {
+            populated++;
+            if (populated === 1) say(`  PUSH DECODED (plaintext location): ${desc}`);
+          }
+          // Sweep run 1 only asked whether location_state was populated, and
+          // that may simply be the wrong question: an EMPTY location_state
+          // alongside a filled field 11 looks like the NORMAL way PII is
+          // delivered, in which case supplying our key changes who can open the
+          // envelope, not whether the plaintext field gets used. So try to open
+          // it — that is the outcome that actually decides this.
+          const env = extractPiiEnvelope(opened.plaintext);
+          if (!env) continue;
+          const pii = sub.result?.decryptPiiEnvelope?.(env);
+          if (pii) {
+            piiOpened++;
+            if (piiOpened === 1) {
+              say(`  *** PII ENVELOPE OPENED (${pii.variant}) stateId=${pii.stateId} ***`);
+              say(`  pii plaintext: ${hex(pii.plaintext)}`);
+            }
+          }
         }
-        say(`  ${seen.length} pushes in ${WATCH_MS / 1000}s, ${populated} with NON-EMPTY location`);
-        if (populated > 0) {
-          say(`  *** WINNER: "${c.label}" yields real location data — stop here ***`);
+        say(
+          `  ${seen.length} pushes in ${WATCH_MS / 1000}s — ${populated} with plaintext location, ` +
+            `${piiOpened} with a DECRYPTABLE pii envelope`,
+        );
+        if (populated > 0 || piiOpened > 0) {
+          say(`  *** WINNER: "${c.label}" yields readable location — stop here ***`);
           break;
         }
         try {

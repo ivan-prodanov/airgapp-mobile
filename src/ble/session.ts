@@ -550,6 +550,10 @@ export interface CommandResult {
   // open question — the decryptor tries each candidate and reports the winner
   // instead of us guessing one and reading a failure as "wrong key".
   decryptPush?: (frame: Uint8Array) => { plaintext: Uint8Array; aadVariant: string } | null;
+  // Attempts to open the encrypted-PII envelope (VehicleData field 11) that a
+  // subscription push carries instead of a populated location_state. Same
+  // "try bounded candidates and report the winner" contract as decryptPush.
+  decryptPiiEnvelope?: (envelope: Uint8Array) => { stateId: number; plaintext: Uint8Array; variant: string } | null;
 }
 
 // buildRoutablePassiveResponse builds the ROUTABLE passive-entry answer — the
@@ -849,7 +853,97 @@ export async function sendCommand({
   }
 
   _persistSessionMetadata(session);
-  return { routable: respMsg, decryptedPayload, decryptPush: makePushDecryptor(session, env.tag) };
+  return {
+    routable: respMsg,
+    decryptedPayload,
+    decryptPush: makePushDecryptor(session, env.tag),
+    decryptPiiEnvelope: makePiiEnvelopeDecryptor(session),
+  };
+}
+
+// makePiiEnvelopeDecryptor — see CommandResult.decryptPiiEnvelope.
+//
+// The envelope's shape is measured, not guessed (23 on-car pushes, 2026-07-26):
+//
+//   08 <n>      field 1 — a state selector; observed 8, which is
+//               location_state's own field number inside VehicleData
+//   12 <len>    field 2 — ciphertext (97-98B, entropy 7.91 bits/byte)
+//   1a 1c       field 3 — 28 bytes = a 12-byte GCM nonce + a 16-byte GCM tag,
+//               in one order or the other
+//
+// What is NOT measured is the key and the AAD, so both are searched. The session
+// key is the only shared secret we hold, and it already comes from ECDH against
+// the car's static key — the same secret the car would have if it derived a
+// content key from the subscriber public key we supplied. If none of these open
+// it, that is a real finding: it means the content key is NOT derived from
+// anything we possess, which is the "Tesla-held key" branch of REQUEST-19 Q1c
+// and the point at which this stops being solvable air-gapped.
+function makePiiEnvelopeDecryptor(
+  session: Session,
+): (envelope: Uint8Array) => { stateId: number; plaintext: Uint8Array; variant: string } | null {
+  return (envelope) => {
+    let stateId = 0;
+    let ciphertext: Uint8Array | null = null;
+    let nonceTag: Uint8Array | null = null;
+    let pos = 0;
+    // Small inline scan: this runs on a field we have no proto for, and decoding
+    // it through a generated message would require declaring a schema we have
+    // deliberately not committed to.
+    while (pos < envelope.length) {
+      const tag = envelope[pos++];
+      const field = tag >>> 3;
+      const wire = tag & 0x07;
+      if (wire === 0) {
+        let v = 0;
+        let shift = 0;
+        while (pos < envelope.length) {
+          const b = envelope[pos++];
+          v += (b & 0x7f) * Math.pow(2, shift);
+          if ((b & 0x80) === 0) break;
+          shift += 7;
+        }
+        if (field === 1) stateId = v;
+      } else if (wire === 2) {
+        let len = 0;
+        let shift = 0;
+        while (pos < envelope.length) {
+          const b = envelope[pos++];
+          len += (b & 0x7f) * Math.pow(2, shift);
+          if ((b & 0x80) === 0) break;
+          shift += 7;
+        }
+        if (pos + len > envelope.length) break;
+        const body = envelope.subarray(pos, pos + len);
+        pos += len;
+        if (field === 2) ciphertext = body;
+        else if (field === 3) nonceTag = body;
+      } else {
+        break;
+      }
+    }
+    if (!ciphertext || !nonceTag || nonceTag.length !== 28) return null;
+
+    const splits = [
+      { name: 'nonce-first', nonce: nonceTag.subarray(0, 12), tag: nonceTag.subarray(12) },
+      { name: 'tag-first', nonce: nonceTag.subarray(16), tag: nonceTag.subarray(0, 16) },
+    ];
+    const aads: Array<{ name: string; aad: Uint8Array }> = [
+      { name: 'empty-aad', aad: new Uint8Array(0) },
+      { name: 'state-id-aad', aad: new Uint8Array([stateId]) },
+      { name: 'vin-aad', aad: new TextEncoder().encode(session.vin) },
+    ];
+    for (const s of splits) {
+      for (const a of aads) {
+        try {
+          const plaintext = aesGcmDecrypt(session.sessionKey, s.nonce, ciphertext, s.tag, a.aad);
+          return { stateId, plaintext, variant: `${s.name}/${a.name}` };
+        } catch {
+          // wrong combination — keep searching
+        }
+      }
+    }
+    return null;
+  };
 }
 
 // makePushDecryptor — see CommandResult.decryptPush.
