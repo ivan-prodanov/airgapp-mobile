@@ -79,9 +79,51 @@ function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
 // raw notification bytes as they arrive (in order); it returns zero or
 // more COMPLETE message payloads (length prefix already stripped) each
 // time enough bytes have accumulated to close out one or more messages.
+// A RoutableMessage from the car always begins with a known tag byte. Every
+// frame we have ever captured starts with one of:
+//   0x32  field 6, to_destination
+//   0x3a  field 7, from_destination
+//   0x52  field 10, protobuf_message_as_bytes
+//   0x62  field 12, signedMessageStatus
+// A byte outside that set means the length prefix we trusted pointed into the
+// MIDDLE of a message — i.e. the stream is desynced. See DesyncStats.
+const PLAUSIBLE_FIRST_BYTES = new Set([0x32, 0x3a, 0x52, 0x62]);
+
+export interface DesyncStats {
+  // Frames emitted whose first byte cannot start a RoutableMessage. The cheap
+  // tell that the buffer is mis-parsing.
+  implausibleFrames: number;
+  // Consecutive run of them, right now. A desync does not self-correct, so this
+  // climbing is the signature we are hunting.
+  consecutiveImplausible: number;
+  // Bytes still held. Non-zero at an exchange timeout means we are sitting on a
+  // partial (or misaligned) message.
+  residualBytes: number;
+  // Times the stale-gap flush actually fired. The wedge hypothesis says it
+  // CANNOT fire under heavy push traffic, so a wedge with 0 here is a confirm.
+  staleFlushes: number;
+}
+
 export class BleReassembler {
   private buf: Uint8Array = new Uint8Array(0);
   private lastPushMs: number | null = null;
+  private implausibleFrames = 0;
+  private consecutiveImplausible = 0;
+  private staleFlushes = 0;
+
+  // stats — read this when an exchange times out. Nothing here changes
+  // behaviour; it exists because the wedge (docs/BLE-WEDGE-2026-07-26.md) has
+  // two candidate causes that look identical from outside — frames that are
+  // well-formed but for an old request, versus frames that are not well-formed
+  // at all — and guessing between them has already cost a day elsewhere.
+  stats(): DesyncStats {
+    return {
+      implausibleFrames: this.implausibleFrames,
+      consecutiveImplausible: this.consecutiveImplausible,
+      residualBytes: this.buf.length,
+      staleFlushes: this.staleFlushes,
+    };
+  }
 
   // push accepts the next chunk of raw notification bytes plus the
   // caller's current clock (injected for testability — the transport
@@ -98,6 +140,7 @@ export class BleReassembler {
       // (the tail bytes, if they ever arrive, belong to a different
       // logical message) — discard it before appending the new bytes.
       this.buf = new Uint8Array(0);
+      this.staleFlushes += 1;
     }
     this.lastPushMs = nowMs;
 
@@ -115,7 +158,18 @@ export class BleReassembler {
         break;
       }
       if (this.buf.length < 2 + msgLength) break; // message not fully arrived yet
-      complete.push(this.buf.slice(2, 2 + msgLength));
+      const frame = this.buf.slice(2, 2 + msgLength);
+      // Classify BEFORE handing it on. A desynced buffer keeps producing
+      // plausible-looking lengths from mid-message, so the frames it emits are
+      // garbage that no correlator will ever match — and until now that produced
+      // no evidence whatsoever, which is exactly why the wedge went unexplained.
+      if (frame.length > 0 && !PLAUSIBLE_FIRST_BYTES.has(frame[0])) {
+        this.implausibleFrames += 1;
+        this.consecutiveImplausible += 1;
+      } else {
+        this.consecutiveImplausible = 0;
+      }
+      complete.push(frame);
       this.buf = this.buf.slice(2 + msgLength);
     }
     return complete;

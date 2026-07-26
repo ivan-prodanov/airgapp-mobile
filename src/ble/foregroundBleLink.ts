@@ -328,9 +328,20 @@ class ForegroundBleLink {
         if (settled) return;
         settled = true;
         this.waiters = this.waiters.filter((w) => w !== check);
+        // Attach the reassembler's state to the ONE message a wedge always
+        // produces. The wedge (docs/BLE-WEDGE-2026-07-26.md) has two candidate
+        // causes that are indistinguishable from outside: frames that are
+        // well-formed but answer an older request, versus frames that are not
+        // well-formed at all because the byte stream desynced. These four
+        // numbers separate them, and they appear exactly where anyone
+        // investigating will already be looking.
+        const st = this.reassembler.stats();
         reject(
           new Error(
-            `stale frame: no matching response within ${timeoutMs}ms (timeout — car sent no reply, or only unrelated/unsolicited frames)`,
+            `stale frame: no matching response within ${timeoutMs}ms ` +
+              `(timeout — car sent no reply, or only unrelated/unsolicited frames) ` +
+              `[rx: implausible=${st.implausibleFrames} consecutive=${st.consecutiveImplausible} ` +
+              `residual=${st.residualBytes}B staleFlushes=${st.staleFlushes}]`,
           ),
         );
       }, timeoutMs);

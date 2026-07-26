@@ -136,3 +136,46 @@ test('BleReassembler: reset clears accumulated partial state', () => {
   const out = r.push(framed.slice(4), 1000);
   assert.deepEqual(out, []);
 });
+
+test('a DESYNCED stream is counted — the wedge signature', () => {
+  // Feed a valid frame, then bytes that make the parser read a length from the
+  // middle of a message. The emitted frames cannot start a RoutableMessage, and
+  // until this counter existed that produced no evidence at all.
+  const r = new BleReassembler();
+  const good = Uint8Array.from([0x00, 0x03, 0x32, 0x01, 0x02]);
+  assert.equal(r.push(good, 1000).length, 1);
+  assert.equal(r.stats().implausibleFrames, 0, 'a real frame is plausible');
+
+  // 0x99 cannot begin a RoutableMessage.
+  r.push(Uint8Array.from([0x00, 0x02, 0x99, 0x99]), 1010);
+  assert.equal(r.stats().implausibleFrames, 1);
+  assert.equal(r.stats().consecutiveImplausible, 1);
+  r.push(Uint8Array.from([0x00, 0x02, 0x88, 0x77]), 1020);
+  assert.equal(r.stats().consecutiveImplausible, 2, 'a desync does not self-correct');
+
+  // A good frame resets the run but not the total — the total is the history,
+  // the run is the live signal.
+  r.push(good, 1030);
+  assert.equal(r.stats().consecutiveImplausible, 0);
+  assert.equal(r.stats().implausibleFrames, 2);
+});
+
+test('staleFlushes counts the escape hatch — a wedge with ZERO confirms it never fired', () => {
+  // The wedge hypothesis is that heavy push traffic keeps inter-chunk gaps under
+  // RX_STALE_GAP_MS, so the flush that would clear a desync never runs. If a
+  // wedge shows implausible frames climbing AND staleFlushes stuck at 0, that is
+  // the mechanism, measured rather than argued.
+  const r = new BleReassembler();
+  r.push(Uint8Array.from([0x00, 0x09, 0x32]), 1000); // partial, waits for more
+  assert.equal(r.stats().staleFlushes, 0);
+  r.push(Uint8Array.from([0x01]), 1500); // 500ms gap — under the threshold
+  assert.equal(r.stats().staleFlushes, 0, 'traffic this close never triggers the flush');
+  r.push(Uint8Array.from([0x01]), 3000); // 1500ms gap — over it
+  assert.equal(r.stats().staleFlushes, 1);
+});
+
+test('residualBytes exposes a buffer that is sitting on a partial message', () => {
+  const r = new BleReassembler();
+  r.push(Uint8Array.from([0x00, 0x20, 0x32, 0x01]), 1000);
+  assert.equal(r.stats().residualBytes, 4, 'held, waiting for the rest');
+});
