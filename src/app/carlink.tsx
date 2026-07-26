@@ -1180,25 +1180,36 @@ export default function CarLinkScreen() {
         if (!dec) continue;
         opened++;
         const desc = describePlaintext(dec.plaintext);
-        // field_number 5 inside a field-11 envelope means DriveState is gated.
-        const env = extractPiiEnvelope(dec.plaintext);
-        if (env && env.length > 1 && env[0] === 0x08 && env[1] === 5) gated++;
-        if (desc.includes('drive=')) {
-          clear++;
-          if (clear <= 3) say(`  +${(o.atMs / 1000).toFixed(1)}s CLEARTEXT ${desc}`);
-        } else if (opened <= 3) {
+        // ALWAYS dump the plaintext for the first few, whatever the verdict.
+        // Run 1 printed it only for frames that failed the cleartext test, and
+        // since every frame passed, the run produced no bytes at all to check
+        // its own conclusion against. Fifth time I have gated the evidence on
+        // the classification under test; the rule is simply never do it.
+        if (opened <= 3) {
           say(`  +${(o.atMs / 1000).toFixed(1)}s ${desc}`);
           say(`    plain: ${hex(dec.plaintext)}`);
         }
+        // GATED: a field-11 envelope whose field_number is 5 (drive_state).
+        const env = extractPiiEnvelope(dec.plaintext);
+        if (env && env.length > 1 && env[0] === 0x08 && env[1] === 5) gated++;
+        // CLEARTEXT means the slice carries actual VALUES. Run 1 tested only
+        // that the slice was PRESENT, so a present-and-empty field 5 — the very
+        // shape a gated state produces — counted as cleartext, and the probe
+        // reported "cleartext" and "gated" on all 15 frames simultaneously.
+        if (/"speed":\s*-?[\d.]/.test(desc) || /"gear":\s*"(?!unknown)/.test(desc)) clear++;
       }
-      say(`${seen.length} frames, ${opened} decrypted, ${clear} with cleartext drive, ${gated} gated`);
-      if (clear > 0) {
+      say(`${seen.length} frames, ${opened} decrypted, ${clear} with POPULATED drive, ${gated} gated envelopes`);
+      if (clear > 0 && gated === 0) {
         say('VERDICT: DRIVESTATE IS CLEARTEXT - speed and gear stream with NO PII key.');
         say('  -> live speed is reachable today; RSA is only needed for LOCATION.');
-      } else if (gated > 0) {
-        say('VERDICT: DriveState is GATED (field-11 envelope, field_number=5) - needs the PII key.');
+      } else if (gated > 0 && clear === 0) {
+        say('VERDICT: DriveState is GATED - field 5 arrives EMPTY, content is in a');
+        say('  field-11 envelope with field_number=5. Live speed needs the PII key too.');
+        say('  (RESPONSE-19 expected cleartext but flagged this as MCU2->HW4 divergent.)');
+      } else if (clear > 0 && gated > 0) {
+        say('VERDICT: BOTH populated cleartext AND a drive envelope - unexpected; read the hex.');
       } else {
-        say('VERDICT: inconclusive - no drive-bearing pushes decoded. See the plaintext above.');
+        say('VERDICT: inconclusive - no drive content either way. See the plaintext above.');
       }
     } catch (err) {
       say(`ERROR drive probe: ${errMsg(err)}`);
