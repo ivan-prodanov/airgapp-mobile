@@ -21,10 +21,6 @@ import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
 import { diffToCommands, revertFields } from '../ble/reconcile';
 
-// Gap between chained navigateTo sends when building a multi-stop route, so the
-// car processes each as its own request instead of a burst.
-const NAV_CHAIN_GAP_MS = 600;
-
 export interface Fleet {
   vehicles: Vehicle[];
   activeId: string;
@@ -39,9 +35,6 @@ export interface Fleet {
   // state-diff reconciler above can never infer them. Navigation is the first:
   // "Send to Car" is an event, not a toggle. No-op for a demo (non-live) car.
   sendNavigation: (lat: number, lon: number, label?: string) => void;
-  // Multi-stop route. Coordinates only (the car takes "lat,lon;lat,lon"); no label
-  // and no trip-order — NavigationWaypointsRequest carries neither.
-  sendWaypoints: (coords: { lat: number; lon: number }[]) => void;
 }
 
 export function useFleetState(): {
@@ -166,41 +159,9 @@ export function useFleetState(): {
     [activeIsLive, carLink],
   );
 
-  // Multi-stop by APPEND-CHAINING single destinations (RESPONSE-18 Q4).
-  //
-  // The coordinate waypoints string does NOT work: the car only accepts prefixed
-  // reference tokens ("refId:<googlePlaceId>" / "superchargerId:<siteId>"), and a
-  // Google Place ID is not derivable offline — so an air-gapped client cannot build
-  // that string for arbitrary stops. It also ACKs whatever you send and silently
-  // drops unparsed tokens, which is why our coordinate attempt looked successful.
-  //
-  // But the car takes a trip ORDER on every GPS-request variant (QtCarServer:
-  // CarAPI::navigation_gps_request(..., const CarAPI::RemoteNavTripOrder&, ...)),
-  // and multi-stop state exists car-side (NAV_multistopRouteId). So: first stop
-  // REPLACE, the rest APPEND — built entirely from the single-destination path we
-  // have already verified on-car.
-  //
-  // NOT PROVEN: that the official app chains this way (its own path is the refId
-  // string), or that the car composes the result into one route on this firmware.
-  // Sends are spaced so each is processed as a separate request rather than
-  // arriving as a burst.
-  const sendWaypoints = useCallback(
-    (coords: { lat: number; lon: number }[]) => {
-      if (!activeIsLive || coords.length === 0) return;
-      coords.forEach(({ lat, lon }, i) => {
-        const order = i === 0 ? 'REPLACE' : 'APPEND';
-        setTimeout(() => {
-          carLink.dispatch({ type: 'navigateTo', lat, lon, order }, () => {});
-        }, i * NAV_CHAIN_GAP_MS);
-      });
-    },
-    [activeIsLive, carLink],
-  );
-
   const fleetApi = useMemo<Fleet>(
     () => ({
       sendNavigation,
-      sendWaypoints,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),
