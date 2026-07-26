@@ -267,6 +267,17 @@ test('vehicleDataSubscriptionAction matches the RESPONSE-15 golden frame byte fo
   assert.equal(decoded?.subscriptionPingS, VDS_DEFAULTS.pingS);
 });
 
+test('locationRateMs:null OMITS field 10 entirely (the guess-free default probe)', () => {
+  const bytes = vehicleDataSubscriptionAction({ durationS: 40, pingS: 5, locationRateMs: null }).bytes;
+  // 12 07 AA 02 04  18 28  60 05  → duration=40 (f3), ping=5 (f12), NO f10.
+  // (body 18 28 60 05 is 4 bytes → AA 02 04, and 3 + 4 = 7 for the Action length)
+  assert.equal(Buffer.from(bytes).toString('hex'), '1207aa020418286005');
+  const d = decodeAction(bytes).vehicleAction?.vehicleDataSubscription;
+  assert.equal(d?.subscriptionDurationS, 40);
+  assert.equal(d?.subscriptionPingS, 5);
+  assert.ok(!d?.locationStateMaxUpdateRateMs, 'field 10 must be absent, not zero');
+});
+
 test('encodePiiKeyRequest emits a length-delimited key at the candidate tag', () => {
   const key = Uint8Array.from([0x04, 0xaa, 0xbb]);
   // tag 1, wire type 2 → 0x0a, then length 3, then the key.

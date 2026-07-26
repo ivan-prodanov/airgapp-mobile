@@ -569,20 +569,25 @@ export function encodePiiKeyRequest(opts: {
 
 export function vehicleDataSubscriptionAction(opts?: {
   durationS?: number;
-  locationRateMs?: number;
+  // null → omit the field (see above). undefined → use the default.
+  locationRateMs?: number | null;
   pingS?: number;
   // Raw bytes of the pii_key_request sub-message — see encodePiiKeyRequest.
   // Without it the car returns location_state EMPTY (measured 2026-07-26).
   piiKeyRequest?: Uint8Array;
 }): ActionPayload {
   const durationS = opts?.durationS ?? VDS_DEFAULTS.durationS;
-  const locationRateMs = opts?.locationRateMs ?? VDS_DEFAULTS.locationRateMs;
+  // null (not undefined) means "omit the per-state rate entirely". That is a
+  // real experiment, not a degenerate case: with no state selected we learn what
+  // the car pushes BY DEFAULT, using only field numbers we have confirmed. It is
+  // the one question here answerable without guessing an undeclared tag.
+  const locationRateMs = opts?.locationRateMs === null ? null : (opts?.locationRateMs ?? VDS_DEFAULTS.locationRateMs);
   const pingS = opts?.pingS ?? VDS_DEFAULTS.pingS;
   for (const [name, v] of [
     ['durationS', durationS],
-    ['locationRateMs', locationRateMs],
+    ...(locationRateMs === null ? [] : ([['locationRateMs', locationRateMs]] as const)),
     ['pingS', pingS],
-  ] as const) {
+  ] as Array<readonly [string, number]>) {
     if (!Number.isInteger(v) || v < 0) throw new Error(`${name} must be a non-negative integer`);
   }
   return {
@@ -594,7 +599,7 @@ export function vehicleDataSubscriptionAction(opts?: {
     bytes: encodeInfotainmentAction({
       vehicleDataSubscription: {
         subscriptionDurationS: durationS,
-        locationStateMaxUpdateRateMs: locationRateMs,
+        ...(locationRateMs === null ? {} : { locationStateMaxUpdateRateMs: locationRateMs }),
         subscriptionPingS: pingS,
         // Omitted entirely when absent — proto3 skips an empty bytes field, so
         // the no-PII frame stays byte-identical to the golden vector.

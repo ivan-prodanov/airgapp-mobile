@@ -653,6 +653,92 @@ export default function CarLinkScreen() {
     return vehicleData ? findField(vehicleData, 11) : null;
   };
 
+  // VDS-M3 — what does the car push when we name NO state?
+  //
+  // Why this and not more M2 sweeping: M2's oracle turned out to be invalid. It
+  // rested on "No PII request" being the car announcing the no-PII branch, so a
+  // candidate that parsed would have to change it. The logs killed that: FOUR
+  // subscribe requests that carried no pii_key_request at all produced TWO
+  // different replies (`0a 00` once, `32 10 1a 0e "No PII request"` three
+  // times). The string is not a function of our input, so it cannot adjudicate
+  // our input. Everything M2 inferred FROM the reply text is withdrawn.
+  //
+  // What survived M2 is behavioural and reproducible across both runs: the key
+  // at tag 2 kills the subscription (0 pushes, twice), the key at tag 1 with an
+  // expiry at tag 2 does not (5 pushes, twice). That is consistent with
+  // {1: bytes key, 2: varint expiry} — a wire-type mismatch at tag 2 would abort
+  // the parse — but it is one bit of evidence, not a confirmed schema, and
+  // REQUEST-19 Q1a asks for the real tags.
+  //
+  // So this probe deliberately guesses NOTHING. It sends only fields whose
+  // numbers we have confirmed on the wire — duration (3) and ping (12) — and
+  // omits the per-state rate entirely. Whatever the car chooses to push then
+  // tells us its DEFAULT state set. If that includes DriveState in the clear,
+  // it answers REQUEST-19 Q1d directly and hands us live speed, which is the
+  // whole reason this thread started.
+  const handleVdsDefaultProbe = async () => {
+    const WATCH_MS = 30_000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const hex = (b: Uint8Array | null | undefined) =>
+      b ? Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ') : null;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+      say('subscribing with duration + ping ONLY — no per-state rate, no PII field.');
+      say('  (every field number here is one we have confirmed on the wire)');
+      const sub = await gw.runRawAction(
+        vehicleDataSubscriptionAction({ durationS: 40, pingS: 5, locationRateMs: null }),
+        'vds-default',
+      );
+      // Log the outcome too. M2 conflated "no decrypted payload" with "the action
+      // failed", and the pushes that arrived anyway proved that wrong.
+      say(`  outcome: ${sub.outcome.ok ? 'ok' : `${sub.outcome.kind}: ${sub.outcome.message}`}`);
+      say(`  reply hex: ${hex(sub.result?.decryptedPayload) ?? '(none)'}`);
+
+      armVdsCapture(Date.now());
+      await wait(WATCH_MS);
+      const seen = disarmVdsCapture();
+      say(`${seen.length} car-initiated frames in ${WATCH_MS / 1000}s`);
+      let opened = 0;
+      const shapes = new Map<string, number>();
+      for (const o of seen) {
+        const dec = sub.result?.decryptPush?.(o.raw);
+        if (!dec) continue;
+        opened++;
+        const desc = describePlaintext(dec.plaintext);
+        shapes.set(desc, (shapes.get(desc) ?? 0) + 1);
+        if (opened <= 3) say(`  +${(o.atMs / 1000).toFixed(1)}s ${desc}`);
+        if (opened === 1) say(`    plain: ${hex(dec.plaintext)}`);
+      }
+      say(`decrypted ${opened}/${seen.length}`);
+      for (const [shape, n] of shapes) say(`  ${n}x  ${shape}`);
+      if (opened === 0 && seen.length === 0) {
+        say('VERDICT: no pushes at all — the car appears to need an explicit per-state rate.');
+        say('  → that is a clean answer: breadth is blocked on REQUEST-19 Q2 (the per-state tags).');
+      } else if (opened > 0) {
+        say('VERDICT: the car pushes a DEFAULT state set. See the shapes above for what is in it.');
+      }
+    } catch (err) {
+      say(`ERROR default probe: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        say('WARN: cancel failed (the TTL will expire it)');
+      }
+      const path = await appendDiagnostic('VDS-M3 default-state probe', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // VDS-M2 — find the pii_key_request encoding, using the CAR as the oracle.
   //
   // Established by VDS-M1 (measured, 2026-07-26): the car pushes state over BLE
@@ -1007,6 +1093,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
               <ActionButton label="VDS-M2 PII key sweep" onPress={handleVdsPiiSweep} theme={theme} />
+              <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
