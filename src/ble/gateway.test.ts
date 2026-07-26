@@ -672,3 +672,31 @@ test('BACKGROUND_READ_TIMEOUT_MS bounds what a user command can wait behind', ()
   // that would turn every poll into a retry storm.
   assert.ok(BACKGROUND_READ_TIMEOUT_MS >= 600, 'must comfortably clear a healthy ~180ms read');
 });
+
+test('EVERY evictSession call site passes a reason — an unlabelled one is invisible', async () => {
+  // 2026-07-26: I labelled the call sites with an unasserted string replace, one
+  // pattern had already been reformatted by prettier, and the replace silently
+  // did nothing. The build deployed, the app ran it, and every eviction logged
+  // `reason=unspecified` — from the ONE site that actually fires. The
+  // instrumentation caught its own gap, which is lucky rather than good.
+  //
+  // A missing reason is not a compile error and not a test failure anywhere
+  // else, so it is checked here by reading the source.
+  const { readFile } = await import('node:fs/promises');
+  const dir = new URL('.', import.meta.url).pathname;
+  const offenders: string[] = [];
+  for (const f of ['gateway.ts', 'session.ts']) {
+    const src = await readFile(dir + f, 'utf8');
+    // Line-based rather than regex-balanced: a paren-matching regex stops early
+    // on nested calls like evictScopeFor(kind) and reports a false positive,
+    // and a guard that cries wolf gets deleted by the next person.
+    const lines = src.split('\n');
+    lines.forEach((line, i) => {
+      if (!/\bevictSession\(/.test(line)) return;
+      if (/function\s+evictSession/.test(line)) return; // the definition itself
+      const call = lines.slice(i, i + 5).join('\n');
+      if (!/reason\s*:/.test(call)) offenders.push(`${f}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(offenders, [], 'an eviction with no reason cannot be diagnosed from a log');
+});

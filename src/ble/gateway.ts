@@ -429,6 +429,7 @@ export function createCarGateway({
             // VCSEC session that locks the car.
             await evictSession(vin, action.domain, {
               scope: evictScopeFor(kind),
+              reason: kind,
             }).catch(() => {});
             await sleep(TRANSIENT_DELAY_MS);
             continue;
