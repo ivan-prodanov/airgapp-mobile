@@ -1204,7 +1204,23 @@ export default function CarLinkScreen() {
       say('waking car…');
       await gw.wake();
 
+      // Lock before EACH phase. Ivan caught this: a successful phase A unlocks
+      // the car, so a phase-B handle pull on an already-unlocked car produces no
+      // challenge at all — the probe would report INCONCLUSIVE and look like the
+      // bug had vanished. The lock is done here rather than asked of the user
+      // because forgetting it silently invalidates the run.
+      const lockCar = async (phase: string) => {
+        try {
+          const r = await gw!.runCommand({ type: 'lock' });
+          say(`  locked before ${phase}: ${r.ok ? 'ok' : r.message}`);
+        } catch (e) {
+          say(`  WARN could not lock before ${phase}: ${errMsg(e)} — pull may not challenge`);
+        }
+        await wait(2000); // let VCSEC settle so the pull is seen as a walk-up
+      };
+
       // ---- Phase A: quiet ----
+      await lockCar('PHASE A');
       resetLatencyStats();
       const aStart = Date.now();
       say('');
@@ -1215,6 +1231,8 @@ export default function CarLinkScreen() {
       for (const l of formatLatencyStats(a)) say(`  ${l}`);
 
       // ---- Phase B: link held busy ----
+      // Re-lock: phase A very likely opened the car.
+      await lockCar('PHASE B');
       resetLatencyStats();
       const bStart = Date.now();
       say('');
