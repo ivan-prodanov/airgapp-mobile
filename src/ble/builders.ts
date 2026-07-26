@@ -527,10 +527,53 @@ export const VDS_DEFAULTS = Object.freeze({
   pingS: 10, // the CAR emits these; silence for >1 ping = no push arm
 });
 
+// encodePiiKeyRequest — hand-build a candidate `pii_key_request` sub-message.
+//
+// Hand-built because we know the OUTER tag (13) but not the inner ones. The RE
+// recovered that the message carries `subscriber_public_key` and
+// `subscriber_public_key_expiration` (fc0/z2, fc0/a3) — their existence, not
+// their field numbers. Rather than invent a schema and then trust it, we emit
+// candidate encodings and let the car adjudicate: it answers "No PII request"
+// when it takes the no-PII branch, so a candidate that PARSES must change that
+// reply. The firmware is the oracle.
+export function encodePiiKeyRequest(opts: {
+  keyTag: number;
+  publicKeyRaw: Uint8Array;
+  expiryTag?: number;
+  expiresAtUnix?: number;
+}): Uint8Array {
+  const { keyTag, publicKeyRaw, expiryTag, expiresAtUnix } = opts;
+  if (!Number.isInteger(keyTag) || keyTag < 1) throw new Error('keyTag must be a positive integer');
+  if (publicKeyRaw.length === 0) throw new Error('publicKeyRaw must not be empty');
+  const varint = (n: number): number[] => {
+    const out: number[] = [];
+    let v = n;
+    do {
+      let b = v & 0x7f;
+      v = Math.floor(v / 128);
+      if (v > 0) b |= 0x80;
+      out.push(b);
+    } while (v > 0);
+    return out;
+  };
+  const bytes: number[] = [
+    ...varint((keyTag << 3) | 2), // length-delimited
+    ...varint(publicKeyRaw.length),
+    ...publicKeyRaw,
+  ];
+  if (expiryTag !== undefined && expiresAtUnix !== undefined) {
+    bytes.push(...varint(expiryTag << 3), ...varint(expiresAtUnix)); // varint
+  }
+  return Uint8Array.from(bytes);
+}
+
 export function vehicleDataSubscriptionAction(opts?: {
   durationS?: number;
   locationRateMs?: number;
   pingS?: number;
+  // Raw bytes of the pii_key_request sub-message — see encodePiiKeyRequest.
+  // Without it the car returns location_state EMPTY (measured 2026-07-26).
+  piiKeyRequest?: Uint8Array;
 }): ActionPayload {
   const durationS = opts?.durationS ?? VDS_DEFAULTS.durationS;
   const locationRateMs = opts?.locationRateMs ?? VDS_DEFAULTS.locationRateMs;
@@ -553,6 +596,9 @@ export function vehicleDataSubscriptionAction(opts?: {
         subscriptionDurationS: durationS,
         locationStateMaxUpdateRateMs: locationRateMs,
         subscriptionPingS: pingS,
+        // Omitted entirely when absent — proto3 skips an empty bytes field, so
+        // the no-PII frame stays byte-identical to the golden vector.
+        ...(opts?.piiKeyRequest ? { piiKeyRequest: opts.piiKeyRequest } : {}),
       },
     }),
   };

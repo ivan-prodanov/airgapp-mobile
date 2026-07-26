@@ -127,7 +127,19 @@ message VehicleAction {
 //     transport selection — which is why a push over our BLE link is plausible.
 //   • duration_s is a car-enforced absolute TTL; the CAR generates the pings;
 //     max_update_rate_ms is a car-side rate limiter WITH change-detection (state
-//     that has not changed is not resent); pii_key_request is optional.
+//     that has not changed is not resent).
+//   • pii_key_request is "optional" ONLY in the sense that the request still
+//     succeeds without it. Measured on-car: omit it and the state arrives with
+//     location_state EMPTY and the payload encrypted into field 11. See the
+//     field's own comment below.
+//
+// MEASURED ON-CAR 2026-07-26 — the paragraph below is no longer the prior:
+//   The car DOES push over BLE. Rate sweep, parked and locked: requested 5000ms
+//   → median gap 4979/5010ms; requested 2000ms → 1982/1983ms; baseline with
+//   nothing subscribed → ZERO domain-3 frames. 23/23 pushes decrypted. The
+//   cadence tracked a parameter we chose, which nothing else on the link does.
+//   The app's refusal to use this over BLE turns out to say nothing about
+//   whether the CAR supports it.
 //
 // What is settled AGAINST it (equally HIGH confidence — do not skip):
 //   • The official app NEVER sends this over BLE. All three call sites pass
@@ -157,12 +169,42 @@ message VehicleDataSubscription {
     uint32 subscription_duration_s = 3;
     uint32 location_state_max_update_rate_ms = 10;
     uint32 subscription_ping_s = 12;
-    // reserved 13 = pii_key_request (fc0/z2 subscriber_public_key + fc0/a3
-    // expiration). Deliberately omitted, not forgotten: QtCarServer's
-    // "No PII request" path proceeds without it, and it is the field that
-    // "smells like Fleet-Telemetry". Note this is NOT the top-level
-    // piiKeyRequest, which is Action field 51 and IS cloud-pinned.
+    // pii_key_request — declared as BYTES, not as a message, and that is
+    // deliberate: we know the field number (RESPONSE-15: fc0/x5 field 13) but
+    // NOT the inner tags of its sub-message (fc0/z2 subscriber_public_key +
+    // fc0/a3 subscriber_public_key_expiration — the RE recovered their
+    // existence, not their numbers). On the wire a nested message and a bytes
+    // field are identical, so this lets us hand-build candidate encodings and
+    // let the CAR tell us which one parses, without inventing a schema and then
+    // trusting it. Promote to a real message once the tags are confirmed.
+    //
+    // Why it matters (measured 2026-07-26, not inferred): omitting this does NOT
+    // merely skip an optional extra. The car answers "No PII request" and then
+    // returns location_state EMPTY, moving the real payload into an undeclared
+    // VehicleData field 11 encrypted to a key we never supplied. The
+    // subscription proceeds; the data does not.
+    //
+    // NOT the top-level piiKeyRequest (Action field 51), which IS cloud-pinned.
+    bytes pii_key_request = 13;
 }
+
+
+// EncryptedPiiEnvelope — VehicleData field 11, absent from every public proto.
+//
+// NOT declared in VehicleData below, because we have measured its SHAPE but not
+// its semantics, and a wrong name in a shared proto is worse than no name. What
+// 23 on-car pushes showed (2026-07-26, car parked and locked the whole time):
+//
+//   5a <len>        VehicleData field 11
+//     08 08         field 1 = 8   ← location_state's own field number in VehicleData
+//     12 61|62      field 2 = 97-98 bytes, Shannon entropy 7.91 bits/byte
+//     1a 1c         field 3 = 28 bytes  ← 12-byte GCM nonce + 16-byte GCM tag
+//
+// Field 2 changed COMPLETELY on every push while the car sat still — plaintext
+// location would have been byte-identical — so it is ciphertext with a fresh
+// nonce per push. Read alongside the car's own "No PII request" reply, the
+// envelope is "the content of field 8, encrypted to a subscriber key you did
+// not give me".
 
 message GetVehicleData {
     GetChargeState getChargeState = 2;

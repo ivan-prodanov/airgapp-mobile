@@ -36,7 +36,7 @@ import {
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
-import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, VDS_DEFAULTS } from '@/ble/builders';
+import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, encodePiiKeyRequest, VDS_DEFAULTS } from '@/ble/builders';
 import { parseCarServerResponse } from '@/ble/telemetry';
 // Aliased: the global DOM `Response` shadows the proto one in this file.
 import { Response as CarServerResponse } from '@/ble/proto';
@@ -609,6 +609,108 @@ export default function CarLinkScreen() {
     }
   };
 
+  // VDS-M2 — find the pii_key_request encoding, using the CAR as the oracle.
+  //
+  // Established by VDS-M1 (measured, 2026-07-26): the car pushes state over BLE
+  // at the rate we ask for, and 23/23 pushes decrypt — but location_state comes
+  // back EMPTY, with the real payload in an undeclared VehicleData field 11
+  // encrypted to a key we never supplied. The car says why, in as many words:
+  // "No PII request".
+  //
+  // That string is what makes this a measurement rather than a guessing game.
+  // We know pii_key_request is subscription field 13, but not the inner tags of
+  // its sub-message. So: send each candidate encoding and read the reply. If a
+  // candidate PARSES, the car cannot still be taking the no-PII branch, so that
+  // string must change — and if location_state comes back populated, we are done.
+  // A wrong guess produces an unambiguous negative instead of silence, which is
+  // the property the first version of the M1 probe lacked.
+  const handleVdsPiiSweep = async () => {
+    const WATCH_MS = 8000;
+    const RATE_MS = 2000; // fast, so a short watch still yields several pushes
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const ascii = (b: Uint8Array) =>
+      Array.from(b)
+        .map((c) => (c >= 0x20 && c < 0x7f ? String.fromCharCode(c) : '.'))
+        .join('');
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+      say(`device public key: ${keys.publicKeyRaw.length}B SEC1 (the one the car already whitelisted)`);
+
+      // Candidates, cheapest-first. Tag 1 is the overwhelmingly likely home for
+      // the key; the expiry variants test whether the car REQUIRES it before it
+      // will accept the request at all.
+      const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+      const candidates = [
+        { label: 'key@1', opts: { keyTag: 1, publicKeyRaw: keys.publicKeyRaw } },
+        { label: 'key@2', opts: { keyTag: 2, publicKeyRaw: keys.publicKeyRaw } },
+        { label: 'key@1 + expiry@2', opts: { keyTag: 1, publicKeyRaw: keys.publicKeyRaw, expiryTag: 2, expiresAtUnix: expiresAt } },
+        { label: 'key@2 + expiry@1', opts: { keyTag: 2, publicKeyRaw: keys.publicKeyRaw, expiryTag: 1, expiresAtUnix: expiresAt } },
+      ];
+
+      for (const c of candidates) {
+        const piiKeyRequest = encodePiiKeyRequest(c.opts);
+        const sub = await gw.runRawAction(
+          vehicleDataSubscriptionAction({ locationRateMs: RATE_MS, piiKeyRequest }),
+          `vds-pii-${c.label}`,
+        );
+        const reply = sub.result?.decryptedPayload ?? null;
+        const replyText = reply ? ascii(reply) : '(no payload)';
+        const noPii = replyText.includes('No PII request');
+        say('');
+        say(`candidate "${c.label}" — pii_key_request ${piiKeyRequest.length}B`);
+        say(`  reply: ${replyText}`);
+        // THE ORACLE. Still "No PII request" ⇒ the car did not parse our
+        // sub-message and fell through to the same branch as an absent field.
+        say(`  → ${noPii ? 'REJECTED (car still took the no-PII branch)' : '*** PARSED — reply changed ***'}`);
+
+        // Whether location actually arrives is the outcome that matters; the
+        // string only tells us the car got as far as looking.
+        armVdsCapture(Date.now());
+        await wait(WATCH_MS);
+        const seen = disarmVdsCapture();
+        let populated = 0;
+        for (const o of seen) {
+          const opened = sub.result?.decryptPush?.(o.raw);
+          if (!opened) continue;
+          const desc = describePlaintext(opened.plaintext);
+          if (desc.includes('location={}') || desc.includes('no recognised')) continue;
+          populated++;
+          if (populated === 1) say(`  PUSH DECODED: ${desc}`);
+        }
+        say(`  ${seen.length} pushes in ${WATCH_MS / 1000}s, ${populated} with NON-EMPTY location`);
+        if (populated > 0) {
+          say(`  *** WINNER: "${c.label}" yields real location data — stop here ***`);
+          break;
+        }
+        try {
+          await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+        } catch {
+          say('  WARN: inter-candidate cancel failed');
+        }
+      }
+    } catch (err) {
+      say(`ERROR pii sweep: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        say('WARN: final cancel failed (the TTL will expire it)');
+      }
+      const path = await appendDiagnostic('VDS-M2 pii_key_request sweep', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   const handleVdsProbe = async () => {
     // VDS-M1 — the vehicle-data subscription experiment. See src/ble/vdsProbe.ts.
     //
@@ -828,6 +930,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
+              <ActionButton label="VDS-M2 PII key sweep" onPress={handleVdsPiiSweep} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />

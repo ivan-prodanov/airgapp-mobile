@@ -58,6 +58,7 @@ import {
   navigateSearchAction,
   navigateWaypointsAction,
   vehicleDataSubscriptionAction,
+  encodePiiKeyRequest,
   cancelVehicleDataSubscriptionAction,
   VDS_DEFAULTS,
   boomboxAction,
@@ -264,6 +265,45 @@ test('vehicleDataSubscriptionAction matches the RESPONSE-15 golden frame byte fo
   assert.equal(decoded?.subscriptionDurationS, VDS_DEFAULTS.durationS);
   assert.equal(decoded?.locationStateMaxUpdateRateMs, VDS_DEFAULTS.locationRateMs);
   assert.equal(decoded?.subscriptionPingS, VDS_DEFAULTS.pingS);
+});
+
+test('encodePiiKeyRequest emits a length-delimited key at the candidate tag', () => {
+  const key = Uint8Array.from([0x04, 0xaa, 0xbb]);
+  // tag 1, wire type 2 → 0x0a, then length 3, then the key.
+  assert.equal(Buffer.from(encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: key })).toString('hex'), '0a03' + '04aabb');
+  // tag 2 → 0x12.
+  assert.equal(Buffer.from(encodePiiKeyRequest({ keyTag: 2, publicKeyRaw: key })).toString('hex'), '1203' + '04aabb');
+});
+
+test('encodePiiKeyRequest appends the expiry as a varint at its own tag', () => {
+  const key = Uint8Array.from([0x04]);
+  // key@1 then expiry@2 = 0x10, value 300 = 0xac 0x02.
+  assert.equal(
+    Buffer.from(encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: key, expiryTag: 2, expiresAtUnix: 300 })).toString('hex'),
+    '0a0104' + '10ac02',
+  );
+  // A real unix timestamp exceeds 32 bits of shifting — check it still encodes.
+  const big = encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: key, expiryTag: 2, expiresAtUnix: 1785000000 });
+  assert.ok(big.length > 3);
+});
+
+test('encodePiiKeyRequest rejects a missing key or a bogus tag', () => {
+  assert.throws(() => encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: new Uint8Array(0) }));
+  assert.throws(() => encodePiiKeyRequest({ keyTag: 0, publicKeyRaw: Uint8Array.from([1]) }));
+});
+
+test('a subscription WITHOUT pii_key_request stays byte-identical to the golden frame', () => {
+  // The field must be genuinely absent, not present-and-empty: proto3 skips an
+  // empty bytes field, and the M1 golden vector is what proves our tags are right.
+  assert.equal(Buffer.from(vehicleDataSubscriptionAction().bytes).toString('hex'), '120aaa0207183c508827600a');
+});
+
+test('a subscription WITH pii_key_request carries it at field 13', () => {
+  const pii = encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: Uint8Array.from([0x04, 0x01, 0x02]) });
+  const decoded = decodeAction(vehicleDataSubscriptionAction({ piiKeyRequest: pii }).bytes);
+  const got = decoded.vehicleAction?.vehicleDataSubscription?.piiKeyRequest;
+  assert.ok(got, 'field 13 must be present');
+  assert.equal(Buffer.from(got).toString('hex'), Buffer.from(pii).toString('hex'));
 });
 
 test('cancelVehicleDataSubscriptionAction is an EMPTY sub-message (duration 0 is a proto3 default)', () => {

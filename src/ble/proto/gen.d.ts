@@ -764,6 +764,9 @@ export namespace CarServer {
         /** VehicleDataSubscription subscriptionPingS. */
         subscriptionPingS: number;
 
+        /** VehicleDataSubscription piiKeyRequest. */
+        piiKeyRequest: Uint8Array;
+
         /**
          * Creates a new VehicleDataSubscription instance using the specified properties.
          * @param [properties] Properties to set
@@ -856,6 +859,9 @@ export namespace CarServer {
 
             /** VehicleDataSubscription subscriptionPingS */
             subscriptionPingS?: (number|null);
+
+            /** VehicleDataSubscription piiKeyRequest */
+            piiKeyRequest?: (Uint8Array|null);
 
             /** Unknown fields preserved while decoding when enabled */
             $unknowns?: Uint8Array[];

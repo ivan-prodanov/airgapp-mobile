@@ -3253,6 +3253,7 @@ $root.CarServer = (function() {
          * @property {number|null} [subscriptionDurationS] VehicleDataSubscription subscriptionDurationS
          * @property {number|null} [locationStateMaxUpdateRateMs] VehicleDataSubscription locationStateMaxUpdateRateMs
          * @property {number|null} [subscriptionPingS] VehicleDataSubscription subscriptionPingS
+         * @property {Uint8Array|null} [piiKeyRequest] VehicleDataSubscription piiKeyRequest
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
 
@@ -3309,6 +3310,14 @@ $root.CarServer = (function() {
         VehicleDataSubscription.prototype.subscriptionPingS = 0;
 
         /**
+         * VehicleDataSubscription piiKeyRequest.
+         * @member {Uint8Array} piiKeyRequest
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.piiKeyRequest = $util.newBuffer([]);
+
+        /**
          * Creates a new VehicleDataSubscription instance using the specified properties.
          * @function create
          * @memberof CarServer.VehicleDataSubscription
@@ -3346,6 +3355,8 @@ $root.CarServer = (function() {
                 writer.uint32(/* id 10, wireType 0 =*/80).uint32(message.locationStateMaxUpdateRateMs);
             if (message.subscriptionPingS != null && $Object.hasOwnProperty.call(message, "subscriptionPingS") && message.subscriptionPingS !== 0)
                 writer.uint32(/* id 12, wireType 0 =*/96).uint32(message.subscriptionPingS);
+            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest") && message.piiKeyRequest.length)
+                writer.uint32(/* id 13, wireType 2 =*/106).bytes(message.piiKeyRequest);
             if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                 for (var i = 0; i < message.$unknowns.length; ++i)
                     writer.raw(message.$unknowns[i]);
@@ -3420,6 +3431,15 @@ $root.CarServer = (function() {
                             delete message.subscriptionPingS;
                         continue;
                     }
+                case 13: {
+                        if (wireType !== 2)
+                            break;
+                        if ((value = reader.bytes()).length)
+                            message.piiKeyRequest = value;
+                        else
+                            delete message.piiKeyRequest;
+                        continue;
+                    }
                 }
                 reader.skipType(wireType, _depth, tag);
                 if (!reader.discardUnknown) {
@@ -3472,6 +3492,9 @@ $root.CarServer = (function() {
             if (message.subscriptionPingS != null && $Object.hasOwnProperty.call(message, "subscriptionPingS"))
                 if (!$util.isInteger(message.subscriptionPingS))
                     return "subscriptionPingS: integer expected";
+            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest"))
+                if (!(message.piiKeyRequest && typeof message.piiKeyRequest.length === "number" || $util.isString(message.piiKeyRequest)))
+                    return "piiKeyRequest: buffer expected";
             return null;
         };
 
@@ -3502,6 +3525,12 @@ $root.CarServer = (function() {
             if (object.subscriptionPingS != null)
                 if ($Number(object.subscriptionPingS) !== 0)
                     message.subscriptionPingS = object.subscriptionPingS >>> 0;
+            if (object.piiKeyRequest != null)
+                if (object.piiKeyRequest.length)
+                    if (typeof object.piiKeyRequest === "string")
+                        $util.base64.decode(object.piiKeyRequest, message.piiKeyRequest = $util.newBuffer($util.base64.length(object.piiKeyRequest)), 0);
+                    else if (object.piiKeyRequest.length >= 0)
+                        message.piiKeyRequest = object.piiKeyRequest;
             return message;
         };
 
@@ -3526,6 +3555,13 @@ $root.CarServer = (function() {
                 object.subscriptionDurationS = 0;
                 object.locationStateMaxUpdateRateMs = 0;
                 object.subscriptionPingS = 0;
+                if (options.bytes === $String)
+                    object.piiKeyRequest = "";
+                else {
+                    object.piiKeyRequest = [];
+                    if (options.bytes !== $Array)
+                        object.piiKeyRequest = $util.newBuffer(object.piiKeyRequest);
+                }
             }
             if (message.subscriptionDurationS != null && $Object.hasOwnProperty.call(message, "subscriptionDurationS"))
                 object.subscriptionDurationS = message.subscriptionDurationS;
@@ -3533,6 +3569,8 @@ $root.CarServer = (function() {
                 object.locationStateMaxUpdateRateMs = message.locationStateMaxUpdateRateMs;
             if (message.subscriptionPingS != null && $Object.hasOwnProperty.call(message, "subscriptionPingS"))
                 object.subscriptionPingS = message.subscriptionPingS;
+            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest"))
+                object.piiKeyRequest = options.bytes === $String ? $util.base64.encode(message.piiKeyRequest, 0, message.piiKeyRequest.length) : options.bytes === $Array ? $Array.prototype.slice.call(message.piiKeyRequest) : message.piiKeyRequest;
             return object;
         };
 
