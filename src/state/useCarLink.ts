@@ -543,6 +543,16 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             if (cached.targetTempC != null) patch.targetTempC = cached.targetTempC;
             if (cached.chargeLimitPercent != null) patch.chargeLimitPercent = cached.chargeLimitPercent;
             if (cached.chargingAmps != null) patch.chargingAmps = cached.chargingAmps;
+            // Guarded on finite coordinates, not just presence: a cache written
+            // under an older schema has no carLocation at all, and a malformed
+            // one would put the map pin at 0,0 in the Gulf of Guinea.
+            if (
+              cached.carLocation &&
+              Number.isFinite(cached.carLocation.lat) &&
+              Number.isFinite(cached.carLocation.lon)
+            ) {
+              patch.carLocation = cached.carLocation;
+            }
             // Rehydrate via the UNGATED path: at cold start the active-is-live
             // gate is still false, so applyTelemetry would drop this and the
             // battery/temps would stay blank until the car connects.
@@ -1167,6 +1177,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       targetTempC: patch.targetTempC ?? base.targetTempC,
       chargeLimitPercent: patch.chargeLimitPercent ?? base.chargeLimitPercent,
       chargingAmps: patch.chargingAmps ?? base.chargingAmps,
+      carLocation: patch.carLocation ?? base.carLocation,
     };
     cacheRef.current = next;
     saveCacheRef.current?.(next);
@@ -1200,6 +1211,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         rangeMiles: null,
         charging: null,
         awake: null,
+        carLocation: null,
         interiorTempC: null,
         exteriorTempC: null,
         targetTempC: null,

@@ -1,3 +1,4 @@
+import type { CarLocation } from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
 
 // The linked car's last-known telemetry, cached across app launches.
@@ -31,6 +32,20 @@ export interface CarLinkCache {
   targetTempC: number | null;
   chargeLimitPercent: number | null;
   chargingAmps: number | null;
+  // The car's last known GPS. Persisted for the same reason as the rest: a cold
+  // start should show what we knew, not a blank.
+  //
+  // Its absence was visible and annoying — on relaunch the map fell back to the
+  // USER's position and only jumped to the car after a pull-to-refresh, because
+  // `carLocation` lived only in memory. The native side already persists this
+  // (CarRegionMonitor keeps it in UserDefaults for the reboot-survival geofence),
+  // so the phone knew where the car was the whole time; JS just did not.
+  //
+  // Stale by nature: it is where the car was when we last read it. That is the
+  // same contract as the battery percentage beside it, and it is what the
+  // official app does too — show the last known state, dimmed, rather than
+  // nothing.
+  carLocation: CarLocation | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -62,6 +77,18 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     targetTempC: num(cached?.targetTempC),
     chargeLimitPercent: num(cached?.chargeLimitPercent),
     chargingAmps: num(cached?.chargingAmps),
+    // Validated, not trusted: an older cache has no carLocation, and a corrupt
+    // one must not put the map pin at 0,0.
+    carLocation:
+      cached?.carLocation &&
+      Number.isFinite(cached.carLocation.lat) &&
+      Number.isFinite(cached.carLocation.lon)
+        ? {
+            lat: cached.carLocation.lat,
+            lon: cached.carLocation.lon,
+            heading: num(cached.carLocation.heading),
+          }
+        : null,
   };
 }
 
