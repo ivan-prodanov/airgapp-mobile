@@ -562,6 +562,21 @@ export function piiKeyRequestFor(opts: {
   };
 }
 
+// piiKeyRequestRaw — EXPERIMENT ONLY: no PEM validation.
+//
+// piiKeyRequestFor deliberately rejects anything that is not a PKCS#1 PEM,
+// because sending the wrong encoding kills the subscription with no diagnostic.
+// This bypasses that so a probe can ask the car what it will actually take.
+// Nothing outside a probe should use it.
+//
+// ⚠ Note what CANNOT be tried here: raw DER. The field is a protobuf STRING,
+// which is UTF-8 on the wire, so any byte above 0x7F is re-encoded and the key
+// arrives corrupted AND larger. DER is not a smaller encoding of this field; it
+// is an invalid one. That is almost certainly why Tesla put base64 PEM here.
+export function piiKeyRequestRaw(subscriberPublicKey: string): { subscriberPublicKey: string } {
+  return { subscriberPublicKey };
+}
+
 export function vehicleDataSubscriptionAction(opts?: {
   durationS?: number;
   // null → omit the field. undefined → use the default.

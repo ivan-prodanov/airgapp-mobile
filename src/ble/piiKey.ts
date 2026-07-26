@@ -68,11 +68,19 @@ export interface PiiKeypair {
 // rest of our crypto uses instead of trusting that fallback for a long-lived
 // key. Synchronous generation blocks for a while (seconds on a phone) — call it
 // once and persist, never per subscription.
-export function generatePiiKeypair(): PiiKeypair {
+export function generatePiiKeypair(bits = 2048): PiiKeypair {
   const prng = forge.random.createInstance();
   prng.seedFileSync = (needed: number) =>
     forge.util.createBuffer(bytesToBinaryString(randomBytes(needed))).getBytes(needed);
-  const { privateKey, publicKey } = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001, prng });
+  // bits is a parameter ONLY because the car will not accept a request large
+  // enough to carry a 2048-bit PEM. VDS-M7 measured the wall: it answers a 276B
+  // sealed body and goes silent at 372B, i.e. the same 452B wire cap Android
+  // applies inbound. A PKCS#1 PEM at 2048 is 434 chars ⇒ 451B sealed ⇒ ~557B
+  // framed, so it is dropped without a word. 1024 is ~220 chars ⇒ ~237B sealed,
+  // which fits. Whether the CAR accepts a 1024-bit subscriber key is the open
+  // question — VDS-M8 asks it. 2048 stays the default; nothing should quietly
+  // ship a weaker key.
+  const { privateKey, publicKey } = forge.pki.rsa.generateKeyPair({ bits, e: 0x10001, prng });
   return {
     privatePem: forge.pki.privateKeyToPem(privateKey),
     // ⚠ publicKeyToRSAPublicKeyPem, NOT publicKeyToPem. The first emits PKCS#1

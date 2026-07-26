@@ -38,7 +38,7 @@ import {
   DOMAIN_INFOTAINMENT,
   type ActionPayload,
 } from '@/ble/session';
-import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, pingAction, piiKeyRequestFor, VDS_DEFAULTS } from '@/ble/builders';
+import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, pingAction, piiKeyRequestFor, piiKeyRequestRaw, VDS_DEFAULTS } from '@/ble/builders';
 import {
   fmtCoord,
   formatRouteDelta,
@@ -51,6 +51,7 @@ import { parseCarServerResponse } from '@/ble/telemetry';
 import { latencyStats, formatLatencyStats, resetLatencyStats } from '@/ble/passiveEntryLatency';
 import { withBackgroundReadsSuspended } from '@/ble/backgroundReads';
 import {
+  generatePiiKeypair,
   loadOrCreatePiiKeypair,
   unwrapPiiKey,
   decryptEncryptedState,
@@ -1120,6 +1121,129 @@ export default function CarLinkScreen() {
     }
   };
 
+  // VDS-M8 — will a key that FITS get us a PII key back?
+  //
+  // VDS-M7 found the wall: the car answers a 276B sealed body and goes silent at
+  // 372B, which is the 452B wire cap Android applies inbound. An RSA-2048 PKCS#1
+  // PEM is 434 chars ⇒ 451B sealed ⇒ ~557B framed, so it is dropped in silence.
+  //
+  // Two encodings that fit, tried in order of honesty:
+  //   1. RSA-1024 PKCS#1 PEM (~220 chars ⇒ ~237B sealed). Correct SHAPE, smaller
+  //      key. Separates "the key is too big" from "the mechanism does not work
+  //      over BLE" — which is the question actually worth answering.
+  //   2. RSA-2048 PEM with header/footer/newlines STRIPPED (~360 chars). Marked
+  //      a guess: RESPONSE-19 says PEM TEXT and the car's own unwrap strips the
+  //      exact "-----BEGIN/END RSA PUBLIC KEY-----" markers, so removing them may
+  //      simply make it unparseable. Worth one rung because it is free.
+  //
+  // NOT tried, and worth saying why: raw DER. The field is a protobuf STRING,
+  // i.e. UTF-8 on the wire, so bytes above 0x7F are re-encoded — DER would arrive
+  // corrupted AND longer. It is not a smaller encoding of this field, it is an
+  // invalid one.
+  //
+  // A REPLY of any kind is progress. Silence means still too big; a reply with no
+  // wrapped key means the car parsed it and declined the key.
+  const handleVdsKeyEncodings = async () => {
+    const WATCH_MS = 12_000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const hex = (b: Uint8Array | null | undefined) =>
+      b ? Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ') : null;
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      say('generating an RSA-1024 keypair (smaller, so it fits under the 452B cap)…');
+      const t0 = Date.now();
+      const kp1024 = generatePiiKeypair(1024);
+      say(`  ready in ${Date.now() - t0}ms; PEM is ${kp1024.publicPkcs1Pem.length} chars`);
+      const kp2048 = await loadOrCreatePiiKeypair(store);
+      const stripped = kp2048.publicPkcs1Pem
+        .replace(/-----[^-]+-----/g, '')
+        .replace(/\s+/g, '');
+      say(`  2048 PEM stripped to ${stripped.length} chars (guess — see the comment)`);
+
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+
+      const rungs = [
+        { label: 'RSA-1024 PKCS#1 PEM', key: kp1024.publicPkcs1Pem, priv: kp1024.privatePem },
+        { label: 'RSA-2048 PEM, markers stripped (GUESS)', key: stripped, priv: kp2048.privatePem },
+      ];
+
+      for (const rung of rungs) {
+        const action = vehicleDataSubscriptionAction({
+          durationS: 30,
+          pingS: 10,
+          locationRateMs: null,
+          driveRateMs: 2000,
+          piiKeyRequest: piiKeyRequestRaw(rung.key),
+        });
+        say('');
+        say(`--- ${rung.label} — sealed ${action.bytes.length}B ---`);
+        const sub = await gw.runRawAction(action, 'vds-m8');
+        const replied = sub.outcome.ok || !/timeout|unreachable/.test(sub.outcome.kind ?? '');
+        say(`  ${replied ? 'REPLIED' : 'SILENT'} — ${sub.outcome.ok ? 'ok' : sub.outcome.kind}`);
+        say(`  reply hex: ${hex(sub.result?.decryptedPayload) ?? '(none)'}`);
+        if (!replied) {
+          say('  → still over the cap.');
+          continue;
+        }
+
+        armVdsCapture(Date.now());
+        await wait(WATCH_MS);
+        const seen = disarmVdsCapture();
+        let wrapped: Uint8Array | null = null;
+        let opened = 0;
+        for (const o of seen) {
+          const dec = sub.result?.decryptPush?.(o.raw);
+          if (!dec) continue;
+          if (!wrapped) wrapped = extractWrappedPiiKey(dec.plaintext);
+          if (!wrapped) continue;
+          try {
+            const k = unwrapPiiKey(rung.priv, wrapped);
+            for (const env of parsePiiEnvelopes(dec.plaintext)) {
+              const plain = decryptEncryptedState(k, env);
+              opened++;
+              if (opened === 1) say(`  *** DECRYPTED state ${env.fieldNumber}: ${hex(plain)}`);
+            }
+          } catch (e) {
+            if (opened === 0) say(`  unwrap/decrypt failed: ${errMsg(e)}`);
+          }
+        }
+        say(`  ${seen.length} pushes, wrapped key ${wrapped ? `${wrapped.length}B` : 'ABSENT'}, ${opened} decrypted`);
+        if (opened > 0) {
+          say(`  *** WINNER: "${rung.label}" — live gated state over BLE, fully offline ***`);
+          break;
+        }
+        if (wrapped) {
+          say('  the car SENT a wrapped key but we could not open it — wrong private key?');
+          break;
+        }
+        say('  parsed, but the car declined to mint a key for it.');
+        try {
+          await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+        } catch {
+          /* best effort */
+        }
+      }
+    } catch (err) {
+      say(`ERROR key-encoding probe: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        /* the TTL will expire it */
+      }
+      const path = await appendDiagnostic('VDS-M8 key encodings', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // VDS-M7 — how big a request will the car actually accept?
   //
   // VDS-M6 got NO REPLY at all, not a rejection. The only thing that changed is
@@ -1967,6 +2091,7 @@ export default function CarLinkScreen() {
               <ActionButton label="VDS-M5 DriveState cleartext" onPress={() => withBackgroundReadsSuspended(handleVdsDriveProbe)} theme={theme} />
               <ActionButton label="VDS-M6 full PII run" onPress={() => withBackgroundReadsSuspended(handleVdsPiiRun)} theme={theme} />
               <ActionButton label="VDS-M7 size ladder" onPress={() => withBackgroundReadsSuspended(handleVdsSizeLadder)} theme={theme} />
+              <ActionButton label="VDS-M8 key encodings" onPress={() => withBackgroundReadsSuspended(handleVdsKeyEncodings)} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={() => withBackgroundReadsSuspended(handleVdsDefaultProbe)} theme={theme} />
               <ActionButton label="VDS-M4 ping/ack probe" onPress={() => withBackgroundReadsSuspended(handleVdsAckProbe)} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />

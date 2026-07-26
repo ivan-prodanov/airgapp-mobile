@@ -222,3 +222,33 @@ test('NO runtime BLE module uses Buffer — the tests cannot catch this themselv
   }
   assert.deepEqual(offenders, [], 'Buffer is a Node global and does not exist in Hermes');
 });
+
+test('a 1024-bit key produces a PEM that FITS under the car 452B wire cap', () => {
+  // VDS-M7 measured the wall: 276B sealed replies, 372B is silent. A 2048 PEM
+  // makes a 451B sealed body, so it is dropped without a word. This is the whole
+  // reason generatePiiKeypair takes a size.
+  const kp = generatePiiKeypair(1024);
+  assert.ok(isPkcs1PublicPem(kp.publicPkcs1Pem), 'still PKCS#1, only smaller');
+  assert.ok(
+    kp.publicPkcs1Pem.length < 280,
+    `1024 PEM is ${kp.publicPkcs1Pem.length} chars; it must leave room under the cap`,
+  );
+  // And it must still do the actual job.
+  const k = Uint8Array.from({ length: 32 }, (_, i) => (i * 5) & 0xff);
+  const pub = forge.pki.publicKeyFromPem(kp.publicPkcs1Pem);
+  const wrapped = pub.encrypt(
+    String.fromCharCode(...k),
+    'RSA-OAEP',
+    { md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() } },
+  );
+  assert.equal(wrapped.length, 128, 'RSA-1024 wraps to 128B, not 256B — read it off the wire');
+  const got = unwrapPiiKey(kp.privatePem, Uint8Array.from(wrapped, (c) => c.charCodeAt(0) & 0xff));
+  assert.deepEqual(Array.from(got), Array.from(k));
+});
+
+test('2048 stays the DEFAULT — nothing weakens the key by omission', () => {
+  // The smaller key exists to answer a question, not to ship. If a caller
+  // forgets the argument they must get the strong one.
+  const kp = generatePiiKeypair();
+  assert.equal(forge.pki.publicKeyFromPem(kp.publicPkcs1Pem).n.bitLength(), 2048);
+});
