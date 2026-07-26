@@ -43,6 +43,7 @@ import { SendToCarButton } from '@/components/SendToCarButton';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import type { Place } from '@/services/place';
 import { sharedLocationStore } from '@/state/sharedLocationStore';
+import { useSendToCar } from '@/hooks/useSendToCar';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -162,11 +163,6 @@ export default function LocationView() {
   // A point long-pressed on the map (our own pin, reverse-geocoded) OR a tapped Apple map feature (Apple's
   // own marker, enriched via onPoiClick). Its preview panel takes over the sheet.
   const [droppedPin, setDroppedPin] = useState<DroppedPin | null>(null);
-  // An intent handed off from the share popup (a resolved location). Consumed once on mount and on every
-  // subsequent publish; shown as a pin so the Send to Car bar has a target — the shared place is a
-  // destination to send, not something to plan with.
-  const [sharedIntent, setSharedIntent] = useState(() => sharedLocationStore.consume());
-  useEffect(() => sharedLocationStore.subscribe(() => setSharedIntent(sharedLocationStore.consume())), []);
   // Charging deep-link: expand the sheet so the charger list is visible on arrival (the [tab] effect already
   // frames the map + fetches stations). Deferred a frame so the sheet's imperative handle is ready.
   useEffect(() => {
@@ -197,23 +193,40 @@ export default function LocationView() {
     mapRef.current?.animateCamera({ center: place.coordinate }, { duration: 350 });
   };
 
-  // Apply a shared intent once it arrives (declared after onSelectPlace, which it uses).
+  // Frame the shared place once the map can actually accept a camera move. `animateCamera` is a no-op
+  // before `onMapReady` (see mapReady above), so on a cold-launch share the pin would land while the map is
+  // still on the car with the marker off-screen. Gating on the same `mapReady` the Charging fit uses moves
+  // the camera immediately when warm, or on first readiness when cold.
+  const [pendingShareFrame, setPendingShareFrame] = useState<LatLng | null>(null);
   useEffect(() => {
-    if (!sharedIntent) return;
-    const { location } = sharedIntent;
-    setSelectedCharger(null);
-    setTab('location');
-    onSelectPlace({
-      id: `pin:${location.coordinate.latitude.toFixed(5)},${location.coordinate.longitude.toFixed(5)}`,
-      title: location.name ?? 'Shared Location',
-      subtitle: '',
-      coordinate: location.coordinate,
-      kind: 'poi',
-      source: 'apple',
-    });
-    setSharedIntent(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedIntent]);
+    if (!mapReady || !pendingShareFrame) return;
+    mapRef.current?.animateCamera({ center: pendingShareFrame }, { duration: 350 });
+    setPendingShareFrame(null);
+  }, [mapReady, pendingShareFrame]);
+
+  // A shared place is sent the moment it arrives — the choice was already made by
+  // sharing into airgapp. The screen still opens so the toast has somewhere to
+  // land and you can see the pin that was sent.
+  const sendToCar = useSendToCar();
+  useEffect(() => {
+    const consume = () => {
+      const intent = sharedLocationStore.consume();
+      if (!intent) return;
+      const { coordinate, name } = intent.location;
+      setDroppedPin({
+        coordinate,
+        name: name ?? 'Shared Location',
+        subtitle: `${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)}`,
+        fromPoi: false,
+      });
+      setPendingShareFrame(coordinate);
+      // SharedLocation carries no address field (see src/services/sharedLocation.ts) — Task 7's native
+      // side does not resolve one either, so this is always undefined for now.
+      sendToCar({ name, address: undefined, coordinate });
+    };
+    consume();
+    return sharedLocationStore.subscribe(consume);
+  }, [sendToCar]);
 
   // Long-press an empty spot → drop our own pin, reverse-geocode it, and show its preview panel. (Tapping a
   // built-in Apple map feature goes through `onPoiClick` instead, where Apple supplies the name/address.) The

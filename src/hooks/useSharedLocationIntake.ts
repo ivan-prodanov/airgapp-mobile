@@ -6,14 +6,12 @@ import { useRouter } from 'expo-router';
 import SharedIntake from '../../modules/shared-intake';
 import AppleSearch, { type AppleResult } from '../../modules/expo-apple-search';
 import { parseSharedLocation, type ParseDeps, type SharedLocation } from '@/services/sharedLocation';
-import { sharedLocationStore, type SharedAction, type ReorderedStop } from '@/state/sharedLocationStore';
+import { sharedLocationStore } from '@/state/sharedLocationStore';
 import type { LatLng } from '@/state/mockLocation';
 
 interface Intent {
   location?: { lat: number; lng: number; name?: string; address?: string; source: SharedLocation['source'] };
-  action: SharedAction;
   raw: string;
-  reorderedStops?: ReorderedStop[];
 }
 
 // Cap an awaited promise so a hung network call resolves to `fallback` instead of wedging intake (which would
@@ -69,7 +67,7 @@ const deps: ParseDeps = {
 };
 
 // Drains the App Group intents the Share popup queued, resolves the location (native-first, JS fallback), and
-// publishes {location, action} to the Location screen. Runs on cold launch, every foreground, and url events.
+// publishes {location} to the Location screen. Runs on cold launch, every foreground, and url events.
 export function useSharedLocationIntake(): void {
   const busy = useRef(false);
   const router = useRouter();
@@ -99,7 +97,7 @@ export function useSharedLocationIntake(): void {
             loc = await parseSharedLocation(intent.raw, deps); // degraded fallback
           }
           if (loc) {
-            sharedLocationStore.set({ location: loc, action: intent.action, reorderedStops: intent.reorderedStops });
+            sharedLocationStore.set({ location: loc });
             router.navigate('/location');
           }
         }
