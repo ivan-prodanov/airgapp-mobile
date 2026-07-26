@@ -464,29 +464,30 @@ export default function LocationView() {
 
   // Send the trip to the car. Was a no-op stub ("local mock") until 2026-07-26.
   //
-  // SCOPE, deliberately: we send the FINAL destination via navigateTo, which is the
-  // proven BLE path (NavigationGpsRequest lat/lon + label, on-car verified). Sending
-  // every stop needs the multi-waypoint request, whose COORDINATE encoding is still
-  // unproven — the car only accepts coordinates when it advertises
-  // WAYPOINTS_REQUEST_ACCEPTS_COORDINATES, and the delimiter inside that string field
-  // is an open question (RESPONSE-15 residual; ours is Place-ID-only today and throws).
-  // Rather than guess a format and silently send a bad route, send the destination now
-  // and upgrade to the full route once the encoding is confirmed.
+  // Single destination -> navigateTo, which carries a human LABEL the car displays.
+  // Multiple stops -> the multi-waypoint request, whose coordinate encoding is
+  // "lat,lon;lat,lon" (confirmed 2026-07-26; the car advertises the capability as
+  // WAYPOINTS_REQUEST_ACCEPTS_COORDINATES). That message has no label and no trip
+  // order, so the label is only available on the single-stop path — hence the split
+  // rather than always using waypoints.
   const onSendTripToCar = () => {
     const stops = trip.trip?.stops ?? [];
     // stops[0] is always the car itself (invariant enforced above), so the real
-    // destinations are everything after it.
+    // destinations are everything after it — the car knows where it is.
     const destinations = stops.slice(1);
-    const last = destinations[destinations.length - 1];
-    if (!last) return;
+    if (destinations.length === 0) return;
     controlHaptic();
-    fleet.sendNavigation(last.coordinate.latitude, last.coordinate.longitude, last.title);
-    if (destinations.length > 1) {
-      // Don't pretend we sent the whole itinerary.
-      toast.show(`Sent ${last.title} to the car · multi-stop coming soon`);
-    } else {
-      toast.show(`Sent ${last.title} to the car`);
+    if (destinations.length === 1) {
+      const only = destinations[0];
+      fleet.sendNavigation(only.coordinate.latitude, only.coordinate.longitude, only.title);
+      toast.show(`Sent ${only.title} to the car`);
+      return;
     }
+    fleet.sendWaypoints(
+      destinations.map((d) => ({ lat: d.coordinate.latitude, lon: d.coordinate.longitude })),
+    );
+    const last = destinations[destinations.length - 1];
+    toast.show(`Sent ${destinations.length} stops to the car · ${last.title} last`);
   };
 
   // Real Apple route for the active trip (null while loading / offline → straight-line fallback). Shared by

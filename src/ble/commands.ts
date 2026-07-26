@@ -72,6 +72,8 @@ import {
   setParentalSettingAction,
   type ParentalSetting,
   setCopTempAction,
+  waypointsCoordString,
+  navigateWaypointsAction,
 } from './builders';
 
 // --- The CarCommand union (verbatim from the plan's Part 4) ----------------
@@ -171,7 +173,8 @@ const CLIMATE_KEEPER_MODE: Record<'off' | 'on' | 'dog' | 'camp', number> = {
 
 // buildCommand switches on cmd.type and calls the matching builder. Variants
 // with no available proto throw — see the module doc comment and the P1d
-// report for the definitive list (currently: navigateWaypoints only).
+// report. (navigateWaypoints used to be the headline example; it works now that
+// the coordinate encoding is known — see builders.waypointsCoordString.)
 export function buildCommand(cmd: CarCommand): BuiltCommand {
   switch (cmd.type) {
     case 'lock':
@@ -291,12 +294,11 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
           : navigateGpsAction({ lat: cmd.lat, lon: cmd.lon }),
       );
     case 'navigateWaypoints':
-      // NavigationWaypointsRequest.waypoints is a STRING of Google Place
-      // IDs ("refId:ChIJ…,refId:ChIJ…"), not a repeated {lat,lon} list — no
-      // proto message accepts raw coordinates for a multi-stop route. See
-      // builders.ts's navigateWaypointsAction doc comment and the P1d
-      // report. Throwing rather than inventing a lossy/wrong encoding.
-      throw new Error('unsupported over BLE: navigateWaypoints (proto expects Place IDs, not lat/lon coords)');
+      // The waypoints STRING accepts raw coordinates as well as Place IDs —
+      // "lat,lon;lat,lon" (confirmed 2026-07-26). This used to throw because we
+      // believed Place IDs were the only accepted form. The message has no
+      // trip-order field, so `cmd.order` has no wire representation here.
+      return fromPayload(navigateWaypointsAction(waypointsCoordString(cmd.coords)));
     case 'media':
       switch (cmd.action) {
         case 'toggle':

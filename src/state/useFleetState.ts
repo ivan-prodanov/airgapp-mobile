@@ -35,6 +35,9 @@ export interface Fleet {
   // state-diff reconciler above can never infer them. Navigation is the first:
   // "Send to Car" is an event, not a toggle. No-op for a demo (non-live) car.
   sendNavigation: (lat: number, lon: number, label?: string) => void;
+  // Multi-stop route. Coordinates only (the car takes "lat,lon;lat,lon"); no label
+  // and no trip-order — NavigationWaypointsRequest carries neither.
+  sendWaypoints: (coords: { lat: number; lon: number }[]) => void;
 }
 
 export function useFleetState(): {
@@ -159,9 +162,19 @@ export function useFleetState(): {
     [activeIsLive, carLink],
   );
 
+  const sendWaypoints = useCallback(
+    (coords: { lat: number; lon: number }[]) => {
+      if (!activeIsLive || coords.length === 0) return;
+      // `order` is required by the CarCommand shape but has no wire field here.
+      carLink.dispatch({ type: 'navigateWaypoints', coords, order: 'REPLACE' }, () => {});
+    },
+    [activeIsLive, carLink],
+  );
+
   const fleetApi = useMemo<Fleet>(
     () => ({
       sendNavigation,
+      sendWaypoints,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),

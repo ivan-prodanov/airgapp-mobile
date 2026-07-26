@@ -391,18 +391,45 @@ export function navigateSearchAction({ query, order }: { query: string; order?: 
     bytes: encodeInfotainmentAction({ navigationRequest: { destination: query, order: order ?? NAV_ORDER.REPLACE } }),
   };
 }
-// navigateWaypointsAction — kept for a future Google-Place-ID-based multi
-// stop UI. NavigationWaypointsRequest.waypoints is a STRING field
-// (car_server.proto:598: `string waypoints = 1;`), matching the reference
-// web UI's usage: a comma-separated list of Google Place IDs prefixed with
-// "refId:" (rpi-webclient/client/index.html:722-726), NOT a repeated
-// lat/lon list. See the P1d report for why CarCommand's `navigateWaypoints`
-// (which carries {lat, lon}[] coords) is NOT wired to this builder.
+// navigateWaypointsAction — multi-stop navigation.
+//
+// NavigationWaypointsRequest.waypoints is a STRING field (car_server.proto:598:
+// `string waypoints = 1;`). It accepts EITHER form:
+//   • Google Place IDs, comma-separated, "refId:"-prefixed (the reference web UI's
+//     usage, rpi-webclient/client/index.html:722-726) — what we assumed was the
+//     only option, which is why CarCommand's coord-carrying `navigateWaypoints`
+//     used to throw "unsupported over BLE".
+//   • RAW COORDINATES — confirmed 2026-07-26: `"lat,lon;lat,lon"`, i.e. a comma
+//     between lat and lon and a SEMICOLON between waypoints, e.g.
+//     "37.3230,-122.0322;37.4419,-122.1430". The car advertises this capability as
+//     MOBILE_APP_FEATURE_WAYPOINTS_REQUEST_ACCEPTS_COORDINATES (gc0/v.java).
+//
+// NB the message carries no trip-order field (only `waypoints` +
+// `tripPlanOptions`), so CarCommand's `order` has no wire representation here —
+// unlike NavigationGpsRequest, which does take one (see NAV_ORDER).
 export function navigateWaypointsAction(waypoints: string): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ navigationWaypointsRequest: { waypoints } }),
   };
+}
+
+// waypointsCoordString — encode coordinates for the field above.
+// 6 decimal places ≈ 0.1 m, ample for navigation and short enough to keep the
+// string well clear of the car's inbound message ceiling.
+export function waypointsCoordString(coords: { lat: number; lon: number }[]): string {
+  if (coords.length === 0) throw new Error('waypointsCoordString: need at least one coordinate');
+  return coords
+    .map(({ lat, lon }) => {
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        throw new Error(`waypointsCoordString: non-finite coordinate ${lat},${lon}`);
+      }
+      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        throw new Error(`waypointsCoordString: out-of-range coordinate ${lat},${lon}`);
+      }
+      return `${lat.toFixed(6)},${lon.toFixed(6)}`;
+    })
+    .join(';');
 }
 
 // --- Boombox -------------------------------------------------------------

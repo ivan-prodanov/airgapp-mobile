@@ -403,7 +403,11 @@ test('buildCommand: state-read-shaped variants are not in the CarCommand union �
   assert.notEqual(decodeAction(media.bytes).vehicleAction?.mediaNextTrack, undefined);
 });
 
-test('buildCommand throws "unsupported over BLE" for navigateWaypoints (no lat/lon proto shape exists)', () => {
+// SUPERSEDED 2026-07-26: this used to assert navigateWaypoints THREW, on the belief
+// that the waypoints string only accepted Google Place IDs. The car also accepts raw
+// coordinates ("lat,lon;lat,lon"), so it now builds — see the encoding tests at the
+// end of this file.
+test('buildCommand builds navigateWaypoints from coordinates', () => {
   const cmd: CarCommand = {
     type: 'navigateWaypoints',
     coords: [
@@ -412,12 +416,58 @@ test('buildCommand throws "unsupported over BLE" for navigateWaypoints (no lat/l
     ],
     order: 'REPLACE',
   };
-  assert.throws(() => buildCommand(cmd), /unsupported over BLE: navigateWaypoints/);
+  const decoded = decodeAction(buildCommand(cmd).bytes);
+  assert.equal(
+    decoded.vehicleAction?.navigationWaypointsRequest?.waypoints,
+    '1.000000,2.000000;3.000000,4.000000',
+  );
 });
 
 test('buildCommand throws for an unrecognized cmd.type', () => {
   assert.throws(
     () => buildCommand({ type: 'summon' } as unknown as CarCommand),
     /unsupported over BLE: summon/,
+  );
+});
+
+// ── Multi-stop navigation: coordinate waypoints ────────────────────────────────
+// The waypoints field is a STRING that accepts raw coordinates as well as Place
+// IDs: "lat,lon;lat,lon" — comma between lat/lon, SEMICOLON between waypoints.
+// Vector below is the one from Teslemetry's own NavigationWaypointsRequest test.
+
+test('waypointsCoordString encodes "lat,lon;lat,lon"', async () => {
+  const { waypointsCoordString } = await import('./builders');
+  assert.equal(
+    waypointsCoordString([
+      { lat: 37.323, lon: -122.0322 },
+      { lat: 37.4419, lon: -122.143 },
+    ]),
+    '37.323000,-122.032200;37.441900,-122.143000',
+  );
+  // Single stop is still valid (no trailing delimiter).
+  assert.equal(waypointsCoordString([{ lat: 1, lon: 2 }]), '1.000000,2.000000');
+});
+
+test('waypointsCoordString rejects empty, non-finite and out-of-range input', async () => {
+  const { waypointsCoordString } = await import('./builders');
+  assert.throws(() => waypointsCoordString([]), /at least one coordinate/);
+  assert.throws(() => waypointsCoordString([{ lat: NaN, lon: 0 }]), /non-finite/);
+  assert.throws(() => waypointsCoordString([{ lat: 91, lon: 0 }]), /out-of-range/);
+  assert.throws(() => waypointsCoordString([{ lat: 0, lon: 181 }]), /out-of-range/);
+});
+
+test('navigateWaypoints builds a real command (it used to throw)', () => {
+  const built = buildCommand({
+    type: 'navigateWaypoints',
+    coords: [
+      { lat: 42.6977, lon: 23.3219 },
+      { lat: 42.7, lon: 23.33 },
+    ],
+    order: 'REPLACE',
+  });
+  const decoded = decodeAction(built.bytes);
+  assert.equal(
+    decoded.vehicleAction?.navigationWaypointsRequest?.waypoints,
+    '42.697700,23.321900;42.700000,23.330000',
   );
 });
