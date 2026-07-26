@@ -1086,7 +1086,37 @@ export async function refreshCachedSession({
 // both domains share one Pi sessionId, so a transport-dead error from any one
 // domain means the BLE link is dead for the whole VIN. We therefore tear down
 // EVERY cached domain session for this VIN. (IDB row wipe dropped for v1.)
-export async function evictSession(vin: string, domain: Domain): Promise<void> {
+export type EvictScope =
+  // The BLE link itself is gone — every domain riding it is dead.
+  | 'link'
+  // Only THIS domain's exchange failed. The link demonstrably carried our write,
+  // so the other domain's session is still good and must be left alone.
+  | 'domain';
+
+export async function evictSession(
+  vin: string,
+  domain: Domain,
+  opts?: { scope?: EvictScope },
+): Promise<void> {
+  // SCOPED EVICTION. Measured 2026-07-26 (PE-4): a domain-3 read timing out was
+  // tearing down the domain-2 session too, so the next lock/unlock paid a full
+  // cold handshake — 4171ms against a warm 91ms. The blanket teardown is right
+  // for a dead link and wrong for a timeout: the car answered VCSEC normally
+  // seconds later, so the link was never dead.
+  //
+  // A background readout must not be able to destroy the session that opens the
+  // door. Same principle as the passive-entry fix, one layer up.
+  if ((opts?.scope ?? 'link') === 'domain') {
+    const entry = _domainCache.get(domain);
+    if (entry && entry.session.vin === vin) {
+      _evict(domain);
+      // Deliberately NOT clearing _piSessionRefcounts here: the sessionId is
+      // shared with the other domain, which is still using it. _evict's
+      // session.close() decrements our reference and leaves theirs intact.
+      console.warn('[ble] evicted domain', domain, 'for vin', vin.slice(-6), '· link presumed alive');
+    }
+    return;
+  }
   const victims: { d: number; sessionId: string }[] = [];
   for (const [d, e] of _domainCache.entries()) {
     if (e.session.vin === vin) victims.push({ d, sessionId: e.session.sessionId });

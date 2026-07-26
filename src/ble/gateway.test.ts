@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createCarGateway, MAX_BLE_ATTEMPTS } from './gateway';
+import { createCarGateway, MAX_BLE_ATTEMPTS, evictScopeFor } from './gateway';
 import {
   __resetSessionCaches,
   DOMAIN_INFOTAINMENT,
@@ -576,4 +576,28 @@ test('C3: no signal behaves exactly as before (parity, no behaviour change)', as
   const outcome = await gateway.runCommand({ type: 'lock' });
 
   assert.equal(outcome.ok, true);
+});
+
+// --- evictScopeFor -----------------------------------------------------------
+
+test('evictScopeFor: a TIMEOUT takes only its own domain', () => {
+  // The regression PE-4 measured. A domain-3 read timing out was tearing down
+  // the domain-2 session, so the next lock paid a cold handshake: 4171ms against
+  // a warm 91ms. A timeout means no reply came back — not that the link died,
+  // and the car answered VCSEC normally seconds later.
+  assert.equal(evictScopeFor('timeout'), 'domain');
+});
+
+test('evictScopeFor: unreachable still tears down the whole link', () => {
+  // Genuinely can't reach the car (Pi down, out of range) — every domain riding
+  // that link is dead, and narrowing this would leave stale sessions behind.
+  assert.equal(evictScopeFor('unreachable'), 'link');
+});
+
+test('evictScopeFor defaults to the SAFE side for anything unrecognised', () => {
+  // Over-evicting costs a handshake; under-evicting leaves a dead session cached
+  // and every later command fails on it. Unknown kinds must take the former.
+  for (const kind of ['auth', 'fault', 'cancelled', '', 'something-new']) {
+    assert.equal(evictScopeFor(kind), 'link', `${kind} must not be narrowed`);
+  }
 });

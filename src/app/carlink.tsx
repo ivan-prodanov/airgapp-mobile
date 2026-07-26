@@ -30,6 +30,7 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
 // DRIVE assertion is the unlock passive response with level = DRIVE(2).
 import {
+  evictSession,
   openDirectSession,
   buildStandingDriveAssertion,
   buildRoutableCommandFrame,
@@ -1202,6 +1203,70 @@ export default function CarLinkScreen() {
     }
   };
 
+  // PE-5 — does a domain-3 failure still destroy the domain-2 session?
+  //
+  // PE-4 can only catch this by LUCK: it passes if no background read happened
+  // to time out, which looks identical to "fixed". So this probe forces the
+  // condition instead of waiting for it.
+  //
+  //   1. warm BOTH sessions (a VCSEC read and a drive read)
+  //   2. time a VCSEC read           → the warm baseline, ~90ms
+  //   3. evict domain 3, scoped      → exactly what a timed-out read now does
+  //   4. time a VCSEC read again     → the whole question
+  //
+  // Still ~90ms means the VCSEC session survived and the lock path is untouched.
+  // Seconds means it was torn down with the read and the next tap pays a cold
+  // handshake — the 4171ms PE-4 caught.
+  const handleEvictionScopeProbe = async () => {
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    try {
+      const cfg = await loadPiConfig(store);
+      if (!cfg?.vin) throw new Error('no VIN saved');
+      const gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+
+      const timeVcsec = async (): Promise<number> => {
+        const t0 = Date.now();
+        await gw.readVcsecStatus();
+        return Date.now() - t0;
+      };
+
+      say('warming both domains…');
+      await timeVcsec();
+      await gw.awakeSync({ states: ['drive'] });
+
+      const warm = await timeVcsec();
+      say(`  VCSEC warm baseline: ${warm}ms`);
+
+      say('evicting DOMAIN 3 with scope=domain (what a timed-out read now does)…');
+      await evictSession(cfg.vin, DOMAIN_INFOTAINMENT, { scope: 'domain' });
+
+      const after = await timeVcsec();
+      say(`  VCSEC after the domain-3 eviction: ${after}ms`);
+
+      say('');
+      // Threshold on the ABSOLUTE number, not a ratio: a cold handshake is a
+      // second or more and a warm read is ~100ms, so there is no ambiguous middle
+      // — and a ratio would let a slow baseline hide a cold re-open.
+      if (after <= 500) {
+        say(`PASS: the VCSEC session SURVIVED a domain-3 eviction (${warm}ms → ${after}ms).`);
+        say('  A background read can no longer make the next unlock pay a handshake.');
+      } else {
+        say(`FAIL: VCSEC went cold (${warm}ms → ${after}ms) — the eviction is still unscoped.`);
+      }
+    } catch (err) {
+      say(`ERROR eviction-scope probe: ${errMsg(err)}`);
+    } finally {
+      const path = await appendDiagnostic('PE-5 eviction scope', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // PE-4 — what does a user command COST while the focused read is running?
   //
   // The deaf window is fixed, so passive entry is no longer the question: it
@@ -1734,6 +1799,7 @@ export default function CarLinkScreen() {
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
               <ActionButton label="PE-1 deaf-window repro" onPress={handlePassiveEntryRepro} theme={theme} />
               <ActionButton label="PE-4 command latency" onPress={handleCommandLatencyProbe} theme={theme} />
+              <ActionButton label="PE-5 eviction scope" onPress={handleEvictionScopeProbe} theme={theme} />
               <ActionButton label="VDS-M5 DriveState cleartext" onPress={handleVdsDriveProbe} theme={theme} />
               <ActionButton label="VDS-M6 full PII run" onPress={handleVdsPiiRun} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />

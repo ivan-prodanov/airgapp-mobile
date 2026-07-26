@@ -24,6 +24,7 @@ import {
   withCachedSession,
   refreshCachedSession,
   evictSession,
+  type EvictScope,
   sendCommand,
   evaluateFault,
   isTransportDeadError,
@@ -168,6 +169,20 @@ export interface CreateCarGatewayArgs {
 // UI timer, so nothing keeps talking to the car behind a failure the user has
 // already been shown.
 export const DEFAULT_COMMAND_DEADLINE_MS = 25_000;
+
+// evictScopeFor — how much to tear down for a given transport failure.
+//
+// 'unreachable' means the transport could not reach the car at all (Pi down, car
+// out of range): the link is gone and every domain on it with it.
+//
+// 'timeout' means we wrote fine and no matching reply came back within the
+// budget. That is NOT evidence of a dead link — PE-4 measured the car answering
+// VCSEC normally right after a domain-3 read timed out — so it must take only
+// the domain that failed. Evicting both made a background readout capable of
+// adding 4 seconds to the next unlock.
+export function evictScopeFor(kind: string): EvictScope {
+  return kind === 'timeout' ? 'domain' : 'link';
+}
 
 // _faultName lifts a MessageFault_E code to its name (ported verbatim from the
 // reference's _faultName so semantic faults read human-friendly in the
@@ -335,7 +350,11 @@ export function createCarGateway({
             attempt < MAX_BLE_ATTEMPTS
           ) {
             unreachableEvicts += 1;
-            await evictSession(vin, action.domain).catch(() => {});
+            // See evictScopeFor: a timeout takes THIS domain only. A stale frame
+            // that exhausts its retries above lands here and classifies as
+            // 'timeout', which is how a background drive read was destroying the
+            // VCSEC session that locks the car.
+            await evictSession(vin, action.domain, { scope: evictScopeFor(kind) }).catch(() => {});
             await sleep(TRANSIENT_DELAY_MS);
             continue;
           }
