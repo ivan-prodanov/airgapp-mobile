@@ -139,7 +139,14 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // True only when iOS woke us into the background (a CoreBluetooth relaunch is
   // delivered with applicationState == .background; a normal user launch is
   // .inactive → .active). This is the single-writer discriminator.
-  private var isBackground: Bool { UIApplication.shared.applicationState == .background }
+  private var isBackground: Bool { currentAppState() == .background }
+
+  // UIApplication.applicationState is main-thread-only, and this is reached from the
+  // JS bridge as well as from CoreBluetooth callbacks — so hop to main when needed.
+  private func currentAppState() -> UIApplication.State {
+    if Thread.isMainThread { return UIApplication.shared.applicationState }
+    return DispatchQueue.main.sync { UIApplication.shared.applicationState }
+  }
 
   // Called at app launch (foreground OR background relaunch) by the AppDelegate
   // subscriber. Single-writer by lifecycle: native drives BLE ONLY while
@@ -211,6 +218,23 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // The single-writer gate. true = FOREGROUND (TS drives crypto via the pipe);
   // false = BACKGROUND (native self-signs). Driven by whoMaySign/AppState in JS.
   func setForegroundResponderActive(_ active: Bool) {
+    // REFUSE a foreground claim we can disprove.
+    //
+    // MEASURED 2026-07-26 (two force-quit+reboot walk-ups that didn't unlock): on a
+    // background relaunch iOS starts the JS runtime, and RN's AppState reports
+    // 'active' during that launch — so the arming effect called this with true while
+    // the app was really in the background. That put native into dumb-pipe mode, so
+    // it skipped its own handshake and would not self-sign; JS then suspended, and
+    // nothing was left that could answer the walk-up challenge. Native was muzzled
+    // and JS was asleep.
+    //
+    // The app's real UIApplicationState is authoritative and native owns it, so
+    // check it here rather than trusting the claim. Only .active may enable pipe
+    // mode; anything else keeps native autonomous (the safe default).
+    if active, currentAppState() != .active {
+      log("foreground claim REFUSED (app is not active) — staying autonomous")
+      return
+    }
     guard foregroundActive != active else { return }
     foregroundActive = active
     log("foregroundResponderActive=\(active)")
