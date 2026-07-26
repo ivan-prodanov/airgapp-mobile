@@ -413,6 +413,9 @@ test('runAction (navigate): a car-rejected verdict fails the command with faultN
     fault: 0,
     faultName: 'carRejected',
     message: '[navigateTo] the car rejected it: timed reservation expired',
+    // The car's words on their own, free of the developer-facing "[label]"
+    // prefix — this is the field the failure toast renders (commandMessages).
+    reason: 'timed reservation expired',
   });
   // A semantic rejection, not a transient fault — stop, don't retry.
   assert.equal(car.decryptedCommands.length, 1);

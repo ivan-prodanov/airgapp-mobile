@@ -84,6 +84,12 @@ export type CommandOutcome =
       faultName: string;
       fault: number;
       message: string;
+      // The CAR's own words for why it said no (Response.actionStatus
+      // result_reason.plain_text), when it gave any. Separate from `message`
+      // on purpose: `message` is developer-facing and carries a `[label]`
+      // prefix, so it must never be shown to the user, while this is the one
+      // string worth putting in the failure toast instead of "Command failed".
+      reason?: string;
     }
   // `cancelled` (C3) is NOT a failure the user should ever be told about — it
   // means a NEWER command for the same lane superseded this one, so we stopped
@@ -487,6 +493,8 @@ export function createCarGateway({
                 fault: 0,
                 faultName: "carRejected",
                 message: `[${label}] the car rejected it${carStatus.reason ? `: ${carStatus.reason}` : ""}`,
+                // Surfaced VERBATIM in the failure toast (commandMessages).
+                ...(carStatus.reason ? { reason: carStatus.reason } : {}),
               },
               result,
             };

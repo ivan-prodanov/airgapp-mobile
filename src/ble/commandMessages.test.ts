@@ -19,6 +19,24 @@ const faultInsufficient: Fail = {
   message: '[lock] fault 7',
 };
 const faultOther: Fail = { ok: false, kind: 'fault', fault: 9, faultName: 'INVALID_COMMAND', message: '[lock] fault 9' };
+// The car's OWN verdict (Response.actionStatus), as gateway.ts builds it for a
+// rejected navigation send: a developer-facing `message` AND the car's verbatim
+// reason in `reason`.
+const carRejected: Fail = {
+  ok: false,
+  kind: 'fault',
+  fault: 0,
+  faultName: 'carRejected',
+  message: '[navigateTo] the car rejected it: No PII request',
+  reason: 'No PII request',
+};
+const carRejectedNoReason: Fail = {
+  ok: false,
+  kind: 'fault',
+  fault: 0,
+  faultName: 'carRejected',
+  message: '[navigateTo] the car rejected it',
+};
 
 // ── title: always "<Action> failed" (Tesla's bold first line) ────────────────
 
@@ -79,6 +97,38 @@ test('fault INSUFFICIENT_PRIVILEGES → vehicle_error_insufficient_privileges, v
 
 test('fault (other) → the generic command_error_GENERIC_ fallback', () => {
   assert.equal(commandFailureText('Lock', faultOther).body, 'Command failed');
+});
+
+// ── the car's own rejection reason ──────────────────────────────────────────
+//
+// A navigation send fails on the CAR's actionStatus, not on the transport ACK.
+// The whole point of decoding result_reason.plain_text is that the user sees it
+// — before this, the reason reached only the log and the toast said "Command
+// failed".
+
+test('carRejected → the car\'s own reason, verbatim', () => {
+  assert.deepEqual(commandFailureText('Send to car', carRejected), {
+    title: 'Send to car failed',
+    body: 'No PII request',
+  });
+});
+
+test('carRejected never leaks the developer-facing message (the "[label]" prefix)', () => {
+  const { body } = commandFailureText('Send to car', carRejected);
+  assert.doesNotMatch(body, /\[|\]/, `developer string leaked into the toast: ${body}`);
+  assert.doesNotMatch(body, /navigateTo/);
+});
+
+test('carRejected with no reason falls back to the generic body', () => {
+  // The car can reject without saying why (result_reason absent). Inventing a
+  // reason would be worse than the generic line.
+  assert.equal(commandFailureText('Send to car', carRejectedNoReason).body, 'Command failed');
+});
+
+test('navigateTo is labelled "Send to car", not the title-cased wire verb', () => {
+  // titleCase('navigateTo') would read "Navigate to" → "Navigate to failed".
+  assert.equal(commandActionLabel('navigateTo'), 'Send to car');
+  assert.equal(commandFailureText(commandActionLabel('navigateTo'), carRejected).title, 'Send to car failed');
 });
 
 test('no branch invents an asleep/offline body (findings §3.2: no such key exists)', () => {

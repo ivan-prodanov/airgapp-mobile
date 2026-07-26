@@ -39,6 +39,9 @@ const COMMAND_LABELS: Partial<Record<CarCommand['type'], string>> = {
   closeWindows: 'Close windows',
   flashLights: 'Flash lights',
   honk: 'Honk',
+  // Matches the button the user pressed ("Send to Car"), not the wire verb —
+  // titleCase would otherwise render "Navigate to failed".
+  navigateTo: 'Send to car',
 };
 
 // titleCase turns a camelCase command type into a spaced, capitalized phrase
@@ -93,6 +96,12 @@ function failureBody(outcome: FailureOutcome): string {
       if (outcome.faultName === 'INSUFFICIENT_PRIVILEGES') {
         return 'Unpair your phone key and pair it again to retry.'; // vehicle_error_insufficient_privileges
       }
+      // The car answered with its OWN reason (Response.actionStatus
+      // result_reason.plain_text — e.g. "No PII request" on a navigation send).
+      // That beats the generic body: it is the only text that says WHY. Shown
+      // verbatim; `outcome.message` is deliberately NOT used here — it is the
+      // developer-facing string and carries a "[label]" prefix.
+      if (outcome.reason) return outcome.reason;
       return 'Command failed'; // command_error_GENERIC_
   }
 }
