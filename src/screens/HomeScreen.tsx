@@ -132,6 +132,13 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
     awake: state.awake,
     wakeInFlight: carLink.linked ? carLink.wakeInFlight : demoWaking,
     now: Date.now(),
+    // RESPONSE-17: "Parked" is a gated branch — when the car is NOT in P the
+    // official app renders a composed speed line instead. `driving` is derived
+    // from the gear in telemetry, so this is the same signal the car reports.
+    parked: !state.driving,
+    speedMph: state.speed,
+    gear: state.gear,
+    charging: state.charging,
   });
 
   // Home's content clock — VERBATIM (findings R10 §1c):

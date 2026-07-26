@@ -36,6 +36,8 @@
 
 // TimeInMs.TWO_MINUTES — the one threshold behind both `isVehicleDataStale`
 // (#30694) and `fetchedDataRecently` (#30697). Findings §A.
+import { KM_PER_MILES } from './batteryDisplay';
+
 export const DATA_STALE_MS = 120_000;
 
 export interface VehicleStatusInput {
@@ -53,6 +55,20 @@ export interface VehicleStatusInput {
   // reproduces their behaviour on our transport.
   lastVehicleDataAt: number | null;
   awake: boolean;
+  // ── The not-parked gate (RESPONSE-17). "Parked" is a GATED branch in the
+  // official app (`isShiftStateParked` @05f6), NOT a default: when the gear is not
+  // P, control jumps past every fixed-string block into a COMPOSED, speed-bearing
+  // render. That is why a driving car showed "Parked" here — we had no such gate.
+  // There is no "Driving" string in that component; the app shows e.g. "111 KM/H".
+  parked?: boolean;
+  // DriveState.speed, in MPH (the car's unit — the app stores mph and displays
+  // km/h, cf. SpeedLimitSheet). null when the car isn't reporting one.
+  speedMph?: number | null;
+  // Gear name as the car reports it ('D'/'R'/'N'…). Shown next to the speed; the
+  // app suppresses it when parked, which the gate above already covers.
+  gear?: string;
+  // Charging outranks the parked/driving gate (RESPONSE-17 #12-14 sit above #19).
+  charging?: boolean;
   // Our `canWake`: a user-requested wake/refresh is in flight (pull-to-refresh,
   // tapping the status line). This ALONE drives the spinner — an automatic
   // poll, a cold start, or merely-stale data must never spin. See the gate note
@@ -117,6 +133,24 @@ export function isVehicleDataUnreliable(lastVehicleDataAt: number | null, now: n
   return lastVehicleDataAt === null || now - lastVehicleDataAt >= DATA_STALE_MS;
 }
 
+// composeDriveText — the official app builds this line as
+//   [speedPart, shiftStatePart, distancePart].filter(Boolean).join(' · ')
+// (DriveStatusText #118286). We compose the first two; the third is the distance
+// between phone and car, which needs the phone's position and so does not belong
+// in this pure module. Returns '' when nothing is known, so the caller can fall
+// back rather than render an empty status.
+export function composeDriveText(speedMph: number | null, gear?: string): string {
+  const parts: string[] = [];
+  if (speedMph !== null && Number.isFinite(speedMph) && speedMph > 0) {
+    // The car reports mph; the app displays km/h (same convention as
+    // SpeedLimitSheet). Units come from getGuiSettings once that read lands.
+    parts.push(`${Math.round(speedMph * KM_PER_MILES)} km/h`);
+  }
+  // 'unknown' is our parser's placeholder for an absent shiftState — not a gear.
+  if (gear && gear !== 'unknown' && gear !== 'P') parts.push(gear);
+  return parts.join(' · ');
+}
+
 export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
   const { linked, lastVehicleDataAt, awake, wakeInFlight, now } = input;
 
@@ -134,7 +168,17 @@ export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
   const spinner = wakeInFlight && !fetchedRecently;
 
   // A live state wins over the stale branch (findings §A priorities 1-6).
-  if (fetchedRecently) return { text: 'Parked', spinner: false, stale: false };
+  if (fetchedRecently) {
+    // Charging first — it sits ABOVE the parked/driving gate in the official
+    // precedence chain, so a charging car reads "Charging" even in P.
+    if (input.charging) return { text: 'Charging', spinner: false, stale: false };
+    // Not parked → the composed, speed-bearing line (never the word "Driving").
+    if (input.parked === false) {
+      const composed = composeDriveText(input.speedMph ?? null, input.gear);
+      if (composed) return { text: composed, spinner: false, stale: false };
+    }
+    return { text: 'Parked', spinner: false, stale: false };
+  }
 
   if (lastVehicleDataAt === null) {
     // Never fetched (fresh install / newly linked car) — the ONLY route to

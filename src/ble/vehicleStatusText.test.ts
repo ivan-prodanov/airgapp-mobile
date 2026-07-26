@@ -204,3 +204,50 @@ describe('isVehicleDataUnreliable (findings §4 — drives the renderer dim)', (
     }
   });
 });
+
+describe('drive gate (RESPONSE-17)', () => {
+  // ── RESPONSE-17: "Parked" is a GATED branch, not a default ─────────────────────
+// The official app has no "Driving" string: when isShiftStateParked is false it
+// renders a COMPOSED speed-bearing line (on-device: "111 KM/H"). Our status said
+// "Parked" while the car was moving because we had no such gate.
+
+  const live = { linked: true, lastVehicleDataAt: 1_000, awake: true, wakeInFlight: false, now: 1_500 };
+
+  it('driving: not parked -> composed speed line, never "Parked"', () => {
+  const s = vehicleStatusText({ ...live, parked: false, speedMph: 69, gear: 'D' });
+  // 69 mph * 1.609344 = 111.0 -> the car's own display value
+  assert.equal(s.text, '111 km/h · D');
+  assert.equal(s.stale, false);
+  });
+
+  it('driving: speed with no usable gear still drops "Parked"', () => {
+  assert.equal(vehicleStatusText({ ...live, parked: false, speedMph: 30, gear: 'unknown' }).text, '48 km/h');
+  });
+
+  it('driving: stationary but out of P shows the gear alone', () => {
+  assert.equal(vehicleStatusText({ ...live, parked: false, speedMph: 0, gear: 'R' }).text, 'R');
+  });
+
+  it('driving: not parked but nothing composable falls back to Parked', () => {
+  assert.equal(vehicleStatusText({ ...live, parked: false, speedMph: null }).text, 'Parked');
+  });
+
+  it('charging outranks the parked/driving gate', () => {
+  assert.equal(vehicleStatusText({ ...live, charging: true, parked: false, speedMph: 30, gear: 'D' }).text, 'Charging');
+  assert.equal(vehicleStatusText({ ...live, charging: true, parked: true }).text, 'Charging');
+  });
+
+  it('parked (or unknown gear) keeps the existing behaviour', () => {
+  assert.equal(vehicleStatusText({ ...live, parked: true }).text, 'Parked');
+  assert.equal(vehicleStatusText(live).text, 'Parked'); // gate absent -> unchanged
+  });
+
+  it('a stale car is unaffected by the drive gate', () => {
+  const s = vehicleStatusText({
+    linked: true, lastVehicleDataAt: 0, awake: true, wakeInFlight: false,
+    now: 3 * 60 * 1000, parked: false, speedMph: 60, gear: 'D',
+  });
+  assert.match(s.text, /^Last seen/);
+  });
+
+});
