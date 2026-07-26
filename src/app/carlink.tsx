@@ -1120,6 +1120,90 @@ export default function CarLinkScreen() {
     }
   };
 
+  // VDS-M7 — how big a request will the car actually accept?
+  //
+  // VDS-M6 got NO REPLY at all, not a rejection. The only thing that changed is
+  // size: the sealed body goes from 12 bytes to 451 once the PKCS#1 PEM is in
+  // it, and the routable adds ~90B of envelope plus a 16B tag on top.
+  // RESPONSE-19 Q4 warned about exactly this — QtCarServer has
+  // "Dropping payload of size" / "exceeds maximumSize=" and DROPS rather than
+  // fragments — and said to measure it, which nobody had.
+  //
+  // So: send the same field at increasing sizes and find where replies stop.
+  // The payload is deliberately a BOGUS pem-shaped string. We do not want it
+  // accepted; we want to know whether it comes BACK. A rejection is a reply and
+  // counts as a pass. Only silence counts as over-cap, which makes this a clean
+  // one-variable test.
+  const handleVdsSizeLadder = async () => {
+    const SIZES = [64, 128, 256, 352, 400, 451];
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+      say('sending pii_key_request at increasing sizes — a REJECTION counts as a pass,');
+      say('only SILENCE means over-cap.');
+      let lastOk = 0;
+      let firstSilent = 0;
+      for (const size of SIZES) {
+        // A pem-shaped string of the requested total length. Shape matters
+        // because piiKeyRequestFor rejects anything that is not PKCS#1, and we
+        // are testing SIZE, not validity.
+        const head = '-----BEGIN RSA PUBLIC KEY-----\n';
+        const tail = '\n-----END RSA PUBLIC KEY-----\n';
+        const body = 'A'.repeat(Math.max(1, size - head.length - tail.length));
+        const action = vehicleDataSubscriptionAction({
+          durationS: 20,
+          locationRateMs: null,
+          driveRateMs: 2000,
+          piiKeyRequest: piiKeyRequestFor({ publicKeyPkcs1Pem: head + body + tail }),
+        });
+        const t0 = Date.now();
+        const r = await gw.runRawAction(action, `vds-size-${size}`);
+        const ms = Date.now() - t0;
+        const replied = r.outcome.ok || !/timeout|unreachable/.test(r.outcome.kind ?? '');
+        say(
+          `  sealed ${action.bytes.length}B (pem ${size}B): ${replied ? 'REPLIED' : 'SILENT'} ` +
+            `in ${ms}ms — ${r.outcome.ok ? 'ok' : r.outcome.kind}`,
+        );
+        if (replied) lastOk = action.bytes.length;
+        else if (!firstSilent) firstSilent = action.bytes.length;
+        try {
+          await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+        } catch {
+          /* best effort between rungs */
+        }
+      }
+      say('');
+      if (firstSilent && lastOk) {
+        say(`VERDICT: the car answers up to ${lastOk}B sealed and goes SILENT at ${firstSilent}B.`);
+        say('  → a size cap, as RESPONSE-19 Q4 predicted. An RSA-2048 PKCS#1 PEM cannot fit,');
+        say('  so the PII key needs another route: a smaller key encoding, or the key sent');
+        say('  in its own minimal request rather than alongside state rates.');
+      } else if (!firstSilent) {
+        say('VERDICT: every size REPLIED — size is NOT the blocker. VDS-M6 failed for another');
+        say('  reason; re-run it and read the outcome kind.');
+      } else {
+        say('VERDICT: silent from the first rung — something other than size is wrong.');
+      }
+    } catch (err) {
+      say(`ERROR size ladder: ${errMsg(err)}`);
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        /* the TTL will expire it */
+      }
+      const path = await appendDiagnostic('VDS-M7 request size ladder', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // VDS-M6 — the full PII recipe, end to end, on the car.
   //
   // M5 settled that DriveState is GATED on this HW4 car: field 5 arrives
@@ -1227,7 +1311,19 @@ export default function CarLinkScreen() {
       } else if (wrappedSeen > 0) {
         say('VERDICT: the car sent a wrapped key but we could not unwrap it. See above.');
       } else {
-        say('VERDICT: no encrypted_pii_key in any push — the car ignored our pii_key_request.');
+        // Distinguish "answered, without a key" from "did not answer at all".
+        // The first means the car parsed our request and declined; the second
+        // means it never got that far, and conflating them sent me looking at
+        // the wrong half of the protocol.
+        if (!sub.outcome.ok) {
+          say('VERDICT: NO REPLY AT ALL — the car never answered the subscribe.');
+          say(`  The request carries a ${'~451'}B sealed body with the PEM, against 12B without it.`);
+          say('  RESPONSE-19 Q4: the car DROPS rather than fragments an over-cap payload');
+          say('  ("Dropping payload of size", "exceeds maximumSize="). Size is the prime suspect;');
+          say('  run the VDS-M7 size ladder to find the actual cap.');
+        } else {
+          say('VERDICT: the car REPLIED but sent no encrypted_pii_key — request parsed, key declined.');
+        }
       }
     } catch (err) {
       say(`ERROR pii run: ${errMsg(err)}`);
@@ -1870,6 +1966,7 @@ export default function CarLinkScreen() {
               <ActionButton label="PE-5 eviction scope" onPress={() => withBackgroundReadsSuspended(handleEvictionScopeProbe)} theme={theme} />
               <ActionButton label="VDS-M5 DriveState cleartext" onPress={() => withBackgroundReadsSuspended(handleVdsDriveProbe)} theme={theme} />
               <ActionButton label="VDS-M6 full PII run" onPress={() => withBackgroundReadsSuspended(handleVdsPiiRun)} theme={theme} />
+              <ActionButton label="VDS-M7 size ladder" onPress={() => withBackgroundReadsSuspended(handleVdsSizeLadder)} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={() => withBackgroundReadsSuspended(handleVdsDefaultProbe)} theme={theme} />
               <ActionButton label="VDS-M4 ping/ack probe" onPress={() => withBackgroundReadsSuspended(handleVdsAckProbe)} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
