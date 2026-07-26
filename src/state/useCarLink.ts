@@ -1431,8 +1431,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         const gw = getGateway();
         if (!gw || stopped || paused) return;
         const plan = planForCameraMode(active.cameraMode);
+        const t0 = Date.now();
         const snap = await gw.awakeSync({ states: plan.states });
         if (stopped || paused) return;
+        // Logged so the cadence and the screen-keying are VERIFIABLE from
+        // pull-logs.sh. Without this the change is nearly invisible on a parked
+        // car — speed is 0 and gear is P, so nothing on screen moves — and
+        // "did it work?" would come down to trusting the code.
+        logi('poll', 'focused', { states: plan.states.join(','), mode: active.cameraMode, ms: Date.now() - t0 });
         const focusPatch = filterPatchUnderIntent(
           infotainmentToPatch(snap),
           intentRef.current,
