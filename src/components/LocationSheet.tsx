@@ -48,12 +48,12 @@ interface Props {
   onSortChange: (sort: ChargerSort) => void;
   filter: ChargerFilter;
   onFilterChange: (filter: ChargerFilter) => void;
-  // Charger detail: a selected charger shows the detail view instead of the list; the map's Navigate
-  // button (rendered by the screen) drives the actual maps hand-off.
+  // Charger detail: a selected charger shows the detail view instead of the list; the screen's Send to Car
+  // button (rendered over the sheet) is what actually sends it.
   selectedCharger: Charger | null;
   onSelectCharger: (charger: Charger) => void;
   onCloseDetail: () => void;
-  onNavigateCharger: (charger: Charger) => void; // maps hand-off (detail distance pill)
+  onNavigateCharger: (charger: Charger) => void; // detail distance pill → re-select + re-frame
   // Navigate search (Location tab): live query + Apple/local results + persisted recents + car pos for distance.
   query: string;
   onChangeQuery: (text: string) => void;
@@ -61,14 +61,12 @@ interface Props {
   recentGroups: RecentGroup[];
   carCoord: LatLng;
   onSelectPlace: (place: Place) => void;
-  // When provided (a trip is active), render a ‹ Trip button that returns to the trip panel.
-  onBackToTrip?: () => void;
 }
 
-// Tesla Location bottom sheet: one frame with a persistent header (optional ‹ Trip + always-visible
-// Location | Charging tabs) over a tab-switched body. Sort options + charger detail are overlays.
+// Tesla Location bottom sheet: one frame with a persistent header (the always-visible Location | Charging
+// tabs) over a tab-switched body. Sort options + charger detail are overlays.
 export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function LocationSheet(
-  { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger, query, onChangeQuery, results, recentGroups, carCoord, onSelectPlace, onBackToTrip },
+  { tab, onTabChange, chargers, availability, sort, onSortChange, filter, onFilterChange, selectedCharger, onSelectCharger, onCloseDetail, onNavigateCharger, query, onChangeQuery, results, recentGroups, carCoord, onSelectPlace },
   ref,
 ) {
   const insetBottom = useSafeAreaInsets().bottom;
@@ -122,7 +120,7 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
 
         return (
           <View style={styles.tabContent}>
-            <Header dragHandlers={dragHandlers} tab={tab} onTabChange={onTabChange} onBackToTrip={onBackToTrip} />
+            <Header dragHandlers={dragHandlers} tab={tab} onTabChange={onTabChange} />
             {tab === 'location' ? (
               <LocationBody
                 insetBottom={insetBottom}
@@ -158,27 +156,18 @@ export const LocationSheet = forwardRef<LocationSheetHandle, Props>(function Loc
   );
 });
 
-// Persistent header: an optional ‹ Trip back button + the always-visible Location | Charging tabs. Draggable.
+// Persistent header: the always-visible Location | Charging tabs. Draggable.
 function Header({
   dragHandlers,
   tab,
   onTabChange,
-  onBackToTrip,
 }: {
   dragHandlers: GestureResponderHandlers;
   tab: LocationTab;
   onTabChange: (t: LocationTab) => void;
-  onBackToTrip?: () => void;
 }) {
   return (
     <View {...dragHandlers}>
-      {/* Back-to-trip is its own top-left nav row (standard), so it doesn't crowd the Location tab. */}
-      {onBackToTrip ? (
-        <Pressable style={styles.backRow} hitSlop={8} onPress={onBackToTrip}>
-          <SymbolView name="chevron.left" tintColor="#3E6AE1" size={16} weight="semibold" />
-          <Text style={styles.backToTripText}>Trip</Text>
-        </Pressable>
-      ) : null}
       <View style={styles.headerBar}>
         <View style={styles.tabs}>
           <Pressable style={styles.tab} onPress={() => onTabChange('location')}>
@@ -659,8 +648,6 @@ const styles = StyleSheet.create({
   searchFloatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: -2 },
   searchInput: { fontSize: 17, color: 'white', padding: 0 },
   headerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 2, marginBottom: 10, minHeight: 30 },
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: 1, alignSelf: 'flex-start', paddingHorizontal: 14, paddingTop: 2, paddingBottom: 6 },
-  backToTripText: { fontSize: 16, color: '#3E6AE1', fontWeight: '600' },
   tabs: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   tab: { flex: 1, alignItems: 'center' },
   tabDivider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: 'rgba(255,255,255,0.18)' },
