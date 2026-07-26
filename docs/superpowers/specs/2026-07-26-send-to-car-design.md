@@ -133,6 +133,20 @@ Audited by grepping every consumer, not assumed:
   trip-only from `TripSheet` but have other consumers: `_layout.tsx` for the
   former, `animated-icon` and `collapsible` for the latter.
 
+Nothing on the Apple mapping side is removable, and one of them is a trap:
+
+- **`react-native-maps` stays**, with its pnpm patch (tappable POIs). It is
+  imported in exactly ONE file — `location.tsx` — which is also where all the trip
+  code lived, so a consumer grep makes it look trip-only. It is not: the map, the
+  car pin, the charger pins and the POI tap all depend on it.
+- **`modules/expo-apple-search` stays.** Search and completion still power the
+  Navigate tab; only its MKDirections method dies with `appleDirections.ts`.
+- **`expo-location` stays** and becomes MORE load-bearing — it is the
+  reverse-geocoder behind step 2 of the title fallback.
+- **MapKit** is a system framework; nothing to remove. Gutting the share popup
+  drops the extension's `MKMapView`, but MapKit stays linked for `MKMapItem` and
+  `CLGeocoder` in `SharedLocationResolver`.
+
 ## Also in scope
 
 **Read `actionStatus`.** `Response.actionStatus` carries
