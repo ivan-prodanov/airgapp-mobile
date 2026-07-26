@@ -46,6 +46,7 @@ import {
   getLocationStateAction,
 } from "./builders";
 import { decodeMessage, FromVCSECMessage, Response } from "./proto";
+import { parseCarActionStatus, type CarActionStatus } from "./carActionStatus";
 import {
   parseWhitelistPermissions,
   describeWhitelistPermissions,
@@ -63,6 +64,7 @@ import {
   type InfotainmentSnapshot,
 } from "./telemetry";
 import type { Domain, DeviceKeys, PiTransport } from "./types";
+import { logw } from "../services/logbus";
 
 // Re-export the attempt cap under this module's name (it lives with the other
 // protocol primitives in session.ts; the reference kept it on the airgap.*
@@ -75,7 +77,7 @@ export const MAX_BLE_ATTEMPTS = SESSION_MAX_BLE_ATTEMPTS;
 // `fault`, non-retryable) and the link never delivering a clean answer
 // (`unreachable`/`timeout`/`auth`/`exhausted`).
 export type CommandOutcome =
-  | { ok: true; attempts: number }
+  | { ok: true; attempts: number; carStatus?: CarActionStatus }
   | {
       ok: false;
       kind: "fault";
@@ -447,9 +449,42 @@ export function createCarGateway({
         const opStatus = status?.operationStatus;
         const fault = status?.signedMessageFault ?? 0;
 
-        // opStatus 0 (or absent) is success — the car ACK'd the command.
+        // opStatus 0 (or absent) means the ROUTABLE layer accepted the frame. It
+        // does NOT mean the car carried the command out — that verdict is in
+        // CarServer's Response.actionStatus, which we decode here.
         if (opStatus === 0 || opStatus === undefined) {
-          return { outcome: { ok: true, attempts: attempt }, result };
+          const carStatus = parseCarActionStatus(result.decryptedPayload);
+          if (carStatus && !carStatus.ok) {
+            logw("gateway", "car rejected command", { label, reason: carStatus.reason });
+          }
+          // Only NAVIGATION is failed on the car's verdict for now. Other commands
+          // may be returning ERROR today in ways the app tolerates silently, and
+          // flipping all of them at once would invent user-visible failures with
+          // no evidence behind them. The log line above is how we gather that
+          // evidence; widen this once we know what it says.
+          const isNav = label.startsWith("navigate");
+          if (isNav && carStatus && !carStatus.ok) {
+            return {
+              outcome: {
+                ok: false,
+                kind: "fault",
+                fault: 0,
+                faultName: "carRejected",
+                message: `[${label}] the car rejected it${carStatus.reason ? `: ${carStatus.reason}` : ""}`,
+              },
+              result,
+            };
+          }
+          // Omit the key entirely rather than assigning `carStatus: undefined` —
+          // an explicit-undefined own property is NOT the same as an absent one
+          // to assert.deepEqual, and would break every pre-existing outcome
+          // assertion of the form `{ ok: true, attempts: N }`.
+          return {
+            outcome: carStatus
+              ? { ok: true, attempts: attempt, carStatus }
+              : { ok: true, attempts: attempt },
+            result,
+          };
         }
 
         const policy = evaluateFault(fault);

@@ -510,12 +510,18 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.drive.powerKw !== null) patch.powerKw = snap.drive.powerKw;
   }
 
-  if (snap.route) {
-    patch.activeRoute = {
-      destination: snap.route.destination,
-      minutesToArrival: snap.route.minutesToArrival,
-      milesToArrival: snap.route.milesToArrival,
-    };
+  // Emit null, don't omit. Omitting leaves the PREVIOUS route in state forever:
+  // once set, a route that has since ended never clears for the rest of the
+  // session. Only emit when the drive slice was actually read — an absent
+  // driveState means "we did not ask", not "there is no route".
+  if (snap.drive) {
+    patch.activeRoute = snap.route
+      ? {
+          destination: snap.route.destination,
+          minutesToArrival: snap.route.minutesToArrival,
+          milesToArrival: snap.route.milesToArrival,
+        }
+      : null;
   }
 
   // Real GPS → the map's car pin (location.tsx). Only emit when BOTH coords are finite; a partial

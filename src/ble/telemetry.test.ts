@@ -539,7 +539,7 @@ test('drive: reads the optional* variant when the plain field is absent', () => 
   assert.equal(snap.drive?.speed, 30);
 });
 
-test('drive: active route -> activeRoute patch; no route -> omitted', () => {
+test('drive: active route -> activeRoute patch; no route -> null', () => {
   const withRoute = parseCarServerResponse({
     driveState: {
       activeRouteDestination: 'Home',
@@ -554,7 +554,19 @@ test('drive: active route -> activeRoute patch; no route -> omitted', () => {
   });
   // An empty destination is the proto default for "unset" — not a real route.
   const noRoute = parseCarServerResponse({ driveState: { activeRouteDestination: '' } });
-  assert.equal(infotainmentToPatch(noRoute).activeRoute, undefined);
+  assert.equal(infotainmentToPatch(noRoute).activeRoute, null);
+});
+
+test('drive: a route that ends CLEARS activeRoute instead of leaving the old one', () => {
+  // The bug this guards: patch.activeRoute was only ever set, never cleared, so a
+  // route that finished stayed in state for the rest of the session.
+  const ended = parseCarServerResponse({ driveState: { activeRouteDestination: '' } });
+  assert.equal(infotainmentToPatch(ended).activeRoute, null);
+});
+
+test('drive: an unread driveState leaves activeRoute untouched', () => {
+  // "We did not ask" is not "there is no route" — omitting is correct here.
+  assert.equal(infotainmentToPatch(parseCarServerResponse({})).activeRoute, undefined);
 });
 
 test('closures: isUserPresent + centerDisplayState -> patch (the Driving-status inputs)', () => {
