@@ -452,7 +452,7 @@ never cleared, so a route that ended stayed in state for the whole session."
 
 **Interfaces:**
 - Consumes: `destinationTitle` + `TitleInput` (Task 1); `useFleet()` from `@/state/VehicleProvider`; `controlHaptic()` from `@/state/controlHaptic`.
-- Produces: `useSendToCar(): (target: SendTarget) => void` where `interface SendTarget { name?: string | null; address?: string | null; coordinate: { latitude: number; longitude: number } }` (structurally identical to `TitleInput`), and `<SendToCarButton target={...} insetBottom={...} />`. Tasks 4 and 6 use both.
+- Produces: `useSendToCar(): (target: SendTarget) => void` where `interface SendTarget { name?: string | null; address?: string | null; coordinate: { latitude: number; longitude: number } }` (structurally identical to `TitleInput`), and `<SendToCarButton target={...} onSent={...} />`. Tasks 4 and 6 use both. NOTE: there is no `insetBottom` prop — the component handles the home-indicator inset itself with `SafeAreaView edges={['bottom']}`, exactly as the three bars it replaces do.
 
 - [ ] **Step 1: Write the hook**
 
