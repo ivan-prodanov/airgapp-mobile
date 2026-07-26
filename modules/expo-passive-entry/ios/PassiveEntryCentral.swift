@@ -500,6 +500,26 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // ignoring them is "genuinely unmeasured … bound it by logging before acting".
     // A drive engage that takes seconds while we answer nothing is exactly when we
     // need to know what the car is asking for and how often.
+    // (c) HANDLE PULLED WITHOUT AUTH — the car's own ground truth on a FAILED
+    // walk-up, and the only instrument that can actually measure passive-entry
+    // latency (RESPONSE-15 Tier 3 item 9: "land it before any latency work").
+    // It was already arriving and we were discarding it as an unknown probe.
+    //
+    // Layout verified in the HW4 decompile, nothing guessed:
+    //   FromVCSECMessage.alert = 45                       (vc0/w0.java:291)
+    //     Alert.alertHandlePulledWithoutAuth = 1           (vc0/c.java:18)
+    //       1 = timeSinceAlertSet_ms   3 = connectionCount   5 = authRequested
+    //       2 = handlePulled           4 = unknownDevicePresent
+    //
+    // connectionCount and authRequested are the two we can't see from our side:
+    // 0 connections ⇒ the car saw NO link from us when the handle was pulled (we
+    // were dead/reconnecting); ≥1 with authRequested=false ⇒ we were connected but
+    // the car never challenged (a localisation decision, not our latency).
+    if let alert = VcsecSigner.extractLenField(payload, 45),
+       let hp = VcsecSigner.extractLenField(alert, 1) {
+      logHandlePulledWithoutAuth(hp)
+    }
+
     logUnhandledFields(payload)
     // The car asks for our capabilities (field 44) repeatedly until answered.
     if VcsecSigner.topLevelFieldNumbers(payload).contains(44) { sendAppDeviceInfo() }
@@ -509,6 +529,28 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // the drive-engage latency.
   private static let knownPayloadFields: Set<Int> = [1 /*vehicleStatus*/, 3 /*authRequest*/,
                                                      4 /*commandStatus*/, 55 /*CPDMessage*/]
+
+  // The car pulled a handle and could not authenticate anyone. Log its own account
+  // of why — this is what distinguishes "we were not connected yet" (our latency)
+  // from "we were connected and the car chose not to challenge" (its localisation).
+  private func logHandlePulledWithoutAuth(_ hp: [UInt8]) {
+    let sinceMs = VcsecSigner.extractVarintField(hp, 1) ?? -1
+    let handle = VcsecSigner.extractVarintField(hp, 2) ?? -1
+    let connections = VcsecSigner.extractVarintField(hp, 3) ?? -1
+    let unknownDevice = (VcsecSigner.extractVarintField(hp, 4) ?? 0) != 0
+    let authRequested = (VcsecSigner.extractVarintField(hp, 5) ?? 0) != 0
+    // Spell out the verdict so a pulled log needs no interpretation.
+    let verdict: String
+    if connections == 0 {
+      verdict = "car saw NO connection → we were not linked at pull time (relaunch/reconnect race)"
+    } else if !authRequested {
+      verdict = "car was linked to \(connections) but did NOT challenge → localisation, not our latency"
+    } else {
+      verdict = "car challenged over \(connections) connection(s) → our answer was late or refused"
+    }
+    log("HANDLE PULLED WITHOUT AUTH: connections=\(connections) authRequested=\(authRequested) "
+        + "unknownDevice=\(unknownDevice) handle=\(handle) sinceAlertSet=\(sinceMs)ms — \(verdict)")
+  }
 
   private func logUnhandledFields(_ payload: [UInt8]) {
     let fields = VcsecSigner.topLevelFieldNumbers(payload)
