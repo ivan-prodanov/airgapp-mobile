@@ -117,6 +117,11 @@ const LAST_TRANSPORT_KEY = 'ble.lastTransport.v1';
 // enough for a live lock/awake/closures indicator without spamming the link.
 const POLL_MS = 20_000;
 
+// How long the focused read stands down after passive-entry traffic. Sized off
+// the observed burst: the car re-challenged every ~1.6-2.5s for 29s straight, so
+// anything shorter would resume mid-burst and re-create the contention.
+const PASSIVE_ENTRY_QUIET_MS = 15_000;
+
 // How often the poll does the HEAVY infotainment (charge/range) read. VCSEC runs
 // every POLL_MS; this rides on top far less often. Charge state changes slowly,
 // and a cold domain-3 open is ~8s of shared-queue time — see the tick.
@@ -309,6 +314,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // Last INFOTAINMENT (charge/range) read. Throttles the heavy domain-3 poll so
   // it can't block interactive commands — see the poll tick.
   const lastInfotainmentAtRef = useRef(0);
+  // When we last saw passive-entry traffic. The focused read stands down for a
+  // while afterwards; unlocking the car outranks a live speed readout.
+  const lastPassiveEntryAtRef = useRef(0);
   const deferredTeardownRef = useRef(false);
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
@@ -1215,6 +1223,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     const legacyVerdict = describeCommandStatus(frame);
     const routableVerdict = legacyVerdict ? null : describeRoutableVerdict(frame);
     const verdict = legacyVerdict ?? routableVerdict;
+    // PASSIVE-ENTRY ACTIVITY STAMP. The focused read must get out of the way
+    // while the car is challenging us — see focusTick. Stamped on the verdict
+    // because that fires for every challenge we answer, on both seal shapes.
+    if (verdict) lastPassiveEntryAtRef.current = Date.now();
     if (verdict && authResponderRef.current) {
       const accepted = legacyVerdict ? commandStatusAccepted(frame) : routableVerdictAccepted(frame);
       authResponderRef.current.noteVerdict(accepted);
@@ -1424,6 +1436,20 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     const focusTick = async () => {
       if (stopped || paused || inFlight || focusInFlight) return;
       if (inFlightRef.current !== 0) return; // a user command owns the link
+      // STAND DOWN DURING PASSIVE ENTRY. Measured regression, 2026-07-26: after
+      // the focused read shipped, link traffic went from 35 exchanges/hour to
+      // 404, and stale-frame timeouts went from 0 to 25 — every one of them
+      // interleaved with a passive-entry challenge burst. The car challenged 11
+      // times in 29s, each answer GRANTED, while our reads timed out at 4-6s
+      // each; the door took 3-4s to open.
+      //
+      // The contention is structural, not incidental: the passive-entry
+      // responder signs INSIDE the write lock (RESPONSE-14 refinement #2, so the
+      // shared counter cannot interleave), so an in-flight focused read delays
+      // the one answer that has a ~6s window. A live speed number is not worth
+      // a slow unlock, so the read yields — and keeps yielding until the car has
+      // been quiet for a while, since a challenge burst spans tens of seconds.
+      if (Date.now() - lastPassiveEntryAtRef.current < PASSIVE_ENTRY_QUIET_MS) return;
       const active = getActiveStateRef.current();
       if (!active?.awake) return; // domain-3 reads fault on a sleeping car
       focusInFlight = true;
