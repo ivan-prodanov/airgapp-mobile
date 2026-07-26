@@ -21,6 +21,9 @@ export const SessionInfo = pb.Signatures.SessionInfo;
 export const SignatureData = pb.Signatures.SignatureData;
 export const Action = pb.CarServer.Action;
 export const Response = pb.CarServer.Response;
+// Needed to decode a DECRYPTED PII envelope: the plaintext of an EncryptedData
+// with field_number 5 is a bare DriveState message, not a Response.
+export const DriveState = pb.CarServer.DriveState;
 export const VCSECUnsignedMessage = pb.VCSEC.UnsignedMessage;
 export const InformationRequest = pb.VCSEC.InformationRequest;
 export const FromVCSECMessage = pb.VCSEC.FromVCSECMessage;

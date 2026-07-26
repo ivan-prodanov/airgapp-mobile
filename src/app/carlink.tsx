@@ -36,7 +36,7 @@ import {
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
-import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, pingAction, VDS_DEFAULTS } from '@/ble/builders';
+import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, pingAction, piiKeyRequestFor, VDS_DEFAULTS } from '@/ble/builders';
 import {
   classifyOrderProbe,
   classifyRouteStart,
@@ -49,6 +49,14 @@ import {
   type RouteSample,
 } from '@/ble/navProbe';
 import { parseCarServerResponse } from '@/ble/telemetry';
+import {
+  loadOrCreatePiiKeypair,
+  unwrapPiiKey,
+  decryptEncryptedState,
+  extractWrappedPiiKey,
+  parsePiiEnvelopes,
+} from '@/ble/piiKey';
+import { DriveState as DriveStateMsg } from '@/ble/proto';
 // Aliased: the global DOM `Response` shadows the proto one in this file.
 import { Response as CarServerResponse } from '@/ble/proto';
 import { armVdsCapture, disarmVdsCapture, buildVdsReport, type VdsWindow } from '@/ble/vdsProbe';
@@ -1127,6 +1135,129 @@ export default function CarLinkScreen() {
     }
   };
 
+  // VDS-M6 — the full PII recipe, end to end, on the car.
+  //
+  // M5 settled that DriveState is GATED on this HW4 car: field 5 arrives
+  // present-and-empty (`2a 00`) beside `5a 51 08 05 …`, an encrypted_data
+  // envelope with field_number = 5. So live speed needs the PII key, not just
+  // location — RESPONSE-19 expected cleartext here and flagged the choice as
+  // MCU2->HW4 divergent. It diverged.
+  //
+  // The recipe (RESPONSE-19 Q1c, and unit-tested end to end in piiKey.test.ts
+  // against an independently-built envelope, so anything that fails here is the
+  // WIRE, not our crypto):
+  //   1. our RSA-2048 keypair (generated once, persisted)
+  //   2. subscribe with pii_key_request{2: PKCS#1 PEM} + DriveState rate
+  //   3. read VehicleData field 900 -> PiiKeyResponse.encrypted_pii_key (256 B)
+  //   4. RSA-OAEP(SHA-1) unwrap -> K
+  //   5. AES-GCM each field-11 envelope with K, AAD = be32(field_number)
+  //   6. decode the plaintext as the state it claims to be
+  const handleVdsPiiRun = async () => {
+    const WATCH_MS = 25_000;
+    const RATE_MS = 2000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const hex = (b: Uint8Array | null | undefined) =>
+      b ? Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ') : null;
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      say('loading PII keypair (first run generates RSA-2048 — this blocks for seconds)…');
+      const t0 = Date.now();
+      const kp = await loadOrCreatePiiKeypair(store);
+      say(`  keypair ready in ${Date.now() - t0}ms; public key is ${kp.publicPkcs1Pem.length} chars of PKCS#1 PEM`);
+
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+      say(`subscribing: DriveState ${RATE_MS}ms + pii_key_request (expiry OMITTED — cold request)`);
+      const sub = await gw.runRawAction(
+        vehicleDataSubscriptionAction({
+          durationS: 60,
+          pingS: 10,
+          locationRateMs: null,
+          driveRateMs: RATE_MS,
+          piiKeyRequest: piiKeyRequestFor({ publicKeyPkcs1Pem: kp.publicPkcs1Pem }),
+        }),
+        'vds-pii-run',
+      );
+      say(`  outcome: ${sub.outcome.ok ? 'ok' : sub.outcome.message}`);
+      say(`  reply hex: ${hex(sub.result?.decryptedPayload) ?? '(none)'}`);
+
+      armVdsCapture(Date.now());
+      await wait(WATCH_MS);
+      const seen = disarmVdsCapture();
+
+      let k: Uint8Array | null = null;
+      let wrappedSeen = 0;
+      let envelopes = 0;
+      let opened = 0;
+      for (const o of seen) {
+        const dec = sub.result?.decryptPush?.(o.raw);
+        if (!dec) continue;
+        // Always show the first few frames whatever happens — this probe must be
+        // diagnosable from its own log, not from a re-run.
+        if (opened + envelopes < 2) say(`  frame: ${hex(dec.plaintext)}`);
+        const wrapped = extractWrappedPiiKey(dec.plaintext);
+        if (wrapped) {
+          wrappedSeen++;
+          if (!k) {
+            say(`  encrypted_pii_key present: ${wrapped.length} bytes (expect 256 for RSA-2048)`);
+            try {
+              k = unwrapPiiKey(kp.privatePem, wrapped);
+              say(`  *** UNWRAPPED K: ${k.length} bytes (${k.length * 8}-bit AES) ***`);
+            } catch (e) {
+              say(`  RSA-OAEP unwrap FAILED: ${errMsg(e)}`);
+              say('  → the car wrapped to a DIFFERENT public key than we sent (stale registration?)');
+            }
+          }
+        }
+        for (const env of parsePiiEnvelopes(dec.plaintext)) {
+          envelopes++;
+          if (!k) continue;
+          try {
+            const plain = decryptEncryptedState(k, env);
+            opened++;
+            if (opened <= 3) {
+              say(`  *** DECRYPTED state ${env.fieldNumber}: ${hex(plain)}`);
+              if (env.fieldNumber === 5) {
+                const ds = DriveStateMsg.decode(plain);
+                const shift = ds.shiftState ? Object.keys(ds.shiftState)[0] : '?';
+                say(`      drive: shift=${shift} speed=${ds.speed ?? '?'} odo=${ds.odometerInHundredthsOfAMile ?? '?'}`);
+              }
+            }
+          } catch (e) {
+            if (opened === 0) say(`  AES-GCM decrypt failed: ${errMsg(e)}`);
+          }
+        }
+      }
+      say(`${seen.length} frames — ${wrappedSeen} carried a wrapped key, ${envelopes} envelopes, ${opened} DECRYPTED`);
+      if (opened > 0) {
+        say('VERDICT: FULL PII PATH WORKS OVER BLE — live gated state, entirely offline.');
+      } else if (k && envelopes > 0) {
+        say('VERDICT: K unwrapped but no envelope opened — check nonce order / AAD width.');
+      } else if (wrappedSeen > 0) {
+        say('VERDICT: the car sent a wrapped key but we could not unwrap it. See above.');
+      } else {
+        say('VERDICT: no encrypted_pii_key in any push — the car ignored our pii_key_request.');
+      }
+    } catch (err) {
+      say(`ERROR pii run: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        say('WARN: cancel failed (the TTL will expire it)');
+      }
+      const path = await appendDiagnostic('VDS-M6 full PII run', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // VDS-M5 — is DriveState cleartext? (The cheapest possible live speed.)
   //
   // Replaces the M2 PII sweep, obsolete twice over: its oracle was invalid (the
@@ -1465,6 +1596,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
               <ActionButton label="VDS-M5 DriveState cleartext" onPress={handleVdsDriveProbe} theme={theme} />
+              <ActionButton label="VDS-M6 full PII run" onPress={handleVdsPiiRun} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
               <ActionButton label="VDS-M4 ping/ack probe" onPress={handleVdsAckProbe} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
