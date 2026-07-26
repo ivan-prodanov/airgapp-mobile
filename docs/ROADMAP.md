@@ -107,8 +107,23 @@ points at our implementation.
 Enabled. Gated on three measured fixes: deaf window (PE-1, 15 lost → 0, answered at 2ms),
 eviction scope (PE-5, lock session survives), command latency (PE-4, 4171ms → 387ms worst).
 
-- **Untested: the actual outcome.** Nobody has driven the car and watched the speed line update on
-  its own. Everything so far is link-level measurement.
+**Re-verified 2026-07-26 18:24-18:25 with the focused read LIVE — the cleanest set of the day:**
+
+```
+PE-1  phase A  1 challenge  1 answered  2ms          PASS
+      phase B  1 challenge  1 answered  2ms          PASS   104 reads issued, 0 failed
+PE-4  quiet    median  93ms  worst 122ms
+      loaded   median 300ms  worst 302ms             SAFE   (worst == median: no outlier at all)
+PE-5  88ms → 118ms across a forced domain-3 eviction PASS
+```
+
+Earlier runs had a first-command outlier of 510/597/387ms; with domain 3 warmed and the priority
+carried correctly there is none. Note PE-1 phase B ran 104 background reads with ZERO failures,
+against 5-with-4-failing in the run before — the link was healthy throughout, so this is a pass on
+a good link rather than a pass that got lucky.
+
+- **Still untested: the actual outcome.** Nobody has driven the car and watched the speed line
+  update on its own. Everything so far is link-level measurement.
 - Cadences: security 1250 / scheduling 2500 / location 5000 are PROVEN; controls 1650 and climate
   5000 are INFERRED. Home→drive is OUR choice, not recovered.
 
