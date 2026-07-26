@@ -579,7 +579,34 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // desync us and make the next answer fail (or be a push-based desync vector).
     // Keep the verified session; wait for a real handshake reply.
     guard hmacOK else {
-      log("SessionInfo REJECTED (hmac mismatch) counter=\(si.counter) — keeping current session")
+      // NOT necessarily junk. When the car REJECTS one of our signed frames (a
+      // counter/epoch fault) it pushes a SessionInfo back so we can resync — and
+      // that one is NOT bound to our handshake challenge, so the HMAC check can't
+      // pass. RESPONSE-15 lists the required behaviour explicitly:
+      // "fault-6 → swap epoch/counter IN PLACE with no teardown".
+      //
+      // MEASURED 2026-07-26: blanket-rejecting these stranded us desynced — the car
+      // sat at counter 1284 while we kept signing 1285+, every frame refused, the
+      // car reporting no key, until a disconnect forced a fresh handshake. That is
+      // a multi-second "place your key card" window on a drive attempt.
+      //
+      // So: if a session is already ESTABLISHED, treat it as a resync and adopt the
+      // car's counter/epoch in place. We never derive a session KEY from an
+      // unauthenticated frame (the key comes from the car's static public key we
+      // already hold), and a bogus counter is self-correcting — the next frame gets
+      // refused and the car sends another SessionInfo. With no session established
+      // we still refuse, since then it would be load-bearing.
+      guard sessionKey != nil else {
+        log("SessionInfo REJECTED (hmac mismatch, no live session) counter=\(si.counter)")
+        return
+      }
+      let before = counter
+      counter = si.counter
+      epoch = si.epoch
+      clockBase = si.clockTime
+      handshakeWallSec = UInt32(Date().timeIntervalSince1970)
+      persistSession()
+      log("SessionInfo RESYNC (fault path): counter \(before) → \(si.counter) epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) — swapped in place, no teardown")
       return
     }
     // MERGE with any warm session (RESPONSE-15 / P1-3): take the HIGHER counter
@@ -595,7 +622,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     clockBase = si.clockTime; handshakeWallSec = UInt32(Date().timeIntervalSince1970)
     myPubRaw = myPub; carPubRaw = si.publicKey; answersGiven = 0
     persistSession()
-    log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(si.counter) clock=\(si.clockTime) hmacOK=true")
+    log("HANDSHAKE ✓ epoch=\(VcsecSigner.hex(si.epoch).prefix(8)) counter=\(counter)\(counter != si.counter ? " (car said \(si.counter))" : "") clock=\(si.clockTime) hmacOK=true")
     // RESPONSE-11: proactively assert a standing DRIVE authorization on connect,
     // matching the official app. Harmless when exterior (the car ignores an
     // out-of-zone DRIVE); pre-authorizes drive once it localizes us inside.
