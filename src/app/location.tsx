@@ -17,6 +17,8 @@ import {
   type LocationTab,
 } from '@/components/LocationSheet';
 import { useFleet, useVehicle } from '@/state/VehicleProvider';
+import { controlHaptic } from '@/state/controlHaptic';
+import { useToast } from '@/components/ToastHost';
 import {
   distanceMeters,
   formatKm,
@@ -118,6 +120,7 @@ function pinToPlace(pin: DroppedPin): Place {
 // the draggable bottom sheet holds Navigate + Recents/Charging.
 export default function LocationView() {
   const router = useRouter();
+  const toast = useToast();
   // Deep-link: the Charging screen's "Find Chargers" opens `/location?tab=charging` straight on the Charging tab.
   const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
   const fleet = useFleet();
@@ -457,6 +460,33 @@ export default function LocationView() {
   const onTripCancel = () => {
     trip.clearSaved(); // discard session AND the saved snapshot, so a later "Add to Trip" starts fresh
     setScreen('search');
+  };
+
+  // Send the trip to the car. Was a no-op stub ("local mock") until 2026-07-26.
+  //
+  // SCOPE, deliberately: we send the FINAL destination via navigateTo, which is the
+  // proven BLE path (NavigationGpsRequest lat/lon + label, on-car verified). Sending
+  // every stop needs the multi-waypoint request, whose COORDINATE encoding is still
+  // unproven — the car only accepts coordinates when it advertises
+  // WAYPOINTS_REQUEST_ACCEPTS_COORDINATES, and the delimiter inside that string field
+  // is an open question (RESPONSE-15 residual; ours is Place-ID-only today and throws).
+  // Rather than guess a format and silently send a bad route, send the destination now
+  // and upgrade to the full route once the encoding is confirmed.
+  const onSendTripToCar = () => {
+    const stops = trip.trip?.stops ?? [];
+    // stops[0] is always the car itself (invariant enforced above), so the real
+    // destinations are everything after it.
+    const destinations = stops.slice(1);
+    const last = destinations[destinations.length - 1];
+    if (!last) return;
+    controlHaptic();
+    fleet.sendNavigation(last.coordinate.latitude, last.coordinate.longitude, last.title);
+    if (destinations.length > 1) {
+      // Don't pretend we sent the whole itinerary.
+      toast.show(`Sent ${last.title} to the car · multi-stop coming soon`);
+    } else {
+      toast.show(`Sent ${last.title} to the car`);
+    }
   };
 
   // Real Apple route for the active trip (null while loading / offline → straight-line fallback). Shared by
@@ -986,7 +1016,7 @@ export default function LocationView() {
           Hidden behind the pin preview. */}
       {!droppedPin && !tripEditing && screen === 'trip' && trip.trip ? (
         <SafeAreaView edges={['bottom']} style={styles.tripBar} pointerEvents="box-none">
-          <Pressable style={styles.tripSendButton} onPress={() => {}}>
+          <Pressable style={styles.tripSendButton} onPress={onSendTripToCar}>
             <Text style={styles.tripSendText}>
               Send to Car · {formatDuration(tripTotalsVal.durationS)} · {formatKm(tripTotalsVal.distanceM / 1000)}
             </Text>

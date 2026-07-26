@@ -31,6 +31,10 @@ export interface Fleet {
   setActiveVehicle: (id: string) => void;
   nextVehicle: () => void;
   prevVehicle: () => void;
+  // ONE-SHOT car actions — those with no local-state counterpart, so the
+  // state-diff reconciler above can never infer them. Navigation is the first:
+  // "Send to Car" is an event, not a toggle. No-op for a demo (non-live) car.
+  sendNavigation: (lat: number, lon: number, label?: string) => void;
 }
 
 export function useFleetState(): {
@@ -144,8 +148,20 @@ export function useFleetState(): {
 
   const actions = useMemo(() => buildVehicleActions(applyActiveUser), [applyActiveUser]);
 
+  // One-shot commands bypass the state diff (nothing optimistic to mirror), but
+  // still go through carLink.dispatch so they share the queue, the grace window
+  // and the failure toast with every other command.
+  const sendNavigation = useCallback(
+    (lat: number, lon: number, label?: string) => {
+      if (!activeIsLive) return;
+      carLink.dispatch({ type: 'navigateTo', lat, lon, label }, () => {});
+    },
+    [activeIsLive, carLink],
+  );
+
   const fleetApi = useMemo<Fleet>(
     () => ({
+      sendNavigation,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),
