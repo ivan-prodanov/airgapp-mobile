@@ -305,7 +305,8 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
       // car silently drops tokens it can't parse — while still ACKing, which is why
       // this looked like it worked. refId is a Google Place ID and is not derivable
       // offline, so coordinate multi-stop is not available to an air-gapped client.
-      // Use APPEND-chained navigateTo instead (fleet.sendWaypoints).
+      // The app therefore sends ONE destination at a time, via navigateTo
+      // (fleet.sendNavigation); there is no multi-stop caller any more.
       throw new Error(
         'unsupported over BLE: navigateWaypoints by coordinate — the car only accepts refId:/superchargerId: tokens',
       );

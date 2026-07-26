@@ -15,7 +15,7 @@ import {
 export const SHEET_MINIMAL_FRAC = 0.25;
 export const SHEET_MIDDLE_FRAC = 0.34;
 // A middle detent a bit taller than the default, shared by the location list + charger + dropped-pin/POI
-// preview sheets so they rest at a consistent, roomier height (between the default middle and the Trip sheet).
+// preview sheets so they rest at a consistent, roomier height (between the default middle and full).
 export const SHEET_TALL_FRAC = 0.43;
 const SHEET_FULL_FRAC = 0.92;
 
@@ -25,7 +25,7 @@ export interface BottomSheetHandle {
   expandFull: () => void; // open to the full detent
   // The visible screen fraction the sheet currently rests at — but the MIDDLE detent's fraction when fully
   // extended, so a map fit that pads by this never reserves (nearly) the whole screen. Lets the map frame
-  // content just above wherever the sheet actually is (shrunk / middle / trip), not a hardcoded height.
+  // content just above wherever the sheet actually is (minimal / middle / full), not a hardcoded height.
   reserveFrac: () => number;
 }
 
@@ -53,18 +53,20 @@ interface RenderProps {
   scrollProps: SheetScrollProps;
   // Latch OFF the content pan while an internal drag (e.g. a row reorder) owns the gesture.
   setContentBusy: (busy: boolean) => void;
-  // Whether the sheet currently rests at the full detent (lets a consumer remember/restore the detent, e.g.
-  // the Trip sheet's Edit mode which expands to full then returns to the prior detent on Done).
+  // Whether the sheet currently rests at the full detent (lets a consumer remember the detent, expand to
+  // full for a mode, then restore it on exit). No current consumer — kept as part of the sheet's contract.
   atFull: boolean;
 }
 interface Props {
   children: (props: RenderProps) => ReactNode;
-  // 'middle' locks the sheet so it can't be dragged below the middle detent (used by the Trip sheet, which
-  // keeps its pinned action buttons in view). Default 'minimal' = the full three-detent range.
+  // 'middle' locks the sheet so it can't be dragged below the middle detent (used by the place-preview
+  // sheet, which keeps its pinned action button in view). Default 'minimal' = the full three-detent range.
   lowestDetent?: 'minimal' | 'middle';
-  // Override the middle detent's visible screen fraction. The Trip sheet uses a taller ~half-screen detent.
+  // Override the middle detent's visible screen fraction. The place-preview sheet uses the taller
+  // SHEET_TALL_FRAC detent.
   middleFrac?: number;
-  // Freeze the sheet size (no handle/body resize). Used by the Trip sheet's Edit mode, which pins to full.
+  // Freeze the sheet size (no handle/body resize) for a consumer that pins itself to one detent. No current
+  // consumer — kept as part of the sheet's contract.
   locked?: boolean;
 }
 
@@ -76,7 +78,7 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 };
 
 // Bottom-anchored panel dragged by its top handle between three detents (full / middle / minimal), shared by
-// LocationSheet (search/charging) and TripSheet (itinerary). The body coordinates scroll-vs-resize: not fully
+// LocationSheet (search/charging) and PlacePreviewSheet (a pin/POI). The body coordinates scroll-vs-resize: not fully
 // expanded → a body drag resizes the sheet; fully expanded → the list scrolls, and a downward drag at the top
 // lowers the sheet.
 export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomSheet(
@@ -144,7 +146,7 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
     (dy: number, vy: number) => {
       const s = snapsRef.current;
       // Commit toward the drag direction once you've travelled ~35% of the way to the next detent — plain
-      // "nearest" (50%) felt sticky on the trip sheet's tall middle↔full gap ("sometimes up, sometimes stuck
+      // "nearest" (50%) felt sticky on a tall middle↔full gap (SHEET_TALL_FRAC: "sometimes up, sometimes stuck
       // in the middle"). Amplifying dy + weighting the fling velocity lets a normal swipe snap to the next
       // detent instead of falling back.
       const projected = restingY.current + dy * 1.4 + vy * 260;

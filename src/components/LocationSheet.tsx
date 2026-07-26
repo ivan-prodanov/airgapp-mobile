@@ -541,7 +541,8 @@ function ChargerDetail({
             <Text style={styles.addressPlace}>{charger.place}</Text>
             <Text style={styles.addressSub}>{charger.region}</Text>
           </View>
-          {/* Tapping the distance pill navigates to the station. */}
+          {/* Tapping the distance pill re-selects this station (re-framing the map on it) — it does NOT send
+              it anywhere; the pinned Send to Car button is the only thing that talks to the car. */}
           <Pressable
             style={({ pressed }) => [styles.distancePill, { opacity: pressed ? 0.6 : 1 }]}
             onPress={() => onNavigate(charger)}

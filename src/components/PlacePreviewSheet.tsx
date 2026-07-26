@@ -23,7 +23,7 @@ export interface DroppedPin {
 
 // Preview panel for a long-pressed point or a tapped POI. Structured like the charger detail: no fixed header
 // (the title is the top of the scroll content, wired into the sheet's drag/scroll coordination), and the
-// primary action (Navigate / Add to Trip) is a blue button pinned at the screen bottom by the map screen.
+// single primary action (Send to Car) is a blue button pinned at the screen bottom by the map screen.
 export function PlacePreviewSheet({ pin, onClose }: { pin: DroppedPin; onClose: () => void }) {
   const insetBottom = useSafeAreaInsets().bottom;
   const accent = pin.color || '#E5484D';

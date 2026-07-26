@@ -69,7 +69,11 @@ does mean sharing a place mid-drive will not reroute you. Accepted, eyes open.
 No card, no map, no trip sheet, no action choice. The extension shows a spinner
 with "Sharing to car" — Google URL resolution takes seconds and the wait needs to
 be visible — resolves the location, writes `{lat, lon, title}` to the App Group,
-opens the app, and dismisses. The app sends on intake and shows a toast.
+opens the app, and dismisses. The app sends on intake, silently: a haptic and
+nothing else. As built, success is not toasted anywhere: the send is
+fire-and-forget, so a toast at intake would be asserting an outcome we do not have
+yet. Only failure speaks — through the shared failure toast, carrying the car's
+own rejection reason.
 
 ## Where the title comes from
 
