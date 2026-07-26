@@ -29,6 +29,32 @@ import { randomBytes } from '@noble/hashes/utils';
 
 const PKCS1_PUBLIC_HEADER = '-----BEGIN RSA PUBLIC KEY-----';
 
+// forge speaks "binary strings" — one character per byte. Node's Buffer does
+// that conversion in a line, and the first version of this file used it.
+//
+// ⚠ Buffer DOES NOT EXIST IN HERMES. The unit tests all passed because they run
+// under Node, and the very first on-car run died with
+// `Property 'Buffer' doesn't exist` before it reached the car at all. See
+// bytes.ts's header — the same trap, already documented there, for btoa/atob.
+// Nothing in runtime code may use Buffer; piiKey.test.ts enforces that by
+// scanning this file.
+function bytesToBinaryString(b: Uint8Array): string {
+  let s = '';
+  // Chunked: String.fromCharCode(...spread) blows the argument limit on large
+  // inputs, and a wrapped key is 256 bytes with PEMs larger still.
+  const CHUNK = 1024;
+  for (let i = 0; i < b.length; i += CHUNK) {
+    s += String.fromCharCode(...b.subarray(i, Math.min(i + CHUNK, b.length)));
+  }
+  return s;
+}
+
+function binaryStringToBytes(s: string): Uint8Array {
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
+  return out;
+}
+
 export interface PiiKeypair {
   // PKCS#1 PEM. Private stays on device; public goes to the car.
   privatePem: string;
@@ -45,7 +71,7 @@ export interface PiiKeypair {
 export function generatePiiKeypair(): PiiKeypair {
   const prng = forge.random.createInstance();
   prng.seedFileSync = (needed: number) =>
-    forge.util.createBuffer(Buffer.from(randomBytes(needed)).toString('binary')).getBytes(needed);
+    forge.util.createBuffer(bytesToBinaryString(randomBytes(needed))).getBytes(needed);
   const { privateKey, publicKey } = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001, prng });
   return {
     privatePem: forge.pki.privateKeyToPem(privateKey),
@@ -69,11 +95,11 @@ export function isPkcs1PublicPem(pem: string): boolean {
 export function unwrapPiiKey(privatePem: string, encryptedPiiKey: Uint8Array): Uint8Array {
   const priv = forge.pki.privateKeyFromPem(privatePem);
   const decrypted = priv.decrypt(
-    Buffer.from(encryptedPiiKey).toString('binary'),
+    bytesToBinaryString(encryptedPiiKey),
     'RSA-OAEP',
     { md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() } },
   );
-  return Uint8Array.from(Buffer.from(decrypted, 'binary'));
+  return binaryStringToBytes(decrypted);
 }
 
 // be32 — the AAD. RESPONSE-19: the AAD is the 4-byte BIG-ENDIAN field_number,

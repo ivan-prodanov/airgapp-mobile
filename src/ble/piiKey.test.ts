@@ -190,3 +190,35 @@ function encodeLen(n: number): number[] {
   } while (v > 0);
   return out;
 }
+
+// --- runtime-environment guard ----------------------------------------------
+
+test('NO runtime BLE module uses Buffer — the tests cannot catch this themselves', async () => {
+  // The first on-car VDS-M6 run died instantly with `Property 'Buffer' doesn't
+  // exist`, having never reached the car. Every unit test had passed, because
+  // node:test runs under Node where Buffer is a global and Hermes is where it
+  // is not. No amount of behavioural testing closes that gap — the test
+  // environment is simply not the runtime.
+  //
+  // So this scans the source instead. bytes.ts documents the same trap for
+  // btoa/atob; this makes it enforceable rather than a comment people read after
+  // the fact.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const dir = new URL('.', import.meta.url).pathname;
+  const files = (await readdir(dir)).filter(
+    (f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.d.ts'),
+  );
+  const offenders: string[] = [];
+  for (const f of files) {
+    const src = await readFile(dir + f, 'utf8');
+    // Ignore the word inside comments/identifiers (chargeBuffer, createBuffer,
+    // "Node's Buffer"); catch actual use of the global.
+    for (const line of src.split('\n')) {
+      const code = line.replace(/\/\/.*$/, '');
+      if (/(^|[^.\w])Buffer\s*\.\s*(from|alloc|concat|isBuffer)\b/.test(code)) {
+        offenders.push(`${f}: ${line.trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], 'Buffer is a Node global and does not exist in Hermes');
+});
