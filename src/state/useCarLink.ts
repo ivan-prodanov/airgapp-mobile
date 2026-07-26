@@ -117,45 +117,41 @@ const LAST_TRANSPORT_KEY = 'ble.lastTransport.v1';
 // enough for a live lock/awake/closures indicator without spamming the link.
 const POLL_MS = 20_000;
 
-// How long the focused read stands down after passive-entry traffic.
+// NOTE: the 15s passive-entry stand-down that used to live here is GONE.
 //
-// ⚠ This is a BACKSTOP, not the fix, and on its own it is close to useless: it
-// only engages AFTER a challenge has been seen, so the FIRST challenge — the one
-// that actually opens the door when you pull the handle — still races. All it
-// buys is that challenges 2..N are not also lost.
-const PASSIVE_ENTRY_QUIET_MS = 15_000;
+// It was a backstop for the deaf window, and Ivan was right that it was mostly
+// hope: it only engaged after a challenge had already been missed. The window
+// itself is now closed, so the stand-down bought nothing and cost something real
+// — a 15-second stall in the speed readout after every unlock, on exactly the
+// screen you look at when you get in the car.
+//
+// Removing it also makes the next PE-1 run STRICTER: with no stand-down there is
+// nothing masking a regression in the deaf-window fix. If PE-1 shows any loss
+// with the focused read on, that is a real finding and not a tuning question.
 
-// FOCUSED_READ_ENABLED — off until the deaf window below is closed.
+// FOCUSED_READ_ENABLED — on. Turned back on 2026-07-26 after the three defects
+// it exposed were fixed and each one measured on the car:
 //
-// The real mechanism, from foregroundBleLink.onNativeFrame: while an exchange is
-// in flight, inbound frames are buffered for the correlator and the always-on
-// responder branch is skipped entirely. drainInbox then hands non-matching
-// frames to onUnsolicited, which does not answer challenges. So a challenge that
-// arrives mid-exchange is not deferred — it is NEVER ANSWERED.
+//   PE-1  the DEAF WINDOW. While a command was in flight the responder was
+//         skipped entirely and challenges were never answered — not deferred,
+//         lost. Measured 15 lost out of 15 under load; now 0, answered in 2ms.
+//         Fixed by narrowing the window to the real seal→write hazard and
+//         DEFERRING through even that.
 //
-// That makes every in-flight command a window in which we are deaf to passive
-// entry. The duty cycle is the whole story:
+//   PE-5  EVICTION SCOPE. A timed-out domain-3 read tore down the domain-2
+//         session too, so the next lock paid a cold handshake — 4171ms against
+//         a warm 91ms. Now scoped: 90ms → 150ms across a forced eviction.
 //
-//   before  VCSEC 20s + infotainment 60s   ~2% deaf
-//   after   + focused read every 1.65s     ~11% deaf, and far worse once a read
-//                                          times out: exchangeInFlight then
-//                                          stays true for the FULL 4-6s
+//   PE-4  COMMAND LATENCY. A tap queued behind whatever background work was
+//         pending, and could sit behind an in-flight read for its full 4-6s
+//         timeout. Now user commands jump queued background work, and
+//         background reads give up after 1200ms. Worst tap 387ms against a
+//         93ms idle baseline.
 //
-// and it is self-reinforcing — contention causes timeouts, timeouts widen the
-// deaf window, which causes more contention. That is the 29-second, 11-challenge
-// burst at 14:05:22, and why every challenge in it was GRANTED yet the door was
-// slow: the answers that landed were the ones that happened to fall outside a
-// window.
-//
-// The proper fix is to answer challenges even during an in-flight exchange. It
-// is safe in principle — the responder already signs INSIDE the write lock, so
-// the shared counter cannot interleave — but it changes the most
-// safety-critical path in the app, so it is not something to bolt on in the same
-// pass that discovered the bug.
-//
-// Until then this stays off. A live speed readout is not worth being deaf to the
-// car's front door 11% of the time.
-const FOCUSED_READ_ENABLED = false;
+// None of these were caused by the focused read; it made all three frequent
+// enough to find. They were hurting unlocks and command latency long before it
+// existed, which is the real reason this was worth the day.
+const FOCUSED_READ_ENABLED = true;
 
 // How often the poll does the HEAVY infotainment (charge/range) read. VCSEC runs
 // every POLL_MS; this rides on top far less often. Charge state changes slowly,
@@ -349,9 +345,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // Last INFOTAINMENT (charge/range) read. Throttles the heavy domain-3 poll so
   // it can't block interactive commands — see the poll tick.
   const lastInfotainmentAtRef = useRef(0);
-  // When we last saw passive-entry traffic. The focused read stands down for a
-  // while afterwards; unlocking the car outranks a live speed readout.
-  const lastPassiveEntryAtRef = useRef(0);
   const deferredTeardownRef = useRef(false);
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
@@ -1258,10 +1251,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     const legacyVerdict = describeCommandStatus(frame);
     const routableVerdict = legacyVerdict ? null : describeRoutableVerdict(frame);
     const verdict = legacyVerdict ?? routableVerdict;
-    // PASSIVE-ENTRY ACTIVITY STAMP. The focused read must get out of the way
-    // while the car is challenging us — see focusTick. Stamped on the verdict
-    // because that fires for every challenge we answer, on both seal shapes.
-    if (verdict) lastPassiveEntryAtRef.current = Date.now();
     if (verdict && authResponderRef.current) {
       const accepted = legacyVerdict ? commandStatusAccepted(frame) : routableVerdictAccepted(frame);
       authResponderRef.current.noteVerdict(accepted);
@@ -1477,20 +1466,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       if (!FOCUSED_READ_ENABLED) return;
       if (stopped || paused || inFlight || focusInFlight) return;
       if (inFlightRef.current !== 0) return; // a user command owns the link
-      // STAND DOWN DURING PASSIVE ENTRY. Measured regression, 2026-07-26: after
-      // the focused read shipped, link traffic went from 35 exchanges/hour to
-      // 404, and stale-frame timeouts went from 0 to 25 — every one of them
-      // interleaved with a passive-entry challenge burst. The car challenged 11
-      // times in 29s, each answer GRANTED, while our reads timed out at 4-6s
-      // each; the door took 3-4s to open.
-      //
-      // The contention is structural, not incidental: the passive-entry
-      // responder signs INSIDE the write lock (RESPONSE-14 refinement #2, so the
-      // shared counter cannot interleave), so an in-flight focused read delays
-      // the one answer that has a ~6s window. A live speed number is not worth
-      // a slow unlock, so the read yields — and keeps yielding until the car has
-      // been quiet for a while, since a challenge burst spans tens of seconds.
-      if (Date.now() - lastPassiveEntryAtRef.current < PASSIVE_ENTRY_QUIET_MS) return;
+
       const active = getActiveStateRef.current();
       if (!active?.awake) return; // domain-3 reads fault on a sleeping car
       focusInFlight = true;
