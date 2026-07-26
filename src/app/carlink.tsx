@@ -49,6 +49,7 @@ import {
 } from '@/ble/navBench';
 import { parseCarServerResponse } from '@/ble/telemetry';
 import { latencyStats, formatLatencyStats, resetLatencyStats } from '@/ble/passiveEntryLatency';
+import { withBackgroundReadsSuspended } from '@/ble/backgroundReads';
 import {
   loadOrCreatePiiKeypair,
   unwrapPiiKey,
@@ -1863,14 +1864,14 @@ export default function CarLinkScreen() {
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
-              <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
-              <ActionButton label="PE-1 deaf-window repro" onPress={handlePassiveEntryRepro} theme={theme} />
-              <ActionButton label="PE-4 command latency" onPress={handleCommandLatencyProbe} theme={theme} />
-              <ActionButton label="PE-5 eviction scope" onPress={handleEvictionScopeProbe} theme={theme} />
-              <ActionButton label="VDS-M5 DriveState cleartext" onPress={handleVdsDriveProbe} theme={theme} />
-              <ActionButton label="VDS-M6 full PII run" onPress={handleVdsPiiRun} theme={theme} />
-              <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
-              <ActionButton label="VDS-M4 ping/ack probe" onPress={handleVdsAckProbe} theme={theme} />
+              <ActionButton label="VDS-M1 subscription probe" onPress={() => withBackgroundReadsSuspended(handleVdsProbe)} theme={theme} />
+              <ActionButton label="PE-1 deaf-window repro" onPress={() => withBackgroundReadsSuspended(handlePassiveEntryRepro)} theme={theme} />
+              <ActionButton label="PE-4 command latency" onPress={() => withBackgroundReadsSuspended(handleCommandLatencyProbe)} theme={theme} />
+              <ActionButton label="PE-5 eviction scope" onPress={() => withBackgroundReadsSuspended(handleEvictionScopeProbe)} theme={theme} />
+              <ActionButton label="VDS-M5 DriveState cleartext" onPress={() => withBackgroundReadsSuspended(handleVdsDriveProbe)} theme={theme} />
+              <ActionButton label="VDS-M6 full PII run" onPress={() => withBackgroundReadsSuspended(handleVdsPiiRun)} theme={theme} />
+              <ActionButton label="VDS-M3 default-state probe" onPress={() => withBackgroundReadsSuspended(handleVdsDefaultProbe)} theme={theme} />
+              <ActionButton label="VDS-M4 ping/ack probe" onPress={() => withBackgroundReadsSuspended(handleVdsAckProbe)} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />

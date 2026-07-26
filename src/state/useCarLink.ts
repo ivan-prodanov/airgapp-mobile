@@ -64,6 +64,7 @@ import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
 import { observeVdsFrame } from '@/ble/vdsProbe';
 import { planForCameraMode } from '@/ble/viewFocusReads';
+import { backgroundReadsSuspended } from '@/ble/backgroundReads';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import {
   bondWedgeStore,
@@ -1329,6 +1330,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
 
     const tick = async (opts?: { forceInfotainment?: boolean }) => {
       if (stopped || paused || inFlight) return;
+      // Same reason as focusTick: a probe holds its own gateway, and a second
+      // writer on the shared session counter is how PE-4's "quiet" phase ended
+      // up taking 25 seconds.
+      if (backgroundReadsSuspended()) return;
       // ⚠️ Interactive commands own the BLE link; the background poll yields.
       // Everything for the live car runs through ONE per-VIN FIFO, so a poll
       // that's mid-flight blocks a user's Lock behind it. Cheap to skip a 20s
@@ -1464,6 +1469,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     let focusInFlight = false;
     const focusTick = async () => {
       if (!FOCUSED_READ_ENABLED) return;
+      // A debug probe is measuring the link — see backgroundReads.ts. Two
+      // gateways over one session counter corrupts it, so hold off entirely.
+      if (backgroundReadsSuspended()) return;
       if (stopped || paused || inFlight || focusInFlight) return;
       if (inFlightRef.current !== 0) return; // a user command owns the link
 
