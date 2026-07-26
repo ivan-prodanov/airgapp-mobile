@@ -1280,18 +1280,29 @@ export default function CarLinkScreen() {
 
       const ma = median(a);
       const mb = median(b);
+      const worstB = Math.max(...b);
       say('');
-      say(`quiet ${ma}ms  →  loaded ${mb}ms   (${ma > 0 ? (mb / ma).toFixed(1) : '?'}x)`);
-      // The threshold is stated up front so the answer is not argued after the
-      // fact. 500ms is roughly the point where a lock tap stops feeling instant.
-      if (mb <= 500) {
-        say('VERDICT: SAFE TO ENABLE — commands stay responsive under focused-read load.');
-      } else if (mb <= 1500) {
-        say('VERDICT: MARGINAL — noticeable lag on every tap. Prefer fixing the queue first');
-        say('  (user commands jumping ahead of background reads) rather than shipping this.');
+      say(`quiet: median ${ma}ms worst ${Math.max(...a)}ms`);
+      say(`loaded: median ${mb}ms WORST ${worstB}ms`);
+      // ⚠ The verdict is on the WORST, not the median.
+      //
+      // Run 1 verdicted on the median and said SAFE with a 4171ms first command
+      // sitting in the sample. That is the whole user experience — you tap, and
+      // four seconds later the car responds — and the median buried it under
+      // four fast ones that only came after the session was warm again.
+      //
+      // Latency questions are TAIL questions. A summary that averages away the
+      // bad case is measuring the wrong thing, which is the same mistake as
+      // gating a hex dump on the classification under test.
+      if (worstB <= 500) {
+        say('VERDICT: SAFE TO ENABLE — even the worst command stayed responsive.');
+      } else if (worstB <= 1500) {
+        say(`VERDICT: MARGINAL — worst tap ${worstB}ms. Fix the cause before enabling.`);
       } else {
-        say('VERDICT: DO NOT ENABLE — the read loop puts seconds between a tap and the car.');
-        say('  The FIFO needs priority before live speed is worth anything.');
+        say(`VERDICT: DO NOT ENABLE — worst tap ${worstB}ms.`);
+        say('  Look for a cold re-open: a failing domain-3 read evicts the VCSEC session too');
+        say('  (evictSession drops EVERY domain for the VIN), so the next lock pays a full');
+        say('  handshake. That is the 8-10s regression the 60s throttle was hiding.');
       }
     } catch (err) {
       say(`ERROR latency probe: ${errMsg(err)}`);
