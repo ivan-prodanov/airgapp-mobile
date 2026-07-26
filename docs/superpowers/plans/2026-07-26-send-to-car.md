@@ -901,6 +901,20 @@ In `src/app/location.tsx`, replace the whole shared-intent effect (the one that 
 
 Add `import { useSendToCar } from '@/hooks/useSendToCar';` to the imports. Note `'Shared Location'` is in `destinationTitle`'s placeholder set, so it renders on our map but never reaches the car as a label — the real `name` is passed to `sendToCar` separately.
 
+**Also fix the cold-launch framing defect this effect inherits from Task 4.** `animateCamera` is a no-op before `onMapReady` (see the comment at the top of `location.tsx`), which is exactly why the Charging-tab fit is gated on `mapReady`. On the share-sheet COLD-LAUNCH path the pin is set while the map is still initialising, so the card names the shared place while the map sits on the car with the marker off-screen. Warm shares are unaffected. Defer the camera move until the map is ready — gate it on the same `mapReady` state the Charging fit uses, so the camera moves either immediately (warm) or on first readiness (cold):
+
+```tsx
+  // Frame the shared place once the map can actually accept a camera move.
+  const [pendingShareFrame, setPendingShareFrame] = useState<LatLng | null>(null);
+  useEffect(() => {
+    if (!mapReady || !pendingShareFrame) return;
+    mapRef.current?.animateCamera({ center: pendingShareFrame }, { duration: 350 });
+    setPendingShareFrame(null);
+  }, [mapReady, pendingShareFrame]);
+```
+
+and have the intake effect call `setPendingShareFrame(coordinate)` instead of animating directly.
+
 Check `SharedLocation` in `src/services/sharedLocation.ts` actually carries `address`; if it does not, pass `undefined` and note it for Task 7.
 
 - [ ] **Step 4: Verify**
