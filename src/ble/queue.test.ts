@@ -155,3 +155,81 @@ test('FIFO ordering holds across three interleaved VINs independently', async ()
   assert.deepEqual(results.X, [1, 2, 3, 4]);
   assert.deepEqual(results.Y, [1, 2, 3, 4]);
 });
+
+test('a user command jumps AHEAD of queued background work', async () => {
+  // The regression PE-4 measured: a lock tap sat behind whatever background
+  // reads were queued. Ordering within a lane is still FIFO; the user lane just
+  // drains first.
+  const queue = new SessionQueue();
+  const order: string[] = [];
+  const gate = deferred<void>();
+
+  // One background job in flight, holding the runner.
+  const running = queue.enqueue('VIN1', async () => {
+    await gate.promise;
+    order.push('bg-running');
+  }, { priority: 'background' });
+  // Two more background jobs queued behind it...
+  const bg2 = queue.enqueue('VIN1', async () => { order.push('bg2'); }, { priority: 'background' });
+  const bg3 = queue.enqueue('VIN1', async () => { order.push('bg3'); }, { priority: 'background' });
+  // ...then the user taps.
+  const user = queue.enqueue('VIN1', async () => { order.push('USER'); });
+
+  gate.resolve();
+  await Promise.all([running, bg2, bg3, user]);
+
+  // The in-flight job finishes (it cannot be preempted), then the USER command
+  // goes next — ahead of the two background jobs queued before it.
+  assert.deepEqual(order, ['bg-running', 'USER', 'bg2', 'bg3']);
+});
+
+test('an unmarked job is treated as a USER job — forgetting must not slow the door', async () => {
+  const queue = new SessionQueue();
+  const order: string[] = [];
+  const gate = deferred<void>();
+  const running = queue.enqueue('VIN1', async () => { await gate.promise; }, { priority: 'background' });
+  const bg = queue.enqueue('VIN1', async () => { order.push('bg'); }, { priority: 'background' });
+  const unmarked = queue.enqueue('VIN1', async () => { order.push('unmarked'); });
+  gate.resolve();
+  await Promise.all([running, bg, unmarked]);
+  assert.deepEqual(order, ['unmarked', 'bg'], 'no priority given ⇒ treated as user');
+});
+
+test('user jobs keep FIFO order among themselves', async () => {
+  const queue = new SessionQueue();
+  const order: number[] = [];
+  const gate = deferred<void>();
+  const running = queue.enqueue('VIN1', async () => { await gate.promise; });
+  const a = queue.enqueue('VIN1', async () => { order.push(1); });
+  const b = queue.enqueue('VIN1', async () => { order.push(2); });
+  const c = queue.enqueue('VIN1', async () => { order.push(3); });
+  gate.resolve();
+  await Promise.all([running, a, b, c]);
+  assert.deepEqual(order, [1, 2, 3], 'priority reorders lanes, never within one');
+});
+
+test('a rejected background job does not wedge a waiting user command', async () => {
+  const queue = new SessionQueue();
+  const order: string[] = [];
+  const gate = deferred<void>();
+  const running = queue.enqueue('VIN1', async () => {
+    await gate.promise;
+    throw new Error('background read timed out');
+  }, { priority: 'background' });
+  const user = queue.enqueue('VIN1', async () => { order.push('USER'); });
+  gate.resolve();
+  await assert.rejects(running, /timed out/);
+  await user;
+  assert.deepEqual(order, ['USER'], 'a failing read must never block the door');
+});
+
+test('depth reports what is WAITING, so a backlog is visible', async () => {
+  const queue = new SessionQueue();
+  const gate = deferred<void>();
+  const running = queue.enqueue('VIN1', async () => { await gate.promise; }, { priority: 'background' });
+  queue.enqueue('VIN1', async () => {}, { priority: 'background' });
+  queue.enqueue('VIN1', async () => {});
+  assert.deepEqual(queue.depth('VIN1'), { user: 1, background: 1 });
+  gate.resolve();
+  await running;
+});

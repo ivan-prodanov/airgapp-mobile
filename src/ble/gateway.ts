@@ -18,8 +18,8 @@
 // plug into. Timers are injectable (the `sleep` arg) so tests never wait on a
 // real clock.
 
-import { buildCommand, type CarCommand } from './commands';
-import { SessionQueue } from './queue';
+import { buildCommand, type CarCommand } from "./commands";
+import { SessionQueue, type JobPriority } from "./queue";
 import {
   withCachedSession,
   refreshCachedSession,
@@ -38,14 +38,14 @@ import {
   MAX_BLE_ATTEMPTS as SESSION_MAX_BLE_ATTEMPTS,
   type ActionPayload,
   type CommandResult,
-} from './session';
+} from "./session";
 import {
   getChargeStateAction,
   getClimateStateAction,
   getDriveStateAction,
   getLocationStateAction,
-} from './builders';
-import { decodeMessage, FromVCSECMessage, Response } from './proto';
+} from "./builders";
+import { decodeMessage, FromVCSECMessage, Response } from "./proto";
 import {
   parseWhitelistPermissions,
   describeWhitelistPermissions,
@@ -55,9 +55,14 @@ import {
   parseWhitelistEntryPublicKey,
   dumpEntryFields,
   bytesEqual,
-} from './whitelistPermissions';
-import { parseVcsecStatus, parseCarServerResponse, type VcsecStatus, type InfotainmentSnapshot } from './telemetry';
-import type { Domain, DeviceKeys, PiTransport } from './types';
+} from "./whitelistPermissions";
+import {
+  parseVcsecStatus,
+  parseCarServerResponse,
+  type VcsecStatus,
+  type InfotainmentSnapshot,
+} from "./telemetry";
+import type { Domain, DeviceKeys, PiTransport } from "./types";
 
 // Re-export the attempt cap under this module's name (it lives with the other
 // protocol primitives in session.ts; the reference kept it on the airgap.*
@@ -71,14 +76,24 @@ export const MAX_BLE_ATTEMPTS = SESSION_MAX_BLE_ATTEMPTS;
 // (`unreachable`/`timeout`/`auth`/`exhausted`).
 export type CommandOutcome =
   | { ok: true; attempts: number }
-  | { ok: false; kind: 'fault'; faultName: string; fault: number; message: string }
+  | {
+      ok: false;
+      kind: "fault";
+      faultName: string;
+      fault: number;
+      message: string;
+    }
   // `cancelled` (C3) is NOT a failure the user should ever be told about — it
   // means a NEWER command for the same lane superseded this one, so we stopped
   // retrying a value the user has already moved past. The coalescer has already
   // neutralised its rollback. Distinct from `timeout`/`exhausted` precisely so
   // the UI can stay silent instead of toasting a "failure" the user caused.
-  | { ok: false; kind: 'cancelled'; message: string }
-  | { ok: false; kind: 'unreachable' | 'timeout' | 'auth' | 'exhausted'; message: string };
+  | { ok: false; kind: "cancelled"; message: string }
+  | {
+      ok: false;
+      kind: "unreachable" | "timeout" | "auth" | "exhausted";
+      message: string;
+    };
 
 // WhitelistEntryProbe is the result of asking the car what it granted our key.
 // `permissions: null` = UNKNOWN (no permissions field in the reply), which is
@@ -126,15 +141,23 @@ export interface WhitelistEntryProbe {
 }
 
 // The state slices awakeSync can read, named so a caller can ask for a subset.
-export type InfotainmentStateKey = 'charge' | 'climate' | 'drive' | 'location';
+export type InfotainmentStateKey = "charge" | "climate" | "drive" | "location";
 
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
-  runCommand(cmd: CarCommand, opts?: { signal?: AbortSignal }): Promise<CommandOutcome>;
+  runCommand(
+    cmd: CarCommand,
+    opts?: { signal?: AbortSignal },
+  ): Promise<CommandOutcome>;
   readVcsecStatus(): Promise<VcsecStatus>;
   // Passive-entry precondition probe — see readWhitelistEntry's implementation.
   readWhitelistEntry(): Promise<WhitelistEntryProbe>;
-  awakeSync(opts?: { states?: InfotainmentStateKey[] }): Promise<InfotainmentSnapshot>;
+  // `priority: 'background'` makes this yield to user commands in the per-VIN
+  // queue. The POLL must pass it; pull-to-refresh must not.
+  awakeSync(opts?: {
+    states?: InfotainmentStateKey[];
+    priority?: JobPriority;
+  }): Promise<InfotainmentSnapshot>;
   wake(): Promise<CommandOutcome>;
   // EXPERIMENT-ONLY escape hatch: drive one hand-built ActionPayload through the
   // normal seal/retry/session machinery and hand back the raw reply. It exists
@@ -142,7 +165,10 @@ export interface CarGateway {
   // not yet know whether the car honours them at all (VDS-M1). Anything that
   // turns out to work should graduate to a real CarCommand rather than keep
   // calling this.
-  runRawAction(action: ActionPayload, label: string): Promise<{ outcome: CommandOutcome; result: CommandResult | null }>;
+  runRawAction(
+    action: ActionPayload,
+    label: string,
+  ): Promise<{ outcome: CommandOutcome; result: CommandResult | null }>;
 }
 
 export interface CreateCarGatewayArgs {
@@ -181,33 +207,33 @@ export const DEFAULT_COMMAND_DEADLINE_MS = 25_000;
 // the domain that failed. Evicting both made a background readout capable of
 // adding 4 seconds to the next unlock.
 export function evictScopeFor(kind: string): EvictScope {
-  return kind === 'timeout' ? 'domain' : 'link';
+  return kind === "timeout" ? "domain" : "link";
 }
 
 // _faultName lifts a MessageFault_E code to its name (ported verbatim from the
 // reference's _faultName so semantic faults read human-friendly in the
 // CommandOutcome message).
 const FAULT_NAMES: Record<number, string> = {
-  0: 'NONE',
-  1: 'BUSY',
-  2: 'TIMEOUT',
-  3: 'UNKNOWN_KEY_ID',
-  4: 'INACTIVE_KEY',
-  5: 'INVALID_SIGNATURE',
-  6: 'INVALID_TOKEN_OR_COUNTER',
-  7: 'INSUFFICIENT_PRIVILEGES',
-  8: 'INVALID_DOMAINS',
-  9: 'INVALID_COMMAND',
-  10: 'DECODING',
-  11: 'INTERNAL',
-  12: 'WRONG_PERSONALIZATION',
-  13: 'BAD_PARAMETER',
-  14: 'KEYCHAIN_IS_FULL',
-  15: 'INCORRECT_EPOCH',
-  16: 'IV_INCORRECT_LENGTH',
-  17: 'TIME_EXPIRED',
-  18: 'NOT_PROVISIONED',
-  19: 'COULD_NOT_HASH_METADATA',
+  0: "NONE",
+  1: "BUSY",
+  2: "TIMEOUT",
+  3: "UNKNOWN_KEY_ID",
+  4: "INACTIVE_KEY",
+  5: "INVALID_SIGNATURE",
+  6: "INVALID_TOKEN_OR_COUNTER",
+  7: "INSUFFICIENT_PRIVILEGES",
+  8: "INVALID_DOMAINS",
+  9: "INVALID_COMMAND",
+  10: "DECODING",
+  11: "INTERNAL",
+  12: "WRONG_PERSONALIZATION",
+  13: "BAD_PARAMETER",
+  14: "KEYCHAIN_IS_FULL",
+  15: "INCORRECT_EPOCH",
+  16: "IV_INCORRECT_LENGTH",
+  17: "TIME_EXPIRED",
+  18: "NOT_PROVISIONED",
+  19: "COULD_NOT_HASH_METADATA",
 };
 
 function faultName(fault: number): string {
@@ -215,9 +241,9 @@ function faultName(fault: number): string {
 }
 
 function errMsg(e: unknown): string {
-  if (e && typeof e === 'object' && 'message' in e) {
+  if (e && typeof e === "object" && "message" in e) {
     const m = (e as { message?: unknown }).message;
-    if (typeof m === 'string') return m;
+    if (typeof m === "string") return m;
   }
   return String(e);
 }
@@ -225,23 +251,28 @@ function errMsg(e: unknown): string {
 // classifyTransportError maps a rethrown transport-level error onto a terminal
 // CommandOutcome kind. A TransportError carries its own `kind` (the Pi's HTTP
 // contract); anything without one is treated as unreachable.
-function classifyTransportError(e: unknown): 'unreachable' | 'timeout' | 'auth' {
+function classifyTransportError(
+  e: unknown,
+): "unreachable" | "timeout" | "auth" {
   const kind = (e as { kind?: unknown } | null)?.kind;
-  if (kind === 'auth') return 'auth';
-  if (kind === 'timeout') return 'timeout';
+  if (kind === "auth") return "auth";
+  if (kind === "timeout") return "timeout";
   // 'session-gone' / 'ble' / 'network' / 'http' / no kind → unreachable.
-  return 'unreachable';
+  return "unreachable";
 }
 
-const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const realSleep = (ms: number): Promise<void> =>
+  new Promise((r) => setTimeout(r, ms));
 
 // bytesToHexDump renders a payload for the on-device diagnostics log. Capped —
 // these are small VCSEC replies, and an unbounded dump would flood the log.
 function bytesToHexDump(b: Uint8Array, max = 96): string {
   const shown = Array.from(b.subarray(0, max))
-    .map((x) => x.toString(16).padStart(2, '0'))
-    .join(' ');
-  return b.length > max ? `${shown} …(${b.length} bytes)` : `${shown} (${b.length} bytes)`;
+    .map((x) => x.toString(16).padStart(2, "0"))
+    .join(" ");
+  return b.length > max
+    ? `${shown} …(${b.length} bytes)`
+    : `${shown} (${b.length} bytes)`;
 }
 
 export function createCarGateway({
@@ -270,8 +301,15 @@ export function createCarGateway({
     // 10 of them can run far past what a user will wait.
     const startedAt = now();
     const deadlineExceeded = () => now() - startedAt >= commandDeadlineMs;
-    const timedOut = (): { outcome: CommandOutcome; result: CommandResult | null } => ({
-      outcome: { ok: false, kind: 'timeout', message: `[${label}] timeout: command deadline exceeded` },
+    const timedOut = (): {
+      outcome: CommandOutcome;
+      result: CommandResult | null;
+    } => ({
+      outcome: {
+        ok: false,
+        kind: "timeout",
+        message: `[${label}] timeout: command deadline exceeded`,
+      },
       result: lastResult,
     });
     // C3 — in-flight cancellation. Checked ONLY between attempts, never mid
@@ -281,8 +319,15 @@ export function createCarGateway({
     // allows exactly one in-flight exchange, and abandoning a reply-wait rejects
     // as "stale frame", which this very loop then treats as a car fault and
     // RETRIES — i.e. it would disguise a deliberate cancel as a failure.
-    const cancelled = (): { outcome: CommandOutcome; result: CommandResult | null } => ({
-      outcome: { ok: false, kind: 'cancelled', message: `[${label}] cancelled: superseded by a newer command` },
+    const cancelled = (): {
+      outcome: CommandOutcome;
+      result: CommandResult | null;
+    } => ({
+      outcome: {
+        ok: false,
+        kind: "cancelled",
+        message: `[${label}] cancelled: superseded by a newer command`,
+      },
       result: lastResult,
     });
 
@@ -292,7 +337,10 @@ export function createCarGateway({
     // retry can START past the deadline — but a single attempt that never
     // settles (a wedged native BLE await) never returns to that check. That's
     // what the Promise.race below backstops.
-    async function runAttempts(): Promise<{ outcome: CommandOutcome; result: CommandResult | null }> {
+    async function runAttempts(): Promise<{
+      outcome: CommandOutcome;
+      result: CommandResult | null;
+    }> {
       // Bounds how many times an "unreachable/timeout" failure evicts + retries
       // (re-handshake, which re-selects the transport under a SelectingTransport).
       // Enough to fall over to the other transport once or twice, but capped so
@@ -307,18 +355,26 @@ export function createCarGateway({
         let result: CommandResult;
         try {
           result = await queue.enqueue(vin, () =>
-            withCachedSession({ transport, vin, deviceKeys, domain: action.domain }, async (session) => {
-              // Domain lockstep guard (carry-forward): the cached session MUST
-              // target the same domain the command was built for. A mismatch is
-              // an engine bug that would otherwise surface as an opaque car-side
-              // signature fault — throw a clear local error instead.
-              if (session.domain !== action.domain) {
-                throw new Error(
-                  `gateway domain lockstep violation: session.domain=${session.domain} built.domain=${action.domain}`,
-                );
-              }
-              return sendCommand({ transport, session, payloadBytes: action.bytes, flags });
-            }),
+            withCachedSession(
+              { transport, vin, deviceKeys, domain: action.domain },
+              async (session) => {
+                // Domain lockstep guard (carry-forward): the cached session MUST
+                // target the same domain the command was built for. A mismatch is
+                // an engine bug that would otherwise surface as an opaque car-side
+                // signature fault — throw a clear local error instead.
+                if (session.domain !== action.domain) {
+                  throw new Error(
+                    `gateway domain lockstep violation: session.domain=${session.domain} built.domain=${action.domain}`,
+                  );
+                }
+                return sendCommand({
+                  transport,
+                  session,
+                  payloadBytes: action.bytes,
+                  flags,
+                });
+              },
+            ),
           );
         } catch (e) {
           // Transport-dead: the cached BLE link is gone. A SessionInfoRequest on
@@ -345,7 +401,7 @@ export function createCarGateway({
           // (bad/revoked bearer) are NOT retried — a re-handshake can't fix them.
           const kind = classifyTransportError(e);
           if (
-            (kind === 'unreachable' || kind === 'timeout') &&
+            (kind === "unreachable" || kind === "timeout") &&
             unreachableEvicts < MAX_UNREACHABLE_EVICTS &&
             attempt < MAX_BLE_ATTEMPTS
           ) {
@@ -354,12 +410,21 @@ export function createCarGateway({
             // that exhausts its retries above lands here and classifies as
             // 'timeout', which is how a background drive read was destroying the
             // VCSEC session that locks the car.
-            await evictSession(vin, action.domain, { scope: evictScopeFor(kind) }).catch(() => {});
+            await evictSession(vin, action.domain, {
+              scope: evictScopeFor(kind),
+            }).catch(() => {});
             await sleep(TRANSIENT_DELAY_MS);
             continue;
           }
           // Anything else (auth, or unreachable past the cap) is terminal.
-          return { outcome: { ok: false, kind, message: `[${label}] ${kind}: ${errMsg(e)}` }, result: lastResult };
+          return {
+            outcome: {
+              ok: false,
+              kind,
+              message: `[${label}] ${kind}: ${errMsg(e)}`,
+            },
+            result: lastResult,
+          };
         }
 
         lastResult = result;
@@ -377,16 +442,27 @@ export function createCarGateway({
           // Semantic fault — the car rejected the command on its merits. Stop.
           const name = faultName(fault);
           return {
-            outcome: { ok: false, kind: 'fault', fault, faultName: name, message: `[${label}] fault ${fault} (${name})` },
+            outcome: {
+              ok: false,
+              kind: "fault",
+              fault,
+              faultName: name,
+              message: `[${label}] fault ${fault} (${name})`,
+            },
             result,
           };
         }
 
-        if (policy.category === 'session-stale') {
+        if (policy.category === "session-stale") {
           // Refresh the session key in place on the same BLE link (no teardown),
           // then retry. Fall back to a full evict on failure (inside
           // refreshCachedSession). Swallow — a failed refresh still retries.
-          await refreshCachedSession({ transport, vin, domain: action.domain, deviceKeys }).catch(() => false);
+          await refreshCachedSession({
+            transport,
+            vin,
+            domain: action.domain,
+            deviceKeys,
+          }).catch(() => false);
         }
         if (policy.delayMs > 0) await sleep(policy.delayMs);
         // loop continues with another attempt
@@ -394,10 +470,14 @@ export function createCarGateway({
 
       // Every attempt was retryable but none succeeded.
       return {
-        outcome: { ok: false, kind: 'exhausted', message: `[${label}] exhausted ${MAX_BLE_ATTEMPTS} attempts` },
+        outcome: {
+          ok: false,
+          kind: "exhausted",
+          message: `[${label}] exhausted ${MAX_BLE_ATTEMPTS} attempts`,
+        },
         result: lastResult,
       };
-      }
+    }
 
     // HARD deadline. The between-attempt check above is cheap and stops work
     // early on the normal path, but it can only fire while the loop is running.
@@ -419,7 +499,10 @@ export function createCarGateway({
     // user-visible guarantee here is only that the COMMAND always terminates
     // at the deadline.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadlineTimer = new Promise<{ outcome: CommandOutcome; result: CommandResult | null }>((resolve) => {
+    const deadlineTimer = new Promise<{
+      outcome: CommandOutcome;
+      result: CommandResult | null;
+    }>((resolve) => {
       timer = setTimeout(() => resolve(timedOut()), commandDeadlineMs);
     });
     try {
@@ -431,7 +514,10 @@ export function createCarGateway({
     }
   }
 
-  async function runCommand(cmd: CarCommand, opts?: { signal?: AbortSignal }): Promise<CommandOutcome> {
+  async function runCommand(
+    cmd: CarCommand,
+    opts?: { signal?: AbortSignal },
+  ): Promise<CommandOutcome> {
     const built = buildCommand(cmd);
     const { outcome } = await runAction(built, cmd.type, opts?.signal);
     return outcome;
@@ -443,14 +529,19 @@ export function createCarGateway({
     // round-trip is exercised here: vcsecGetStatusAction sets the flag, and a
     // successful decode of the sealed FromVCSECMessage proves it end-to-end.
     const action = vcsecGetStatusAction();
-    const { outcome, result } = await runAction(action, 'vcsecGetStatus');
+    const { outcome, result } = await runAction(action, "vcsecGetStatus");
     if (!outcome.ok) {
       throw new Error(`readVcsecStatus failed: ${outcome.message}`);
     }
     if (!result?.decryptedPayload) {
-      throw new Error('readVcsecStatus: car returned no encrypted status payload');
+      throw new Error(
+        "readVcsecStatus: car returned no encrypted status payload",
+      );
     }
-    const fromVcsec = decodeMessage(FromVCSECMessage, result.decryptedPayload) as { vehicleStatus?: unknown };
+    const fromVcsec = decodeMessage(
+      FromVCSECMessage,
+      result.decryptedPayload,
+    ) as { vehicleStatus?: unknown };
     return parseVcsecStatus(fromVcsec.vehicleStatus);
   }
 
@@ -476,23 +567,35 @@ export function createCarGateway({
     const attempts: WhitelistProbeAttempt[] = [];
 
     for (const mode of WHITELIST_TARGET_MODES) {
-      const action = vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw, mode);
+      const action = vcsecGetWhitelistEntryAction(
+        deviceKeys.publicKeyRaw,
+        mode,
+      );
       let payload: Uint8Array | null = null;
       let error: string | null = null;
       try {
-        const { outcome, result } = await runAction(action, `vcsecGetWhitelistEntry:${mode}`);
+        const { outcome, result } = await runAction(
+          action,
+          `vcsecGetWhitelistEntry:${mode}`,
+        );
         if (!outcome.ok) {
           error = outcome.message;
         } else {
           payload = result?.decryptedPayload ?? null;
-          if (!payload) error = 'car returned no encrypted payload';
+          if (!payload) error = "car returned no encrypted payload";
         }
       } catch (e) {
         error = errMsg(e);
       }
 
       if (!payload) {
-        attempts.push({ mode, subMessage: null, rawHex: null, permissions: null, error });
+        attempts.push({
+          mode,
+          subMessage: null,
+          rawHex: null,
+          permissions: null,
+          error,
+        });
         continue;
       }
 
@@ -532,8 +635,8 @@ export function createCarGateway({
       keyRole: null,
       slot: null,
       summary:
-        'permissions: UNKNOWN — no targeting arm produced a whitelistEntryInfo. ' +
-        'This is a REQUEST-side result, not a firmware verdict; see the per-attempt hex.',
+        "permissions: UNKNOWN — no targeting arm produced a whitelistEntryInfo. " +
+        "This is a REQUEST-side result, not a firmware verdict; see the per-attempt hex.",
       matchedMode: null,
       attempts,
       slotMask: null,
@@ -563,8 +666,11 @@ export function createCarGateway({
     let numberOfEntries: number | null = null;
     let slots: number[];
     try {
-      const { outcome, result } = await runAction(vcsecGetWhitelistInfoAction(), 'vcsecGetWhitelistInfo');
-      const payload = outcome.ok ? result?.decryptedPayload ?? null : null;
+      const { outcome, result } = await runAction(
+        vcsecGetWhitelistInfoAction(),
+        "vcsecGetWhitelistInfo",
+      );
+      const payload = outcome.ok ? (result?.decryptedPayload ?? null) : null;
       const info = payload ? parseWhitelistInfo(payload) : null;
       if (info) {
         slotMask = info.slotMask;
@@ -575,13 +681,16 @@ export function createCarGateway({
     }
     // Fall back to a bounded sweep when the mask is unavailable: the firmware
     // model is 20 slots (0..19), slot 0 reserved for the vehicle's own key.
-    slots = slotMask && slotMask > 0 ? filledSlots(slotMask) : Array.from({ length: 20 }, (_, i) => i);
+    slots =
+      slotMask && slotMask > 0
+        ? filledSlots(slotMask)
+        : Array.from({ length: 20 }, (_, i) => i);
 
     const survey: WhitelistSlotSurvey[] = [];
     for (const slot of slots) {
       try {
         const { outcome, result } = await runAction(
-          vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw, 'slot', slot),
+          vcsecGetWhitelistEntryAction(deviceKeys.publicKeyRaw, "slot", slot),
           `vcsecGetWhitelistEntry:slot=${slot}`,
         );
         if (!outcome.ok || !result?.decryptedPayload) {
@@ -591,7 +700,7 @@ export function createCarGateway({
             permissions: null,
             keyRole: null,
             isOurs: false,
-            error: outcome.ok ? 'no payload' : outcome.message,
+            error: outcome.ok ? "no payload" : outcome.message,
           });
           continue;
         }
@@ -609,13 +718,23 @@ export function createCarGateway({
           error: null,
         });
       } catch (e) {
-        survey.push({ slot, fields: null, permissions: null, keyRole: null, isOurs: false, error: errMsg(e) });
+        survey.push({
+          slot,
+          fields: null,
+          permissions: null,
+          keyRole: null,
+          isOurs: false,
+          error: errMsg(e),
+        });
       }
     }
     return { slotMask, numberOfEntries, survey };
   }
 
-  async function awakeSync(opts?: { states?: InfotainmentStateKey[] }): Promise<InfotainmentSnapshot> {
+  async function awakeSync(opts?: {
+    states?: InfotainmentStateKey[];
+    priority?: JobPriority;
+  }): Promise<InfotainmentSnapshot> {
     // State reads on ONE warm INFOTAINMENT session (single handshake).
     // Does NOT wake — the caller wakes first if the car is asleep; on an
     // asleep car these reads fault, which surfaces via the thrown error.
@@ -633,58 +752,80 @@ export function createCarGateway({
       drive: getDriveStateAction,
       location: getLocationStateAction,
     };
-    const keys = opts?.states ?? (['charge', 'climate', 'drive', 'location'] as InfotainmentStateKey[]);
-    if (keys.length === 0) throw new Error('awakeSync: states must not be empty');
+    const keys =
+      opts?.states ??
+      (["charge", "climate", "drive", "location"] as InfotainmentStateKey[]);
+    if (keys.length === 0)
+      throw new Error("awakeSync: states must not be empty");
     const reads: ActionPayload[] = keys.map((k) => byKey[k]());
     const domain: Domain = reads[0].domain;
-    const { out: slices, sawFault: anyFault } = await queue.enqueue(vin, () =>
-      withCachedSession({ transport, vin, deviceKeys, domain }, async (session) => {
-        const out: InfotainmentSnapshot[] = [];
-        let sawFault = false;
-        for (const read of reads) {
-          if (session.domain !== read.domain) {
-            throw new Error(
-              `gateway domain lockstep violation: session.domain=${session.domain} read.domain=${read.domain}`,
-            );
-          }
-          const res = await sendCommand({
-            transport,
-            session,
-            payloadBytes: read.bytes,
-            flags: read.flags ?? 0,
-          });
-          // Mirror runAction's success check: opStatus 0 (or absent) is
-          // success. A car-side fault comes back status-only — no thrown
-          // error, no decryptedPayload — so it must be detected here, not
-          // inferred from a catch block.
-          const opStatus = res.routable.signedMessageStatus?.operationStatus;
-          const succeeded = opStatus === 0 || opStatus === undefined;
-          if (res.decryptedPayload) {
-            const carResp = decodeMessage(Response, res.decryptedPayload);
-            out.push(parseCarServerResponse(carResp));
-          }
-          if (!succeeded || !res.decryptedPayload) sawFault = true;
-        }
-        return { out, sawFault };
-      }),
+    const { out: slices, sawFault: anyFault } = await queue.enqueue(
+      vin,
+      () =>
+        withCachedSession(
+          { transport, vin, deviceKeys, domain },
+          async (session) => {
+            const out: InfotainmentSnapshot[] = [];
+            let sawFault = false;
+            for (const read of reads) {
+              if (session.domain !== read.domain) {
+                throw new Error(
+                  `gateway domain lockstep violation: session.domain=${session.domain} read.domain=${read.domain}`,
+                );
+              }
+              const res = await sendCommand({
+                transport,
+                session,
+                payloadBytes: read.bytes,
+                flags: read.flags ?? 0,
+              });
+              // Mirror runAction's success check: opStatus 0 (or absent) is
+              // success. A car-side fault comes back status-only — no thrown
+              // error, no decryptedPayload — so it must be detected here, not
+              // inferred from a catch block.
+              const opStatus =
+                res.routable.signedMessageStatus?.operationStatus;
+              const succeeded = opStatus === 0 || opStatus === undefined;
+              if (res.decryptedPayload) {
+                const carResp = decodeMessage(Response, res.decryptedPayload);
+                out.push(parseCarServerResponse(carResp));
+              }
+              if (!succeeded || !res.decryptedPayload) sawFault = true;
+            }
+            return { out, sawFault };
+          },
+        ),
+      { priority: opts?.priority },
     );
     if (slices.length === 0 && anyFault) {
       // All four reads faulted (or came back status-only with no payload) —
       // most commonly because the car is asleep/unreachable. Surface this as
       // a failure instead of a silent empty snapshot so the caller can tell
       // "car unreachable" apart from "car has no data".
-      throw new Error('awakeSync: no vehicle data — is the car awake? (all reads faulted)');
+      throw new Error(
+        "awakeSync: no vehicle data — is the car awake? (all reads faulted)",
+      );
     }
     // Merge the populated slices into one snapshot. This is safe (no
     // clobbering) only because each read writes a DISTINCT sub-key
     // (charge/climate/drive/location) — the merge itself enforces no
     // ordering guarantee beyond that disjointness.
-    return slices.reduce<InfotainmentSnapshot>((acc, s) => ({ ...acc, ...s }), {});
+    return slices.reduce<InfotainmentSnapshot>(
+      (acc, s) => ({ ...acc, ...s }),
+      {},
+    );
   }
 
   async function wake(): Promise<CommandOutcome> {
-    return runCommand({ type: 'wake' });
+    return runCommand({ type: "wake" });
   }
 
-  return { runCommand, readVcsecStatus, readWhitelistEntry, awakeSync, wake, runRawAction: runAction };
+  return {
+    runCommand,
+    readVcsecStatus,
+    readWhitelistEntry,
+    awakeSync,
+    wake,
+    runRawAction: runAction,
+  };
 }

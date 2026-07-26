@@ -1415,7 +1415,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         ) {
           try {
             const it0 = Date.now();
-            const snap = await gw.awakeSync();
+            // The automatic poll yields; a user-forced refresh does not. That
+            // distinction is the whole point of the priority — pull-to-refresh
+            // is something the user is waiting on.
+            const snap = await gw.awakeSync({
+              priority: opts?.forceInfotainment === true ? 'user' : 'background',
+            });
             logi('poll', 'infotainment', { ms: Date.now() - it0 });
             if (stopped || paused) return;
             lastInfotainmentAtRef.current = Date.now();
@@ -1494,7 +1499,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         if (!gw || stopped || paused) return;
         const plan = planForCameraMode(active.cameraMode);
         const t0 = Date.now();
-        const snap = await gw.awakeSync({ states: plan.states });
+        const snap = await gw.awakeSync({ states: plan.states, priority: 'background' });
         if (stopped || paused) return;
         // Logged so the cadence and the screen-keying are VERIFIABLE from
         // pull-logs.sh. Without this the change is nearly invisible on a parked
