@@ -57,6 +57,7 @@ class ForegroundBleLink {
   private started = false;
   private vin: string | null = null;
   private exchangeInFlight = false;
+  private writePending = false;
   private frameSub: (() => void) | null = null;
   private connSub: (() => void) | null = null;
   private writeChain: Promise<unknown> = Promise.resolve();
@@ -143,12 +144,22 @@ class ForegroundBleLink {
     const want = outgoingCorrelators(req);
     this.inbox = [];
     this.exchangeInFlight = true;
+    // writePending is the ONLY interval in which the responder must stay quiet.
+    // The command is sealed UPSTREAM (session.ts) before it gets here, so its
+    // counter is already allocated; a responder seal that reaches the car first
+    // would arrive out of order and be hard-rejected. Once these bytes are
+    // written that hazard is gone — any later seal is strictly later — so the
+    // reply wait below, which is the multi-second part, needs no protection at
+    // all. Deafness that lasted a whole exchange was protecting ~1ms with ~6s.
+    this.writePending = true;
     try {
       await this.writeMessage(req);
+      this.writePending = false;
       const clamped = Math.min(Math.max(timeoutMs, 0), MAX_EXCHANGE_TIMEOUT_MS);
       const matched = await this.awaitMatchingFrame(want, clamped);
       return bytesToBase64(matched);
     } finally {
+      this.writePending = false;
       this.exchangeInFlight = false;
     }
   }
@@ -166,63 +177,70 @@ class ForegroundBleLink {
     const frames = this.reassembler.push(bytes, Date.now());
     if (frames.length === 0) return;
     if (this.exchangeInFlight) {
-      // A command reply is expected — buffer for the correlator.
+      // A command reply is expected — buffer for the correlator, AND answer any
+      // challenge unless we are inside the tiny seal→write hazard (writePending).
       //
-      // ⚠ THE DEAF WINDOW. The old comment here said a challenge landing in this
-      // branch "is NOT answered until the exchange finishes". That was wrong in a
-      // way that mattered: drainInbox hands non-matching frames to onUnsolicited,
-      // which does not answer challenges, so nothing ever picks them back up.
-      // A challenge that arrives here is not deferred — it is LOST.
-      //
-      // Counting them is step one. Every in-flight command opens this window, and
-      // a timed-out one holds it open for 4-6s, which is why unlocks occasionally
-      // failed long before any of today's changes.
-      for (const f of frames) {
-        if (parseAuthenticationRequest(f)) noteChallengeArrived(Date.now(), true);
-      }
+      // This used to skip the responder for the whole exchange. Nothing ever
+      // picked those frames back up — drainInbox hands non-matching frames to
+      // onUnsolicited, which does not answer challenges — so a challenge landing
+      // here was not deferred, it was LOST. PE-1 measured it: 15 challenges
+      // during 20s of continuous reads, 0 answered, versus 1-for-1 at 2ms when
+      // the link was idle.
       this.inbox.push(...frames);
       this.wake();
+      for (const f of frames) {
+        if (this.writePending) {
+          // Genuinely unanswerable: a seal now could overtake the command's.
+          if (parseAuthenticationRequest(f)) noteChallengeArrived(Date.now(), true);
+          continue;
+        }
+        this.answerIfChallenge(f);
+      }
     } else {
       // ALWAYS-ON: answer challenges + run CPD/status pushes on every idle frame.
       for (const f of frames) {
-        // RESPONSE-14 refinement #2: SIGN INSIDE THE LOCK. The seal consumes the
-        // shared VS counter, so signing outside it could interleave with a
-        // command's seal→write and reach the car OUT OF ORDER (→ hard counter
-        // reject). Holding the lock across sign→write makes the counter
-        // read→increment→write atomic w.r.t. the command path. Deferring queue
-        // (not drop-on-contention), and the critical section stays short so the
-        // answer still fits the car's ~6 s challenge window.
-        const isChallenge = parseAuthenticationRequest(f) !== null;
-        if (isChallenge) noteChallengeArrived(Date.now(), false);
-        void this.withWriteLock(async () => {
-          let reply: Uint8Array | null = null;
-          try {
-            reply = this.authResponder?.(f) ?? null;
-          } catch {
-            if (isChallenge) noteChallengeDropped();
-            return; // a responder fault must never take down the notify path
-          }
-          if (!reply || !this.isConnected()) {
-            // Consulted and declined: circuit breaker, rate limit, bad token.
-            // Recorded separately from the deaf window — those are choices, this
-            // is a defect, and merging them would hide one behind the other.
-            if (isChallenge) noteChallengeDropped();
-            return;
-          }
-          const framed = frameMessage(reply);
-          if (!passiveEntryWriteFrame(bytesToBase64(framed))) {
-            logi('ble', 'passive answer write failed (link dropped)');
-            if (isChallenge) noteChallengeDropped();
-            return;
-          }
-          // Stamped at the WRITE, not at the decision — the question is how long
-          // the answer takes to reach the link, and the queueing is the part we
-          // are trying to measure.
-          if (isChallenge) noteAnswerWritten(Date.now());
-        });
+        this.answerIfChallenge(f);
         this.onUnsolicited?.(f);
       }
     }
+  }
+
+  // answerIfChallenge — the one passive-entry answer path, shared by the idle
+  // branch and the mid-exchange one so they can never drift apart.
+  //
+  // RESPONSE-14 refinement #2: SIGN INSIDE THE LOCK. The seal consumes the
+  // shared VS counter, so signing outside it could interleave with a command's
+  // write and reach the car out of order. Holding the lock across sign→write
+  // makes it atomic with respect to the command path, which is exactly what
+  // makes answering during a command's REPLY WAIT safe.
+  private answerIfChallenge(f: Uint8Array): void {
+    const isChallenge = parseAuthenticationRequest(f) !== null;
+    if (isChallenge) noteChallengeArrived(Date.now(), false);
+    void this.withWriteLock(async () => {
+      let reply: Uint8Array | null = null;
+      try {
+        reply = this.authResponder?.(f) ?? null;
+      } catch {
+        if (isChallenge) noteChallengeDropped();
+        return; // a responder fault must never take down the notify path
+      }
+      if (!reply || !this.isConnected()) {
+        // Consulted and declined: circuit breaker, rate limit, bad token.
+        // Recorded apart from the deaf window — those are choices, that was a
+        // defect, and merging them would hide one behind the other.
+        if (isChallenge) noteChallengeDropped();
+        return;
+      }
+      const framed = frameMessage(reply);
+      if (!passiveEntryWriteFrame(bytesToBase64(framed))) {
+        logi('ble', 'passive answer write failed (link dropped)');
+        if (isChallenge) noteChallengeDropped();
+        return;
+      }
+      // Stamped at the WRITE, not the decision — the queueing is the part worth
+      // measuring.
+      if (isChallenge) noteAnswerWritten(Date.now());
+    });
   }
 
   private writeMessage(payload: Uint8Array): Promise<void> {
