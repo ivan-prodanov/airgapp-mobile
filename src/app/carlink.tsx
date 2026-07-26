@@ -35,19 +35,17 @@ import {
   buildRoutableCommandFrame,
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
+  type ActionPayload,
 } from '@/ble/session';
 import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, pingAction, piiKeyRequestFor, VDS_DEFAULTS } from '@/ble/builders';
 import {
-  classifyOrderProbe,
-  classifyRouteStart,
-  formatGateSnapshot,
-  gateProbeVerdict,
-  isGateOpen,
-  type GateSample,
-  type GateSnapshot,
+  fmtCoord,
+  formatRouteDelta,
+  formatRouteRead,
+  parseCoord,
   type ProbeCoord,
-  type RouteSample,
-} from '@/ble/navProbe';
+  type RouteRead,
+} from '@/ble/navBench';
 import { parseCarServerResponse } from '@/ble/telemetry';
 import {
   loadOrCreatePiiKeypair,
@@ -118,14 +116,21 @@ export default function CarLinkScreen() {
   const [vin, setVin] = useState('');
   // Raw waypoints string, so format variants can be tried on-car without a rebuild.
   const [waypointsRaw, setWaypointsRaw] = useState('42.697700,23.321900;42.700000,23.330000');
-  // NAV-P1/P2 probe points. Two places far enough apart that the car's snap-to-road
-  // can never make them look like the same stop (navProbe's SAME_PLACE_M is 150 m).
-  // BASELINE is where the throwaway route goes; APPEND is the stop we try to add.
-  const [navBaseline, setNavBaseline] = useState('42.6977,23.3219');
-  const [navAppend, setNavAppend] = useState('42.7105,23.3219');
-  // NAV-P3 accumulates one row per tap — the user drives the stages by physically
-  // getting in and out of the car, so it cannot be a single blocking run.
-  const navGateRowsRef = useRef<GateSnapshot[]>([]);
+  // NAV BENCH — two destinations, far enough apart that the car's snap-to-road can
+  // never make them look like the same stop, plus the message/order/target the next
+  // SEND will use. See the handlers further down for why this is a manual bench.
+  const [navPointA, setNavPointA] = useState('42.6977,23.3219');
+  const [navPointB, setNavPointB] = useState('42.7105,23.3219');
+  const [benchMsg, setBenchMsg] = useState<'f53' | 'f106' | 'f21'>('f53');
+  const [benchOrder, setBenchOrder] = useState<'REPLACE' | 'PREPEND' | 'APPEND'>('REPLACE');
+  const [benchTarget, setBenchTarget] = useState<'A' | 'B'>('A');
+  // The previous read, so each read can state how far the destination moved. A ref,
+  // not state: it must survive re-renders without causing them, and it is only ever
+  // read inside the handler.
+  const lastBenchReadRef = useRef<RouteRead | null>(null);
+  // Back-to-back commands desynchronised the Pi's BLE channel in the earlier runs
+  // (a send read the previous send's reply). Track the spacing so the log can say so.
+  const lastBenchActionRef = useRef(0);
   const [enrolLink, setEnrolLink] = useState('');
   const [log, setLog] = useState<string[]>([]);
   // transport: which CarTransport lock/unlock/read/wake route through.
@@ -310,236 +315,110 @@ export default function CarLinkScreen() {
     }
   };
 
-  // ── NAV-P1/P2/P3 — the RESPONSE-19 probes ───────────────────────────────────
+  // ── NAV BENCH — one action per press ────────────────────────────────────────
   //
-  // RESPONSE-19 was disassembled from an Intel MCU2 rootfs; our car is HW4 Ryzen,
-  // and the report itself flags nav semantics as the layer most likely to differ.
-  // These three probes each test one claim we are not willing to build on faith.
-  // The verdict logic lives in src/ble/navProbe.ts (node-tested) — everything here
-  // is I/O and sequencing.
+  // This replaced three automated probes that produced two CONTRADICTORY verdicts
+  // on the same message in consecutive runs — see src/ble/navBench.ts's header for
+  // the post mortem. The short version: the classifiers reported confident results
+  // from sends that had already failed, and firing six commands in ninety seconds
+  // desynchronised the Pi's BLE channel so later sends read earlier replies.
   //
-  // ⚠ NAV-P1 and NAV-P2 SEND NAVIGATION. They will replace whatever route the car
-  // is currently following. Do not run them on a route you care about.
+  // So the bench does no sequencing and draws no conclusions. SEND fires exactly
+  // one command and prints its raw outcome; READ ROUTE performs exactly one read
+  // and prints the raw fields plus how far the destination moved since last time.
+  // The operator drives the sequence, because the operator can see the centre
+  // screen — which is the only instrument that can answer the question the reads
+  // provably cannot (PREPEND and REPLACE produce identical readings).
 
-  // The car needs time to reverse-geocode, route and republish NAV_* before a read
-  // means anything. Too short and every probe reads the OLD route and reports
-  // ORDER_HONOURED — a false confirmation, the worst outcome available here.
-  const NAV_SETTLE_MS = 12_000;
+  // Below this spacing the Pi's BLE channel has been observed serving the previous
+  // command's reply to the next request. Not enforced — just flagged in the log.
+  const BENCH_MIN_GAP_MS = 3_000;
 
-  const parseCoord = (raw: string): ProbeCoord | null => {
-    const [a, b] = raw.split(',').map((s) => Number(s.trim()));
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-    if (Math.abs(a) > 90 || Math.abs(b) > 180) return null;
-    return { lat: a, lon: b };
+  const benchCoord = () => parseCoord(benchTarget === 'A' ? navPointA : navPointB);
+
+  const benchMessage = (c: ProbeCoord, order: number): ActionPayload => {
+    if (benchMsg === 'f53') return navigateGpsAction({ lat: c.lat, lon: c.lon, order });
+    if (benchMsg === 'f106') return navigateGpsWithLabelAction({ lat: c.lat, lon: c.lon, label: 'bench', order });
+    // f21 takes a STRING. RESPONSE-19: the car splits "lat,lon" locally
+    // (split(',') + toDouble) with no geocoding — which is what makes it usable
+    // air-gapped at all.
+    return navigateSearchAction({ query: `${c.lat.toFixed(6)},${c.lon.toFixed(6)}`, order });
   };
 
-  // One scoped DriveState read plus the VCSEC presence read, reduced to exactly
-  // what the classifiers consume. `states: ['drive']` keeps this to a single
-  // command round-trip instead of the default four.
-  const readNavSamples = async (
-    gw: Awaited<ReturnType<typeof makeGateway>>,
-  ): Promise<{ route: RouteSample; gate: GateSample }> => {
-    const snap = await gw.awakeSync({ states: ['drive'] });
-    let userPresent: boolean | null = null;
-    try {
-      const vcsec = await gw.readVcsecStatus();
-      if (vcsec.userPresence !== 'unknown') userPresent = vcsec.userPresence === 'present';
-    } catch {
-      // Presence is corroboration, not the measurement — a failed VCSEC read
-      // leaves it null and isGateOpen falls back to the shift state.
+  // Firing two commands back-to-back is what corrupted the previous runs. This
+  // does not block — the operator may have a reason — it just says so in the log
+  // so a desynchronised reply is recognisable afterwards rather than mysterious.
+  const benchPaceWarning = () => {
+    const since = Date.now() - lastBenchActionRef.current;
+    lastBenchActionRef.current = Date.now();
+    if (since < BENCH_MIN_GAP_MS) {
+      append(`⚠ only ${(since / 1000).toFixed(1)}s since the last bench action — the Pi channel can serve a STALE reply`);
     }
-    return {
-      route: {
+  };
+
+  const handleBenchSend = async () => {
+    const c = benchCoord();
+    if (!c) {
+      append(`ERROR bench: point ${benchTarget} is not "lat,lon"`);
+      return;
+    }
+    const order = NAV_ORDER[benchOrder];
+    const line = `SEND ${benchMsg} order=${benchOrder}(${order}) → ${benchTarget} ${fmtCoord(c)}`;
+    benchPaceWarning();
+    append(line);
+    const out: string[] = [line];
+    try {
+      const gw = await makeGateway();
+      const res = await gw.runRawAction(benchMessage(c, order), `bench-${benchMsg}-${benchOrder}`);
+      // Loud on failure: the previous probes' worst results all came from reading
+      // state after a send that had not landed.
+      const verdict = res.outcome.ok
+        ? '  → ACK ok (an ACK is not a route — look at the centre screen)'
+        : `  → SEND FAILED: ${res.outcome.kind}: ${res.outcome.message}`;
+      out.push(verdict);
+      append(verdict);
+    } catch (err) {
+      const e = `  → SEND FAILED: ${errMsg(err)}`;
+      out.push(e);
+      append(e);
+    } finally {
+      await appendDiagnostic('nav bench send', out);
+    }
+  };
+
+  const handleBenchRead = async () => {
+    benchPaceWarning();
+    const out: string[] = [];
+    try {
+      const gw = await makeGateway();
+      const snap = await gw.awakeSync({ states: ['drive'] });
+      let userPresent: boolean | null = null;
+      try {
+        const vcsec = await gw.readVcsecStatus();
+        if (vcsec.userPresence !== 'unknown') userPresent = vcsec.userPresence === 'present';
+      } catch {
+        // Presence is context, not the measurement — leave it unknown rather than
+        // guessing, and let the printed '?' say so.
+      }
+      const next: RouteRead = {
         present: !!snap.route,
         destination: snap.route?.destination ?? null,
         coordinates: snap.route?.coordinates ?? null,
-      },
-      gate: { shiftState: snap.drive?.gear ?? 'unknown', userPresent },
-    };
-  };
-
-  const describeSample = (label: string, route: RouteSample, gate: GateSample) =>
-    `${label}: ${route.present ? `route "${route.destination ?? 'unnamed'}" @ ${route.coordinates ? `${route.coordinates.lat.toFixed(5)},${route.coordinates.lon.toFixed(5)}` : 'no coord'}` : 'NO route fields'} | shift=${gate.shiftState} user=${gate.userPresent === null ? 'unknown' : gate.userPresent} gate=${isGateOpen(gate) ? 'OPEN' : 'SHUT'}`;
-
-  // NAV-P1 — do f53 / f106 / f21 honour the `order` field?
-  //
-  // RESPONSE-19 Blocker 1 says f53 and f106 spill the order argument and never
-  // dereference it, so only f21/f22 can express PREPEND/APPEND. If that's right,
-  // every order-bearing send has to move off the messages we use today.
-  //
-  // APPEND is the only order that produces a distinguishable reading — PREPEND and
-  // REPLACE both make the sent place the next stop, so they cannot be told apart
-  // from the read side. See navProbe.ts's header for the full argument.
-  const handleNavOrderProbe = async () => {
-    const baseline = parseCoord(navBaseline);
-    const appendAt = parseCoord(navAppend);
-    const out: string[] = [];
-    const say = (line: string) => {
-      out.push(line);
-      append(line);
-    };
-    if (!baseline || !appendAt) {
-      append('ERROR NAV-P1: both probe points must be "lat,lon"');
-      return;
-    }
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    // Each variant is tested with its OWN fresh baseline route, so a previous
-    // variant's leftovers can't be mistaken for this one's result.
-    const variants = [
-      { name: 'f53 NavigationGpsRequest', build: (c: ProbeCoord, order: number) => navigateGpsAction({ ...c, order }) },
-      {
-        name: 'f106 NavigationGpsDestinationRequest',
-        build: (c: ProbeCoord, order: number) =>
-          navigateGpsWithLabelAction({ lat: c.lat, lon: c.lon, label: 'probe', order }),
-      },
-      {
-        // RESPONSE-19: f21 splits "lat,lon" locally (split(',') + toDouble) with no
-        // geocoding — which is what makes it usable air-gapped at all.
-        name: 'f21 NavigationRequest',
-        build: (c: ProbeCoord, order: number) =>
-          navigateSearchAction({ query: `${c.lat.toFixed(6)},${c.lon.toFixed(6)}`, order }),
-      },
-    ];
-    try {
-      const gw = await makeGateway();
-      say('NAV-P1 — does `order` survive on f53 / f106 / f21?');
-      say('⚠ this REPLACES the car\'s current route three times. Sit in the car: the');
-      say('  route fields are gated on driverPresent (Blocker 3) and read as absent otherwise.');
-      say('waking car (domain 3 needs the MCU up)…');
-      await gw.wake();
-
-      for (const v of variants) {
-        say(`── ${v.name} ──`);
-        say(`  establishing baseline route → ${baseline.lat},${baseline.lon} (order=REPLACE)`);
-        const seed = await gw.runRawAction(v.build(baseline, NAV_ORDER.REPLACE), `navp1-seed-${v.name}`);
-        say(`  seed outcome: ${seed.outcome.ok ? 'ok' : `${seed.outcome.kind}: ${seed.outcome.message}`}`);
-        say(`  settling ${NAV_SETTLE_MS / 1000}s…`);
-        await wait(NAV_SETTLE_MS);
-        const before = await readNavSamples(gw);
-        say(`  ${describeSample('before', before.route, before.gate)}`);
-
-        say(`  appending → ${appendAt.lat},${appendAt.lon} (order=APPEND=${NAV_ORDER.APPEND})`);
-        const app = await gw.runRawAction(v.build(appendAt, NAV_ORDER.APPEND), `navp1-append-${v.name}`);
-        say(`  append outcome: ${app.outcome.ok ? 'ok' : `${app.outcome.kind}: ${app.outcome.message}`}`);
-        say(`  settling ${NAV_SETTLE_MS / 1000}s…`);
-        await wait(NAV_SETTLE_MS);
-        const after = await readNavSamples(gw);
-        say(`  ${describeSample('after ', after.route, after.gate)}`);
-
-        const verdict = classifyOrderProbe({
-          before: before.route,
-          after: after.route,
-          sent: appendAt,
-          gate: after.gate,
-        });
-        say(`  ⇒ ${v.name}: ${verdict.verdict} — ${verdict.why}`);
-      }
-      say('NAV-P1 done. ORDER_DISCARDED on f53/f106 confirms RESPONSE-19 Blocker 1.');
-    } catch (err) {
-      say(`ERROR NAV-P1: ${errMsg(err)}`);
-    } finally {
-      const path = await appendDiagnostic('NAV-P1 order-field probe', out);
-      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
-    }
-  };
-
-  // NAV-P2 — does f21 actually ROUTE, or only drop a pin and wait for a tap?
-  //
-  // RESPONSE-19 Blocker 2 (V1's correction of its own trace) says f21's only
-  // terminal is displayRemoteNavRequest → {getSuperchargerFromId, displayPlace,
-  // createCustomPin} — it draws a pin and never routes. If true, f21 is useless to
-  // us even though it's the only message that decodes `order`, and the whole
-  // prepend/append feature dies on this firmware.
-  //
-  // Requires NO active route at the start: "did this send start a route" is
-  // unanswerable if one was already running.
-  const handleNavF21Probe = async () => {
-    const target = parseCoord(navAppend);
-    const out: string[] = [];
-    const say = (line: string) => {
-      out.push(line);
-      append(line);
-    };
-    if (!target) {
-      append('ERROR NAV-P2: the APPEND probe point must be "lat,lon"');
-      return;
-    }
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    try {
-      const gw = await makeGateway();
-      say('NAV-P2 — does f21 route on its own, or only drop a pin?');
-      say('  cancel any nav on the centre screen first, and sit in the car (Blocker 3).');
-      await gw.wake();
-
-      const before = await readNavSamples(gw);
-      say(describeSample('before', before.route, before.gate));
-      if (before.route.present) {
-        say('⇒ ABORT: a route is already active. Cancel it on the centre screen and re-run.');
-        return;
-      }
-      if (!isGateOpen(before.gate)) {
-        say('⚠ gate is SHUT — a null result below will be uninterpretable. Get in the car.');
-      }
-
-      say(`sending f21 "${target.lat.toFixed(6)},${target.lon.toFixed(6)}" order=REPLACE…`);
-      const res = await gw.runRawAction(
-        navigateSearchAction({ query: `${target.lat.toFixed(6)},${target.lon.toFixed(6)}`, order: NAV_ORDER.REPLACE }),
-        'navp2-f21',
-      );
-      say(`outcome: ${res.outcome.ok ? 'ok' : `${res.outcome.kind}: ${res.outcome.message}`} (an ACK is not a route)`);
-      say(`settling ${NAV_SETTLE_MS / 1000}s — WATCH THE CENTRE SCREEN: pin only, or a live route?`);
-      await wait(NAV_SETTLE_MS);
-
-      const after = await readNavSamples(gw);
-      say(describeSample('after ', after.route, after.gate));
-      const verdict = classifyRouteStart({ before: before.route, after: after.route, gate: after.gate });
-      say(`⇒ ${verdict.verdict} — ${verdict.why}`);
-    } catch (err) {
-      say(`ERROR NAV-P2: ${errMsg(err)}`);
-    } finally {
-      const path = await appendDiagnostic('NAV-P2 f21 routing probe', out);
-      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
-    }
-  };
-
-  // NAV-P3 — are the route fields gated on someone being in the car?
-  //
-  // RESPONSE-19 Blocker 3 says the eight route DataValues sit inside a block
-  // guarded by driverPresent || inDrivingGear, and that the clear_optional_* calls
-  // live INSIDE that block — so "absent because gated" is byte-identical on the
-  // wire to "absent because no route". That's the supermarket case, and if it
-  // holds, the action bar must never read absence as "no route".
-  //
-  // This one can't be a single blocking run: it needs a human to leave the car and
-  // the car to notice. One tap = one row. Sequence:
-  //   1. route running, you seated          → expect route PRESENT
-  //   2. get out, shut the doors, wait      → tap again
-  //   3. (optional) get back in             → tap again
-  const handleNavGateSnapshot = async () => {
-    try {
-      const gw = await makeGateway();
-      await gw.wake();
-      const { route, gate } = await readNavSamples(gw);
-      const n = navGateRowsRef.current.length + 1;
-      const row: GateSnapshot = {
-        label: `stage ${n} (user=${gate.userPresent === null ? 'unknown' : gate.userPresent ? 'present' : 'absent'} shift=${gate.shiftState})`,
-        gate,
-        route,
+        minutesToArrival: snap.route?.minutesToArrival ?? null,
+        milesToArrival: snap.route?.milesToArrival ?? null,
+        shiftState: snap.drive?.gear ?? 'unknown',
+        userPresent,
       };
-      navGateRowsRef.current = [...navGateRowsRef.current, row];
-      const line = formatGateSnapshot(row);
-      const verdict = gateProbeVerdict(navGateRowsRef.current);
-      append(line);
-      append(`⇒ ${verdict}`);
-      await appendDiagnostic('NAV-P3 route-field gate probe', [line, `⇒ ${verdict}`]);
+      out.push(formatRouteRead(next), formatRouteDelta(lastBenchReadRef.current, next));
+      lastBenchReadRef.current = next;
+      out.forEach(append);
     } catch (err) {
-      append(`ERROR NAV-P3: ${errMsg(err)}`);
+      const e = `READ FAILED: ${errMsg(err)}`;
+      out.push(e);
+      append(e);
+    } finally {
+      await appendDiagnostic('nav bench read', out);
     }
-  };
-
-  const handleNavGateReset = () => {
-    navGateRowsRef.current = [];
-    append('NAV-P3: rows cleared — next tap starts a fresh sequence');
   };
 
   // handleAssertDrive (RESPONSE-11) fires the proactive standing-DRIVE the
@@ -1566,26 +1445,6 @@ export default function CarLinkScreen() {
                 theme={theme}
               />
               <ActionButton label="Send waypoints (raw)" onPress={handleSendWaypointsRaw} theme={theme} />
-              <Field
-                label="NAV probe — baseline destination (lat,lon)"
-                value={navBaseline}
-                onChangeText={setNavBaseline}
-                placeholder="42.6977,23.3219"
-                autoCapitalize="none"
-                theme={theme}
-              />
-              <Field
-                label="NAV probe — stop to append (lat,lon; >150 m from baseline)"
-                value={navAppend}
-                onChangeText={setNavAppend}
-                placeholder="42.7105,23.3219"
-                autoCapitalize="none"
-                theme={theme}
-              />
-              <ActionButton label="NAV-P1 order-field probe (REPLACES route ×3)" onPress={handleNavOrderProbe} theme={theme} />
-              <ActionButton label="NAV-P2 does f21 route? (REPLACES route)" onPress={handleNavF21Probe} theme={theme} />
-              <ActionButton label="NAV-P3 gate snapshot (tap per stage)" onPress={handleNavGateSnapshot} theme={theme} />
-              <ActionButton label="NAV-P3 reset rows" onPress={handleNavGateReset} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />
               <ActionButton label="Native key check" onPress={handleNativeKeyCheck} theme={theme} />
@@ -1603,6 +1462,64 @@ export default function CarLinkScreen() {
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
               <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />
+            </View>
+
+            {/* NAV BENCH — its own section, directly above the log so the controls and
+                their output are on screen together. Numbered because the order of
+                operations is the experiment: configure, send ONE command, read once. */}
+            <View style={[styles.benchSection, { borderColor: theme.backgroundSelected }]}>
+              <Text style={[styles.benchTitle, { color: theme.text }]}>NAV BENCH — one action per press</Text>
+              <Text style={[styles.benchNote, { color: theme.textSecondary }]}>
+                No sequencing, no verdicts. Watch the centre screen — it answers what the reads cannot.
+              </Text>
+
+              <Field
+                label="1 · Point A (lat,lon)"
+                value={navPointA}
+                onChangeText={setNavPointA}
+                placeholder="42.6977,23.3219"
+                autoCapitalize="none"
+                theme={theme}
+              />
+              <Field
+                label="1 · Point B (lat,lon)"
+                value={navPointB}
+                onChangeText={setNavPointB}
+                placeholder="42.7105,23.3219"
+                autoCapitalize="none"
+                theme={theme}
+              />
+
+              <View style={styles.field}>
+                <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>2 · Message</Text>
+                <View style={styles.transportRow}>
+                  <TransportPill label="f53 gps" active={benchMsg === 'f53'} onPress={() => setBenchMsg('f53')} theme={theme} />
+                  <TransportPill label="f106 gps+label" active={benchMsg === 'f106'} onPress={() => setBenchMsg('f106')} theme={theme} />
+                  <TransportPill label="f21 string" active={benchMsg === 'f21'} onPress={() => setBenchMsg('f21')} theme={theme} />
+                </View>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>3 · Order</Text>
+                <View style={styles.transportRow}>
+                  <TransportPill label="REPLACE 0" active={benchOrder === 'REPLACE'} onPress={() => setBenchOrder('REPLACE')} theme={theme} />
+                  <TransportPill label="PREPEND 1" active={benchOrder === 'PREPEND'} onPress={() => setBenchOrder('PREPEND')} theme={theme} />
+                  <TransportPill label="APPEND 2" active={benchOrder === 'APPEND'} onPress={() => setBenchOrder('APPEND')} theme={theme} />
+                </View>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>4 · Target</Text>
+                <View style={styles.transportRow}>
+                  <TransportPill label="Point A" active={benchTarget === 'A'} onPress={() => setBenchTarget('A')} theme={theme} />
+                  <TransportPill label="Point B" active={benchTarget === 'B'} onPress={() => setBenchTarget('B')} theme={theme} />
+                </View>
+              </View>
+
+              <View style={styles.buttonGrid}>
+                <ActionButton label="5 · SEND ONE COMMAND" onPress={handleBenchSend} theme={theme} />
+                <ActionButton label="6 · READ ROUTE" onPress={handleBenchRead} theme={theme} />
+              </View>
             </View>
 
             <View style={styles.logHeader}>
@@ -1772,6 +1689,23 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
     marginTop: 8,
+  },
+  benchSection: {
+    marginTop: 22,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    gap: 4,
+  },
+  benchTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  benchNote: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 10,
   },
   actionButton: {
     borderRadius: 10,
