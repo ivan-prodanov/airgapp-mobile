@@ -1365,6 +1365,26 @@ export default function CarLinkScreen() {
       say('');
       say(`PHASE B (focused-read load): the same ${N}, with continuous drive reads beside them…`);
       say("  (load runs at priority 'background', exactly as the focused read does)");
+      // WARM DOMAIN 3 FIRST — this is the difference between measuring the
+      // steady state and measuring a one-off.
+      //
+      // Phase A only touches VCSEC, so domain 3 starts phase B COLD. The load
+      // loop's first read therefore pays a full handshake, and a user command
+      // that queues behind it waits for the handshake too, not just for a read.
+      // That is the ~240ms on top of the 270ms floor, and it showed up as the
+      // first-command outlier in all three runs (4171 / 597 / 510).
+      //
+      // It is NOT what the focused read does in service: at 1.65s intervals
+      // domain 3 is permanently warm, and the cost is paid once at startup. So
+      // warm it here, and the number below answers the question actually being
+      // asked — what a tap costs while the focused read is RUNNING.
+      const warmT0 = Date.now();
+      try {
+        await gw.awakeSync({ states: ['drive'], priority: 'background' });
+        say(`  warmed domain 3 in ${Date.now() - warmT0}ms (cold-open cost, paid once at startup)`);
+      } catch (e) {
+        say(`  WARN could not warm domain 3: ${errMsg(e)}`);
+      }
       let loadReads = 0;
       let loadStop = false;
       const loadLoop = (async () => {
