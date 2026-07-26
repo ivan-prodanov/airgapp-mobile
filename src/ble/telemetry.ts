@@ -69,11 +69,13 @@ export interface InfotainmentSnapshot {
     odometerMiles: number | null;
     powerKw: number | null;
   };
-  // The car's active navigation route, when it has one.
+  // The car's active navigation route, when it has one. Every field describes the
+  // CURRENT SEGMENT — the next stop — not the final destination (RESPONSE-19 Q1).
   route?: {
     destination: string | null;
     minutesToArrival: number | null;
     milesToArrival: number | null;
+    coordinates: { lat: number; lon: number } | null;
   };
   location?: { lat: number | undefined; lon: number | undefined; heading: number | undefined };
   closures?: {
@@ -295,13 +297,25 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     const dest = str(dr.activeRouteDestination) ?? str(dr.optionalActiveRouteDestination);
     const mins = num(dr.activeRouteMinutesToArrival) ?? num(dr.optionalActiveRouteMinutesToArrival);
     const miles = num(dr.activeRouteMilesToArrival) ?? num(dr.optionalActiveRouteMilesToArrival);
+    // activeRouteCoordinates is the NEXT stop's lat/lon (RESPONSE-19 Q1: every
+    // active-route field describes the current segment, not the final destination).
+    // The name is a car-side reverse-geocode we can't predict, but the coordinate
+    // is one we CAN compare against what we sent — which is the only way to tell
+    // "the car appended our stop" from "the car replaced the route with it".
+    // That comparison is the whole discriminator in the NAV-P1 order probe.
+    const coordRaw = dr.activeRouteCoordinates as { latitude?: number; longitude?: number } | undefined;
+    const coordLat = num(coordRaw?.latitude);
+    const coordLon = num(coordRaw?.longitude);
+    const coordinates =
+      coordLat !== undefined && coordLon !== undefined ? { lat: coordLat, lon: coordLon } : null;
     // Only emit a route when the car actually has one — an empty destination with
     // zeroed ETA is "no navigation", not "0 minutes away".
-    if (dest || mins !== undefined || miles !== undefined) {
+    if (dest || mins !== undefined || miles !== undefined || coordinates) {
       snap.route = {
         destination: dest ?? null,
         minutesToArrival: mins ?? null,
         milesToArrival: miles ?? null,
+        coordinates,
       };
     }
   }

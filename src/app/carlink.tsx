@@ -36,7 +36,18 @@ import {
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
-import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, encodePiiKeyRequest, pingAction, VDS_DEFAULTS } from '@/ble/builders';
+import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, encodePiiKeyRequest, pingAction, VDS_DEFAULTS } from '@/ble/builders';
+import {
+  classifyOrderProbe,
+  classifyRouteStart,
+  formatGateSnapshot,
+  gateProbeVerdict,
+  isGateOpen,
+  type GateSample,
+  type GateSnapshot,
+  type ProbeCoord,
+  type RouteSample,
+} from '@/ble/navProbe';
 import { parseCarServerResponse } from '@/ble/telemetry';
 // Aliased: the global DOM `Response` shadows the proto one in this file.
 import { Response as CarServerResponse } from '@/ble/proto';
@@ -99,6 +110,14 @@ export default function CarLinkScreen() {
   const [vin, setVin] = useState('');
   // Raw waypoints string, so format variants can be tried on-car without a rebuild.
   const [waypointsRaw, setWaypointsRaw] = useState('42.697700,23.321900;42.700000,23.330000');
+  // NAV-P1/P2 probe points. Two places far enough apart that the car's snap-to-road
+  // can never make them look like the same stop (navProbe's SAME_PLACE_M is 150 m).
+  // BASELINE is where the throwaway route goes; APPEND is the stop we try to add.
+  const [navBaseline, setNavBaseline] = useState('42.6977,23.3219');
+  const [navAppend, setNavAppend] = useState('42.7105,23.3219');
+  // NAV-P3 accumulates one row per tap — the user drives the stages by physically
+  // getting in and out of the car, so it cannot be a single blocking run.
+  const navGateRowsRef = useRef<GateSnapshot[]>([]);
   const [enrolLink, setEnrolLink] = useState('');
   const [log, setLog] = useState<string[]>([]);
   // transport: which CarTransport lock/unlock/read/wake route through.
@@ -281,6 +300,238 @@ export default function CarLinkScreen() {
     } catch (err) {
       append(`ERROR waypoints RAW: ${errMsg(err)}`);
     }
+  };
+
+  // ── NAV-P1/P2/P3 — the RESPONSE-19 probes ───────────────────────────────────
+  //
+  // RESPONSE-19 was disassembled from an Intel MCU2 rootfs; our car is HW4 Ryzen,
+  // and the report itself flags nav semantics as the layer most likely to differ.
+  // These three probes each test one claim we are not willing to build on faith.
+  // The verdict logic lives in src/ble/navProbe.ts (node-tested) — everything here
+  // is I/O and sequencing.
+  //
+  // ⚠ NAV-P1 and NAV-P2 SEND NAVIGATION. They will replace whatever route the car
+  // is currently following. Do not run them on a route you care about.
+
+  // The car needs time to reverse-geocode, route and republish NAV_* before a read
+  // means anything. Too short and every probe reads the OLD route and reports
+  // ORDER_HONOURED — a false confirmation, the worst outcome available here.
+  const NAV_SETTLE_MS = 12_000;
+
+  const parseCoord = (raw: string): ProbeCoord | null => {
+    const [a, b] = raw.split(',').map((s) => Number(s.trim()));
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    if (Math.abs(a) > 90 || Math.abs(b) > 180) return null;
+    return { lat: a, lon: b };
+  };
+
+  // One scoped DriveState read plus the VCSEC presence read, reduced to exactly
+  // what the classifiers consume. `states: ['drive']` keeps this to a single
+  // command round-trip instead of the default four.
+  const readNavSamples = async (
+    gw: Awaited<ReturnType<typeof makeGateway>>,
+  ): Promise<{ route: RouteSample; gate: GateSample }> => {
+    const snap = await gw.awakeSync({ states: ['drive'] });
+    let userPresent: boolean | null = null;
+    try {
+      const vcsec = await gw.readVcsecStatus();
+      if (vcsec.userPresence !== 'unknown') userPresent = vcsec.userPresence === 'present';
+    } catch {
+      // Presence is corroboration, not the measurement — a failed VCSEC read
+      // leaves it null and isGateOpen falls back to the shift state.
+    }
+    return {
+      route: {
+        present: !!snap.route,
+        destination: snap.route?.destination ?? null,
+        coordinates: snap.route?.coordinates ?? null,
+      },
+      gate: { shiftState: snap.drive?.gear ?? 'unknown', userPresent },
+    };
+  };
+
+  const describeSample = (label: string, route: RouteSample, gate: GateSample) =>
+    `${label}: ${route.present ? `route "${route.destination ?? 'unnamed'}" @ ${route.coordinates ? `${route.coordinates.lat.toFixed(5)},${route.coordinates.lon.toFixed(5)}` : 'no coord'}` : 'NO route fields'} | shift=${gate.shiftState} user=${gate.userPresent === null ? 'unknown' : gate.userPresent} gate=${isGateOpen(gate) ? 'OPEN' : 'SHUT'}`;
+
+  // NAV-P1 — do f53 / f106 / f21 honour the `order` field?
+  //
+  // RESPONSE-19 Blocker 1 says f53 and f106 spill the order argument and never
+  // dereference it, so only f21/f22 can express PREPEND/APPEND. If that's right,
+  // every order-bearing send has to move off the messages we use today.
+  //
+  // APPEND is the only order that produces a distinguishable reading — PREPEND and
+  // REPLACE both make the sent place the next stop, so they cannot be told apart
+  // from the read side. See navProbe.ts's header for the full argument.
+  const handleNavOrderProbe = async () => {
+    const baseline = parseCoord(navBaseline);
+    const appendAt = parseCoord(navAppend);
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    if (!baseline || !appendAt) {
+      append('ERROR NAV-P1: both probe points must be "lat,lon"');
+      return;
+    }
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    // Each variant is tested with its OWN fresh baseline route, so a previous
+    // variant's leftovers can't be mistaken for this one's result.
+    const variants = [
+      { name: 'f53 NavigationGpsRequest', build: (c: ProbeCoord, order: number) => navigateGpsAction({ ...c, order }) },
+      {
+        name: 'f106 NavigationGpsDestinationRequest',
+        build: (c: ProbeCoord, order: number) =>
+          navigateGpsWithLabelAction({ lat: c.lat, lon: c.lon, label: 'probe', order }),
+      },
+      {
+        // RESPONSE-19: f21 splits "lat,lon" locally (split(',') + toDouble) with no
+        // geocoding — which is what makes it usable air-gapped at all.
+        name: 'f21 NavigationRequest',
+        build: (c: ProbeCoord, order: number) =>
+          navigateSearchAction({ query: `${c.lat.toFixed(6)},${c.lon.toFixed(6)}`, order }),
+      },
+    ];
+    try {
+      const gw = await makeGateway();
+      say('NAV-P1 — does `order` survive on f53 / f106 / f21?');
+      say('⚠ this REPLACES the car\'s current route three times. Sit in the car: the');
+      say('  route fields are gated on driverPresent (Blocker 3) and read as absent otherwise.');
+      say('waking car (domain 3 needs the MCU up)…');
+      await gw.wake();
+
+      for (const v of variants) {
+        say(`── ${v.name} ──`);
+        say(`  establishing baseline route → ${baseline.lat},${baseline.lon} (order=REPLACE)`);
+        const seed = await gw.runRawAction(v.build(baseline, NAV_ORDER.REPLACE), `navp1-seed-${v.name}`);
+        say(`  seed outcome: ${seed.outcome.ok ? 'ok' : `${seed.outcome.kind}: ${seed.outcome.message}`}`);
+        say(`  settling ${NAV_SETTLE_MS / 1000}s…`);
+        await wait(NAV_SETTLE_MS);
+        const before = await readNavSamples(gw);
+        say(`  ${describeSample('before', before.route, before.gate)}`);
+
+        say(`  appending → ${appendAt.lat},${appendAt.lon} (order=APPEND=${NAV_ORDER.APPEND})`);
+        const app = await gw.runRawAction(v.build(appendAt, NAV_ORDER.APPEND), `navp1-append-${v.name}`);
+        say(`  append outcome: ${app.outcome.ok ? 'ok' : `${app.outcome.kind}: ${app.outcome.message}`}`);
+        say(`  settling ${NAV_SETTLE_MS / 1000}s…`);
+        await wait(NAV_SETTLE_MS);
+        const after = await readNavSamples(gw);
+        say(`  ${describeSample('after ', after.route, after.gate)}`);
+
+        const verdict = classifyOrderProbe({
+          before: before.route,
+          after: after.route,
+          sent: appendAt,
+          gate: after.gate,
+        });
+        say(`  ⇒ ${v.name}: ${verdict.verdict} — ${verdict.why}`);
+      }
+      say('NAV-P1 done. ORDER_DISCARDED on f53/f106 confirms RESPONSE-19 Blocker 1.');
+    } catch (err) {
+      say(`ERROR NAV-P1: ${errMsg(err)}`);
+    } finally {
+      const path = await appendDiagnostic('NAV-P1 order-field probe', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
+  // NAV-P2 — does f21 actually ROUTE, or only drop a pin and wait for a tap?
+  //
+  // RESPONSE-19 Blocker 2 (V1's correction of its own trace) says f21's only
+  // terminal is displayRemoteNavRequest → {getSuperchargerFromId, displayPlace,
+  // createCustomPin} — it draws a pin and never routes. If true, f21 is useless to
+  // us even though it's the only message that decodes `order`, and the whole
+  // prepend/append feature dies on this firmware.
+  //
+  // Requires NO active route at the start: "did this send start a route" is
+  // unanswerable if one was already running.
+  const handleNavF21Probe = async () => {
+    const target = parseCoord(navAppend);
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    if (!target) {
+      append('ERROR NAV-P2: the APPEND probe point must be "lat,lon"');
+      return;
+    }
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    try {
+      const gw = await makeGateway();
+      say('NAV-P2 — does f21 route on its own, or only drop a pin?');
+      say('  cancel any nav on the centre screen first, and sit in the car (Blocker 3).');
+      await gw.wake();
+
+      const before = await readNavSamples(gw);
+      say(describeSample('before', before.route, before.gate));
+      if (before.route.present) {
+        say('⇒ ABORT: a route is already active. Cancel it on the centre screen and re-run.');
+        return;
+      }
+      if (!isGateOpen(before.gate)) {
+        say('⚠ gate is SHUT — a null result below will be uninterpretable. Get in the car.');
+      }
+
+      say(`sending f21 "${target.lat.toFixed(6)},${target.lon.toFixed(6)}" order=REPLACE…`);
+      const res = await gw.runRawAction(
+        navigateSearchAction({ query: `${target.lat.toFixed(6)},${target.lon.toFixed(6)}`, order: NAV_ORDER.REPLACE }),
+        'navp2-f21',
+      );
+      say(`outcome: ${res.outcome.ok ? 'ok' : `${res.outcome.kind}: ${res.outcome.message}`} (an ACK is not a route)`);
+      say(`settling ${NAV_SETTLE_MS / 1000}s — WATCH THE CENTRE SCREEN: pin only, or a live route?`);
+      await wait(NAV_SETTLE_MS);
+
+      const after = await readNavSamples(gw);
+      say(describeSample('after ', after.route, after.gate));
+      const verdict = classifyRouteStart({ before: before.route, after: after.route, gate: after.gate });
+      say(`⇒ ${verdict.verdict} — ${verdict.why}`);
+    } catch (err) {
+      say(`ERROR NAV-P2: ${errMsg(err)}`);
+    } finally {
+      const path = await appendDiagnostic('NAV-P2 f21 routing probe', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
+  // NAV-P3 — are the route fields gated on someone being in the car?
+  //
+  // RESPONSE-19 Blocker 3 says the eight route DataValues sit inside a block
+  // guarded by driverPresent || inDrivingGear, and that the clear_optional_* calls
+  // live INSIDE that block — so "absent because gated" is byte-identical on the
+  // wire to "absent because no route". That's the supermarket case, and if it
+  // holds, the action bar must never read absence as "no route".
+  //
+  // This one can't be a single blocking run: it needs a human to leave the car and
+  // the car to notice. One tap = one row. Sequence:
+  //   1. route running, you seated          → expect route PRESENT
+  //   2. get out, shut the doors, wait      → tap again
+  //   3. (optional) get back in             → tap again
+  const handleNavGateSnapshot = async () => {
+    try {
+      const gw = await makeGateway();
+      await gw.wake();
+      const { route, gate } = await readNavSamples(gw);
+      const n = navGateRowsRef.current.length + 1;
+      const row: GateSnapshot = {
+        label: `stage ${n} (user=${gate.userPresent === null ? 'unknown' : gate.userPresent ? 'present' : 'absent'} shift=${gate.shiftState})`,
+        gate,
+        route,
+      };
+      navGateRowsRef.current = [...navGateRowsRef.current, row];
+      const line = formatGateSnapshot(row);
+      const verdict = gateProbeVerdict(navGateRowsRef.current);
+      append(line);
+      append(`⇒ ${verdict}`);
+      await appendDiagnostic('NAV-P3 route-field gate probe', [line, `⇒ ${verdict}`]);
+    } catch (err) {
+      append(`ERROR NAV-P3: ${errMsg(err)}`);
+    }
+  };
+
+  const handleNavGateReset = () => {
+    navGateRowsRef.current = [];
+    append('NAV-P3: rows cleared — next tap starts a fresh sequence');
   };
 
   // handleAssertDrive (RESPONSE-11) fires the proactive standing-DRIVE the
@@ -1220,6 +1471,26 @@ export default function CarLinkScreen() {
                 theme={theme}
               />
               <ActionButton label="Send waypoints (raw)" onPress={handleSendWaypointsRaw} theme={theme} />
+              <Field
+                label="NAV probe — baseline destination (lat,lon)"
+                value={navBaseline}
+                onChangeText={setNavBaseline}
+                placeholder="42.6977,23.3219"
+                autoCapitalize="none"
+                theme={theme}
+              />
+              <Field
+                label="NAV probe — stop to append (lat,lon; >150 m from baseline)"
+                value={navAppend}
+                onChangeText={setNavAppend}
+                placeholder="42.7105,23.3219"
+                autoCapitalize="none"
+                theme={theme}
+              />
+              <ActionButton label="NAV-P1 order-field probe (REPLACES route ×3)" onPress={handleNavOrderProbe} theme={theme} />
+              <ActionButton label="NAV-P2 does f21 route? (REPLACES route)" onPress={handleNavF21Probe} theme={theme} />
+              <ActionButton label="NAV-P3 gate snapshot (tap per stage)" onPress={handleNavGateSnapshot} theme={theme} />
+              <ActionButton label="NAV-P3 reset rows" onPress={handleNavGateReset} theme={theme} />
               <ActionButton label="Native passive: start" onPress={handleNativePassiveStart} theme={theme} />
               <ActionButton label="Native seal golden" onPress={handleNativeSealGolden} theme={theme} />
               <ActionButton label="Native key check" onPress={handleNativeKeyCheck} theme={theme} />
