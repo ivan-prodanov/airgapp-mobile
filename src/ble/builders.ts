@@ -609,6 +609,33 @@ export function vehicleDataSubscriptionAction(opts?: {
   };
 }
 
+// pingAction — send OUR timestamp to the car.
+//
+// Guess-free: Ping is fully declared (ping_id 1, local_timestamp 2,
+// last_remote_timestamp 3) and VehicleAction.ping is tag 46, all from the public
+// proto. Nothing here is reverse-engineered.
+//
+// Why it matters: VDS-M3 showed the car's subscription pings arrive as
+// Response.ping with local_timestamp set and last_remote_timestamp ABSENT. That
+// third field is the car reporting the newest timestamp it has received FROM US
+// — a classic round-trip clock sync — so it is the natural place for the
+// `handleAck:` behaviour RESPONSE-15 found in QtCarServer to show up. If sending
+// this makes last_remote_timestamp appear in the next car ping, we have found
+// the ack channel; if the car keeps pushing regardless, acks are optional over
+// BLE. Either answer is worth having before shipping a subscription.
+export function pingAction(opts?: { pingId?: number; atMs?: number }): ActionPayload {
+  const atMs = opts?.atMs ?? Date.now();
+  const seconds = Math.floor(atMs / 1000);
+  const nanos = (atMs % 1000) * 1e6;
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({
+      ping: { pingId: opts?.pingId ?? 1, localTimestamp: { seconds, nanos } },
+    }),
+  };
+}
+
 // cancelVehicleDataSubscriptionAction — duration 0. The car's TTL means a
 // subscription always dies on its own, but leaving one running after a probe
 // would keep the car pushing at us for the rest of the TTL, so the probe always

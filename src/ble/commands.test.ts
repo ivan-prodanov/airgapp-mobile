@@ -59,6 +59,7 @@ import {
   navigateWaypointsAction,
   vehicleDataSubscriptionAction,
   encodePiiKeyRequest,
+  pingAction,
   cancelVehicleDataSubscriptionAction,
   VDS_DEFAULTS,
   boomboxAction,
@@ -265,6 +266,17 @@ test('vehicleDataSubscriptionAction matches the RESPONSE-15 golden frame byte fo
   assert.equal(decoded?.subscriptionDurationS, VDS_DEFAULTS.durationS);
   assert.equal(decoded?.locationStateMaxUpdateRateMs, VDS_DEFAULTS.locationRateMs);
   assert.equal(decoded?.subscriptionPingS, VDS_DEFAULTS.pingS);
+});
+
+test('pingAction wraps a Timestamp at VehicleAction.ping(46) with split seconds/nanos', () => {
+  const a = pingAction({ pingId: 7, atMs: 1785068142_039 });
+  const p = decodeAction(a.bytes).vehicleAction?.ping;
+  assert.equal(p?.pingId, 7);
+  assert.equal(Number(p?.localTimestamp?.seconds), 1785068142);
+  // 39ms → 39_000_000ns. Exactly the shape the CAR sent us in VDS-M3, which is
+  // the point: our ack has to look like the thing it is answering.
+  assert.equal(Number(p?.localTimestamp?.nanos), 39_000_000);
+  assert.equal(a.flags, 2, 'state-read flag — we want the response encrypted');
 });
 
 test('locationRateMs:null OMITS field 10 entirely (the guess-free default probe)', () => {

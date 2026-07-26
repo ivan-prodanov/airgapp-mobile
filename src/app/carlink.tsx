@@ -36,7 +36,7 @@ import {
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
-import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, encodePiiKeyRequest, VDS_DEFAULTS } from '@/ble/builders';
+import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, encodePiiKeyRequest, pingAction, VDS_DEFAULTS } from '@/ble/builders';
 import { parseCarServerResponse } from '@/ble/telemetry';
 // Aliased: the global DOM `Response` shadows the proto one in this file.
 import { Response as CarServerResponse } from '@/ble/proto';
@@ -593,6 +593,22 @@ export default function CarLinkScreen() {
   const describePlaintext = (plain: Uint8Array): string => {
     try {
       const resp = CarServerResponse.decode(plain);
+      // PING first — VDS-M3 measured that a subscription with no per-state rate
+      // pushes nothing BUT pings, and the old wording called those "no
+      // recognised state slices", which reads like a decode failure when it is
+      // actually a fully understood frame.
+      if (resp.ping) {
+        const ts = resp.ping.localTimestamp;
+        const secs = Number(ts?.seconds ?? 0);
+        const when = secs ? new Date(secs * 1000 + Math.round(Number(ts?.nanos ?? 0) / 1e6)).toISOString() : 'none';
+        const lastRemote = resp.ping.lastRemoteTimestamp
+          ? new Date(Number(resp.ping.lastRemoteTimestamp.seconds ?? 0) * 1000).toISOString()
+          : 'ABSENT';
+        // last_remote_timestamp is the interesting half: it is the car echoing
+        // the most recent timestamp IT received from US, so its presence is
+        // direct evidence of whether our acks are landing.
+        return `PING id=${resp.ping.pingId ?? 0} carClock=${when} lastRemote=${lastRemote}`;
+      }
       const snap = parseCarServerResponse(resp);
       const slices = Object.keys(snap);
       const status = resp.actionStatus?.result;
@@ -735,6 +751,93 @@ export default function CarLinkScreen() {
         say('WARN: cancel failed (the TTL will expire it)');
       }
       const path = await appendDiagnostic('VDS-M3 default-state probe', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
+  // VDS-M4 — is there an ack channel, and does the subscription need it?
+  //
+  // VDS-M3 found the car's subscription pings: Response.ping, local_timestamp
+  // set to the car's own clock, and last_remote_timestamp ABSENT. Ping's three
+  // fields are a round-trip clock sync, so that third field is the car reporting
+  // the newest timestamp it has had FROM US — which makes it the visible half of
+  // the `handleAck:` path RESPONSE-15 found in QtCarServer.
+  //
+  // This probe subscribes, lets the car ping us for a while UNANSWERED, then
+  // starts answering with our own Ping and watches for last_remote_timestamp to
+  // appear. The unanswered phase is the control: without it, a populated field
+  // could just be how pings always look.
+  //
+  // Guess-free — Ping (1/2/3) and VehicleAction.ping (46) are public proto.
+  const handleVdsAckProbe = async () => {
+    const SILENT_MS = 20_000; // control: never answer
+    const ACKED_MS = 25_000; // then answer every car ping
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+      const sub = await gw.runRawAction(
+        vehicleDataSubscriptionAction({ durationS: 90, pingS: 5, locationRateMs: null }),
+        'vds-ack',
+      );
+      say(`subscribe: ${sub.outcome.ok ? 'ok' : sub.outcome.message}`);
+
+      const summarise = (label: string, frames: ReturnType<typeof disarmVdsCapture>) => {
+        let withRemote = 0;
+        let total = 0;
+        for (const o of frames) {
+          const dec = sub.result?.decryptPush?.(o.raw);
+          if (!dec) continue;
+          total++;
+          const desc = describePlaintext(dec.plaintext);
+          if (total <= 2) say(`  ${label} +${(o.atMs / 1000).toFixed(1)}s ${desc}`);
+          if (desc.includes('PING') && !desc.includes('lastRemote=ABSENT')) withRemote++;
+        }
+        say(`  ${label}: ${total} decrypted pings, ${withRemote} carrying last_remote_timestamp`);
+        return { total, withRemote };
+      };
+
+      say(`phase 1 — ${SILENT_MS / 1000}s, NEVER answering (control)`);
+      armVdsCapture(Date.now());
+      await wait(SILENT_MS);
+      const silent = summarise('silent', disarmVdsCapture());
+
+      say(`phase 2 — ${ACKED_MS / 1000}s, answering every ~5s with our own Ping`);
+      armVdsCapture(Date.now());
+      const ackTimer = setInterval(() => {
+        void gw?.runRawAction(pingAction({ pingId: 1 }), 'vds-ack-ping').catch(() => undefined);
+      }, 5000);
+      await wait(ACKED_MS);
+      clearInterval(ackTimer);
+      const acked = summarise('acked', disarmVdsCapture());
+
+      say('');
+      if (acked.withRemote > 0 && silent.withRemote === 0) {
+        say('VERDICT: ACK CHANNEL FOUND — last_remote_timestamp appears only once we ping back.');
+        say('  → VehicleAction.ping(46) is how a phone acks a BLE subscription.');
+      } else if (silent.total > 0 && acked.total > 0 && acked.withRemote === 0) {
+        say('VERDICT: the car pings regardless and never echoes us — acks appear OPTIONAL over BLE.');
+        say('  → good news for shipping: no keepalive needed within a TTL.');
+      } else {
+        say('VERDICT: inconclusive — too few decrypted pings to compare the phases.');
+      }
+    } catch (err) {
+      say(`ERROR ack probe: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        say('WARN: cancel failed (the TTL will expire it)');
+      }
+      const path = await appendDiagnostic('VDS-M4 ping/ack probe', out);
       append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
     }
   };
@@ -1094,6 +1197,7 @@ export default function CarLinkScreen() {
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
               <ActionButton label="VDS-M2 PII key sweep" onPress={handleVdsPiiSweep} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
+              <ActionButton label="VDS-M4 ping/ack probe" onPress={handleVdsAckProbe} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
