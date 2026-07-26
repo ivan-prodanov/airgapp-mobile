@@ -451,7 +451,7 @@ never cleared, so a route that ended stayed in state for the whole session."
 - Create: `src/hooks/useSendToCar.ts`
 
 **Interfaces:**
-- Consumes: `destinationTitle` + `TitleInput` (Task 1); `useFleet()` from `@/state/VehicleProvider`; `useToast()` from `@/components/ToastHost`; `controlHaptic()` from `@/state/controlHaptic`.
+- Consumes: `destinationTitle` + `TitleInput` (Task 1); `useFleet()` from `@/state/VehicleProvider`; `controlHaptic()` from `@/state/controlHaptic`.
 - Produces: `useSendToCar(): (target: SendTarget) => void` where `interface SendTarget { name?: string | null; address?: string | null; coordinate: { latitude: number; longitude: number } }` (structurally identical to `TitleInput`), and `<SendToCarButton target={...} insetBottom={...} />`. Tasks 4 and 6 use both.
 
 - [ ] **Step 1: Write the hook**
@@ -462,32 +462,34 @@ Create `src/hooks/useSendToCar.ts`:
 import { useCallback } from 'react';
 
 import { useFleet } from '@/state/VehicleProvider';
-import { useToast } from '@/components/ToastHost';
 import { controlHaptic } from '@/state/controlHaptic';
 import { destinationTitle, type TitleInput } from '@/services/destinationTitle';
 
 export type SendTarget = TitleInput;
 
 // One place a destination leaves the app for the car. Every screen that can show
-// a place routes through this, so the title rules, the haptic and the toast are
-// identical everywhere.
+// a place routes through this, so the title rules and the haptic are identical
+// everywhere.
 //
 // Fire-and-forget by design: no wake (verified on-car — sends land on a sleeping
 // car) and no route-state check (the active-route fields are unreadable while the
-// car is locked, which is whenever you would use this). A send the car REJECTS
-// now surfaces through the shared failure toast, because Task 2 made navigation
-// fail on the car's own actionStatus instead of on the transport ACK.
+// car is locked, which is whenever you would use this).
+//
+// DELIBERATELY SILENT ON SUCCESS. The haptic is the immediate feedback; there is
+// no "Sent X to the car" toast. Task 2 made navigation fail on the car's OWN
+// actionStatus rather than on the transport ACK, so a rejection now surfaces
+// through the shared failure toast with the car's reason — and a success toast
+// fired at tap time would be claiming an outcome we do not yet know, then being
+// contradicted a moment later. Silence on success, the truth on failure.
 export function useSendToCar(): (target: SendTarget) => void {
   const fleet = useFleet();
-  const toast = useToast();
   return useCallback(
     (target: SendTarget) => {
       const title = destinationTitle(target);
       controlHaptic();
       fleet.sendNavigation(target.coordinate.latitude, target.coordinate.longitude, title);
-      toast.show(`Sent ${title} to the car`);
     },
-    [fleet, toast],
+    [fleet],
   );
 }
 ```
@@ -1059,7 +1061,7 @@ Then install the built `.app` and launch. `CoreDeviceError 10002` on auto-launch
 
 - [ ] **Step 3: Verify in-app sending**
 
-With the car reachable, confirm each of these sends and shows the toast:
+With the car reachable, confirm each of these sends (haptic on tap; NO success toast by design — the car receiving the destination is the confirmation):
 
 1. Long-press the map → `Send to Car`. Check the car names it by its address, **not** "Dropped Pin".
 2. Tap an Apple POI → `Send to Car`. The car should show the POI's name.
@@ -1076,7 +1078,7 @@ Start a route on the car, then send a place from the app. Expected: a tappable p
 
 - [ ] **Step 6: Verify a rejected send is now visible**
 
-Send a destination the car will refuse — the open-water coordinate from the bench, `39.936693, 25.306087`, entered as a long-press or via the bench's Point C. Expected: a failure surfaces rather than a success toast, carrying the car's own reason. This is what Task 2 was for; if it still reports success, `actionStatus` is not reaching the outcome and that needs fixing before this is called done.
+Send a destination the car will refuse — the open-water coordinate from the bench, `39.936693, 25.306087`, entered as a long-press or via the bench's Point C. Expected: a failure toast appears carrying the car's own reason. (Success is silent, so a failure toast is the ONLY toast you should ever see from a send.) This is what Task 2 was for; if it still reports success, `actionStatus` is not reaching the outcome and that needs fixing before this is called done.
 
 - [ ] **Step 7: Commit anything that changed**
 
