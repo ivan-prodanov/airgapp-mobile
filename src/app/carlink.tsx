@@ -129,9 +129,13 @@ export default function CarLinkScreen() {
   // port) or refuses, it ran the string through its own search instead — which
   // would mean arbitrary dropped pins are not safe to send as "lat,lon".
   const [navPointC, setNavPointC] = useState('39.936693,25.306087');
+  // D and E re-run the same discriminator after C came back "no results found" —
+  // a phrase that belongs to a SEARCH, not to a numeric parse.
+  const [navPointD, setNavPointD] = useState('39.936959,25.305732');
+  const [navPointE, setNavPointE] = useState('39.926736,25.332941');
   const [benchMsg, setBenchMsg] = useState<'f53' | 'f106' | 'f21'>('f53');
   const [benchOrder, setBenchOrder] = useState<'REPLACE' | 'PREPEND' | 'APPEND'>('REPLACE');
-  const [benchTarget, setBenchTarget] = useState<'A' | 'B' | 'C'>('A');
+  const [benchTarget, setBenchTarget] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('A');
   // The previous read, so each read can state how far the destination moved. A ref,
   // not state: it must survive re-renders without causing them, and it is only ever
   // read inside the handler.
@@ -342,8 +346,14 @@ export default function CarLinkScreen() {
   // command's reply to the next request. Not enforced — just flagged in the log.
   const BENCH_MIN_GAP_MS = 3_000;
 
-  const benchCoord = () =>
-    parseCoord(benchTarget === 'A' ? navPointA : benchTarget === 'B' ? navPointB : navPointC);
+  const benchPoints = (): Record<'A' | 'B' | 'C' | 'D' | 'E', string> => ({
+    A: navPointA,
+    B: navPointB,
+    C: navPointC,
+    D: navPointD,
+    E: navPointE,
+  });
+  const benchCoord = () => parseCoord(benchPoints()[benchTarget]);
 
   const benchMessage = (c: ProbeCoord, order: number): ActionPayload => {
     if (benchMsg === 'f53') return navigateGpsAction({ lat: c.lat, lon: c.lon, order });
@@ -1836,10 +1846,26 @@ export default function CarLinkScreen() {
                 theme={theme}
               />
               <Field
-                label="1 · Point C — open sea, no road/address/POI (geocoding test)"
+                label="1 · Point C — featureless (came back “no results found”)"
                 value={navPointC}
                 onChangeText={setNavPointC}
                 placeholder="39.936693,25.306087"
+                autoCapitalize="none"
+                theme={theme}
+              />
+              <Field
+                label="1 · Point D — retry of the same discriminator"
+                value={navPointD}
+                onChangeText={setNavPointD}
+                placeholder="39.936959,25.305732"
+                autoCapitalize="none"
+                theme={theme}
+              />
+              <Field
+                label="1 · Point E — retry, ~2.5 km from C/D"
+                value={navPointE}
+                onChangeText={setNavPointE}
+                placeholder="39.926736,25.332941"
                 autoCapitalize="none"
                 theme={theme}
               />
@@ -1865,9 +1891,15 @@ export default function CarLinkScreen() {
               <View style={styles.field}>
                 <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>4 · Target</Text>
                 <View style={styles.transportRow}>
-                  <TransportPill label="Point A" active={benchTarget === 'A'} onPress={() => setBenchTarget('A')} theme={theme} />
-                  <TransportPill label="Point B" active={benchTarget === 'B'} onPress={() => setBenchTarget('B')} theme={theme} />
-                  <TransportPill label="Point C sea" active={benchTarget === 'C'} onPress={() => setBenchTarget('C')} theme={theme} />
+                  {(['A', 'B', 'C', 'D', 'E'] as const).map((p) => (
+                    <TransportPill
+                      key={p}
+                      label={p}
+                      active={benchTarget === p}
+                      onPress={() => setBenchTarget(p)}
+                      theme={theme}
+                    />
+                  ))}
                 </View>
               </View>
 
