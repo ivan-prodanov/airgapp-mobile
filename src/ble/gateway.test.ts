@@ -389,6 +389,65 @@ test('runCommand: built.domain drives the session domain (no cross-domain)', asy
   assert.deepEqual(car.handshakeDomains, [DOMAIN_INFOTAINMENT, DOMAIN_VEHICLE_SECURITY]);
 });
 
+// ── runAction: the car's own verdict (Response.actionStatus) ────────────────
+//
+// Regression coverage for 43ea3eb: runAction used to report ok:true off the
+// routable-layer signedMessageStatus alone, which only means the frame was
+// delivered — not that the car did what was asked. These pin the gating
+// logic itself (label.startsWith('navigate') + the outcome-shape branching),
+// which parseCarActionStatus's own unit tests and the telemetry tests don't
+// exercise.
+
+test('runAction (navigate): a car-rejected verdict fails the command with faultName carRejected and the car\'s reason in the message', async () => {
+  __resetSessionCaches();
+  const rejected = encodeMessage(Response, {
+    actionStatus: { result: 1, resultReason: { plainText: 'timed reservation expired' } },
+  });
+  const { car, gateway } = makeGateway([{ kind: 'ok', response: rejected }]);
+
+  const outcome = await gateway.runCommand({ type: 'navigateTo', lat: 40.1, lon: -74.2 });
+
+  assert.deepEqual(outcome, {
+    ok: false,
+    kind: 'fault',
+    fault: 0,
+    faultName: 'carRejected',
+    message: '[navigateTo] the car rejected it: timed reservation expired',
+  });
+  // A semantic rejection, not a transient fault — stop, don't retry.
+  assert.equal(car.decryptedCommands.length, 1);
+});
+
+test('runAction (non-navigation): the same car-rejected actionStatus does NOT fail a non-nav command — the nav-only scoping is deliberate', async () => {
+  __resetSessionCaches();
+  const rejected = encodeMessage(Response, {
+    actionStatus: { result: 1, resultReason: { plainText: 'timed reservation expired' } },
+  });
+  const { gateway } = makeGateway([{ kind: 'ok', response: rejected }]);
+
+  const outcome = await gateway.runCommand({ type: 'lock' });
+
+  assert.deepEqual(outcome, {
+    ok: true,
+    attempts: 1,
+    carStatus: { ok: false, reason: 'timed reservation expired' },
+  });
+});
+
+test('runAction (navigate): a car-accepted verdict attaches carStatus to the success outcome', async () => {
+  __resetSessionCaches();
+  const accepted = encodeMessage(Response, { actionStatus: { result: 0 } });
+  const { gateway } = makeGateway([{ kind: 'ok', response: accepted }]);
+
+  const outcome = await gateway.runCommand({ type: 'navigateTo', lat: 40.1, lon: -74.2 });
+
+  assert.deepEqual(outcome, {
+    ok: true,
+    attempts: 1,
+    carStatus: { ok: true, reason: null },
+  });
+});
+
 // ── readVcsecStatus (+ decrypt-fail retry + FLAG_ENCRYPT_RESPONSE round-trip)─
 
 function vcsecStatusBytes(): Uint8Array {
