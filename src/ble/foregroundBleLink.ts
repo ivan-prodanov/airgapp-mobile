@@ -24,6 +24,8 @@
 // command never sign concurrently. Background is native's job (this stays stopped).
 
 import { logi } from '../services/logbus';
+import { parseAuthenticationRequest } from './passiveEntryAuth';
+import { noteChallengeArrived, noteAnswerWritten, noteChallengeDropped } from './passiveEntryLatency';
 import { BleReassembler, frameMessage, MAX_BLE_MESSAGE_SIZE } from './bleFraming';
 import { outgoingCorrelators, frameAnswersRequest, type Correlators } from './bleCorrelation';
 import { bytesToBase64, base64ToBytes } from './bytes';
@@ -164,9 +166,20 @@ class ForegroundBleLink {
     const frames = this.reassembler.push(bytes, Date.now());
     if (frames.length === 0) return;
     if (this.exchangeInFlight) {
-      // A command reply is expected — buffer for the correlator. (A challenge that
-      // lands here is NOT answered until the exchange finishes, which keeps passive
-      // and command signing from overlapping the shared counter.)
+      // A command reply is expected — buffer for the correlator.
+      //
+      // ⚠ THE DEAF WINDOW. The old comment here said a challenge landing in this
+      // branch "is NOT answered until the exchange finishes". That was wrong in a
+      // way that mattered: drainInbox hands non-matching frames to onUnsolicited,
+      // which does not answer challenges, so nothing ever picks them back up.
+      // A challenge that arrives here is not deferred — it is LOST.
+      //
+      // Counting them is step one. Every in-flight command opens this window, and
+      // a timed-out one holds it open for 4-6s, which is why unlocks occasionally
+      // failed long before any of today's changes.
+      for (const f of frames) {
+        if (parseAuthenticationRequest(f)) noteChallengeArrived(Date.now(), true);
+      }
       this.inbox.push(...frames);
       this.wake();
     } else {
@@ -179,18 +192,33 @@ class ForegroundBleLink {
         // read→increment→write atomic w.r.t. the command path. Deferring queue
         // (not drop-on-contention), and the critical section stays short so the
         // answer still fits the car's ~6 s challenge window.
+        const isChallenge = parseAuthenticationRequest(f) !== null;
+        if (isChallenge) noteChallengeArrived(Date.now(), false);
         void this.withWriteLock(async () => {
           let reply: Uint8Array | null = null;
           try {
             reply = this.authResponder?.(f) ?? null;
           } catch {
+            if (isChallenge) noteChallengeDropped();
             return; // a responder fault must never take down the notify path
           }
-          if (!reply || !this.isConnected()) return;
+          if (!reply || !this.isConnected()) {
+            // Consulted and declined: circuit breaker, rate limit, bad token.
+            // Recorded separately from the deaf window — those are choices, this
+            // is a defect, and merging them would hide one behind the other.
+            if (isChallenge) noteChallengeDropped();
+            return;
+          }
           const framed = frameMessage(reply);
           if (!passiveEntryWriteFrame(bytesToBase64(framed))) {
             logi('ble', 'passive answer write failed (link dropped)');
+            if (isChallenge) noteChallengeDropped();
+            return;
           }
+          // Stamped at the WRITE, not at the decision — the question is how long
+          // the answer takes to reach the link, and the queueing is the part we
+          // are trying to measure.
+          if (isChallenge) noteAnswerWritten(Date.now());
         });
         this.onUnsolicited?.(f);
       }
