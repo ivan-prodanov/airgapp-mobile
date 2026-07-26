@@ -21,6 +21,10 @@ import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
 import { diffToCommands, revertFields } from '../ble/reconcile';
 
+// Gap between chained navigateTo sends when building a multi-stop route, so the
+// car processes each as its own request instead of a burst.
+const NAV_CHAIN_GAP_MS = 600;
+
 export interface Fleet {
   vehicles: Vehicle[];
   activeId: string;
@@ -162,11 +166,33 @@ export function useFleetState(): {
     [activeIsLive, carLink],
   );
 
+  // Multi-stop by APPEND-CHAINING single destinations (RESPONSE-18 Q4).
+  //
+  // The coordinate waypoints string does NOT work: the car only accepts prefixed
+  // reference tokens ("refId:<googlePlaceId>" / "superchargerId:<siteId>"), and a
+  // Google Place ID is not derivable offline — so an air-gapped client cannot build
+  // that string for arbitrary stops. It also ACKs whatever you send and silently
+  // drops unparsed tokens, which is why our coordinate attempt looked successful.
+  //
+  // But the car takes a trip ORDER on every GPS-request variant (QtCarServer:
+  // CarAPI::navigation_gps_request(..., const CarAPI::RemoteNavTripOrder&, ...)),
+  // and multi-stop state exists car-side (NAV_multistopRouteId). So: first stop
+  // REPLACE, the rest APPEND — built entirely from the single-destination path we
+  // have already verified on-car.
+  //
+  // NOT PROVEN: that the official app chains this way (its own path is the refId
+  // string), or that the car composes the result into one route on this firmware.
+  // Sends are spaced so each is processed as a separate request rather than
+  // arriving as a burst.
   const sendWaypoints = useCallback(
     (coords: { lat: number; lon: number }[]) => {
       if (!activeIsLive || coords.length === 0) return;
-      // `order` is required by the CarCommand shape but has no wire field here.
-      carLink.dispatch({ type: 'navigateWaypoints', coords, order: 'REPLACE' }, () => {});
+      coords.forEach(({ lat, lon }, i) => {
+        const order = i === 0 ? 'REPLACE' : 'APPEND';
+        setTimeout(() => {
+          carLink.dispatch({ type: 'navigateTo', lat, lon, order }, () => {});
+        }, i * NAV_CHAIN_GAP_MS);
+      });
     },
     [activeIsLive, carLink],
   );

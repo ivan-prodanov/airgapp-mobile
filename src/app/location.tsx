@@ -464,33 +464,29 @@ export default function LocationView() {
 
   // Send the trip to the car. Was a no-op stub ("local mock") until 2026-07-26.
   //
-  // ⚠ MULTI-STOP IS DISABLED PENDING A FIX. The coordinate encoding
-  // ("lat,lon;lat,lon", Teslemetry's vector) builds correctly and the car ACCEPTS
-  // the command — on-car 2026-07-26 every navigateWaypoints settled `outcome:"ok"`
-  // — but the car does NOT act on it: no route appears. So the payload is parsed
-  // and discarded, or this car lacks
-  // MOBILE_APP_FEATURE_WAYPOINTS_REQUEST_ACCEPTS_COORDINATES (which RESPONSE-15
-  // made a precondition for coordinates, and which we cannot read: our proto does
-  // not model the car's feature list). Open question in REQUEST-18.
-  //
-  // Until that is settled, send the FINAL destination via navigateTo — the proven
-  // path, which also carries a label the car displays. A working single destination
-  // beats a silently-ignored itinerary; the toast says so rather than implying the
-  // whole route went.
+  // Single destination -> navigateTo, which carries a label the car displays.
+  // Multiple stops -> APPEND-chained navigateTo (RESPONSE-18 Q4): the coordinate
+  // waypoints string is a dead end for an air-gapped client — the car only accepts
+  // "refId:<googlePlaceId>"/"superchargerId:<siteId>" tokens, and a Place ID cannot
+  // be derived offline. The car ACKs anything, so the earlier attempt only LOOKED
+  // like it worked; chaining reuses the single-destination path we have verified.
   const onSendTripToCar = () => {
     const stops = trip.trip?.stops ?? [];
-    // stops[0] is always the car itself (invariant enforced above), so the real
-    // destinations are everything after it — the car knows where it is.
+    // stops[0] is always the car itself (invariant enforced above) — the origin,
+    // not a waypoint.
     const destinations = stops.slice(1);
     const last = destinations[destinations.length - 1];
     if (!last) return;
     controlHaptic();
-    fleet.sendNavigation(last.coordinate.latitude, last.coordinate.longitude, last.title);
-    toast.show(
-      destinations.length > 1
-        ? `Sent ${last.title} to the car · multi-stop not supported yet`
-        : `Sent ${last.title} to the car`,
+    if (destinations.length === 1) {
+      fleet.sendNavigation(last.coordinate.latitude, last.coordinate.longitude, last.title);
+      toast.show(`Sent ${last.title} to the car`);
+      return;
+    }
+    fleet.sendWaypoints(
+      destinations.map((d) => ({ lat: d.coordinate.latitude, lon: d.coordinate.longitude })),
     );
+    toast.show(`Sent ${destinations.length} stops to the car · ${last.title} last`);
   };
 
   // Real Apple route for the active trip (null while loading / offline → straight-line fallback). Shared by

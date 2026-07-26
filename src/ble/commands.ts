@@ -72,8 +72,8 @@ import {
   setParentalSettingAction,
   type ParentalSetting,
   setCopTempAction,
-  waypointsCoordString,
   navigateWaypointsAction,
+  NAV_ORDER,
 } from './builders';
 
 // --- The CarCommand union (verbatim from the plan's Part 4) ----------------
@@ -127,7 +127,7 @@ export type CarCommand =
   | { type: 'boombox'; sound: number }
   | { type: 'bioweaponMode'; on: boolean }
   | { type: 'pinToDrive'; on: boolean; pin?: string }
-  | { type: 'navigateTo'; lat: number; lon: number; label?: string }
+  | { type: 'navigateTo'; lat: number; lon: number; label?: string; order?: 'REPLACE' | 'PREPEND' | 'APPEND' }
   | { type: 'navigateWaypoints'; coords: { lat: number; lon: number }[]; order: 'REPLACE' | 'PREPEND' | 'APPEND' }
   | { type: 'media'; action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown' };
 
@@ -173,8 +173,8 @@ const CLIMATE_KEEPER_MODE: Record<'off' | 'on' | 'dog' | 'camp', number> = {
 
 // buildCommand switches on cmd.type and calls the matching builder. Variants
 // with no available proto throw — see the module doc comment and the P1d
-// report. (navigateWaypoints used to be the headline example; it works now that
-// the coordinate encoding is known — see builders.waypointsCoordString.)
+// report. (navigateWaypoints by COORDINATE is the standing example: the car only
+// accepts refId:/superchargerId: tokens — see builders.navigateWaypointsAction.)
 export function buildCommand(cmd: CarCommand): BuiltCommand {
   switch (cmd.type) {
     case 'lock':
@@ -287,18 +287,28 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
         default:
           throw new Error(`unsupported over BLE: parental.${(cmd as { action: string }).action}`);
       }
-    case 'navigateTo':
+    case 'navigateTo': {
+      // The car takes a trip order on EVERY GPS-request variant — QtCarServer's
+      // CarAPI::navigation_gps_request(..., const CarAPI::RemoteNavTripOrder&, ...)
+      // — which is what makes APPEND-chaining a multi-stop route possible.
+      const order = cmd.order ? NAV_ORDER[cmd.order] : undefined;
       return fromPayload(
         cmd.label
-          ? navigateGpsWithLabelAction({ lat: cmd.lat, lon: cmd.lon, label: cmd.label })
-          : navigateGpsAction({ lat: cmd.lat, lon: cmd.lon }),
+          ? navigateGpsWithLabelAction({ lat: cmd.lat, lon: cmd.lon, label: cmd.label, order })
+          : navigateGpsAction({ lat: cmd.lat, lon: cmd.lon, order }),
       );
+    }
     case 'navigateWaypoints':
-      // The waypoints STRING accepts raw coordinates as well as Place IDs —
-      // "lat,lon;lat,lon" (confirmed 2026-07-26). This used to throw because we
-      // believed Place IDs were the only accepted form. The message has no
-      // trip-order field, so `cmd.order` has no wire representation here.
-      return fromPayload(navigateWaypointsAction(waypointsCoordString(cmd.coords)));
+      // RESPONSE-18: the waypoints STRING only accepts prefixed reference tokens
+      // ("refId:<googlePlaceId>" / "superchargerId:<siteId>", comma-joined). There
+      // is NO code path in the official app that emits a bare coordinate, and the
+      // car silently drops tokens it can't parse — while still ACKing, which is why
+      // this looked like it worked. refId is a Google Place ID and is not derivable
+      // offline, so coordinate multi-stop is not available to an air-gapped client.
+      // Use APPEND-chained navigateTo instead (fleet.sendWaypoints).
+      throw new Error(
+        'unsupported over BLE: navigateWaypoints by coordinate — the car only accepts refId:/superchargerId: tokens',
+      );
     case 'media':
       switch (cmd.action) {
         case 'toggle':

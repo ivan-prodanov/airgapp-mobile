@@ -403,25 +403,6 @@ test('buildCommand: state-read-shaped variants are not in the CarCommand union �
   assert.notEqual(decodeAction(media.bytes).vehicleAction?.mediaNextTrack, undefined);
 });
 
-// SUPERSEDED 2026-07-26: this used to assert navigateWaypoints THREW, on the belief
-// that the waypoints string only accepted Google Place IDs. The car also accepts raw
-// coordinates ("lat,lon;lat,lon"), so it now builds — see the encoding tests at the
-// end of this file.
-test('buildCommand builds navigateWaypoints from coordinates', () => {
-  const cmd: CarCommand = {
-    type: 'navigateWaypoints',
-    coords: [
-      { lat: 1, lon: 2 },
-      { lat: 3, lon: 4 },
-    ],
-    order: 'REPLACE',
-  };
-  const decoded = decodeAction(buildCommand(cmd).bytes);
-  assert.equal(
-    decoded.vehicleAction?.navigationWaypointsRequest?.waypoints,
-    '1.000000,2.000000;3.000000,4.000000',
-  );
-});
 
 test('buildCommand throws for an unrecognized cmd.type', () => {
   assert.throws(
@@ -430,44 +411,37 @@ test('buildCommand throws for an unrecognized cmd.type', () => {
   );
 });
 
-// ── Multi-stop navigation: coordinate waypoints ────────────────────────────────
-// The waypoints field is a STRING that accepts raw coordinates as well as Place
-// IDs: "lat,lon;lat,lon" — comma between lat/lon, SEMICOLON between waypoints.
-// Vector below is the one from Teslemetry's own NavigationWaypointsRequest test.
+// ── Multi-stop navigation ─────────────────────────────────────────────────────
+// RESPONSE-18: the waypoints STRING takes prefixed reference tokens joined by a
+// COMMA — never bare coordinates. refId is a Google Place ID (not derivable
+// offline), so coordinate multi-stop is impossible for an air-gapped client and
+// multi-stop is done by APPEND-chaining single destinations instead.
 
-test('waypointsCoordString encodes "lat,lon;lat,lon"', async () => {
-  const { waypointsCoordString } = await import('./builders');
+test('waypointsTokenString joins reference tokens with a comma', async () => {
+  const { waypointsTokenString } = await import('./builders');
   assert.equal(
-    waypointsCoordString([
-      { lat: 37.323, lon: -122.0322 },
-      { lat: 37.4419, lon: -122.143 },
-    ]),
-    '37.323000,-122.032200;37.441900,-122.143000',
+    waypointsTokenString(['refId:ChIJabc', 'superchargerId:12345']),
+    'refId:ChIJabc,superchargerId:12345',
   );
-  // Single stop is still valid (no trailing delimiter).
-  assert.equal(waypointsCoordString([{ lat: 1, lon: 2 }]), '1.000000,2.000000');
+  assert.equal(waypointsTokenString(['superchargerId:1']), 'superchargerId:1');
 });
 
-test('waypointsCoordString rejects empty, non-finite and out-of-range input', async () => {
-  const { waypointsCoordString } = await import('./builders');
-  assert.throws(() => waypointsCoordString([]), /at least one coordinate/);
-  assert.throws(() => waypointsCoordString([{ lat: NaN, lon: 0 }]), /non-finite/);
-  assert.throws(() => waypointsCoordString([{ lat: 91, lon: 0 }]), /out-of-range/);
-  assert.throws(() => waypointsCoordString([{ lat: 0, lon: 181 }]), /out-of-range/);
+test('waypointsTokenString rejects empty input and bare coordinates', async () => {
+  const { waypointsTokenString } = await import('./builders');
+  assert.throws(() => waypointsTokenString([]), /at least one token/);
+  assert.throws(() => waypointsTokenString(['42.69,23.32']), /refId:<id> or superchargerId:<id>/);
 });
 
-test('navigateWaypoints builds a real command (it used to throw)', () => {
-  const built = buildCommand({
-    type: 'navigateWaypoints',
-    coords: [
-      { lat: 42.6977, lon: 23.3219 },
-      { lat: 42.7, lon: 23.33 },
-    ],
-    order: 'REPLACE',
-  });
-  const decoded = decodeAction(built.bytes);
-  assert.equal(
-    decoded.vehicleAction?.navigationWaypointsRequest?.waypoints,
-    '42.697700,23.321900;42.700000,23.330000',
+test('navigateWaypoints by COORDINATE is refused (the car drops unparsed tokens)', () => {
+  assert.throws(
+    () => buildCommand({ type: 'navigateWaypoints', coords: [{ lat: 1, lon: 2 }], order: 'REPLACE' }),
+    /only accepts refId:\/superchargerId: tokens/,
   );
+});
+
+test('navigateTo carries the trip order (what makes APPEND-chaining work)', () => {
+  const first = decodeAction(buildCommand({ type: 'navigateTo', lat: 1, lon: 2, order: 'REPLACE' }).bytes);
+  assert.equal(first.vehicleAction?.navigationGpsRequest?.order ?? 0, 0); // REPLACE = 0
+  const next = decodeAction(buildCommand({ type: 'navigateTo', lat: 3, lon: 4, order: 'APPEND' }).bytes);
+  assert.equal(next.vehicleAction?.navigationGpsRequest?.order, 2); // APPEND = 2
 });

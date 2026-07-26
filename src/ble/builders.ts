@@ -393,20 +393,24 @@ export function navigateSearchAction({ query, order }: { query: string; order?: 
 }
 // navigateWaypointsAction — multi-stop navigation.
 //
-// NavigationWaypointsRequest.waypoints is a STRING field (car_server.proto:598:
-// `string waypoints = 1;`). It accepts EITHER form:
-//   • Google Place IDs, comma-separated, "refId:"-prefixed (the reference web UI's
-//     usage, rpi-webclient/client/index.html:722-726) — what we assumed was the
-//     only option, which is why CarCommand's coord-carrying `navigateWaypoints`
-//     used to throw "unsupported over BLE".
-//   • RAW COORDINATES — confirmed 2026-07-26: `"lat,lon;lat,lon"`, i.e. a comma
-//     between lat and lon and a SEMICOLON between waypoints, e.g.
-//     "37.3230,-122.0322;37.4419,-122.1430". The car advertises this capability as
-//     MOBILE_APP_FEATURE_WAYPOINTS_REQUEST_ACCEPTS_COORDINATES (gc0/v.java).
+// NavigationWaypointsRequest.waypoints is a STRING field (car_server.proto:598).
+// RESPONSE-18 recovered what the official app actually puts in it (#114892
+// @04b2-054a): PREFIXED REFERENCE TOKENS JOINED BY A COMMA —
 //
-// NB the message carries no trip-order field (only `waypoints` +
-// `tripPlanOptions`), so CarCommand's `order` has no wire representation here —
-// unlike NavigationGpsRequest, which does take one (see NAV_ORDER).
+//     refId:<googlePlaceId>,superchargerId:<teslaSiteId>,refId:<googlePlaceId>
+//
+// A stop carrying neither id is silently SKIPPED by the app itself
+// ("Skipping waypoint without refId or valid supercharger id" @00e1).
+//
+// ⚠ COORDINATES ARE NOT ACCEPTED. There is no code path in the 4.58.0 iOS build
+// that emits a bare lat/lon into this field, and the semicolon form we tried
+// ("lat,lon;lat,lon") is an API-side convention, not the car's. The car ACKs it
+// anyway — see waypointsTokenString's note on why the ACK proves nothing — and
+// then drops every unparsed token, which is exactly the "ok but no route" we
+// measured on-car 2026-07-26.
+//
+// The message carries no trip-order field (only `waypoints` + `tripPlanOptions`),
+// unlike NavigationGpsRequest which does (see NAV_ORDER).
 export function navigateWaypointsAction(waypoints: string): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
@@ -414,22 +418,26 @@ export function navigateWaypointsAction(waypoints: string): ActionPayload {
   };
 }
 
-// waypointsCoordString — encode coordinates for the field above.
-// 6 decimal places ≈ 0.1 m, ample for navigation and short enough to keep the
-// string well clear of the car's inbound message ceiling.
-export function waypointsCoordString(coords: { lat: number; lon: number }[]): string {
-  if (coords.length === 0) throw new Error('waypointsCoordString: need at least one coordinate');
-  return coords
-    .map(({ lat, lon }) => {
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        throw new Error(`waypointsCoordString: non-finite coordinate ${lat},${lon}`);
-      }
-      if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-        throw new Error(`waypointsCoordString: out-of-range coordinate ${lat},${lon}`);
-      }
-      return `${lat.toFixed(6)},${lon.toFixed(6)}`;
-    })
-    .join(';');
+// waypointsTokenString — join reference tokens the way the app does: a plain
+// Array.join(','), no leading or trailing delimiter.
+//
+// Only `superchargerId:<id>` is constructible by an air-gapped client: `refId:` is
+// a GOOGLE PLACE ID, which cannot be derived offline from a lat/lon. So this is
+// usable for a Supercharger-only itinerary and nothing else.
+//
+// ⚠ Do NOT use the car's ACK as proof of success for anything nav-related.
+// QtCarServer's navigation_waypoints_request is a thin proxy that logs and
+// forwards, returning result:true BEFORE any parsing; the parse happens downstream
+// and its failures never reach us (RESPONSE-18 Q3). Verify by reading back
+// DriveState.active_route_* instead.
+export function waypointsTokenString(tokens: string[]): string {
+  if (tokens.length === 0) throw new Error('waypointsTokenString: need at least one token');
+  for (const t of tokens) {
+    if (!/^(refId|superchargerId):.+/.test(t)) {
+      throw new Error(`waypointsTokenString: token must be refId:<id> or superchargerId:<id>, got "${t}"`);
+    }
+  }
+  return tokens.join(',');
 }
 
 // --- Boombox -------------------------------------------------------------
