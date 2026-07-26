@@ -1364,13 +1364,21 @@ export default function CarLinkScreen() {
 
       say('');
       say(`PHASE B (focused-read load): the same ${N}, with continuous drive reads beside them…`);
+      say("  (load runs at priority 'background', exactly as the focused read does)");
       let loadReads = 0;
       let loadStop = false;
       const loadLoop = (async () => {
         const deadline = Date.now() + LOAD_MS;
         while (!loadStop && Date.now() < deadline) {
           try {
-            await gw!.awakeSync({ states: ['drive'] });
+            // ⚠ priority MUST match what the real focused read passes.
+            //
+            // Run 2 omitted it, so the load queued as 'user' — both lanes were
+            // user, the priority never engaged, and the run measured the OLD
+            // behaviour while appearing to test the new one (513ms -> 597ms, no
+            // change, because nothing had changed for it). A probe that models
+            // the load but not its priority is not modelling the feature.
+            await gw!.awakeSync({ states: ['drive'], priority: 'background' });
             loadReads++;
           } catch {
             /* a failed read still occupied the link, which is the point */
