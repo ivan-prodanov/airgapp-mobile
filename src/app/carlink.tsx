@@ -1202,6 +1202,105 @@ export default function CarLinkScreen() {
     }
   };
 
+  // PE-4 — what does a user command COST while the focused read is running?
+  //
+  // The deaf window is fixed, so passive entry is no longer the question: it
+  // writes directly under the write lock and never touches the command FIFO.
+  // What is still unmeasured is head-of-line blocking. SessionQueue is an
+  // unbounded per-VIN promise chain that never drops or coalesces, so a command
+  // you tap lands BEHIND whatever read is already in flight. The focused read
+  // does check inFlightRef before starting, but that is one-directional — it
+  // stops us piling onto a command, not a command piling onto us.
+  //
+  // This is the number that decides whether the focused read goes back on, and
+  // it is the same shape as PE-1: measure the thing quiet, then measure it under
+  // exactly the load in question.
+  //
+  //   A. QUIET  — 5 commands back to back, nothing else running.
+  //   B. LOADED — the same 5, with a continuous drive-state read loop beside
+  //               them, i.e. precisely what FOCUSED_READ_ENABLED=true would do.
+  //
+  // A VCSEC status read stands in for the user command: it goes through the same
+  // per-VIN FIFO as a lock, so it measures the same wait, without actuating
+  // anything on a car that may be parked somewhere public.
+  const handleCommandLatencyProbe = async () => {
+    const N = 5;
+    const LOAD_MS = 25_000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0);
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+
+      const timeCommands = async (label: string): Promise<number[]> => {
+        const ms: number[] = [];
+        for (let i = 0; i < N; i++) {
+          const t0 = Date.now();
+          try {
+            await gw!.readVcsecStatus();
+            ms.push(Date.now() - t0);
+          } catch (e) {
+            say(`  ${label} command ${i + 1} FAILED: ${errMsg(e)}`);
+            ms.push(Date.now() - t0);
+          }
+        }
+        return ms;
+      };
+
+      say('');
+      say(`PHASE A (quiet): ${N} commands, nothing else running…`);
+      const a = await timeCommands('A');
+      say(`  latencies: ${a.join(', ')}ms  → median ${median(a)}ms`);
+
+      say('');
+      say(`PHASE B (focused-read load): the same ${N}, with continuous drive reads beside them…`);
+      let loadReads = 0;
+      let loadStop = false;
+      const loadLoop = (async () => {
+        const deadline = Date.now() + LOAD_MS;
+        while (!loadStop && Date.now() < deadline) {
+          try {
+            await gw!.awakeSync({ states: ['drive'] });
+            loadReads++;
+          } catch {
+            /* a failed read still occupied the link, which is the point */
+          }
+        }
+      })();
+      const b = await timeCommands('B');
+      loadStop = true;
+      await loadLoop;
+      say(`  latencies: ${b.join(', ')}ms  → median ${median(b)}ms  (${loadReads} background reads ran)`);
+
+      const ma = median(a);
+      const mb = median(b);
+      say('');
+      say(`quiet ${ma}ms  →  loaded ${mb}ms   (${ma > 0 ? (mb / ma).toFixed(1) : '?'}x)`);
+      // The threshold is stated up front so the answer is not argued after the
+      // fact. 500ms is roughly the point where a lock tap stops feeling instant.
+      if (mb <= 500) {
+        say('VERDICT: SAFE TO ENABLE — commands stay responsive under focused-read load.');
+      } else if (mb <= 1500) {
+        say('VERDICT: MARGINAL — noticeable lag on every tap. Prefer fixing the queue first');
+        say('  (user commands jumping ahead of background reads) rather than shipping this.');
+      } else {
+        say('VERDICT: DO NOT ENABLE — the read loop puts seconds between a tap and the car.');
+        say('  The FIFO needs priority before live speed is worth anything.');
+      }
+    } catch (err) {
+      say(`ERROR latency probe: ${errMsg(err)}`);
+    } finally {
+      const path = await appendDiagnostic('PE-4 command latency under load', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // PE-1 — reproduce the deaf window ON DEMAND.
   //
   // "It's hard to reproduce" is true of waiting for it to happen by luck: the
@@ -1623,6 +1722,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
               <ActionButton label="PE-1 deaf-window repro" onPress={handlePassiveEntryRepro} theme={theme} />
+              <ActionButton label="PE-4 command latency" onPress={handleCommandLatencyProbe} theme={theme} />
               <ActionButton label="VDS-M5 DriveState cleartext" onPress={handleVdsDriveProbe} theme={theme} />
               <ActionButton label="VDS-M6 full PII run" onPress={handleVdsPiiRun} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
