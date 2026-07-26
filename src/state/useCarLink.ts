@@ -117,10 +117,45 @@ const LAST_TRANSPORT_KEY = 'ble.lastTransport.v1';
 // enough for a live lock/awake/closures indicator without spamming the link.
 const POLL_MS = 20_000;
 
-// How long the focused read stands down after passive-entry traffic. Sized off
-// the observed burst: the car re-challenged every ~1.6-2.5s for 29s straight, so
-// anything shorter would resume mid-burst and re-create the contention.
+// How long the focused read stands down after passive-entry traffic.
+//
+// ⚠ This is a BACKSTOP, not the fix, and on its own it is close to useless: it
+// only engages AFTER a challenge has been seen, so the FIRST challenge — the one
+// that actually opens the door when you pull the handle — still races. All it
+// buys is that challenges 2..N are not also lost.
 const PASSIVE_ENTRY_QUIET_MS = 15_000;
+
+// FOCUSED_READ_ENABLED — off until the deaf window below is closed.
+//
+// The real mechanism, from foregroundBleLink.onNativeFrame: while an exchange is
+// in flight, inbound frames are buffered for the correlator and the always-on
+// responder branch is skipped entirely. drainInbox then hands non-matching
+// frames to onUnsolicited, which does not answer challenges. So a challenge that
+// arrives mid-exchange is not deferred — it is NEVER ANSWERED.
+//
+// That makes every in-flight command a window in which we are deaf to passive
+// entry. The duty cycle is the whole story:
+//
+//   before  VCSEC 20s + infotainment 60s   ~2% deaf
+//   after   + focused read every 1.65s     ~11% deaf, and far worse once a read
+//                                          times out: exchangeInFlight then
+//                                          stays true for the FULL 4-6s
+//
+// and it is self-reinforcing — contention causes timeouts, timeouts widen the
+// deaf window, which causes more contention. That is the 29-second, 11-challenge
+// burst at 14:05:22, and why every challenge in it was GRANTED yet the door was
+// slow: the answers that landed were the ones that happened to fall outside a
+// window.
+//
+// The proper fix is to answer challenges even during an in-flight exchange. It
+// is safe in principle — the responder already signs INSIDE the write lock, so
+// the shared counter cannot interleave — but it changes the most
+// safety-critical path in the app, so it is not something to bolt on in the same
+// pass that discovered the bug.
+//
+// Until then this stays off. A live speed readout is not worth being deaf to the
+// car's front door 11% of the time.
+const FOCUSED_READ_ENABLED = false;
 
 // How often the poll does the HEAVY infotainment (charge/range) read. VCSEC runs
 // every POLL_MS; this rides on top far less often. Charge state changes slowly,
@@ -1434,6 +1469,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     let focusTimer: ReturnType<typeof setTimeout> | null = null;
     let focusInFlight = false;
     const focusTick = async () => {
+      if (!FOCUSED_READ_ENABLED) return;
       if (stopped || paused || inFlight || focusInFlight) return;
       if (inFlightRef.current !== 0) return; // a user command owns the link
       // STAND DOWN DURING PASSIVE ENTRY. Measured regression, 2026-07-26: after
