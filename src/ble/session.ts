@@ -536,6 +536,20 @@ export async function refetchSessionInfo({
 export interface CommandResult {
   routable: ReturnType<typeof RoutableMessage.decode>;
   decryptedPayload: Uint8Array | null;
+  // Decrypts a LATER, unsolicited frame that the car sent as a consequence of
+  // THIS request — i.e. a vehicle-data subscription push (VDS-M1 proved the car
+  // emits these over BLE at the rate we ask for).
+  //
+  // It is a closure rather than exported keys on purpose: the session key stays
+  // inside this module, and the caller gets only the ability to decrypt frames
+  // bound to a request it already made.
+  //
+  // Returns the plaintext, plus WHICH candidate AAD worked. The car's response
+  // AAD normally binds REQUEST_HASH to the tag of the request being answered,
+  // but a push is not answering any single request, so which hash it uses is an
+  // open question — the decryptor tries each candidate and reports the winner
+  // instead of us guessing one and reading a failure as "wrong key".
+  decryptPush?: (frame: Uint8Array) => { plaintext: Uint8Array; aadVariant: string } | null;
 }
 
 // buildRoutablePassiveResponse builds the ROUTABLE passive-entry answer — the
@@ -835,7 +849,64 @@ export async function sendCommand({
   }
 
   _persistSessionMetadata(session);
-  return { routable: respMsg, decryptedPayload };
+  return { routable: respMsg, decryptedPayload, decryptPush: makePushDecryptor(session, env.tag) };
+}
+
+// makePushDecryptor — see CommandResult.decryptPush.
+//
+// The candidates below are a deliberate, bounded search, not a shotgun. A push
+// is structurally an AES_GCM_Response, so everything in its AAD is determined by
+// the frame itself EXCEPT the REQUEST_HASH, which on a normal response binds the
+// reply to the request that caused it. A subscription push has no single such
+// request, so there are only a few things the car can plausibly put there, and
+// trying them costs one AES-GCM verify each.
+function makePushDecryptor(
+  session: Session,
+  requestTag: Uint8Array,
+): (frame: Uint8Array) => { plaintext: Uint8Array; aadVariant: string } | null {
+  const candidates: Array<{ name: string; requestHash: Uint8Array }> = [
+    // The subscribe's own tag — the car treating every push as an answer to the
+    // request that armed the subscription.
+    { name: 'subscribe-request-hash', requestHash: makeRequestHash(requestTag) },
+    // Type byte with an empty tag: "a response, to nothing in particular".
+    { name: 'type-byte-only', requestHash: new Uint8Array([SIGNATURE_TYPE.AES_GCM_PERSONALIZED]) },
+    // No REQUEST_HASH tag in the metadata block at all.
+    { name: 'absent', requestHash: new Uint8Array(0) },
+  ];
+  return (frame) => {
+    let msg: ReturnType<typeof RoutableMessage.decode>;
+    try {
+      msg = RoutableMessage.decode(frame);
+    } catch {
+      return null;
+    }
+    const gcm = msg.signatureData?.AES_GCM_ResponseData;
+    const payload = msg.protobufMessageAsBytes;
+    if (!gcm?.nonce || !gcm?.tag || !payload || payload.length === 0) return null;
+    for (const c of candidates) {
+      const aad = buildAesGcmResponseMetadata({
+        domain: msg.fromDestination?.domain ?? session.domain,
+        verifierName: session.vin,
+        counter: gcm.counter || 0,
+        flags: msg.flags || 0,
+        requestHash: c.requestHash,
+        fault: msg.signedMessageStatus?.signedMessageFault || 0,
+      });
+      try {
+        const plaintext = aesGcmDecrypt(
+          session.sessionKey,
+          new Uint8Array(gcm.nonce),
+          new Uint8Array(payload),
+          new Uint8Array(gcm.tag),
+          aad,
+        );
+        return { plaintext, aadVariant: c.name };
+      } catch {
+        // wrong candidate — try the next
+      }
+    }
+    return null;
+  };
 }
 
 // --- Domain session cache --------------------------------------------------

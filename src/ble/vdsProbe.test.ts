@@ -110,6 +110,7 @@ const obs = (atMs: number, domain: number | null, hasUuid = false): VdsObservati
   flags: 2,
   innerFields: [1],
   hex: '00',
+  raw: Uint8Array.from([0x00]),
 });
 
 const win = (label: string, startMs: number, endMs: number, requestedRateMs: number) => ({
@@ -212,4 +213,35 @@ test('REGRESSION: raw hex is printed for EVERY window frame, not only classified
     windows: [win('5000ms', 15_000, 45_000, 5000)],
   });
   assert.match(r.lines.join('\n'), /de ad be ef/, 'a NON-push frame must still show its bytes');
+});
+
+test('a decryptable push renders its plaintext instead of ciphertext', () => {
+  const r = buildVdsReport({
+    observations: [{ ...obs(20_000, 3), hex: 'ci ph er', raw: Uint8Array.from([1, 2, 3]) }],
+    baselineEndMs: 15_000,
+    windows: [
+      {
+        ...win('5000ms', 15_000, 45_000, 5000),
+        decryptPush: () => ({ plaintext: Uint8Array.from([0xde, 0xad]), aadVariant: 'subscribe-request-hash' }),
+        describePlaintext: () => 'slices=[location]',
+      },
+    ],
+  });
+  const text = r.lines.join('\n');
+  assert.match(text, /DECRYPTED \(aad=subscribe-request-hash\): slices=\[location\]/);
+  assert.match(text, /plain: de ad/);
+  assert.match(text, /decrypted 1\/1 via AAD variant\(s\): subscribe-request-hash/);
+});
+
+test('a push that will NOT decrypt keeps its ciphertext — never silently dropped', () => {
+  // A frame we cannot open is still evidence, and the bytes are the only way to
+  // work out why later. Run 2 lost exactly this by keeping only a hex preview.
+  const r = buildVdsReport({
+    observations: [{ ...obs(20_000, 3), hex: 'ci ph er', raw: Uint8Array.from([1, 2, 3]) }],
+    baselineEndMs: 15_000,
+    windows: [{ ...win('5000ms', 15_000, 45_000, 5000), decryptPush: () => null }],
+  });
+  const text = r.lines.join('\n');
+  assert.match(text, /raw: ci ph er/);
+  assert.match(text, /decrypted 0\/1/);
 });

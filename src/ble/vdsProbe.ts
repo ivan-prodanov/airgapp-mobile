@@ -117,6 +117,10 @@ export interface VdsObservation {
   // still distinguishable from a known one.
   innerFields: number[];
   hex: string;
+  // The frame itself, kept so a push can be DECRYPTED after the fact. Run 2
+  // proved the car pushes but left 140B of ciphertext per frame unread, purely
+  // because the capture had thrown the bytes away and kept only a hex preview.
+  raw: Uint8Array;
 }
 
 export interface VdsProbeReport {
@@ -166,7 +170,7 @@ export function describeVdsFrame(frame: Uint8Array, atMs: number): VdsObservatio
   } catch {
     // fall through with whatever we managed to read
   }
-  return { atMs, byteLen: frame.length, fromDomain, hasRequestUuid, flags, innerFields, hex: toHex(frame) };
+  return { atMs, byteLen: frame.length, fromDomain, hasRequestUuid, flags, innerFields, hex: toHex(frame), raw: frame };
 }
 
 // --- capture state ---------------------------------------------------------
@@ -259,6 +263,12 @@ export interface VdsWindow {
   requestedRateMs: number;
   subscribeOutcome: string;
   subscribeResponseHex: string | null;
+  // Decrypts a push bound to THIS window's subscribe (session.ts's
+  // CommandResult.decryptPush). Absent → the report falls back to ciphertext.
+  decryptPush?: (frame: Uint8Array) => { plaintext: Uint8Array; aadVariant: string } | null;
+  // Renders decrypted plaintext as something readable. Injected so this module
+  // stays free of the proto/telemetry layer (and stays unit-testable).
+  describePlaintext?: (plaintext: Uint8Array) => string;
 }
 
 export function buildVdsReport(args: {
@@ -306,12 +316,31 @@ export function buildVdsReport(args: {
     // frames of the run were logged as one-line summaries with no bytes behind
     // them — nothing left to re-examine once the predicate turned out wrong.
     // Never gate the evidence on the classification being tested.
+    let decrypted = 0;
+    const aadVariants = new Set<string>();
     for (const o of inWin) {
       lines.push(
         `  +${(o.atMs / 1000).toFixed(1)}s ${o.byteLen}B domain=${o.fromDomain ?? '?'} ` +
           `uuid=${o.hasRequestUuid ? 'yes' : 'no'} flags=${o.flags ?? '-'}`,
       );
-      lines.push(`    raw: ${o.hex}`);
+      const opened = w.decryptPush?.(o.raw) ?? null;
+      if (opened) {
+        decrypted++;
+        aadVariants.add(opened.aadVariant);
+        lines.push(`    DECRYPTED (aad=${opened.aadVariant}): ${w.describePlaintext?.(opened.plaintext) ?? ''}`);
+        lines.push(`    plain: ${toHex(opened.plaintext)}`);
+      } else {
+        // Keep the ciphertext when we cannot open it. A frame we failed to
+        // decrypt is still evidence, and the bytes are the only way to work out
+        // why later.
+        lines.push(`    raw: ${o.hex}`);
+      }
+    }
+    if (inWin.length > 0) {
+      lines.push(
+        `  decrypted ${decrypted}/${inWin.length}` +
+          (aadVariants.size ? ` via AAD variant(s): ${[...aadVariants].join(', ')}` : ''),
+      );
     }
   }
 

@@ -37,6 +37,9 @@ import {
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
 import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, VDS_DEFAULTS } from '@/ble/builders';
+import { parseCarServerResponse } from '@/ble/telemetry';
+// Aliased: the global DOM `Response` shadows the proto one in this file.
+import { Response as CarServerResponse } from '@/ble/proto';
 import { armVdsCapture, disarmVdsCapture, buildVdsReport, type VdsWindow } from '@/ble/vdsProbe';
 // Model (b): the real BLE path is the native central (BridgedBleTransport) — the
 // ONLY phone-central path. react-native-ble-plx (DirectBleTransport) was removed
@@ -580,6 +583,32 @@ export default function CarLinkScreen() {
   //   3. WATCH window ~= the TTL, looking for domain-3 frames with no request_uuid.
   //   4. Cancel, always — including on the error path, so a probe that throws
   //      halfway cannot leave the car pushing at us for the rest of the TTL.
+  // describePlaintext — turn a decrypted push into one readable line.
+  //
+  // Decodes as a CarServer.Response, which is what a subscription push should be
+  // if it is the same shape as a state read. If it is NOT that shape the decode
+  // yields nothing recognisable, and saying so plainly is the useful outcome —
+  // the report prints the plaintext hex alongside either way, so a surprise is
+  // diagnosable rather than silently rendered as "empty".
+  const describePlaintext = (plain: Uint8Array): string => {
+    try {
+      const resp = CarServerResponse.decode(plain);
+      const snap = parseCarServerResponse(resp);
+      const slices = Object.keys(snap);
+      const status = resp.actionStatus?.result;
+      const parts: string[] = [];
+      if (status !== undefined && status !== null) parts.push(`actionStatus=${status}`);
+      parts.push(slices.length ? `slices=[${slices.join(',')}]` : 'no recognised state slices');
+      if (snap.location) {
+        parts.push(`location=${JSON.stringify(snap.location)}`);
+      }
+      if (snap.drive) parts.push(`drive=${JSON.stringify(snap.drive)}`);
+      return parts.join(' ');
+    } catch (err) {
+      return `does NOT decode as CarServer.Response (${errMsg(err)})`;
+    }
+  };
+
   const handleVdsProbe = async () => {
     // VDS-M1 — the vehicle-data subscription experiment. See src/ble/vdsProbe.ts.
     //
@@ -636,6 +665,11 @@ export default function CarLinkScreen() {
           requestedRateMs: rate,
           subscribeOutcome: outcome,
           subscribeResponseHex: hex(sub.result?.decryptedPayload),
+          // Bound to THIS window's subscribe: the AAD candidates include that
+          // request's own tag, so window 2's pushes must be opened with
+          // window 2's decryptor.
+          decryptPush: sub.result?.decryptPush,
+          describePlaintext,
         });
         // Cancel BETWEEN windows, so the second window measures the second rate
         // rather than two overlapping subscriptions.
