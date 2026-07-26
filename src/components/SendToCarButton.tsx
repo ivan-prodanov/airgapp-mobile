@@ -33,17 +33,25 @@ export function SendToCarButton({ target, onSent }: { target: SendTarget; onSent
 }
 
 const styles = StyleSheet.create({
-  bar: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  row: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 10, gap: 10 },
+  bar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: '#161616',
+  },
+  row: { flexDirection: 'row', gap: 10, marginBottom: 6 },
   button: {
     flex: 1,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#0A84FF',
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#3E6AE1',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
-  label: { color: 'white', fontSize: 17, fontWeight: '600' },
+  label: { color: 'white', fontSize: 17, fontWeight: '700' },
 });
