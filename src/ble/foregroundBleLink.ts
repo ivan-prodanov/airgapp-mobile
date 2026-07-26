@@ -58,6 +58,9 @@ class ForegroundBleLink {
   private vin: string | null = null;
   private exchangeInFlight = false;
   private writePending = false;
+  // Challenges that arrived inside the seal→write hazard. Answered the moment it
+  // clears — see the drain in exchange().
+  private deferredChallenges: Uint8Array[] = [];
   private frameSub: (() => void) | null = null;
   private connSub: (() => void) | null = null;
   private writeChain: Promise<unknown> = Promise.resolve();
@@ -155,11 +158,20 @@ class ForegroundBleLink {
     try {
       await this.writeMessage(req);
       this.writePending = false;
+      // The hazard is over: our bytes are out, so any seal from here is strictly
+      // later. Answer anything that arrived during it. The delay is one BLE
+      // write — tens of milliseconds against the car's ~6s challenge window — so
+      // deferring costs nothing and drops nothing.
+      this.drainDeferredChallenges();
       const clamped = Math.min(Math.max(timeoutMs, 0), MAX_EXCHANGE_TIMEOUT_MS);
       const matched = await this.awaitMatchingFrame(want, clamped);
       return bytesToBase64(matched);
     } finally {
       this.writePending = false;
+      // A throw before the write leaves the frame unanswerable in order, and the
+      // car will have re-challenged by the next one. Drop rather than answer a
+      // dead nonce with a fresh counter.
+      this.deferredChallenges = [];
       this.exchangeInFlight = false;
     }
   }
@@ -190,8 +202,10 @@ class ForegroundBleLink {
       this.wake();
       for (const f of frames) {
         if (this.writePending) {
-          // Genuinely unanswerable: a seal now could overtake the command's.
-          if (parseAuthenticationRequest(f)) noteChallengeArrived(Date.now(), true);
+          // DEFER, do not drop. Sealing now could overtake the command's seal,
+          // but the constraint is ORDERING, not immediacy — so hold the frame
+          // and answer it as soon as the write lands.
+          if (parseAuthenticationRequest(f)) this.deferredChallenges.push(f);
           continue;
         }
         this.answerIfChallenge(f);
@@ -203,6 +217,19 @@ class ForegroundBleLink {
         this.onUnsolicited?.(f);
       }
     }
+  }
+
+  // drainDeferredChallenges — answer whatever arrived during the hazard window.
+  //
+  // Bounded and freshest-first: if several piled up, the car has re-challenged
+  // and only the newest nonce is still live, so answering stale ones would just
+  // spend counters on requests the car has already given up on.
+  private drainDeferredChallenges(): void {
+    if (this.deferredChallenges.length === 0) return;
+    const pending = this.deferredChallenges;
+    this.deferredChallenges = [];
+    const newest = pending[pending.length - 1];
+    this.answerIfChallenge(newest);
   }
 
   // answerIfChallenge — the one passive-entry answer path, shared by the idle
