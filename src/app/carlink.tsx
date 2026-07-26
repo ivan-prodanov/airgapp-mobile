@@ -47,6 +47,7 @@ import {
   type RouteRead,
 } from '@/ble/navBench';
 import { parseCarServerResponse } from '@/ble/telemetry';
+import { latencyStats, formatLatencyStats, resetLatencyStats } from '@/ble/passiveEntryLatency';
 import {
   loadOrCreatePiiKeypair,
   unwrapPiiKey,
@@ -1170,6 +1171,91 @@ export default function CarLinkScreen() {
     }
   };
 
+  // PE-1 — reproduce the deaf window ON DEMAND.
+  //
+  // "It's hard to reproduce" is true of waiting for it to happen by luck: the
+  // window is only open while a command is in flight, which is ~2% of the time
+  // in normal use. But we do not have to wait for luck — WE control when a
+  // command is in flight. Hold the link busy continuously and the window is open
+  // essentially 100% of the time, so every challenge the car sends lands in it.
+  //
+  // Two phases, and the pull happens in BOTH:
+  //   A. QUIET  — nothing in flight. Pull the handle. Expect PASS, 0 lost.
+  //   B. LOADED — back-to-back drive-state reads. Pull again. Expect FAIL.
+  //
+  // The quiet phase is not ceremony. Without it a failure in phase B could be
+  // "the car did not challenge at all", and we would be reading a broken link as
+  // a reproduced bug. Phase A proves the car challenges and we answer.
+  //
+  // After the fix, the SAME run must report PASS in both phases. That is the
+  // only acceptable result — the pass condition is zero lost, not few.
+  const handlePassiveEntryRepro = async () => {
+    const QUIET_MS = 20_000;
+    const LOAD_MS = 20_000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+
+      // ---- Phase A: quiet ----
+      resetLatencyStats();
+      const aStart = Date.now();
+      say('');
+      say('*** PHASE A (quiet) — PULL THE DOOR HANDLE NOW. 20s. ***');
+      await wait(QUIET_MS);
+      const a = latencyStats(aStart);
+      say('PHASE A result:');
+      for (const l of formatLatencyStats(a)) say(`  ${l}`);
+
+      // ---- Phase B: link held busy ----
+      resetLatencyStats();
+      const bStart = Date.now();
+      say('');
+      say('*** PHASE B (link held busy) — PULL THE DOOR HANDLE AGAIN. 20s. ***');
+      const deadline = Date.now() + LOAD_MS;
+      let reads = 0;
+      let readFails = 0;
+      while (Date.now() < deadline) {
+        try {
+          // One state, the cheapest read there is. The point is not to be heavy,
+          // it is to be CONTINUOUS: each read holds exchangeInFlight for its
+          // whole round trip, and the gap between them is sub-millisecond.
+          await gw.awakeSync({ states: ['drive'] });
+          reads++;
+        } catch {
+          readFails++;
+        }
+      }
+      const b = latencyStats(bStart);
+      say(`PHASE B result (${reads} reads issued, ${readFails} failed — the link was busy throughout):`);
+      for (const l of formatLatencyStats(b)) say(`  ${l}`);
+
+      say('');
+      if (a.total === 0 && b.total === 0) {
+        say('INCONCLUSIVE: the car never challenged in either phase. Did the handle get pulled?');
+        say('  → this says nothing about the bug; re-run and pull during the 20s windows.');
+      } else if (a.lostToDeafWindow === 0 && b.lostToDeafWindow > 0) {
+        say('REPRODUCED: challenges are answered when the link is idle and LOST when it is busy.');
+      } else if (b.lostToDeafWindow === 0 && b.total > 0) {
+        say('NOT reproduced: nothing was lost even under load. If this is AFTER the fix, that is the pass.');
+      } else {
+        say('MIXED: read the two phases above — losses in the quiet phase mean something else is wrong.');
+      }
+    } catch (err) {
+      say(`ERROR repro: ${errMsg(err)}`);
+    } finally {
+      const path = await appendDiagnostic('PE-1 deaf-window reproduction', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // VDS-M5 — is DriveState cleartext? (The cheapest possible live speed.)
   //
   // Replaces the M2 PII sweep, obsolete twice over: its oracle was invalid (the
@@ -1487,6 +1573,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
+              <ActionButton label="PE-1 deaf-window repro" onPress={handlePassiveEntryRepro} theme={theme} />
               <ActionButton label="VDS-M5 DriveState cleartext" onPress={handleVdsDriveProbe} theme={theme} />
               <ActionButton label="VDS-M6 full PII run" onPress={handleVdsPiiRun} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
