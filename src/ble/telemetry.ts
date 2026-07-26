@@ -63,11 +63,27 @@ export interface InfotainmentSnapshot {
     steeringWheel: { mode: SteeringWheelClimateModeName; level: 0 | 1 | 2 } | undefined;
     seats: Partial<Record<SeatPosition, SeatClimateMode>> | undefined;
   };
-  drive?: { speed: number | null; gear: string };
+  drive?: {
+    speed: number | null;
+    gear: string;
+    odometerMiles: number | null;
+    powerKw: number | null;
+  };
+  // The car's active navigation route, when it has one.
+  route?: {
+    destination: string | null;
+    minutesToArrival: number | null;
+    milesToArrival: number | null;
+  };
   location?: { lat: number | undefined; lon: number | undefined; heading: number | undefined };
   closures?: {
     sentryOn: boolean | undefined;
     windows: Partial<Record<'leftFront' | 'rightFront' | 'leftRear' | 'rightRear', boolean>>;
+    userPresent?: boolean | undefined;
+    centerDisplay?: string | undefined;
+    locked?: boolean | undefined;
+    valetMode?: boolean | undefined;
+    speedLimitMode?: boolean | undefined;
   };
 }
 
@@ -123,6 +139,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
+
+// str — a non-empty string, else undefined. Empty strings are the proto default for
+// an unset string field, so they mean "absent", not "".
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 
 // enumName ports the reference's _enumName: numbers index straight into the table (the normal
@@ -256,10 +278,32 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
 
   const dr = pick(vehicleData, root, 'driveState');
   if (dr) {
+    // RESPONSE-15 Tier 1: odometer / power / active-route were ALREADY arriving in
+    // this message and being discarded — no new request, no extra bytes on the wire.
+    // NB the proto carries both a plain and an `optional*` variant of several
+    // fields (the car sets one or the other depending on firmware); read either.
+    const odoHundredths =
+      num(dr.odometerInHundredthsOfAMile) ?? num(dr.optionalOdometerInHundredthsOfAMile);
     snap.drive = {
-      speed: num(dr.speed) ?? null,
+      speed: num(dr.speed) ?? num(dr.optionalSpeed) ?? null,
       gear: oneofName(dr.shiftState) ?? 'unknown',
+      // Hundredths of a mile → miles. Keep the raw precision; format at the edge.
+      odometerMiles: odoHundredths !== undefined ? odoHundredths / 100 : null,
+      // Instantaneous power: positive = drawing (driving), negative = regen.
+      powerKw: num(dr.power) ?? num(dr.optionalPower) ?? null,
     };
+    const dest = str(dr.activeRouteDestination) ?? str(dr.optionalActiveRouteDestination);
+    const mins = num(dr.activeRouteMinutesToArrival) ?? num(dr.optionalActiveRouteMinutesToArrival);
+    const miles = num(dr.activeRouteMilesToArrival) ?? num(dr.optionalActiveRouteMilesToArrival);
+    // Only emit a route when the car actually has one — an empty destination with
+    // zeroed ETA is "no navigation", not "0 minutes away".
+    if (dest || mins !== undefined || miles !== undefined) {
+      snap.route = {
+        destination: dest ?? null,
+        minutesToArrival: mins ?? null,
+        milesToArrival: miles ?? null,
+      };
+    }
   }
 
   const loc = pick(vehicleData, root, 'locationState');
@@ -286,6 +330,14 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     snap.closures = {
       sentryOn: sentryMode !== undefined ? sentryMode !== 'Off' : undefined,
       windows,
+      // RESPONSE-15 Tier 1: also already on the wire and previously discarded.
+      // isUserPresent + centerDisplayState are the car's own "someone is in it /
+      // the screen is up" signals — the inputs a Driving status needs (REQUEST-17).
+      userPresent: typeof cls.isUserPresent === 'boolean' ? cls.isUserPresent : undefined,
+      centerDisplay: oneofName(cls.centerDisplayState),
+      locked: typeof cls.locked === 'boolean' ? cls.locked : undefined,
+      valetMode: typeof cls.valetMode === 'boolean' ? cls.valetMode : undefined,
+      speedLimitMode: typeof cls.speedLimitMode === 'boolean' ? cls.speedLimitMode : undefined,
     };
   }
 
@@ -438,6 +490,18 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
 
   if (snap.drive) {
     patch.driving = DRIVING_GEARS.has(snap.drive.gear);
+    patch.gear = snap.drive.gear;
+    if (snap.drive.speed !== null) patch.speed = snap.drive.speed;
+    if (snap.drive.odometerMiles !== null) patch.odometerMiles = snap.drive.odometerMiles;
+    if (snap.drive.powerKw !== null) patch.powerKw = snap.drive.powerKw;
+  }
+
+  if (snap.route) {
+    patch.activeRoute = {
+      destination: snap.route.destination,
+      minutesToArrival: snap.route.minutesToArrival,
+      milesToArrival: snap.route.milesToArrival,
+    };
   }
 
   // Real GPS → the map's car pin (location.tsx). Only emit when BOTH coords are finite; a partial
@@ -459,6 +523,14 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (w.rightFront !== undefined) patch.rightFrontWindowOpen = w.rightFront;
     if (w.leftRear !== undefined) patch.leftRearWindowOpen = w.leftRear;
     if (w.rightRear !== undefined) patch.rightRearWindowOpen = w.rightRear;
+    // Free extras (RESPONSE-15 Tier 1). `locked` also arrives over VCSEC and that
+    // path stays authoritative for the lock UI — this is a consistent second
+    // source, not a replacement.
+    const c = snap.closures;
+    if (c.userPresent !== undefined) patch.userPresent = c.userPresent;
+    if (c.centerDisplay !== undefined) patch.centerDisplay = c.centerDisplay;
+    if (c.valetMode !== undefined) patch.valetMode = c.valetMode;
+    if (c.speedLimitMode !== undefined) patch.speedLimitMode = c.speedLimitMode;
   }
 
   return patch;

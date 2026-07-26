@@ -110,6 +110,20 @@ export interface VehicleViewState {
   // Drive mode: when true the adapter sends a non-parked drive_state (shift D, speed > 0), which the
   // Godot scene reads to spin the wheels (VehicleManager wheel-spin path). Mirrors the harness "Drive".
   driving: boolean;
+  // ── Free telemetry already arriving in DriveState/ClosuresState (RESPONSE-15
+  // Tier 1). Previously parsed and discarded; no extra request or bytes.
+  // Gear name as the car reports it ('P'|'D'|'R'|'N'|'unknown' style oneof name).
+  gear: string;
+  speed: number | null;
+  odometerMiles: number | null;
+  // Instantaneous power: positive = drawing, negative = regen.
+  powerKw: number | null;
+  // The car's own "somebody is in it" flag, and its centre-screen state. These are
+  // the inputs a real Driving status needs (see REQUEST-17).
+  userPresent: boolean;
+  centerDisplay: string | null;
+  // Active navigation route, when the car has one.
+  activeRoute: { destination: string | null; minutesToArrival: number | null; milesToArrival: number | null } | null;
   // Which Tesla model the Godot scene renders. Switching this re-issues SHOW_PRODUCT with that model's
   // config (mirrors the harness S/3/X/Y buttons). Only Model Y is texture-verified on device.
   carModel: CarModel;
@@ -201,6 +215,13 @@ export const initialVehicleState: VehicleViewState = {
   tirePressureVisible: false,
   mediaPlaying: false,
   driving: false,
+  gear: 'unknown',
+  speed: null,
+  odometerMiles: null,
+  powerKw: null,
+  userPresent: false,
+  centerDisplay: null,
+  activeRoute: null,
   carModel: 'modelY',
   headlightsOn: false,
   brakeLightsOn: false,

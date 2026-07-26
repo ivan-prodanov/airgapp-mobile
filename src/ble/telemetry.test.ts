@@ -515,3 +515,61 @@ test('climate: absent optional fields are OMITTED from the patch (proto3-optiona
   assert.equal('seatClimateModes' in p, false, 'no seat field reported -> do not touch the map');
   assert.equal('steeringWheelClimate' in p, false);
 });
+
+// ── RESPONSE-15 Tier 1: data that was already arriving and being discarded ──────
+// No new request, no extra bytes — these all ride the DriveState/ClosuresState we
+// already read, so the only thing that was missing was the parse.
+
+test('drive: odometer (hundredths of a mile) -> odometerMiles, power -> powerKw', () => {
+  const snap = parseCarServerResponse({
+    driveState: { odometerInHundredthsOfAMile: 1234567, power: -12 },
+  });
+  assert.equal(snap.drive?.odometerMiles, 12345.67);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.odometerMiles, 12345.67);
+  assert.equal(patch.powerKw, -12); // negative = regen
+});
+
+test('drive: reads the optional* variant when the plain field is absent', () => {
+  const snap = parseCarServerResponse({
+    driveState: { optionalOdometerInHundredthsOfAMile: 500, optionalPower: 7, optionalSpeed: 30 },
+  });
+  assert.equal(snap.drive?.odometerMiles, 5);
+  assert.equal(snap.drive?.powerKw, 7);
+  assert.equal(snap.drive?.speed, 30);
+});
+
+test('drive: active route -> activeRoute patch; no route -> omitted', () => {
+  const withRoute = parseCarServerResponse({
+    driveState: {
+      activeRouteDestination: 'Home',
+      activeRouteMinutesToArrival: 12,
+      activeRouteMilesToArrival: 4.5,
+    },
+  });
+  assert.deepEqual(infotainmentToPatch(withRoute).activeRoute, {
+    destination: 'Home',
+    minutesToArrival: 12,
+    milesToArrival: 4.5,
+  });
+  // An empty destination is the proto default for "unset" — not a real route.
+  const noRoute = parseCarServerResponse({ driveState: { activeRouteDestination: '' } });
+  assert.equal(infotainmentToPatch(noRoute).activeRoute, undefined);
+});
+
+test('closures: isUserPresent + centerDisplayState -> patch (the Driving-status inputs)', () => {
+  const snap = parseCarServerResponse({
+    closuresState: { isUserPresent: true, valetMode: false, speedLimitMode: true },
+  });
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.userPresent, true);
+  assert.equal(patch.valetMode, false);
+  assert.equal(patch.speedLimitMode, true);
+});
+
+test('closures: absent extras stay absent (never fabricate a false)', () => {
+  const snap = parseCarServerResponse({ closuresState: {} });
+  const patch = infotainmentToPatch(snap);
+  assert.equal('userPresent' in patch, false);
+  assert.equal('centerDisplay' in patch, false);
+});
