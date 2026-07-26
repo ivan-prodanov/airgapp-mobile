@@ -5,6 +5,62 @@
 
 ---
 
+## ⚠ UPDATE 2026-07-26 — Q4 TESTED AND FAILED (APPEND behaves like REPLACE). Here's why, and what's left.
+
+Ivan chained `NavigationGpsRequest` with `order=APPEND` at 600 ms spacing: the car just showed each destination in turn — every send **replaced**. The enum is not the problem (app `fc0/f3`: `RemoteNavTripOrderReplace/Prepend/Append` = 0/1/2; car has `RemoteNavTripOrderNameMap` with `Replace`/`Prepend`/`Append`). **The reason is structural:**
+
+**`RemoteNavTripOrder` never reaches the trip planner.** Every symbol in QtCarServer that mentions it is in the **CarAPI transport layer** — `CarAPI{,Impl,HandlerImpl}::navigation_{gps,gps_destination,sc,}_request(...)`, their `async*` twins, and a `RemoteNavTripOrderDataValue` (a published state variable). **No `TMServer` (trip-manager) function takes a `RemoteNavTripOrder` at all.** The trip planner's actual multi-stop entry points are:
+
+```
+TMServer::routeToWaypoints(TMWaypointRouteRequest, QMap<QString,QVariant>, int, …)
+TMWaypointRouteRequest  ← built from a QVariant containing recalc.currentStops (a STRUCTURED stop list)
+TMServer::getMultiPointRoute(TMMultiPointRouteRequestList, …)
+TMMultiPointRouteRequest::addDestinationLocation(int, const LocationCoordinate&)   ← coordinates!
+TMMultiPointRouteRequest::addOriginLocation(int, const LocationCoordinate&)
+```
+
+So the car **does** have a coordinate-based multi-point API (`LocationCoordinate`, indexed) — but it lives on **TMServer's internal IPC**, not on the phone-facing CarAPI. From the phone there is exactly **one door into multi-stop**: `navigation_waypoints_request(QString waypoints, QMap options)`. The GPS request is a *single-destination* API whose order flag is interpreted (or ignored) by the CID nav app downstream — and empirically, for a plain GPS destination, it is ignored.
+
+**Consequence: APPEND-chaining is dead. Don't spend more on it.** Q4's recommendation is withdrawn — that's what testing is for.
+
+### What's actually left, cheapest first
+
+1. **Re-test the waypoints string with a COMMA separator and flat coordinates** *(cheapest, and it directly targets your original failure)*. You tested `lat,lon;lat,lon` — semicolons. The app's own join is **`,`** (`#114892 @0545/054a`), and a feature bit literally named `MOBILE_APP_FEATURE_WAYPOINTS_REQUEST_ACCEPTS_COORDINATES` exists, so *some* firmware parses coordinates out of this field. Try:
+   - `42.697700,23.321900,42.700000,23.330000` (flat, comma-joined alternating lat/lon)
+   - and, as a second shot, `42.697700 23.321900,42.700000 23.330000` (space inside a pair, comma between pairs)
+   
+   **Unproven** — the token parser is downstream of QtCarServer's proxy and not in any image we hold. But it is two one-line experiments against the exact field that already ACKs, and it's the only way coordinates could ever enter this path.
+2. **`superchargerId:` tokens** — proven format, comma-joined, and **offline-constructible** if you hold site ids. Also note the car has `navigation_sc_request(const int& siteId, const RemoteNavTripOrder&, …)` — a supercharger-by-id call that *also* carries the order flag, so it's worth one APPEND test there even though GPS-APPEND failed (different downstream handler).
+3. **The `options` map** — `navigation_waypoints_request`'s second D-Bus arg is `a{sv}` (`<arg direction="in" type="a{sv}" name="options"/>`), which you currently send as `TripPlanOptions{startSoe,endSoe}`. Worth dumping what keys the car accepts there; it is the only structured channel on the multi-stop door.
+4. **Unexplored entry points** — `navigation_dropped_pin_request` and `navigation_fixed_route_request(s fixed_route_name)`.
+
+**Verification for all of the above: stop trusting the ACK.** Read back `DriveState.active_route_*` (already on your wire) and assert the stop list actually changed; the car-side failure only ever appears in its own log as `TMWaypointRouteRequest: Invalid waypoint in recalc.currentStops`.
+
+---
+
+## ⚠ FIRST: "but single-destination `lat,lon` works!" — no contradiction. Different API, different wire type.
+
+Coordinates absolutely work for navigation. They just don't work **inside the `waypoints` string**, because that field is not a coordinate field — it's an opaque token list. The car exposes **four separate nav entry points with different C++ signatures** (from QtCarServer's dynsym; `RKd` = `const double&`, `RK7QString` = `const QString&`):
+
+| car entry point | signature | takes |
+|---|---|---|
+| `CarAPIImpl::navigation_gps_request` @`0x839d10` | `(RKd, RKd, RK RemoteNavTripOrder, …)` | **two real doubles** + order |
+| `CarAPIImpl::navigation_gps_destination_request` @`0x83aae0` | `(RKd, RKd, RK7QString, RK RemoteNavTripOrder, …)` | **two doubles** + a name string + order |
+| `CarAPIImpl::navigation_request` @`0x83a560` | `(RK7QString, RK RemoteNavTripOrder, …)` | a **share-text** string (address/URL) |
+| `CarAPIHandlerImpl::navigation_waypoints_request` @`0xa08e70` | `(RK7QString, RK QMap<QString,QVariant>, …)` | **one opaque string** + options — **no doubles anywhere** |
+
+**Your working path is #1.** You send `NavigationGpsRequest{lat, lon, destination, order}` — the lat/lon arrive as **numeric protobuf fields** and reach the car as **actual C++ doubles**. Nothing is ever parsed out of text, so there is no format to get wrong. That is why it works, every time.
+
+**The waypoints path is #4.** There is exactly one string, and the car must *tokenise* it. The app's tokens are `refId:<id>` / `superchargerId:<id>` (proven below). When you hand it `42.6977,23.3219;42.7,23.33`, the car splits on `,` and gets tokens like `42.6977`, `23.3219;42.7`, `23.33` — none of which carry a recognised prefix, so each is discarded. The message is well-formed, the seal is valid, the handler ACKs — and zero stops survive parsing. Exactly your symptom.
+
+So the two observations are consistent: **coordinates are first-class as *doubles* in the GPS request, and simply have no representation in the *waypoints string*.**
+
+> This also reinforces Q4: `navigation_gps_request` — your already-working, double-based call — is the one that carries `RemoteNavTripOrder`. That is why APPEND-chaining it is the natural coordinate-based route to multi-stop.
+>
+> (Two further entry points exist that I did not previously mention and that no one has explored: **`navigation_dropped_pin_request`** and **`navigation_fixed_route_request(s fixed_route_name)`**.)
+
+---
+
 ## TL;DR — your string is wrong in two independent ways
 
 The official app **never sends coordinates** in `waypoints`. It sends **prefixed reference tokens joined by commas**:
