@@ -390,6 +390,30 @@ export default function CarLinkScreen() {
     }
   };
 
+  // WAKE as its own press. SEND uses runRawAction, which deliberately does NOT
+  // wake — so "can nav be set on a sleeping car?" is answerable by sending cold,
+  // and "does it need the MCU up first?" by waking, waiting, then sending. Keeping
+  // them separate is the difference between measuring the car and measuring us.
+  //
+  // RESPONSE-19 Q3.7 is the reason this matters: the car's requestNavigation
+  // returns early — no queue, no retry, silently dropped — when the centre display
+  // or nav window isn't initialised. If that holds here, a cold send ACKs and
+  // vanishes, which looks identical to success from our side.
+  const handleBenchWake = async () => {
+    benchPaceWarning();
+    try {
+      await closeAllCachedSessions();
+      const gw = await makeGateway();
+      const t0 = Date.now();
+      const out = await gw.wake();
+      const line = `WAKE: ${out.ok ? 'ok' : `${out.kind}: ${out.message}`} (${Date.now() - t0}ms) — give the MCU a few seconds before sending`;
+      append(line);
+      await appendDiagnostic('nav bench wake', [line]);
+    } catch (err) {
+      append(`WAKE FAILED: ${errMsg(err)}`);
+    }
+  };
+
   // READ ROUTE deliberately never wakes the car. Two of the questions on the bench
   // — is the route readable with nobody aboard, and does it survive sleep — are
   // destroyed by a wake, so this reads whatever the car will answer as it is.
@@ -1657,6 +1681,7 @@ export default function CarLinkScreen() {
               <View style={styles.buttonGrid}>
                 <ActionButton label="5 · SEND ONE COMMAND" onPress={handleBenchSend} theme={theme} />
                 <ActionButton label="6 · READ ROUTE" onPress={handleBenchRead} theme={theme} />
+                <ActionButton label="7 · WAKE (does not send)" onPress={handleBenchWake} theme={theme} />
               </View>
             </View>
 
