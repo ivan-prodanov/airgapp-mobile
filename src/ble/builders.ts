@@ -335,17 +335,30 @@ export function setSpeedLimitMphAction(mph: number): ActionPayload {
 
 // --- Navigation --------------------------------------------------------------
 //
-// REPLACE=1, PREPEND=2, APPEND=3 (RemoteNavTripOrder, defined per-message in
-// the proto — numeric values are consistent across NavigationGpsRequest /
-// NavigationGpsDestinationRequest).
-
-export const NAV_ORDER = Object.freeze({ REPLACE: 1, PREPEND: 2, APPEND: 3 });
+// REPLACE=0, PREPEND=1, APPEND=2 (RemoteNavTripOrder).
+//
+// ⚠ OUR VENDORED PROTO IS WRONG HERE — do not "correct" this back from
+// `proto/gen.d.ts`. The generated enum carries a spurious
+// `REMOTE_NAV_TRIP_ORDER_UNKNOWN = 0` which shifts every real value up by one
+// (REPLACE=1, PREPEND=2, APPEND=3). The official app's enum has no UNKNOWN member:
+//
+//   new f3("RemoteNavTripOrderReplace", 0, 0)   → REPLACE = 0
+//   new f3("RemoteNavTripOrderPrepend", 1, 1)   → PREPEND = 1
+//   new f3("RemoteNavTripOrderAppend",  2, 2)   → APPEND  = 2
+//                                (fc0/f3.java, HW4 decompile; RESPONSE-15 Tier 0)
+//
+// Consequence of the old values, and why this was a live user-visible defect:
+// every "navigate here" sent 1 = PREPEND, so destinations were PREPENDED to the
+// existing trip instead of REPLACING it, and APPEND sent 3 — not a valid value,
+// which the car maps to null. REPLACE=0 is the proto default, so it may be omitted
+// on the wire entirely; the car defaults to REPLACE, which is exactly what we want.
+export const NAV_ORDER = Object.freeze({ REPLACE: 0, PREPEND: 1, APPEND: 2 });
 
 export function navigateGpsAction({ lat, lon, order }: { lat: number; lon: number; order?: number }): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({
-      navigationGpsRequest: { lat: Number(lat), lon: Number(lon), order: order || NAV_ORDER.REPLACE },
+      navigationGpsRequest: { lat: Number(lat), lon: Number(lon), order: order ?? NAV_ORDER.REPLACE },
     }),
   };
 }
@@ -367,7 +380,7 @@ export function navigateGpsWithLabelAction({
         lat: Number(lat),
         lon: Number(lon),
         destination: label || '',
-        order: order || NAV_ORDER.REPLACE,
+        order: order ?? NAV_ORDER.REPLACE,
       },
     }),
   };
@@ -375,7 +388,7 @@ export function navigateGpsWithLabelAction({
 export function navigateSearchAction({ query, order }: { query: string; order?: number }): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
-    bytes: encodeInfotainmentAction({ navigationRequest: { destination: query, order: order || NAV_ORDER.REPLACE } }),
+    bytes: encodeInfotainmentAction({ navigationRequest: { destination: query, order: order ?? NAV_ORDER.REPLACE } }),
   };
 }
 // navigateWaypointsAction — kept for a future Google-Place-ID-based multi

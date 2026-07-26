@@ -218,7 +218,10 @@ test('navigation: GPS, GPS+label, search, waypoints (Place-ID string) builders',
   const gps = decodeAction(navigateGpsAction({ lat: 1.5, lon: 2.5 }).bytes);
   assert.equal(gps.vehicleAction?.navigationGpsRequest?.lat, 1.5);
   assert.equal(gps.vehicleAction?.navigationGpsRequest?.lon, 2.5);
-  assert.equal(gps.vehicleAction?.navigationGpsRequest?.order, 1); // REPLACE default
+  // REPLACE = 0 (fc0/f3.java: RemoteNavTripOrderReplace = 0). Our vendored proto's
+  // spurious UNKNOWN=0 shifted this by one, so we used to send 1 = PREPEND on every
+  // nav. 0 is the proto default, so it may be omitted on the wire and decode as 0.
+  assert.equal(gps.vehicleAction?.navigationGpsRequest?.order ?? 0, 0);
 
   const labeled = decodeAction(navigateGpsWithLabelAction({ lat: 1.5, lon: 2.5, label: 'Home' }).bytes);
   assert.equal(labeled.vehicleAction?.navigationGpsDestinationRequest?.destination, 'Home');
