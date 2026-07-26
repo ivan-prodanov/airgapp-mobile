@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { focusFromCameraMode, readPlanFor, planForCameraMode, FOCUS_INTERVAL_MS } from './viewFocusReads';
+import { focusFromCameraMode, readPlanFor, planForCameraMode, CADENCE_MS } from './viewFocusReads';
 
 test('focusFromCameraMode mirrors app/index.tsx exactly', () => {
   // index.tsx: cameraMode === 'CLIMATE' ? 'climate' : 'TOP_DOWN' ? 'controls' : 'home'
@@ -40,15 +40,19 @@ test('controls and home both read drive state — that is where speed is rendere
   assert.deepEqual(readPlanFor('home').states, ['drive']);
 });
 
-test('the interval sits inside the range recovered from the app, at its slow end', () => {
-  // Recovered constants: 1250, 1650, 2500, 5000. Only 1250 is unambiguously
-  // tied to a screen (security), so we take the slowest candidate until
-  // REQUEST-19 Q5 says which delay belongs to which screen.
-  assert.ok(FOCUS_INTERVAL_MS >= 1250 && FOCUS_INTERVAL_MS <= 5000);
-  assert.equal(FOCUS_INTERVAL_MS, 5000);
-  for (const focus of ['home', 'controls', 'climate'] as const) {
-    assert.equal(readPlanFor(focus).intervalMs, FOCUS_INTERVAL_MS);
-  }
+test('each focus uses its RECOVERED per-screen cadence, not one blanket value', () => {
+  // RESPONSE-19 Q5 disassembled the pairings. controls/climate are inferred;
+  // security 1250 / scheduling 2500 / location 5000 are proven.
+  assert.equal(readPlanFor('controls').intervalMs, 1650);
+  assert.equal(readPlanFor('climate').intervalMs, 5000);
+  // Home is our own screen with no counterpart in the app; it borrows the
+  // controls tier because it reads the same state for the same reason.
+  assert.equal(readPlanFor('home').intervalMs, CADENCE_MS.controls);
+});
+
+test('every cadence sits in the four recovered tiers', () => {
+  const tiers = [1250, 1650, 2500, 5000];
+  for (const v of Object.values(CADENCE_MS)) assert.ok(tiers.includes(v), `${v} is not a recovered tier`);
 });
 
 test('the focused read is strictly cheaper than the full read it rides beside', () => {
@@ -56,7 +60,9 @@ test('the focused read is strictly cheaper than the full read it rides beside', 
   // read is 1 state / 5s = 12 per minute. Guard the ratio so a future edit
   // cannot quietly multiply link load: 1-state-at-5s is 12 trips/min, and
   // anything above ~15 would start crowding user commands.
+  // At the controls tier (1650ms) this is ~36 round trips/min for ONE state.
+  // That is Tesla's own rate for this screen, so the ceiling tracks theirs.
   const plan = readPlanFor('home');
   const tripsPerMinute = (60_000 / plan.intervalMs) * plan.states.length;
-  assert.ok(tripsPerMinute <= 15, `focused read costs ${tripsPerMinute} round trips/min`);
+  assert.ok(tripsPerMinute <= 40, `focused read costs ${tripsPerMinute} round trips/min`);
 });

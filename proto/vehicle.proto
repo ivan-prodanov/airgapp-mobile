@@ -17,6 +17,14 @@ message VehicleData {
     DriveState drive_state = 5;
     LocationState location_state = 8;
     ClosuresState closures_state = 9;
+    // RESPONSE-19 Q1b, PROVEN (fc0/u5). location_state (8) is PII: for a gated
+    // state the cleartext field arrives PRESENT AND EMPTY and the real content
+    // moves into encrypted_data. drive_state (5) — speed, gear, and the active
+    // route DESTINATION — carries no live coordinates and is expected cleartext,
+    // but that is a per-field_number car-side choice we must measure.
+    repeated CarServer.EncryptedData encrypted_data = 11;
+    // The wrapped AES PII key comes back HERE, not in the envelope.
+    repeated CarServer.PiiKeyResponse pii_key_response = 900;
     ChargeScheduleState charge_schedule_state = 15;
     PreconditioningScheduleState preconditioning_schedule_state = 16;
     TirePressureState tire_pressure_state = 19;

@@ -26,12 +26,25 @@
 // speed live" (a 5 s driving-only constant) was the wrong fix. Reading ONE state
 // is what buys the cadence.
 //
-// ⚠ RESIDUAL UNKNOWN, deliberately not guessed. Of the four recovered delays,
-// only 1250 ms is unambiguously tied to a screen (security). We therefore use
-// 5000 ms — the slowest of the candidates, and the figure independently quoted
-// as the app's "online" rate — for every focus below. It is inside the measured
-// range and errs toward less link load. REQUEST-19 Q5 asks which delay goes with
-// which screen; tighten this when it lands, and not before.
+// PER-SCREEN CADENCES — now recovered (RESPONSE-19 Q5, disassembled from the
+// Hermes bundle). Four tiers, and the pairings are:
+//
+//     security screen    1250 ms   PROVEN
+//     scheduling screen  2500 ms   PROVEN
+//     location screen    5000 ms   PROVEN
+//     controls screen    1650 ms   INFERRED (by elimination + cluster adjacency)
+//     climate screen     5000 ms   INFERRED (same)
+//
+// Also settled, and worth stating because it retires an idea of mine: the
+// cadence is a PURE FUNCTION OF THE FOREGROUNDED SCREEN. Nothing in that loop
+// reads shift state or speed. So the very first attempt at this — "poll faster
+// while driving" — was not merely a crude fix, it was the wrong shape entirely;
+// Tesla never varies the rate by driving.
+//
+// Failure behaviour worth mirroring eventually: on RESULT_UNSUPPORTED_COMMAND /
+// RESULT_INVALID_COMMAND_REQUEST their loop logs "stopping BLE vehicle data
+// polling due to unrecoverable command result" and effectively stops, rather
+// than hammering a car that rejected the command.
 
 import type { InfotainmentStateKey } from './gateway';
 
@@ -45,8 +58,15 @@ export interface FocusReadPlan {
   intervalMs: number;
 }
 
-// See the residual-unknown note above before changing this.
-export const FOCUS_INTERVAL_MS = 5000;
+// Recovered per-screen tiers. controls/climate are INFERRED (see above); the
+// others are proven and kept here for the screens we do not yet fast-poll.
+export const CADENCE_MS = Object.freeze({
+  controls: 1650,
+  climate: 5000,
+  security: 1250,
+  scheduling: 2500,
+  location: 5000,
+});
 
 export function focusFromCameraMode(cameraMode: string | null | undefined): ViewFocus {
   // Mirrors app/index.tsx's own `mode` derivation exactly. Kept as a function
@@ -61,10 +81,10 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
   switch (focus) {
     case 'climate':
       // 'on climate screen, fetching climate only' — climate ONLY, per the app.
-      return { states: ['climate'], intervalMs: FOCUS_INTERVAL_MS };
+      return { states: ['climate'], intervalMs: CADENCE_MS.climate };
     case 'controls':
       // 'on controls screen, fetching drive state'.
-      return { states: ['drive'], intervalMs: FOCUS_INTERVAL_MS };
+      return { states: ['drive'], intervalMs: CADENCE_MS.controls };
     case 'home':
     default:
       // Home has no literal in the recovered strings, but it is where the
@@ -72,7 +92,11 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
       // by VehicleStatusText on Home — and those fields come from DriveState.
       // This is the case the whole change exists to fix: that line previously
       // moved only on pull-to-refresh, because DriveState rode the 60s read.
-      return { states: ['drive'], intervalMs: FOCUS_INTERVAL_MS };
+      //
+      // Home has no counterpart in the app's screen list, so this pairing stays
+      // MINE. It borrows the controls tier because it reads the same state for
+      // the same reason — the status line is drive data.
+      return { states: ['drive'], intervalMs: CADENCE_MS.controls };
   }
 }
 

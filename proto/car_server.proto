@@ -157,36 +157,64 @@ message VehicleAction {
 // dispatcher deliver UNSOLICITED pushes over the BLE arm? That binary is not in
 // any firmware image we hold. One state, short TTL — see vehicleDataSubscriptionAction.
 message VehicleDataSubscription {
-    // Only the three fields with a recovered tag number are declared. The app's
-    // message also carries per-state *_max_update_rate_ms for ChargeState,
-    // ClimateState, ClosuresState, DriveState, GuiSettings, VehicleConfig,
-    // VehicleState, ParkedAccessoryState, ChargeScheduleState,
-    // PreconditioningScheduleState, AlertState, SuspensionState and
-    // ChildPresenceDetectionState, plus pii_key_request — but RESPONSE-15
-    // recovered a tag for NONE of those, only their existence. Guessing tags
-    // here would silently target the wrong state and make a negative result
-    // uninterpretable, so they stay undeclared until the miner supplies them.
-    uint32 subscription_duration_s = 3;
-    uint32 location_state_max_update_rate_ms = 10;
-    uint32 subscription_ping_s = 12;
-    // pii_key_request — declared as BYTES, not as a message, and that is
-    // deliberate: we know the field number (RESPONSE-15: fc0/x5 field 13) but
-    // NOT the inner tags of its sub-message (fc0/z2 subscriber_public_key +
-    // fc0/a3 subscriber_public_key_expiration — the RE recovered their
-    // existence, not their numbers). On the wire a nested message and a bytes
-    // field are identical, so this lets us hand-build candidate encodings and
-    // let the CAR tell us which one parses, without inventing a schema and then
-    // trusting it. Promote to a real message once the tags are confirmed.
-    //
-    // Why it matters (measured 2026-07-26, not inferred): omitting this does NOT
-    // merely skip an optional extra. The car answers "No PII request" and then
-    // returns location_state EMPTY, moving the real payload into an undeclared
-    // VehicleData field 11 encrypted to a key we never supplied. The
-    // subscription proceeds; the data does not.
-    //
-    // NOT the top-level piiKeyRequest (Action field 51), which IS cloud-pinned.
-    bytes pii_key_request = 13;
+    // COMPLETE tag table, RESPONSE-19 Q2 (PROVEN from fc0/x5). Every rate is
+    // int32 MILLISECONDS, and a state is included in the push IFF its rate > 0.
+    int32 subscription_duration_s = 3;
+    int32 GuiSettings_max_update_rate_ms = 4;
+    int32 ChargeState_max_update_rate_ms = 5;
+    int32 ClimateState_max_update_rate_ms = 6;
+    int32 DriveState_max_update_rate_ms = 7;
+    int32 VehicleState_max_update_rate_ms = 8;
+    int32 VehicleConfig_max_update_rate_ms = 9;
+    int32 LocationState_max_update_rate_ms = 10;
+    int32 ClosuresState_max_update_rate_ms = 11;
+    int32 subscription_ping_s = 12;
+    // ⚠ EMBEDDED here, which is the ONLY BLE-safe home for it. The STANDALONE
+    // top-level carServerAction.pii_key_request is hard-pinned to
+    // TRANSPORT_HERMES by the app's own selector (pb0/b.java:79-89) — never send
+    // that one. This embedded field rides the subscription's transport, which
+    // includes Bluetooth. RESPONSE-19, PROVEN.
+    PiiKeyRequest pii_key_request = 13;
+    int32 ParkedAccessoryState_max_update_rate_ms = 14;
+    int32 ChargeScheduleState_max_update_rate_ms = 15;
+    int32 PreconditioningScheduleState_max_update_rate_ms = 16;
+    int32 AlertState_max_update_rate_ms = 17;
+    int32 SuspensionState_max_update_rate_ms = 18;
+    int32 ChildPresenceDetectionState_max_update_rate_ms = 19;
 }
+
+// PiiKeyRequest — hand the car OUR public key so it wraps the PII key to us.
+//
+// RESPONSE-19 Q1a, PROVEN from fc0/z2. Note the tags are 2 and 4 — NOT
+// sequential from 1, which is exactly what our on-car sweep guessed wrong.
+message PiiKeyRequest {
+    // ⚠ A protobuf STRING holding PKCS#1 PEM TEXT — "-----BEGIN RSA PUBLIC
+    // KEY-----\n…", newlines and all — NOT raw key bytes. And RSA-2048, not EC:
+    // our existing P-256 device key cannot be used here. The car's own D-Bus API
+    // takes it as `s` (string).
+    //
+    // This explains the sweep: putting 65 raw SEC1 bytes at tag 2 hit the RIGHT
+    // field with an unusable value and killed the subscription, while tag 1 was
+    // an unknown field, silently skipped, subscription alive but no PII. Both
+    // observations now make sense.
+    string subscriber_public_key = 2;
+    // OPTIONAL, and OMIT IT on a cold request. Its job is to tell the car "the
+    // key I already hold expires at T" so it can decide keep-vs-rotate; with no
+    // key yet, omitting makes the car mint and wrap a fresh one.
+    google.protobuf.Timestamp pii_key_expiration = 4;
+}
+
+// PiiKeyResponse — arrives in VehicleData field 900 (repeated).
+message PiiKeyResponse {
+    // 256 bytes for RSA-2048. Unwrap with
+    // RSA/ECB/OAEPWithSHA-1AndMGF1Padding (SHA-1, MGF1-SHA-1, empty label) using
+    // our private key → K, the raw AES key for the EncryptedData envelopes.
+    bytes encrypted_pii_key = 2;
+    // Tags 3 and 4 exist (RESPONSE-19 ledger) but were not named; left
+    // undeclared rather than guessed.
+}
+
+
 
 
 // EncryptedPiiEnvelope — VehicleData field 11, absent from every public proto.
@@ -296,10 +324,24 @@ message ResultReason {
     }
 }
 
+// EncryptedData — ONE PII state, encrypted. Carried in VehicleData field 11,
+// which is REPEATED: a push with N gated states repeats it N times.
+//
+// The tags were already right; RESPONSE-19 Q1b/Q1c names what they mean, and we
+// measured all three on-car before knowing any of it.
 message EncryptedData {
+    // A CarServer.VehicleDataFields enum whose values REUSE VehicleData's own
+    // tag numbers — 8 = location_state, 5 = drive_state, 3 = charge_state. So
+    // this says which state the plaintext decodes as. Our first capture read 8
+    // here, i.e. "this is what would have been in VehicleData field 8".
+    //
+    // It is ALSO the AAD: 4-byte BIG-ENDIAN field_number. That binds each
+    // ciphertext to its state slot so a location blob cannot be replayed as a
+    // charge blob. (Our probe tried a single AAD byte — right idea, wrong width.)
     int32 field_number = 1;
     bytes ciphertext = 2;
-
+    // ⚠ Despite the name, 28 bytes = nonce(12) ‖ gcmTag(16), NONCE FIRST.
+    // Confirms the 12+16 split we guessed on-car and fixes the order.
     bytes tag = 3;
 }
 

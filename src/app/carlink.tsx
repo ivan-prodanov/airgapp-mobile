@@ -36,7 +36,7 @@ import {
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
-import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, encodePiiKeyRequest, pingAction, VDS_DEFAULTS } from '@/ble/builders';
+import { navigateWaypointsAction, navigateGpsAction, navigateGpsWithLabelAction, navigateSearchAction, NAV_ORDER, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, pingAction, VDS_DEFAULTS } from '@/ble/builders';
 import {
   classifyOrderProbe,
   classifyRouteStart,
@@ -1127,136 +1127,89 @@ export default function CarLinkScreen() {
     }
   };
 
-  // VDS-M2 — find the pii_key_request encoding, using the CAR as the oracle.
+  // VDS-M5 — is DriveState cleartext? (The cheapest possible live speed.)
   //
-  // Established by VDS-M1 (measured, 2026-07-26): the car pushes state over BLE
-  // at the rate we ask for, and 23/23 pushes decrypt — but location_state comes
-  // back EMPTY, with the real payload in an undeclared VehicleData field 11
-  // encrypted to a key we never supplied. The car says why, in as many words:
-  // "No PII request".
+  // Replaces the M2 PII sweep, obsolete twice over: its oracle was invalid (the
+  // "No PII request" string is not a function of our input) and the tags it was
+  // guessing are now PROVEN — pii_key_request is subscription field 13 holding
+  // {2: PKCS#1 RSA PEM *string*, 4: Timestamp}. Not EC, not raw bytes, not
+  // sequential tags. That path needs an RSA-2048 keypair we do not have yet.
   //
-  // That string is what makes this a measurement rather than a guessing game.
-  // We know pii_key_request is subscription field 13, but not the inner tags of
-  // its sub-message. So: send each candidate encoding and read the reply. If a
-  // candidate PARSES, the car cannot still be taking the no-PII branch, so that
-  // string must change — and if location_state comes back populated, we are done.
-  // A wrong guess produces an unambiguous negative instead of silence, which is
-  // the property the first version of the M1 probe lacked.
-  const handleVdsPiiSweep = async () => {
-    const WATCH_MS = 8000;
-    const RATE_MS = 2000; // fast, so a short watch still yields several pushes
+  // But RESPONSE-19 Q1d says we may not need it for what we actually want.
+  // DriveState (VehicleData field 5) holds shiftState and speedFloat, and its
+  // ONLY coordinates are the active-route DESTINATION — no live position. So it
+  // is expected CLEARTEXT, hence un-gated. Whether that holds is a
+  // per-field_number car-side choice, and the RE flags it as exactly the kind of
+  // thing that diverges MCU2 -> HW4. So: measure, do not assume.
+  //
+  // Subscribe with DriveState_max_update_rate_ms (tag 7) and NO pii_key_request:
+  //   - VehicleData field 5 populated -> speed/gear stream for free, no RSA.
+  //   - a field-11 envelope with field_number = 5 -> gated, needs the key.
+  const handleVdsDriveProbe = async () => {
+    const WATCH_MS = 30_000;
+    const RATE_MS = 2000;
     const out: string[] = [];
     const say = (line: string) => {
       out.push(line);
       append(line);
     };
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const ascii = (b: Uint8Array) =>
-      Array.from(b)
-        .map((c) => (c >= 0x20 && c < 0x7f ? String.fromCharCode(c) : '.'))
-        .join('');
     const hex = (b: Uint8Array | null | undefined) =>
       b ? Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ') : null;
     let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
     try {
-      const keys = await loadOrCreateDeviceKeys(store);
       gw = await makeGateway();
-      say('waking car…');
+      say('waking car...');
       await gw.wake();
-      say(`device public key: ${keys.publicKeyRaw.length}B SEC1 (the one the car already whitelisted)`);
+      say(`subscribing: DriveState (tag 7) at ${RATE_MS}ms, NO pii_key_request`);
+      const sub = await gw.runRawAction(
+        vehicleDataSubscriptionAction({ durationS: 60, pingS: 10, locationRateMs: null, driveRateMs: RATE_MS }),
+        'vds-drive',
+      );
+      say(`  outcome: ${sub.outcome.ok ? 'ok' : sub.outcome.message}`);
+      say(`  reply hex: ${hex(sub.result?.decryptedPayload) ?? '(none)'}`);
 
-      // Candidates, cheapest-first. Tag 1 is the overwhelmingly likely home for
-      // the key; the expiry variants test whether the car REQUIRES it before it
-      // will accept the request at all.
-      const expiresAt = Math.floor(Date.now() / 1000) + 3600;
-      const candidates = [
-        { label: 'key@1', opts: { keyTag: 1, publicKeyRaw: keys.publicKeyRaw } },
-        { label: 'key@2', opts: { keyTag: 2, publicKeyRaw: keys.publicKeyRaw } },
-        { label: 'key@1 + expiry@2', opts: { keyTag: 1, publicKeyRaw: keys.publicKeyRaw, expiryTag: 2, expiresAtUnix: expiresAt } },
-        { label: 'key@2 + expiry@1', opts: { keyTag: 2, publicKeyRaw: keys.publicKeyRaw, expiryTag: 1, expiresAtUnix: expiresAt } },
-      ];
-
-      for (const c of candidates) {
-        const piiKeyRequest = encodePiiKeyRequest(c.opts);
-        const sub = await gw.runRawAction(
-          vehicleDataSubscriptionAction({ locationRateMs: RATE_MS, piiKeyRequest }),
-          `vds-pii-${c.label}`,
-        );
-        const reply = sub.result?.decryptedPayload ?? null;
-        say('');
-        say(`candidate "${c.label}" — pii_key_request ${piiKeyRequest.length}B`);
-        // ALWAYS the hex. Sweep run 1 logged the reply as ASCII only, so the one
-        // byte string that distinguished the candidates had to be reconstructed
-        // afterwards from a four-character rendering. Never log evidence through
-        // a lossy view.
-        say(`  reply hex  : ${hex(reply) ?? '(none)'}`);
-        say(`  reply ascii: ${reply ? ascii(reply) : '(no payload)'}`);
-        // Three outcomes, not two. Run 1 collapsed "no payload" into PARSED,
-        // which is backwards: an empty reply means the car did NOT answer, and
-        // the zero pushes that followed confirmed the subscription never armed.
-        const outcome = !reply
-          ? 'ERROR — no response payload; the action itself failed to parse'
-          : ascii(reply).includes('No PII request')
-            ? 'REJECTED — car still took the no-PII branch, so our sub-message did not parse'
-            : 'PARSED — the car left the no-PII branch';
-        say(`  → ${outcome}`);
-
-        // Whether location actually arrives is the outcome that matters; the
-        // string only tells us the car got as far as looking.
-        armVdsCapture(Date.now());
-        await wait(WATCH_MS);
-        const seen = disarmVdsCapture();
-        let populated = 0;
-        let piiOpened = 0;
-        for (const o of seen) {
-          const opened = sub.result?.decryptPush?.(o.raw);
-          if (!opened) continue;
-          const desc = describePlaintext(opened.plaintext);
-          if (!desc.includes('location={}') && !desc.includes('no recognised')) {
-            populated++;
-            if (populated === 1) say(`  PUSH DECODED (plaintext location): ${desc}`);
-          }
-          // Sweep run 1 only asked whether location_state was populated, and
-          // that may simply be the wrong question: an EMPTY location_state
-          // alongside a filled field 11 looks like the NORMAL way PII is
-          // delivered, in which case supplying our key changes who can open the
-          // envelope, not whether the plaintext field gets used. So try to open
-          // it — that is the outcome that actually decides this.
-          const env = extractPiiEnvelope(opened.plaintext);
-          if (!env) continue;
-          const pii = sub.result?.decryptPiiEnvelope?.(env);
-          if (pii) {
-            piiOpened++;
-            if (piiOpened === 1) {
-              say(`  *** PII ENVELOPE OPENED (${pii.variant}) stateId=${pii.stateId} ***`);
-              say(`  pii plaintext: ${hex(pii.plaintext)}`);
-            }
-          }
-        }
-        say(
-          `  ${seen.length} pushes in ${WATCH_MS / 1000}s — ${populated} with plaintext location, ` +
-            `${piiOpened} with a DECRYPTABLE pii envelope`,
-        );
-        if (populated > 0 || piiOpened > 0) {
-          say(`  *** WINNER: "${c.label}" yields readable location — stop here ***`);
-          break;
-        }
-        try {
-          await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
-        } catch {
-          say('  WARN: inter-candidate cancel failed');
+      armVdsCapture(Date.now());
+      await wait(WATCH_MS);
+      const seen = disarmVdsCapture();
+      let clear = 0;
+      let gated = 0;
+      let opened = 0;
+      for (const o of seen) {
+        const dec = sub.result?.decryptPush?.(o.raw);
+        if (!dec) continue;
+        opened++;
+        const desc = describePlaintext(dec.plaintext);
+        // field_number 5 inside a field-11 envelope means DriveState is gated.
+        const env = extractPiiEnvelope(dec.plaintext);
+        if (env && env.length > 1 && env[0] === 0x08 && env[1] === 5) gated++;
+        if (desc.includes('drive=')) {
+          clear++;
+          if (clear <= 3) say(`  +${(o.atMs / 1000).toFixed(1)}s CLEARTEXT ${desc}`);
+        } else if (opened <= 3) {
+          say(`  +${(o.atMs / 1000).toFixed(1)}s ${desc}`);
+          say(`    plain: ${hex(dec.plaintext)}`);
         }
       }
+      say(`${seen.length} frames, ${opened} decrypted, ${clear} with cleartext drive, ${gated} gated`);
+      if (clear > 0) {
+        say('VERDICT: DRIVESTATE IS CLEARTEXT - speed and gear stream with NO PII key.');
+        say('  -> live speed is reachable today; RSA is only needed for LOCATION.');
+      } else if (gated > 0) {
+        say('VERDICT: DriveState is GATED (field-11 envelope, field_number=5) - needs the PII key.');
+      } else {
+        say('VERDICT: inconclusive - no drive-bearing pushes decoded. See the plaintext above.');
+      }
     } catch (err) {
-      say(`ERROR pii sweep: ${errMsg(err)}`);
+      say(`ERROR drive probe: ${errMsg(err)}`);
       disarmVdsCapture();
     } finally {
       try {
         if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
       } catch {
-        say('WARN: final cancel failed (the TTL will expire it)');
+        say('WARN: cancel failed (the TTL will expire it)');
       }
-      const path = await appendDiagnostic('VDS-M2 pii_key_request sweep', out);
+      const path = await appendDiagnostic('VDS-M5 DriveState cleartext probe', out);
       append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
     }
   };
@@ -1500,7 +1453,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
               <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
-              <ActionButton label="VDS-M2 PII key sweep" onPress={handleVdsPiiSweep} theme={theme} />
+              <ActionButton label="VDS-M5 DriveState cleartext" onPress={handleVdsDriveProbe} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={handleVdsDefaultProbe} theme={theme} />
               <ActionButton label="VDS-M4 ping/ack probe" onPress={handleVdsAckProbe} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />

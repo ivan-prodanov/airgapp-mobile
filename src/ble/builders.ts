@@ -527,54 +527,58 @@ export const VDS_DEFAULTS = Object.freeze({
   pingS: 10, // the CAR emits these; silence for >1 ping = no push arm
 });
 
-// encodePiiKeyRequest — hand-build a candidate `pii_key_request` sub-message.
+// piiKeyRequestFor — the PII key request, now that its real shape is known.
 //
-// Hand-built because we know the OUTER tag (13) but not the inner ones. The RE
-// recovered that the message carries `subscriber_public_key` and
-// `subscriber_public_key_expiration` (fc0/z2, fc0/a3) — their existence, not
-// their field numbers. Rather than invent a schema and then trust it, we emit
-// candidate encodings and let the car adjudicate: it answers "No PII request"
-// when it takes the no-PII branch, so a candidate that PARSES must change that
-// reply. The firmware is the oracle.
-export function encodePiiKeyRequest(opts: {
-  keyTag: number;
-  publicKeyRaw: Uint8Array;
-  expiryTag?: number;
-  expiresAtUnix?: number;
-}): Uint8Array {
-  const { keyTag, publicKeyRaw, expiryTag, expiresAtUnix } = opts;
-  if (!Number.isInteger(keyTag) || keyTag < 1) throw new Error('keyTag must be a positive integer');
-  if (publicKeyRaw.length === 0) throw new Error('publicKeyRaw must not be empty');
-  const varint = (n: number): number[] => {
-    const out: number[] = [];
-    let v = n;
-    do {
-      let b = v & 0x7f;
-      v = Math.floor(v / 128);
-      if (v > 0) b |= 0x80;
-      out.push(b);
-    } while (v > 0);
-    return out;
-  };
-  const bytes: number[] = [
-    ...varint((keyTag << 3) | 2), // length-delimited
-    ...varint(publicKeyRaw.length),
-    ...publicKeyRaw,
-  ];
-  if (expiryTag !== undefined && expiresAtUnix !== undefined) {
-    bytes.push(...varint(expiryTag << 3), ...varint(expiresAtUnix)); // varint
+// RESPONSE-19 Q1a (PROVEN, fc0/z2): tags are 2 and 4, NOT sequential from 1, and
+// the key is a protobuf STRING holding PKCS#1 PEM TEXT — not raw key bytes, and
+// RSA-2048, not EC. Our existing P-256 device key cannot be used here at all.
+//
+// This is why the on-car sweep behaved as it did: 65 raw SEC1 bytes at tag 2 hit
+// the RIGHT field with an unusable value and killed the subscription, while tag 1
+// was an unknown field, silently skipped — subscription alive, no PII. Both
+// observations were real; the interpretation ("wire-type mismatch") was not.
+//
+// Omit `expiresAt` on a cold request: its job is to tell the car "the key I hold
+// expires at T" so it can decide keep-vs-rotate. With no key yet, omitting makes
+// the car mint and wrap a fresh one.
+export function piiKeyRequestFor(opts: {
+  publicKeyPkcs1Pem: string;
+  expiresAtMs?: number;
+}): { subscriberPublicKey: string; piiKeyExpiration?: { seconds: number; nanos: number } } {
+  const pem = opts.publicKeyPkcs1Pem;
+  if (!/^-----BEGIN RSA PUBLIC KEY-----/.test(pem.trim())) {
+    // Fail loudly rather than let the car reject an SPKI/"BEGIN PUBLIC KEY" or a
+    // bare base64 blob — the failure mode on the wire is a dead subscription
+    // with no diagnostic, which cost us a whole probe run to understand.
+    throw new Error('piiKeyRequestFor: expected a PKCS#1 "BEGIN RSA PUBLIC KEY" PEM');
   }
-  return Uint8Array.from(bytes);
+  if (opts.expiresAtMs === undefined) return { subscriberPublicKey: pem };
+  return {
+    subscriberPublicKey: pem,
+    piiKeyExpiration: {
+      seconds: Math.floor(opts.expiresAtMs / 1000),
+      nanos: (opts.expiresAtMs % 1000) * 1e6,
+    },
+  };
 }
 
 export function vehicleDataSubscriptionAction(opts?: {
   durationS?: number;
-  // null → omit the field (see above). undefined → use the default.
+  // null → omit the field. undefined → use the default.
   locationRateMs?: number | null;
   pingS?: number;
-  // Raw bytes of the pii_key_request sub-message — see encodePiiKeyRequest.
-  // Without it the car returns location_state EMPTY (measured 2026-07-26).
-  piiKeyRequest?: Uint8Array;
+  // Per-state rates, all int32 MILLISECONDS. A state is pushed IFF its rate > 0
+  // (RESPONSE-19 Q2, PROVEN). driveRateMs is the interesting one: DriveState
+  // carries speed and gear but NO live coordinates, so it is expected cleartext
+  // and therefore needs no PII key — the cheapest possible route to live speed.
+  driveRateMs?: number;
+  chargeRateMs?: number;
+  climateRateMs?: number;
+  closuresRateMs?: number;
+  // The PII key request — see piiKeyRequestFor. Embedded HERE (subscription
+  // field 13) is the only BLE-safe home; the standalone top-level form is
+  // hard-pinned to Hermes.
+  piiKeyRequest?: ReturnType<typeof piiKeyRequestFor>;
 }): ActionPayload {
   const durationS = opts?.durationS ?? VDS_DEFAULTS.durationS;
   // null (not undefined) means "omit the per-state rate entirely". That is a
@@ -599,10 +603,14 @@ export function vehicleDataSubscriptionAction(opts?: {
     bytes: encodeInfotainmentAction({
       vehicleDataSubscription: {
         subscriptionDurationS: durationS,
-        ...(locationRateMs === null ? {} : { locationStateMaxUpdateRateMs: locationRateMs }),
+        ...(locationRateMs === null ? {} : { LocationStateMaxUpdateRateMs: locationRateMs }),
         subscriptionPingS: pingS,
-        // Omitted entirely when absent — proto3 skips an empty bytes field, so
-        // the no-PII frame stays byte-identical to the golden vector.
+        ...(opts?.driveRateMs ? { DriveStateMaxUpdateRateMs: opts.driveRateMs } : {}),
+        ...(opts?.chargeRateMs ? { ChargeStateMaxUpdateRateMs: opts.chargeRateMs } : {}),
+        ...(opts?.climateRateMs ? { ClimateStateMaxUpdateRateMs: opts.climateRateMs } : {}),
+        ...(opts?.closuresRateMs ? { ClosuresStateMaxUpdateRateMs: opts.closuresRateMs } : {}),
+        // Omitted entirely when absent, so the no-PII frame stays byte-identical
+        // to the golden vector that proves our tags.
         ...(opts?.piiKeyRequest ? { piiKeyRequest: opts.piiKeyRequest } : {}),
       },
     }),

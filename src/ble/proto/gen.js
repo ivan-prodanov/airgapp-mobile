@@ -3251,9 +3251,22 @@ $root.CarServer = (function() {
          * Properties of a VehicleDataSubscription.
          * @typedef {Object} CarServer.VehicleDataSubscription.$Properties
          * @property {number|null} [subscriptionDurationS] VehicleDataSubscription subscriptionDurationS
-         * @property {number|null} [locationStateMaxUpdateRateMs] VehicleDataSubscription locationStateMaxUpdateRateMs
+         * @property {number|null} [GuiSettingsMaxUpdateRateMs] VehicleDataSubscription GuiSettingsMaxUpdateRateMs
+         * @property {number|null} [ChargeStateMaxUpdateRateMs] VehicleDataSubscription ChargeStateMaxUpdateRateMs
+         * @property {number|null} [ClimateStateMaxUpdateRateMs] VehicleDataSubscription ClimateStateMaxUpdateRateMs
+         * @property {number|null} [DriveStateMaxUpdateRateMs] VehicleDataSubscription DriveStateMaxUpdateRateMs
+         * @property {number|null} [VehicleStateMaxUpdateRateMs] VehicleDataSubscription VehicleStateMaxUpdateRateMs
+         * @property {number|null} [VehicleConfigMaxUpdateRateMs] VehicleDataSubscription VehicleConfigMaxUpdateRateMs
+         * @property {number|null} [LocationStateMaxUpdateRateMs] VehicleDataSubscription LocationStateMaxUpdateRateMs
+         * @property {number|null} [ClosuresStateMaxUpdateRateMs] VehicleDataSubscription ClosuresStateMaxUpdateRateMs
          * @property {number|null} [subscriptionPingS] VehicleDataSubscription subscriptionPingS
-         * @property {Uint8Array|null} [piiKeyRequest] VehicleDataSubscription piiKeyRequest
+         * @property {CarServer.PiiKeyRequest.$Properties|null} [piiKeyRequest] VehicleDataSubscription piiKeyRequest
+         * @property {number|null} [ParkedAccessoryStateMaxUpdateRateMs] VehicleDataSubscription ParkedAccessoryStateMaxUpdateRateMs
+         * @property {number|null} [ChargeScheduleStateMaxUpdateRateMs] VehicleDataSubscription ChargeScheduleStateMaxUpdateRateMs
+         * @property {number|null} [PreconditioningScheduleStateMaxUpdateRateMs] VehicleDataSubscription PreconditioningScheduleStateMaxUpdateRateMs
+         * @property {number|null} [AlertStateMaxUpdateRateMs] VehicleDataSubscription AlertStateMaxUpdateRateMs
+         * @property {number|null} [SuspensionStateMaxUpdateRateMs] VehicleDataSubscription SuspensionStateMaxUpdateRateMs
+         * @property {number|null} [ChildPresenceDetectionStateMaxUpdateRateMs] VehicleDataSubscription ChildPresenceDetectionStateMaxUpdateRateMs
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
 
@@ -3294,12 +3307,68 @@ $root.CarServer = (function() {
         VehicleDataSubscription.prototype.subscriptionDurationS = 0;
 
         /**
-         * VehicleDataSubscription locationStateMaxUpdateRateMs.
-         * @member {number} locationStateMaxUpdateRateMs
+         * VehicleDataSubscription GuiSettingsMaxUpdateRateMs.
+         * @member {number} GuiSettingsMaxUpdateRateMs
          * @memberof CarServer.VehicleDataSubscription
          * @instance
          */
-        VehicleDataSubscription.prototype.locationStateMaxUpdateRateMs = 0;
+        VehicleDataSubscription.prototype.GuiSettingsMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription ChargeStateMaxUpdateRateMs.
+         * @member {number} ChargeStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.ChargeStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription ClimateStateMaxUpdateRateMs.
+         * @member {number} ClimateStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.ClimateStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription DriveStateMaxUpdateRateMs.
+         * @member {number} DriveStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.DriveStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription VehicleStateMaxUpdateRateMs.
+         * @member {number} VehicleStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.VehicleStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription VehicleConfigMaxUpdateRateMs.
+         * @member {number} VehicleConfigMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.VehicleConfigMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription LocationStateMaxUpdateRateMs.
+         * @member {number} LocationStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.LocationStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription ClosuresStateMaxUpdateRateMs.
+         * @member {number} ClosuresStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.ClosuresStateMaxUpdateRateMs = 0;
 
         /**
          * VehicleDataSubscription subscriptionPingS.
@@ -3311,11 +3380,59 @@ $root.CarServer = (function() {
 
         /**
          * VehicleDataSubscription piiKeyRequest.
-         * @member {Uint8Array} piiKeyRequest
+         * @member {CarServer.PiiKeyRequest.$Properties|null|undefined} piiKeyRequest
          * @memberof CarServer.VehicleDataSubscription
          * @instance
          */
-        VehicleDataSubscription.prototype.piiKeyRequest = $util.newBuffer([]);
+        VehicleDataSubscription.prototype.piiKeyRequest = null;
+
+        /**
+         * VehicleDataSubscription ParkedAccessoryStateMaxUpdateRateMs.
+         * @member {number} ParkedAccessoryStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.ParkedAccessoryStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription ChargeScheduleStateMaxUpdateRateMs.
+         * @member {number} ChargeScheduleStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.ChargeScheduleStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription PreconditioningScheduleStateMaxUpdateRateMs.
+         * @member {number} PreconditioningScheduleStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.PreconditioningScheduleStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription AlertStateMaxUpdateRateMs.
+         * @member {number} AlertStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.AlertStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription SuspensionStateMaxUpdateRateMs.
+         * @member {number} SuspensionStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.SuspensionStateMaxUpdateRateMs = 0;
+
+        /**
+         * VehicleDataSubscription ChildPresenceDetectionStateMaxUpdateRateMs.
+         * @member {number} ChildPresenceDetectionStateMaxUpdateRateMs
+         * @memberof CarServer.VehicleDataSubscription
+         * @instance
+         */
+        VehicleDataSubscription.prototype.ChildPresenceDetectionStateMaxUpdateRateMs = 0;
 
         /**
          * Creates a new VehicleDataSubscription instance using the specified properties.
@@ -3350,13 +3467,39 @@ $root.CarServer = (function() {
             if (_depth > $util.recursionLimit)
                 throw $Error("max depth exceeded");
             if (message.subscriptionDurationS != null && $Object.hasOwnProperty.call(message, "subscriptionDurationS") && message.subscriptionDurationS !== 0)
-                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.subscriptionDurationS);
-            if (message.locationStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "locationStateMaxUpdateRateMs") && message.locationStateMaxUpdateRateMs !== 0)
-                writer.uint32(/* id 10, wireType 0 =*/80).uint32(message.locationStateMaxUpdateRateMs);
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.subscriptionDurationS);
+            if (message.GuiSettingsMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "GuiSettingsMaxUpdateRateMs") && message.GuiSettingsMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 4, wireType 0 =*/32).int32(message.GuiSettingsMaxUpdateRateMs);
+            if (message.ChargeStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChargeStateMaxUpdateRateMs") && message.ChargeStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 5, wireType 0 =*/40).int32(message.ChargeStateMaxUpdateRateMs);
+            if (message.ClimateStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ClimateStateMaxUpdateRateMs") && message.ClimateStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 6, wireType 0 =*/48).int32(message.ClimateStateMaxUpdateRateMs);
+            if (message.DriveStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "DriveStateMaxUpdateRateMs") && message.DriveStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 7, wireType 0 =*/56).int32(message.DriveStateMaxUpdateRateMs);
+            if (message.VehicleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "VehicleStateMaxUpdateRateMs") && message.VehicleStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 8, wireType 0 =*/64).int32(message.VehicleStateMaxUpdateRateMs);
+            if (message.VehicleConfigMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "VehicleConfigMaxUpdateRateMs") && message.VehicleConfigMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 9, wireType 0 =*/72).int32(message.VehicleConfigMaxUpdateRateMs);
+            if (message.LocationStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "LocationStateMaxUpdateRateMs") && message.LocationStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 10, wireType 0 =*/80).int32(message.LocationStateMaxUpdateRateMs);
+            if (message.ClosuresStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ClosuresStateMaxUpdateRateMs") && message.ClosuresStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 11, wireType 0 =*/88).int32(message.ClosuresStateMaxUpdateRateMs);
             if (message.subscriptionPingS != null && $Object.hasOwnProperty.call(message, "subscriptionPingS") && message.subscriptionPingS !== 0)
-                writer.uint32(/* id 12, wireType 0 =*/96).uint32(message.subscriptionPingS);
-            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest") && message.piiKeyRequest.length)
-                writer.uint32(/* id 13, wireType 2 =*/106).bytes(message.piiKeyRequest);
+                writer.uint32(/* id 12, wireType 0 =*/96).int32(message.subscriptionPingS);
+            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest"))
+                $root.CarServer.PiiKeyRequest.encode(message.piiKeyRequest, writer.uint32(/* id 13, wireType 2 =*/106).fork(), _depth + 1).ldelim();
+            if (message.ParkedAccessoryStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ParkedAccessoryStateMaxUpdateRateMs") && message.ParkedAccessoryStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 14, wireType 0 =*/112).int32(message.ParkedAccessoryStateMaxUpdateRateMs);
+            if (message.ChargeScheduleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChargeScheduleStateMaxUpdateRateMs") && message.ChargeScheduleStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 15, wireType 0 =*/120).int32(message.ChargeScheduleStateMaxUpdateRateMs);
+            if (message.PreconditioningScheduleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "PreconditioningScheduleStateMaxUpdateRateMs") && message.PreconditioningScheduleStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 16, wireType 0 =*/128).int32(message.PreconditioningScheduleStateMaxUpdateRateMs);
+            if (message.AlertStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "AlertStateMaxUpdateRateMs") && message.AlertStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 17, wireType 0 =*/136).int32(message.AlertStateMaxUpdateRateMs);
+            if (message.SuspensionStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "SuspensionStateMaxUpdateRateMs") && message.SuspensionStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 18, wireType 0 =*/144).int32(message.SuspensionStateMaxUpdateRateMs);
+            if (message.ChildPresenceDetectionStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChildPresenceDetectionStateMaxUpdateRateMs") && message.ChildPresenceDetectionStateMaxUpdateRateMs !== 0)
+                writer.uint32(/* id 19, wireType 0 =*/152).int32(message.ChildPresenceDetectionStateMaxUpdateRateMs);
             if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                 for (var i = 0; i < message.$unknowns.length; ++i)
                     writer.raw(message.$unknowns[i]);
@@ -3407,25 +3550,88 @@ $root.CarServer = (function() {
                 case 3: {
                         if (wireType !== 0)
                             break;
-                        if (value = reader.uint32())
+                        if (value = reader.int32())
                             message.subscriptionDurationS = value;
                         else
                             delete message.subscriptionDurationS;
                         continue;
                     }
+                case 4: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.GuiSettingsMaxUpdateRateMs = value;
+                        else
+                            delete message.GuiSettingsMaxUpdateRateMs;
+                        continue;
+                    }
+                case 5: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.ChargeStateMaxUpdateRateMs = value;
+                        else
+                            delete message.ChargeStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 6: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.ClimateStateMaxUpdateRateMs = value;
+                        else
+                            delete message.ClimateStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 7: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.DriveStateMaxUpdateRateMs = value;
+                        else
+                            delete message.DriveStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 8: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.VehicleStateMaxUpdateRateMs = value;
+                        else
+                            delete message.VehicleStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 9: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.VehicleConfigMaxUpdateRateMs = value;
+                        else
+                            delete message.VehicleConfigMaxUpdateRateMs;
+                        continue;
+                    }
                 case 10: {
                         if (wireType !== 0)
                             break;
-                        if (value = reader.uint32())
-                            message.locationStateMaxUpdateRateMs = value;
+                        if (value = reader.int32())
+                            message.LocationStateMaxUpdateRateMs = value;
                         else
-                            delete message.locationStateMaxUpdateRateMs;
+                            delete message.LocationStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 11: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.ClosuresStateMaxUpdateRateMs = value;
+                        else
+                            delete message.ClosuresStateMaxUpdateRateMs;
                         continue;
                     }
                 case 12: {
                         if (wireType !== 0)
                             break;
-                        if (value = reader.uint32())
+                        if (value = reader.int32())
                             message.subscriptionPingS = value;
                         else
                             delete message.subscriptionPingS;
@@ -3434,10 +3640,61 @@ $root.CarServer = (function() {
                 case 13: {
                         if (wireType !== 2)
                             break;
-                        if ((value = reader.bytes()).length)
-                            message.piiKeyRequest = value;
+                        message.piiKeyRequest = $root.CarServer.PiiKeyRequest.decode(reader, reader.uint32(), $undefined, _depth + 1, message.piiKeyRequest);
+                        continue;
+                    }
+                case 14: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.ParkedAccessoryStateMaxUpdateRateMs = value;
                         else
-                            delete message.piiKeyRequest;
+                            delete message.ParkedAccessoryStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 15: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.ChargeScheduleStateMaxUpdateRateMs = value;
+                        else
+                            delete message.ChargeScheduleStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 16: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.PreconditioningScheduleStateMaxUpdateRateMs = value;
+                        else
+                            delete message.PreconditioningScheduleStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 17: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.AlertStateMaxUpdateRateMs = value;
+                        else
+                            delete message.AlertStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 18: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.SuspensionStateMaxUpdateRateMs = value;
+                        else
+                            delete message.SuspensionStateMaxUpdateRateMs;
+                        continue;
+                    }
+                case 19: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.ChildPresenceDetectionStateMaxUpdateRateMs = value;
+                        else
+                            delete message.ChildPresenceDetectionStateMaxUpdateRateMs;
                         continue;
                     }
                 }
@@ -3486,15 +3743,56 @@ $root.CarServer = (function() {
             if (message.subscriptionDurationS != null && $Object.hasOwnProperty.call(message, "subscriptionDurationS"))
                 if (!$util.isInteger(message.subscriptionDurationS))
                     return "subscriptionDurationS: integer expected";
-            if (message.locationStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "locationStateMaxUpdateRateMs"))
-                if (!$util.isInteger(message.locationStateMaxUpdateRateMs))
-                    return "locationStateMaxUpdateRateMs: integer expected";
+            if (message.GuiSettingsMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "GuiSettingsMaxUpdateRateMs"))
+                if (!$util.isInteger(message.GuiSettingsMaxUpdateRateMs))
+                    return "GuiSettingsMaxUpdateRateMs: integer expected";
+            if (message.ChargeStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChargeStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.ChargeStateMaxUpdateRateMs))
+                    return "ChargeStateMaxUpdateRateMs: integer expected";
+            if (message.ClimateStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ClimateStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.ClimateStateMaxUpdateRateMs))
+                    return "ClimateStateMaxUpdateRateMs: integer expected";
+            if (message.DriveStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "DriveStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.DriveStateMaxUpdateRateMs))
+                    return "DriveStateMaxUpdateRateMs: integer expected";
+            if (message.VehicleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "VehicleStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.VehicleStateMaxUpdateRateMs))
+                    return "VehicleStateMaxUpdateRateMs: integer expected";
+            if (message.VehicleConfigMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "VehicleConfigMaxUpdateRateMs"))
+                if (!$util.isInteger(message.VehicleConfigMaxUpdateRateMs))
+                    return "VehicleConfigMaxUpdateRateMs: integer expected";
+            if (message.LocationStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "LocationStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.LocationStateMaxUpdateRateMs))
+                    return "LocationStateMaxUpdateRateMs: integer expected";
+            if (message.ClosuresStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ClosuresStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.ClosuresStateMaxUpdateRateMs))
+                    return "ClosuresStateMaxUpdateRateMs: integer expected";
             if (message.subscriptionPingS != null && $Object.hasOwnProperty.call(message, "subscriptionPingS"))
                 if (!$util.isInteger(message.subscriptionPingS))
                     return "subscriptionPingS: integer expected";
-            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest"))
-                if (!(message.piiKeyRequest && typeof message.piiKeyRequest.length === "number" || $util.isString(message.piiKeyRequest)))
-                    return "piiKeyRequest: buffer expected";
+            if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest")) {
+                var error = $root.CarServer.PiiKeyRequest.verify(message.piiKeyRequest, _depth + 1);
+                if (error)
+                    return "piiKeyRequest." + error;
+            }
+            if (message.ParkedAccessoryStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ParkedAccessoryStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.ParkedAccessoryStateMaxUpdateRateMs))
+                    return "ParkedAccessoryStateMaxUpdateRateMs: integer expected";
+            if (message.ChargeScheduleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChargeScheduleStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.ChargeScheduleStateMaxUpdateRateMs))
+                    return "ChargeScheduleStateMaxUpdateRateMs: integer expected";
+            if (message.PreconditioningScheduleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "PreconditioningScheduleStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.PreconditioningScheduleStateMaxUpdateRateMs))
+                    return "PreconditioningScheduleStateMaxUpdateRateMs: integer expected";
+            if (message.AlertStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "AlertStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.AlertStateMaxUpdateRateMs))
+                    return "AlertStateMaxUpdateRateMs: integer expected";
+            if (message.SuspensionStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "SuspensionStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.SuspensionStateMaxUpdateRateMs))
+                    return "SuspensionStateMaxUpdateRateMs: integer expected";
+            if (message.ChildPresenceDetectionStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChildPresenceDetectionStateMaxUpdateRateMs"))
+                if (!$util.isInteger(message.ChildPresenceDetectionStateMaxUpdateRateMs))
+                    return "ChildPresenceDetectionStateMaxUpdateRateMs: integer expected";
             return null;
         };
 
@@ -3518,19 +3816,57 @@ $root.CarServer = (function() {
             var message = new $root.CarServer.VehicleDataSubscription();
             if (object.subscriptionDurationS != null)
                 if ($Number(object.subscriptionDurationS) !== 0)
-                    message.subscriptionDurationS = object.subscriptionDurationS >>> 0;
-            if (object.locationStateMaxUpdateRateMs != null)
-                if ($Number(object.locationStateMaxUpdateRateMs) !== 0)
-                    message.locationStateMaxUpdateRateMs = object.locationStateMaxUpdateRateMs >>> 0;
+                    message.subscriptionDurationS = object.subscriptionDurationS | 0;
+            if (object.GuiSettingsMaxUpdateRateMs != null)
+                if ($Number(object.GuiSettingsMaxUpdateRateMs) !== 0)
+                    message.GuiSettingsMaxUpdateRateMs = object.GuiSettingsMaxUpdateRateMs | 0;
+            if (object.ChargeStateMaxUpdateRateMs != null)
+                if ($Number(object.ChargeStateMaxUpdateRateMs) !== 0)
+                    message.ChargeStateMaxUpdateRateMs = object.ChargeStateMaxUpdateRateMs | 0;
+            if (object.ClimateStateMaxUpdateRateMs != null)
+                if ($Number(object.ClimateStateMaxUpdateRateMs) !== 0)
+                    message.ClimateStateMaxUpdateRateMs = object.ClimateStateMaxUpdateRateMs | 0;
+            if (object.DriveStateMaxUpdateRateMs != null)
+                if ($Number(object.DriveStateMaxUpdateRateMs) !== 0)
+                    message.DriveStateMaxUpdateRateMs = object.DriveStateMaxUpdateRateMs | 0;
+            if (object.VehicleStateMaxUpdateRateMs != null)
+                if ($Number(object.VehicleStateMaxUpdateRateMs) !== 0)
+                    message.VehicleStateMaxUpdateRateMs = object.VehicleStateMaxUpdateRateMs | 0;
+            if (object.VehicleConfigMaxUpdateRateMs != null)
+                if ($Number(object.VehicleConfigMaxUpdateRateMs) !== 0)
+                    message.VehicleConfigMaxUpdateRateMs = object.VehicleConfigMaxUpdateRateMs | 0;
+            if (object.LocationStateMaxUpdateRateMs != null)
+                if ($Number(object.LocationStateMaxUpdateRateMs) !== 0)
+                    message.LocationStateMaxUpdateRateMs = object.LocationStateMaxUpdateRateMs | 0;
+            if (object.ClosuresStateMaxUpdateRateMs != null)
+                if ($Number(object.ClosuresStateMaxUpdateRateMs) !== 0)
+                    message.ClosuresStateMaxUpdateRateMs = object.ClosuresStateMaxUpdateRateMs | 0;
             if (object.subscriptionPingS != null)
                 if ($Number(object.subscriptionPingS) !== 0)
-                    message.subscriptionPingS = object.subscriptionPingS >>> 0;
-            if (object.piiKeyRequest != null)
-                if (object.piiKeyRequest.length)
-                    if (typeof object.piiKeyRequest === "string")
-                        $util.base64.decode(object.piiKeyRequest, message.piiKeyRequest = $util.newBuffer($util.base64.length(object.piiKeyRequest)), 0);
-                    else if (object.piiKeyRequest.length >= 0)
-                        message.piiKeyRequest = object.piiKeyRequest;
+                    message.subscriptionPingS = object.subscriptionPingS | 0;
+            if (object.piiKeyRequest != null) {
+                if (!$util.isObject(object.piiKeyRequest))
+                    throw $TypeError(".CarServer.VehicleDataSubscription.piiKeyRequest: object expected");
+                message.piiKeyRequest = $root.CarServer.PiiKeyRequest.fromObject(object.piiKeyRequest, _depth + 1);
+            }
+            if (object.ParkedAccessoryStateMaxUpdateRateMs != null)
+                if ($Number(object.ParkedAccessoryStateMaxUpdateRateMs) !== 0)
+                    message.ParkedAccessoryStateMaxUpdateRateMs = object.ParkedAccessoryStateMaxUpdateRateMs | 0;
+            if (object.ChargeScheduleStateMaxUpdateRateMs != null)
+                if ($Number(object.ChargeScheduleStateMaxUpdateRateMs) !== 0)
+                    message.ChargeScheduleStateMaxUpdateRateMs = object.ChargeScheduleStateMaxUpdateRateMs | 0;
+            if (object.PreconditioningScheduleStateMaxUpdateRateMs != null)
+                if ($Number(object.PreconditioningScheduleStateMaxUpdateRateMs) !== 0)
+                    message.PreconditioningScheduleStateMaxUpdateRateMs = object.PreconditioningScheduleStateMaxUpdateRateMs | 0;
+            if (object.AlertStateMaxUpdateRateMs != null)
+                if ($Number(object.AlertStateMaxUpdateRateMs) !== 0)
+                    message.AlertStateMaxUpdateRateMs = object.AlertStateMaxUpdateRateMs | 0;
+            if (object.SuspensionStateMaxUpdateRateMs != null)
+                if ($Number(object.SuspensionStateMaxUpdateRateMs) !== 0)
+                    message.SuspensionStateMaxUpdateRateMs = object.SuspensionStateMaxUpdateRateMs | 0;
+            if (object.ChildPresenceDetectionStateMaxUpdateRateMs != null)
+                if ($Number(object.ChildPresenceDetectionStateMaxUpdateRateMs) !== 0)
+                    message.ChildPresenceDetectionStateMaxUpdateRateMs = object.ChildPresenceDetectionStateMaxUpdateRateMs | 0;
             return message;
         };
 
@@ -3553,24 +3889,57 @@ $root.CarServer = (function() {
             var object = {};
             if (options.defaults) {
                 object.subscriptionDurationS = 0;
-                object.locationStateMaxUpdateRateMs = 0;
+                object.GuiSettingsMaxUpdateRateMs = 0;
+                object.ChargeStateMaxUpdateRateMs = 0;
+                object.ClimateStateMaxUpdateRateMs = 0;
+                object.DriveStateMaxUpdateRateMs = 0;
+                object.VehicleStateMaxUpdateRateMs = 0;
+                object.VehicleConfigMaxUpdateRateMs = 0;
+                object.LocationStateMaxUpdateRateMs = 0;
+                object.ClosuresStateMaxUpdateRateMs = 0;
                 object.subscriptionPingS = 0;
-                if (options.bytes === $String)
-                    object.piiKeyRequest = "";
-                else {
-                    object.piiKeyRequest = [];
-                    if (options.bytes !== $Array)
-                        object.piiKeyRequest = $util.newBuffer(object.piiKeyRequest);
-                }
+                object.piiKeyRequest = null;
+                object.ParkedAccessoryStateMaxUpdateRateMs = 0;
+                object.ChargeScheduleStateMaxUpdateRateMs = 0;
+                object.PreconditioningScheduleStateMaxUpdateRateMs = 0;
+                object.AlertStateMaxUpdateRateMs = 0;
+                object.SuspensionStateMaxUpdateRateMs = 0;
+                object.ChildPresenceDetectionStateMaxUpdateRateMs = 0;
             }
             if (message.subscriptionDurationS != null && $Object.hasOwnProperty.call(message, "subscriptionDurationS"))
                 object.subscriptionDurationS = message.subscriptionDurationS;
-            if (message.locationStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "locationStateMaxUpdateRateMs"))
-                object.locationStateMaxUpdateRateMs = message.locationStateMaxUpdateRateMs;
+            if (message.GuiSettingsMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "GuiSettingsMaxUpdateRateMs"))
+                object.GuiSettingsMaxUpdateRateMs = message.GuiSettingsMaxUpdateRateMs;
+            if (message.ChargeStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChargeStateMaxUpdateRateMs"))
+                object.ChargeStateMaxUpdateRateMs = message.ChargeStateMaxUpdateRateMs;
+            if (message.ClimateStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ClimateStateMaxUpdateRateMs"))
+                object.ClimateStateMaxUpdateRateMs = message.ClimateStateMaxUpdateRateMs;
+            if (message.DriveStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "DriveStateMaxUpdateRateMs"))
+                object.DriveStateMaxUpdateRateMs = message.DriveStateMaxUpdateRateMs;
+            if (message.VehicleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "VehicleStateMaxUpdateRateMs"))
+                object.VehicleStateMaxUpdateRateMs = message.VehicleStateMaxUpdateRateMs;
+            if (message.VehicleConfigMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "VehicleConfigMaxUpdateRateMs"))
+                object.VehicleConfigMaxUpdateRateMs = message.VehicleConfigMaxUpdateRateMs;
+            if (message.LocationStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "LocationStateMaxUpdateRateMs"))
+                object.LocationStateMaxUpdateRateMs = message.LocationStateMaxUpdateRateMs;
+            if (message.ClosuresStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ClosuresStateMaxUpdateRateMs"))
+                object.ClosuresStateMaxUpdateRateMs = message.ClosuresStateMaxUpdateRateMs;
             if (message.subscriptionPingS != null && $Object.hasOwnProperty.call(message, "subscriptionPingS"))
                 object.subscriptionPingS = message.subscriptionPingS;
             if (message.piiKeyRequest != null && $Object.hasOwnProperty.call(message, "piiKeyRequest"))
-                object.piiKeyRequest = options.bytes === $String ? $util.base64.encode(message.piiKeyRequest, 0, message.piiKeyRequest.length) : options.bytes === $Array ? $Array.prototype.slice.call(message.piiKeyRequest) : message.piiKeyRequest;
+                object.piiKeyRequest = $root.CarServer.PiiKeyRequest.toObject(message.piiKeyRequest, options, _depth + 1);
+            if (message.ParkedAccessoryStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ParkedAccessoryStateMaxUpdateRateMs"))
+                object.ParkedAccessoryStateMaxUpdateRateMs = message.ParkedAccessoryStateMaxUpdateRateMs;
+            if (message.ChargeScheduleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChargeScheduleStateMaxUpdateRateMs"))
+                object.ChargeScheduleStateMaxUpdateRateMs = message.ChargeScheduleStateMaxUpdateRateMs;
+            if (message.PreconditioningScheduleStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "PreconditioningScheduleStateMaxUpdateRateMs"))
+                object.PreconditioningScheduleStateMaxUpdateRateMs = message.PreconditioningScheduleStateMaxUpdateRateMs;
+            if (message.AlertStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "AlertStateMaxUpdateRateMs"))
+                object.AlertStateMaxUpdateRateMs = message.AlertStateMaxUpdateRateMs;
+            if (message.SuspensionStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "SuspensionStateMaxUpdateRateMs"))
+                object.SuspensionStateMaxUpdateRateMs = message.SuspensionStateMaxUpdateRateMs;
+            if (message.ChildPresenceDetectionStateMaxUpdateRateMs != null && $Object.hasOwnProperty.call(message, "ChildPresenceDetectionStateMaxUpdateRateMs"))
+                object.ChildPresenceDetectionStateMaxUpdateRateMs = message.ChildPresenceDetectionStateMaxUpdateRateMs;
             return object;
         };
 
@@ -3600,6 +3969,566 @@ $root.CarServer = (function() {
         };
 
         return VehicleDataSubscription;
+    })();
+
+    CarServer.PiiKeyRequest = (function() {
+
+        /**
+         * Properties of a PiiKeyRequest.
+         * @typedef {Object} CarServer.PiiKeyRequest.$Properties
+         * @property {string|null} [subscriberPublicKey] PiiKeyRequest subscriberPublicKey
+         * @property {google.protobuf.Timestamp.$Properties|null} [piiKeyExpiration] PiiKeyRequest piiKeyExpiration
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+
+        /**
+         * Properties of a PiiKeyRequest.
+         * @memberof CarServer
+         * @interface IPiiKeyRequest
+         * @augments CarServer.PiiKeyRequest.$Properties
+         * @deprecated Use CarServer.PiiKeyRequest.$Properties instead.
+         */
+
+        /**
+         * Shape of a PiiKeyRequest.
+         * @typedef {CarServer.PiiKeyRequest.$Properties} CarServer.PiiKeyRequest.$Shape
+         */
+
+        /**
+         * Constructs a new PiiKeyRequest.
+         * @memberof CarServer
+         * @classdesc Represents a PiiKeyRequest.
+         * @constructor
+         * @param {CarServer.PiiKeyRequest.$Properties=} [properties] Properties to set
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+        var PiiKeyRequest = function (properties) {
+            if (properties)
+                for (var keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        };
+
+        /**
+         * PiiKeyRequest subscriberPublicKey.
+         * @member {string} subscriberPublicKey
+         * @memberof CarServer.PiiKeyRequest
+         * @instance
+         */
+        PiiKeyRequest.prototype.subscriberPublicKey = "";
+
+        /**
+         * PiiKeyRequest piiKeyExpiration.
+         * @member {google.protobuf.Timestamp.$Properties|null|undefined} piiKeyExpiration
+         * @memberof CarServer.PiiKeyRequest
+         * @instance
+         */
+        PiiKeyRequest.prototype.piiKeyExpiration = null;
+
+        /**
+         * Creates a new PiiKeyRequest instance using the specified properties.
+         * @function create
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {CarServer.PiiKeyRequest.$Properties=} [properties] Properties to set
+         * @returns {CarServer.PiiKeyRequest} PiiKeyRequest instance
+         * @type {{
+         *   (properties: CarServer.PiiKeyRequest.$Shape): CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape;
+         *   (properties?: CarServer.PiiKeyRequest.$Properties): CarServer.PiiKeyRequest;
+         * }}
+         */
+        PiiKeyRequest.create = function(properties) {
+            return new PiiKeyRequest(properties);
+        };
+
+        /**
+         * Encodes the specified PiiKeyRequest message. Does not implicitly {@link CarServer.PiiKeyRequest.verify|verify} messages.
+         * @function encode
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {CarServer.PiiKeyRequest.$Properties} message PiiKeyRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PiiKeyRequest.encode = function (message, writer, _depth) {
+            if (!writer)
+                writer = $Writer.create();
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            if (message.subscriberPublicKey != null && $Object.hasOwnProperty.call(message, "subscriberPublicKey") && message.subscriberPublicKey !== "")
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.subscriberPublicKey);
+            if (message.piiKeyExpiration != null && $Object.hasOwnProperty.call(message, "piiKeyExpiration"))
+                $root.google.protobuf.Timestamp.encode(message.piiKeyExpiration, writer.uint32(/* id 4, wireType 2 =*/34).fork(), _depth + 1).ldelim();
+            if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                for (var i = 0; i < message.$unknowns.length; ++i)
+                    writer.raw(message.$unknowns[i]);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PiiKeyRequest message, length delimited. Does not implicitly {@link CarServer.PiiKeyRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {CarServer.PiiKeyRequest.$Properties} message PiiKeyRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PiiKeyRequest.encodeDelimited = function(message, writer) {
+            return this.encode(message, (writer || $Writer.create()).fork()).ldelim();
+        };
+
+        /**
+         * Decodes a PiiKeyRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape} PiiKeyRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PiiKeyRequest.decode = function (reader, length, _end, _depth, _target) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $Reader.recursionLimit)
+                throw $Error("max depth exceeded");
+            var end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.CarServer.PiiKeyRequest(), value;
+            while (reader.pos < end) {
+                var start = reader.pos;
+                var tag = reader.tag();
+                if (tag === _end) {
+                    _end = $undefined;
+                    break;
+                }
+                var wireType = tag & 7;
+                switch (tag >>>= 3) {
+                case 2: {
+                        if (wireType !== 2)
+                            break;
+                        if ((value = reader.stringVerify()).length)
+                            message.subscriberPublicKey = value;
+                        else
+                            delete message.subscriberPublicKey;
+                        continue;
+                    }
+                case 4: {
+                        if (wireType !== 2)
+                            break;
+                        message.piiKeyExpiration = $root.google.protobuf.Timestamp.decode(reader, reader.uint32(), $undefined, _depth + 1, message.piiKeyExpiration);
+                        continue;
+                    }
+                }
+                reader.skipType(wireType, _depth, tag);
+                if (!reader.discardUnknown) {
+                    $util.makeProp(message, "$unknowns", false);
+                    (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                }
+            }
+            if (_end !== $undefined)
+                throw $Error("missing end group");
+            return message;
+        };
+
+        /**
+         * Decodes a PiiKeyRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape} PiiKeyRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PiiKeyRequest.decodeDelimited = function(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PiiKeyRequest message.
+         * @function verify
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PiiKeyRequest.verify = function (message, _depth) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                return "max depth exceeded";
+            if (message.subscriberPublicKey != null && $Object.hasOwnProperty.call(message, "subscriberPublicKey"))
+                if (!$util.isString(message.subscriberPublicKey))
+                    return "subscriberPublicKey: string expected";
+            if (message.piiKeyExpiration != null && $Object.hasOwnProperty.call(message, "piiKeyExpiration")) {
+                var error = $root.google.protobuf.Timestamp.verify(message.piiKeyExpiration, _depth + 1);
+                if (error)
+                    return "piiKeyExpiration." + error;
+            }
+            return null;
+        };
+
+        /**
+         * Creates a PiiKeyRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {CarServer.PiiKeyRequest} PiiKeyRequest
+         */
+        PiiKeyRequest.fromObject = function (object, _depth) {
+            if (object instanceof $root.CarServer.PiiKeyRequest)
+                return object;
+            if (!$util.isObject(object))
+                throw $TypeError(".CarServer.PiiKeyRequest: object expected");
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var message = new $root.CarServer.PiiKeyRequest();
+            if (object.subscriberPublicKey != null)
+                if (typeof object.subscriberPublicKey !== "string" || object.subscriberPublicKey.length)
+                    message.subscriberPublicKey = $String(object.subscriberPublicKey);
+            if (object.piiKeyExpiration != null) {
+                if (!$util.isObject(object.piiKeyExpiration))
+                    throw $TypeError(".CarServer.PiiKeyRequest.piiKeyExpiration: object expected");
+                message.piiKeyExpiration = $root.google.protobuf.Timestamp.fromObject(object.piiKeyExpiration, _depth + 1);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a PiiKeyRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {CarServer.PiiKeyRequest} message PiiKeyRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PiiKeyRequest.toObject = function (message, options, _depth) {
+            if (!options)
+                options = {};
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var object = {};
+            if (options.defaults) {
+                object.subscriberPublicKey = "";
+                object.piiKeyExpiration = null;
+            }
+            if (message.subscriberPublicKey != null && $Object.hasOwnProperty.call(message, "subscriberPublicKey"))
+                object.subscriberPublicKey = message.subscriberPublicKey;
+            if (message.piiKeyExpiration != null && $Object.hasOwnProperty.call(message, "piiKeyExpiration"))
+                object.piiKeyExpiration = $root.google.protobuf.Timestamp.toObject(message.piiKeyExpiration, options, _depth + 1);
+            return object;
+        };
+
+        /**
+         * Converts this PiiKeyRequest to JSON.
+         * @function toJSON
+         * @memberof CarServer.PiiKeyRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PiiKeyRequest.prototype.toJSON = function() {
+            return PiiKeyRequest.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the type url for PiiKeyRequest
+         * @function getTypeUrl
+         * @memberof CarServer.PiiKeyRequest
+         * @static
+         * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns {string} The type url
+         */
+        PiiKeyRequest.getTypeUrl = function(prefix) {
+            if (prefix === $undefined)
+                prefix = "type.googleapis.com";
+            return prefix + "/CarServer.PiiKeyRequest";
+        };
+
+        return PiiKeyRequest;
+    })();
+
+    CarServer.PiiKeyResponse = (function() {
+
+        /**
+         * Properties of a PiiKeyResponse.
+         * @typedef {Object} CarServer.PiiKeyResponse.$Properties
+         * @property {Uint8Array|null} [encryptedPiiKey] PiiKeyResponse encryptedPiiKey
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+
+        /**
+         * Properties of a PiiKeyResponse.
+         * @memberof CarServer
+         * @interface IPiiKeyResponse
+         * @augments CarServer.PiiKeyResponse.$Properties
+         * @deprecated Use CarServer.PiiKeyResponse.$Properties instead.
+         */
+
+        /**
+         * Shape of a PiiKeyResponse.
+         * @typedef {CarServer.PiiKeyResponse.$Properties} CarServer.PiiKeyResponse.$Shape
+         */
+
+        /**
+         * Constructs a new PiiKeyResponse.
+         * @memberof CarServer
+         * @classdesc Represents a PiiKeyResponse.
+         * @constructor
+         * @param {CarServer.PiiKeyResponse.$Properties=} [properties] Properties to set
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+        var PiiKeyResponse = function (properties) {
+            if (properties)
+                for (var keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        };
+
+        /**
+         * PiiKeyResponse encryptedPiiKey.
+         * @member {Uint8Array} encryptedPiiKey
+         * @memberof CarServer.PiiKeyResponse
+         * @instance
+         */
+        PiiKeyResponse.prototype.encryptedPiiKey = $util.newBuffer([]);
+
+        /**
+         * Creates a new PiiKeyResponse instance using the specified properties.
+         * @function create
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {CarServer.PiiKeyResponse.$Properties=} [properties] Properties to set
+         * @returns {CarServer.PiiKeyResponse} PiiKeyResponse instance
+         * @type {{
+         *   (properties: CarServer.PiiKeyResponse.$Shape): CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape;
+         *   (properties?: CarServer.PiiKeyResponse.$Properties): CarServer.PiiKeyResponse;
+         * }}
+         */
+        PiiKeyResponse.create = function(properties) {
+            return new PiiKeyResponse(properties);
+        };
+
+        /**
+         * Encodes the specified PiiKeyResponse message. Does not implicitly {@link CarServer.PiiKeyResponse.verify|verify} messages.
+         * @function encode
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {CarServer.PiiKeyResponse.$Properties} message PiiKeyResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PiiKeyResponse.encode = function (message, writer, _depth) {
+            if (!writer)
+                writer = $Writer.create();
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            if (message.encryptedPiiKey != null && $Object.hasOwnProperty.call(message, "encryptedPiiKey") && message.encryptedPiiKey.length)
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.encryptedPiiKey);
+            if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                for (var i = 0; i < message.$unknowns.length; ++i)
+                    writer.raw(message.$unknowns[i]);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified PiiKeyResponse message, length delimited. Does not implicitly {@link CarServer.PiiKeyResponse.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {CarServer.PiiKeyResponse.$Properties} message PiiKeyResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        PiiKeyResponse.encodeDelimited = function(message, writer) {
+            return this.encode(message, (writer || $Writer.create()).fork()).ldelim();
+        };
+
+        /**
+         * Decodes a PiiKeyResponse message from the specified reader or buffer.
+         * @function decode
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape} PiiKeyResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PiiKeyResponse.decode = function (reader, length, _end, _depth, _target) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $Reader.recursionLimit)
+                throw $Error("max depth exceeded");
+            var end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.CarServer.PiiKeyResponse(), value;
+            while (reader.pos < end) {
+                var start = reader.pos;
+                var tag = reader.tag();
+                if (tag === _end) {
+                    _end = $undefined;
+                    break;
+                }
+                var wireType = tag & 7;
+                switch (tag >>>= 3) {
+                case 2: {
+                        if (wireType !== 2)
+                            break;
+                        if ((value = reader.bytes()).length)
+                            message.encryptedPiiKey = value;
+                        else
+                            delete message.encryptedPiiKey;
+                        continue;
+                    }
+                }
+                reader.skipType(wireType, _depth, tag);
+                if (!reader.discardUnknown) {
+                    $util.makeProp(message, "$unknowns", false);
+                    (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                }
+            }
+            if (_end !== $undefined)
+                throw $Error("missing end group");
+            return message;
+        };
+
+        /**
+         * Decodes a PiiKeyResponse message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape} PiiKeyResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        PiiKeyResponse.decodeDelimited = function(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a PiiKeyResponse message.
+         * @function verify
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        PiiKeyResponse.verify = function (message, _depth) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                return "max depth exceeded";
+            if (message.encryptedPiiKey != null && $Object.hasOwnProperty.call(message, "encryptedPiiKey"))
+                if (!(message.encryptedPiiKey && typeof message.encryptedPiiKey.length === "number" || $util.isString(message.encryptedPiiKey)))
+                    return "encryptedPiiKey: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a PiiKeyResponse message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {CarServer.PiiKeyResponse} PiiKeyResponse
+         */
+        PiiKeyResponse.fromObject = function (object, _depth) {
+            if (object instanceof $root.CarServer.PiiKeyResponse)
+                return object;
+            if (!$util.isObject(object))
+                throw $TypeError(".CarServer.PiiKeyResponse: object expected");
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var message = new $root.CarServer.PiiKeyResponse();
+            if (object.encryptedPiiKey != null)
+                if (object.encryptedPiiKey.length)
+                    if (typeof object.encryptedPiiKey === "string")
+                        $util.base64.decode(object.encryptedPiiKey, message.encryptedPiiKey = $util.newBuffer($util.base64.length(object.encryptedPiiKey)), 0);
+                    else if (object.encryptedPiiKey.length >= 0)
+                        message.encryptedPiiKey = object.encryptedPiiKey;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a PiiKeyResponse message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {CarServer.PiiKeyResponse} message PiiKeyResponse
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        PiiKeyResponse.toObject = function (message, options, _depth) {
+            if (!options)
+                options = {};
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var object = {};
+            if (options.defaults)
+                if (options.bytes === $String)
+                    object.encryptedPiiKey = "";
+                else {
+                    object.encryptedPiiKey = [];
+                    if (options.bytes !== $Array)
+                        object.encryptedPiiKey = $util.newBuffer(object.encryptedPiiKey);
+                }
+            if (message.encryptedPiiKey != null && $Object.hasOwnProperty.call(message, "encryptedPiiKey"))
+                object.encryptedPiiKey = options.bytes === $String ? $util.base64.encode(message.encryptedPiiKey, 0, message.encryptedPiiKey.length) : options.bytes === $Array ? $Array.prototype.slice.call(message.encryptedPiiKey) : message.encryptedPiiKey;
+            return object;
+        };
+
+        /**
+         * Converts this PiiKeyResponse to JSON.
+         * @function toJSON
+         * @memberof CarServer.PiiKeyResponse
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        PiiKeyResponse.prototype.toJSON = function() {
+            return PiiKeyResponse.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the type url for PiiKeyResponse
+         * @function getTypeUrl
+         * @memberof CarServer.PiiKeyResponse
+         * @static
+         * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns {string} The type url
+         */
+        PiiKeyResponse.getTypeUrl = function(prefix) {
+            if (prefix === $undefined)
+                prefix = "type.googleapis.com";
+            return prefix + "/CarServer.PiiKeyResponse";
+        };
+
+        return PiiKeyResponse;
     })();
 
     CarServer.GetVehicleData = (function() {
@@ -30351,6 +31280,8 @@ $root.CarServer = (function() {
          * @property {CarServer.DriveState.$Properties|null} [driveState] VehicleData driveState
          * @property {CarServer.LocationState.$Properties|null} [locationState] VehicleData locationState
          * @property {CarServer.ClosuresState.$Properties|null} [closuresState] VehicleData closuresState
+         * @property {Array.<CarServer.EncryptedData.$Properties>|null} [encryptedData] VehicleData encryptedData
+         * @property {Array.<CarServer.PiiKeyResponse.$Properties>|null} [piiKeyResponse] VehicleData piiKeyResponse
          * @property {CarServer.ChargeScheduleState.$Properties|null} [chargeScheduleState] VehicleData chargeScheduleState
          * @property {CarServer.PreconditioningScheduleState.$Properties|null} [preconditioningScheduleState] VehicleData preconditioningScheduleState
          * @property {CarServer.TirePressureState.$Properties|null} [tirePressureState] VehicleData tirePressureState
@@ -30377,6 +31308,8 @@ $root.CarServer = (function() {
          *   driveState?: CarServer.DriveState.$Shape|null;
          *   locationState?: CarServer.LocationState.$Shape|null;
          *   closuresState?: CarServer.ClosuresState.$Shape|null;
+         *   encryptedData?: Array.<CarServer.EncryptedData.$Shape>|null;
+         *   piiKeyResponse?: Array.<CarServer.PiiKeyResponse.$Shape>|null;
          *   chargeScheduleState?: CarServer.ChargeScheduleState.$Shape|null;
          *   preconditioningScheduleState?: CarServer.PreconditioningScheduleState.$Shape|null;
          *   tirePressureState?: CarServer.TirePressureState.$Shape|null;
@@ -30397,6 +31330,8 @@ $root.CarServer = (function() {
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
         var VehicleData = function (properties) {
+            this.encryptedData = [];
+            this.piiKeyResponse = [];
             if (properties)
                 for (var keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null && keys[i] !== "__proto__")
@@ -30442,6 +31377,22 @@ $root.CarServer = (function() {
          * @instance
          */
         VehicleData.prototype.closuresState = null;
+
+        /**
+         * VehicleData encryptedData.
+         * @member {Array.<CarServer.EncryptedData.$Properties>} encryptedData
+         * @memberof CarServer.VehicleData
+         * @instance
+         */
+        VehicleData.prototype.encryptedData = $util.emptyArray;
+
+        /**
+         * VehicleData piiKeyResponse.
+         * @member {Array.<CarServer.PiiKeyResponse.$Properties>} piiKeyResponse
+         * @memberof CarServer.VehicleData
+         * @instance
+         */
+        VehicleData.prototype.piiKeyResponse = $util.emptyArray;
 
         /**
          * VehicleData chargeScheduleState.
@@ -30541,6 +31492,9 @@ $root.CarServer = (function() {
                 $root.CarServer.LocationState.encode(message.locationState, writer.uint32(/* id 8, wireType 2 =*/66).fork(), _depth + 1).ldelim();
             if (message.closuresState != null && $Object.hasOwnProperty.call(message, "closuresState"))
                 $root.CarServer.ClosuresState.encode(message.closuresState, writer.uint32(/* id 9, wireType 2 =*/74).fork(), _depth + 1).ldelim();
+            if (message.encryptedData != null && message.encryptedData.length)
+                for (var i = 0; i < message.encryptedData.length; ++i)
+                    $root.CarServer.EncryptedData.encode(message.encryptedData[i], writer.uint32(/* id 11, wireType 2 =*/90).fork(), _depth + 1).ldelim();
             if (message.chargeScheduleState != null && $Object.hasOwnProperty.call(message, "chargeScheduleState"))
                 $root.CarServer.ChargeScheduleState.encode(message.chargeScheduleState, writer.uint32(/* id 15, wireType 2 =*/122).fork(), _depth + 1).ldelim();
             if (message.preconditioningScheduleState != null && $Object.hasOwnProperty.call(message, "preconditioningScheduleState"))
@@ -30555,6 +31509,9 @@ $root.CarServer = (function() {
                 $root.CarServer.SoftwareUpdateState.encode(message.softwareUpdateState, writer.uint32(/* id 23, wireType 2 =*/186).fork(), _depth + 1).ldelim();
             if (message.parentalControlsState != null && $Object.hasOwnProperty.call(message, "parentalControlsState"))
                 $root.CarServer.ParentalControlsState.encode(message.parentalControlsState, writer.uint32(/* id 24, wireType 2 =*/194).fork(), _depth + 1).ldelim();
+            if (message.piiKeyResponse != null && message.piiKeyResponse.length)
+                for (var i = 0; i < message.piiKeyResponse.length; ++i)
+                    $root.CarServer.PiiKeyResponse.encode(message.piiKeyResponse[i], writer.uint32(/* id 900, wireType 2 =*/7202).fork(), _depth + 1).ldelim();
             if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                 for (var i = 0; i < message.$unknowns.length; ++i)
                     writer.raw(message.$unknowns[i]);
@@ -30630,6 +31587,22 @@ $root.CarServer = (function() {
                         if (wireType !== 2)
                             break;
                         message.closuresState = $root.CarServer.ClosuresState.decode(reader, reader.uint32(), $undefined, _depth + 1, message.closuresState);
+                        continue;
+                    }
+                case 11: {
+                        if (wireType !== 2)
+                            break;
+                        if (!(message.encryptedData && message.encryptedData.length))
+                            message.encryptedData = [];
+                        message.encryptedData.push($root.CarServer.EncryptedData.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                        continue;
+                    }
+                case 900: {
+                        if (wireType !== 2)
+                            break;
+                        if (!(message.piiKeyResponse && message.piiKeyResponse.length))
+                            message.piiKeyResponse = [];
+                        message.piiKeyResponse.push($root.CarServer.PiiKeyResponse.decode(reader, reader.uint32(), $undefined, _depth + 1));
                         continue;
                     }
                 case 15: {
@@ -30742,6 +31715,24 @@ $root.CarServer = (function() {
                 if (error)
                     return "closuresState." + error;
             }
+            if (message.encryptedData != null && $Object.hasOwnProperty.call(message, "encryptedData")) {
+                if (!$Array.isArray(message.encryptedData))
+                    return "encryptedData: array expected";
+                for (var i = 0; i < message.encryptedData.length; ++i) {
+                    var error = $root.CarServer.EncryptedData.verify(message.encryptedData[i], _depth + 1);
+                    if (error)
+                        return "encryptedData." + error;
+                }
+            }
+            if (message.piiKeyResponse != null && $Object.hasOwnProperty.call(message, "piiKeyResponse")) {
+                if (!$Array.isArray(message.piiKeyResponse))
+                    return "piiKeyResponse: array expected";
+                for (var i = 0; i < message.piiKeyResponse.length; ++i) {
+                    var error = $root.CarServer.PiiKeyResponse.verify(message.piiKeyResponse[i], _depth + 1);
+                    if (error)
+                        return "piiKeyResponse." + error;
+                }
+            }
             if (message.chargeScheduleState != null && $Object.hasOwnProperty.call(message, "chargeScheduleState")) {
                 var error = $root.CarServer.ChargeScheduleState.verify(message.chargeScheduleState, _depth + 1);
                 if (error)
@@ -30823,6 +31814,26 @@ $root.CarServer = (function() {
                     throw $TypeError(".CarServer.VehicleData.closuresState: object expected");
                 message.closuresState = $root.CarServer.ClosuresState.fromObject(object.closuresState, _depth + 1);
             }
+            if (object.encryptedData) {
+                if (!$Array.isArray(object.encryptedData))
+                    throw $TypeError(".CarServer.VehicleData.encryptedData: array expected");
+                message.encryptedData = $Array(object.encryptedData.length);
+                for (var i = 0; i < object.encryptedData.length; ++i) {
+                    if (!$util.isObject(object.encryptedData[i]))
+                        throw $TypeError(".CarServer.VehicleData.encryptedData: object expected");
+                    message.encryptedData[i] = $root.CarServer.EncryptedData.fromObject(object.encryptedData[i], _depth + 1);
+                }
+            }
+            if (object.piiKeyResponse) {
+                if (!$Array.isArray(object.piiKeyResponse))
+                    throw $TypeError(".CarServer.VehicleData.piiKeyResponse: array expected");
+                message.piiKeyResponse = $Array(object.piiKeyResponse.length);
+                for (var i = 0; i < object.piiKeyResponse.length; ++i) {
+                    if (!$util.isObject(object.piiKeyResponse[i]))
+                        throw $TypeError(".CarServer.VehicleData.piiKeyResponse: object expected");
+                    message.piiKeyResponse[i] = $root.CarServer.PiiKeyResponse.fromObject(object.piiKeyResponse[i], _depth + 1);
+                }
+            }
             if (object.chargeScheduleState != null) {
                 if (!$util.isObject(object.chargeScheduleState))
                     throw $TypeError(".CarServer.VehicleData.chargeScheduleState: object expected");
@@ -30878,6 +31889,10 @@ $root.CarServer = (function() {
             if (_depth > $util.recursionLimit)
                 throw $Error("max depth exceeded");
             var object = {};
+            if (options.arrays || options.defaults) {
+                object.encryptedData = [];
+                object.piiKeyResponse = [];
+            }
             if (options.defaults) {
                 object.chargeState = null;
                 object.climateState = null;
@@ -30902,6 +31917,11 @@ $root.CarServer = (function() {
                 object.locationState = $root.CarServer.LocationState.toObject(message.locationState, options, _depth + 1);
             if (message.closuresState != null && $Object.hasOwnProperty.call(message, "closuresState"))
                 object.closuresState = $root.CarServer.ClosuresState.toObject(message.closuresState, options, _depth + 1);
+            if (message.encryptedData && message.encryptedData.length) {
+                object.encryptedData = $Array(message.encryptedData.length);
+                for (var j = 0; j < message.encryptedData.length; ++j)
+                    object.encryptedData[j] = $root.CarServer.EncryptedData.toObject(message.encryptedData[j], options, _depth + 1);
+            }
             if (message.chargeScheduleState != null && $Object.hasOwnProperty.call(message, "chargeScheduleState"))
                 object.chargeScheduleState = $root.CarServer.ChargeScheduleState.toObject(message.chargeScheduleState, options, _depth + 1);
             if (message.preconditioningScheduleState != null && $Object.hasOwnProperty.call(message, "preconditioningScheduleState"))
@@ -30916,6 +31936,11 @@ $root.CarServer = (function() {
                 object.softwareUpdateState = $root.CarServer.SoftwareUpdateState.toObject(message.softwareUpdateState, options, _depth + 1);
             if (message.parentalControlsState != null && $Object.hasOwnProperty.call(message, "parentalControlsState"))
                 object.parentalControlsState = $root.CarServer.ParentalControlsState.toObject(message.parentalControlsState, options, _depth + 1);
+            if (message.piiKeyResponse && message.piiKeyResponse.length) {
+                object.piiKeyResponse = $Array(message.piiKeyResponse.length);
+                for (var j = 0; j < message.piiKeyResponse.length; ++j)
+                    object.piiKeyResponse[j] = $root.CarServer.PiiKeyResponse.toObject(message.piiKeyResponse[j], options, _depth + 1);
+            }
             return object;
         };
 

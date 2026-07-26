@@ -758,14 +758,53 @@ export namespace CarServer {
         /** VehicleDataSubscription subscriptionDurationS. */
         subscriptionDurationS: number;
 
-        /** VehicleDataSubscription locationStateMaxUpdateRateMs. */
-        locationStateMaxUpdateRateMs: number;
+        /** VehicleDataSubscription GuiSettingsMaxUpdateRateMs. */
+        GuiSettingsMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription ChargeStateMaxUpdateRateMs. */
+        ChargeStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription ClimateStateMaxUpdateRateMs. */
+        ClimateStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription DriveStateMaxUpdateRateMs. */
+        DriveStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription VehicleStateMaxUpdateRateMs. */
+        VehicleStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription VehicleConfigMaxUpdateRateMs. */
+        VehicleConfigMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription LocationStateMaxUpdateRateMs. */
+        LocationStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription ClosuresStateMaxUpdateRateMs. */
+        ClosuresStateMaxUpdateRateMs: number;
 
         /** VehicleDataSubscription subscriptionPingS. */
         subscriptionPingS: number;
 
         /** VehicleDataSubscription piiKeyRequest. */
-        piiKeyRequest: Uint8Array;
+        piiKeyRequest?: (CarServer.PiiKeyRequest.$Properties|null);
+
+        /** VehicleDataSubscription ParkedAccessoryStateMaxUpdateRateMs. */
+        ParkedAccessoryStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription ChargeScheduleStateMaxUpdateRateMs. */
+        ChargeScheduleStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription PreconditioningScheduleStateMaxUpdateRateMs. */
+        PreconditioningScheduleStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription AlertStateMaxUpdateRateMs. */
+        AlertStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription SuspensionStateMaxUpdateRateMs. */
+        SuspensionStateMaxUpdateRateMs: number;
+
+        /** VehicleDataSubscription ChildPresenceDetectionStateMaxUpdateRateMs. */
+        ChildPresenceDetectionStateMaxUpdateRateMs: number;
 
         /**
          * Creates a new VehicleDataSubscription instance using the specified properties.
@@ -854,14 +893,53 @@ export namespace CarServer {
             /** VehicleDataSubscription subscriptionDurationS */
             subscriptionDurationS?: (number|null);
 
-            /** VehicleDataSubscription locationStateMaxUpdateRateMs */
-            locationStateMaxUpdateRateMs?: (number|null);
+            /** VehicleDataSubscription GuiSettingsMaxUpdateRateMs */
+            GuiSettingsMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription ChargeStateMaxUpdateRateMs */
+            ChargeStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription ClimateStateMaxUpdateRateMs */
+            ClimateStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription DriveStateMaxUpdateRateMs */
+            DriveStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription VehicleStateMaxUpdateRateMs */
+            VehicleStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription VehicleConfigMaxUpdateRateMs */
+            VehicleConfigMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription LocationStateMaxUpdateRateMs */
+            LocationStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription ClosuresStateMaxUpdateRateMs */
+            ClosuresStateMaxUpdateRateMs?: (number|null);
 
             /** VehicleDataSubscription subscriptionPingS */
             subscriptionPingS?: (number|null);
 
             /** VehicleDataSubscription piiKeyRequest */
-            piiKeyRequest?: (Uint8Array|null);
+            piiKeyRequest?: (CarServer.PiiKeyRequest.$Properties|null);
+
+            /** VehicleDataSubscription ParkedAccessoryStateMaxUpdateRateMs */
+            ParkedAccessoryStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription ChargeScheduleStateMaxUpdateRateMs */
+            ChargeScheduleStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription PreconditioningScheduleStateMaxUpdateRateMs */
+            PreconditioningScheduleStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription AlertStateMaxUpdateRateMs */
+            AlertStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription SuspensionStateMaxUpdateRateMs */
+            SuspensionStateMaxUpdateRateMs?: (number|null);
+
+            /** VehicleDataSubscription ChildPresenceDetectionStateMaxUpdateRateMs */
+            ChildPresenceDetectionStateMaxUpdateRateMs?: (number|null);
 
             /** Unknown fields preserved while decoding when enabled */
             $unknowns?: Uint8Array[];
@@ -869,6 +947,246 @@ export namespace CarServer {
 
         /** Shape of a VehicleDataSubscription. */
         type $Shape = CarServer.VehicleDataSubscription.$Properties;
+    }
+
+    /**
+     * Properties of a PiiKeyRequest.
+     * @deprecated Use CarServer.PiiKeyRequest.$Properties instead.
+     */
+    interface IPiiKeyRequest extends CarServer.PiiKeyRequest.$Properties {
+    }
+
+    /** Represents a PiiKeyRequest. */
+    class PiiKeyRequest {
+
+        /**
+         * Constructs a new PiiKeyRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: CarServer.PiiKeyRequest.$Properties);
+
+        /** Unknown fields preserved while decoding when enabled */
+        $unknowns?: Uint8Array[];
+
+        /** PiiKeyRequest subscriberPublicKey. */
+        subscriberPublicKey: string;
+
+        /** PiiKeyRequest piiKeyExpiration. */
+        piiKeyExpiration?: (google.protobuf.Timestamp.$Properties|null);
+
+        /**
+         * Creates a new PiiKeyRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns PiiKeyRequest instance
+         */
+        static create(properties: CarServer.PiiKeyRequest.$Shape): CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape;
+        static create(properties?: CarServer.PiiKeyRequest.$Properties): CarServer.PiiKeyRequest;
+
+        /**
+         * Encodes the specified PiiKeyRequest message. Does not implicitly {@link CarServer.PiiKeyRequest.verify|verify} messages.
+         * @param message PiiKeyRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encode(message: CarServer.PiiKeyRequest.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified PiiKeyRequest message, length delimited. Does not implicitly {@link CarServer.PiiKeyRequest.verify|verify} messages.
+         * @param message PiiKeyRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encodeDelimited(message: CarServer.PiiKeyRequest.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a PiiKeyRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns {CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape} PiiKeyRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape;
+
+        /**
+         * Decodes a PiiKeyRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns {CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape} PiiKeyRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): CarServer.PiiKeyRequest & CarServer.PiiKeyRequest.$Shape;
+
+        /**
+         * Verifies a PiiKeyRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a PiiKeyRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns PiiKeyRequest
+         */
+        static fromObject(object: { [k: string]: any }): CarServer.PiiKeyRequest;
+
+        /**
+         * Creates a plain object from a PiiKeyRequest message. Also converts values to other types if specified.
+         * @param message PiiKeyRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        static toObject(message: CarServer.PiiKeyRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this PiiKeyRequest to JSON.
+         * @returns JSON object
+         */
+        toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the type url for PiiKeyRequest
+         * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns The type url
+         */
+        static getTypeUrl(prefix?: string): string;
+    }
+
+    namespace PiiKeyRequest {
+
+        /** Properties of a PiiKeyRequest. */
+        interface $Properties {
+
+            /** PiiKeyRequest subscriberPublicKey */
+            subscriberPublicKey?: (string|null);
+
+            /** PiiKeyRequest piiKeyExpiration */
+            piiKeyExpiration?: (google.protobuf.Timestamp.$Properties|null);
+
+            /** Unknown fields preserved while decoding when enabled */
+            $unknowns?: Uint8Array[];
+        }
+
+        /** Shape of a PiiKeyRequest. */
+        type $Shape = CarServer.PiiKeyRequest.$Properties;
+    }
+
+    /**
+     * Properties of a PiiKeyResponse.
+     * @deprecated Use CarServer.PiiKeyResponse.$Properties instead.
+     */
+    interface IPiiKeyResponse extends CarServer.PiiKeyResponse.$Properties {
+    }
+
+    /** Represents a PiiKeyResponse. */
+    class PiiKeyResponse {
+
+        /**
+         * Constructs a new PiiKeyResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: CarServer.PiiKeyResponse.$Properties);
+
+        /** Unknown fields preserved while decoding when enabled */
+        $unknowns?: Uint8Array[];
+
+        /** PiiKeyResponse encryptedPiiKey. */
+        encryptedPiiKey: Uint8Array;
+
+        /**
+         * Creates a new PiiKeyResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns PiiKeyResponse instance
+         */
+        static create(properties: CarServer.PiiKeyResponse.$Shape): CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape;
+        static create(properties?: CarServer.PiiKeyResponse.$Properties): CarServer.PiiKeyResponse;
+
+        /**
+         * Encodes the specified PiiKeyResponse message. Does not implicitly {@link CarServer.PiiKeyResponse.verify|verify} messages.
+         * @param message PiiKeyResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encode(message: CarServer.PiiKeyResponse.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified PiiKeyResponse message, length delimited. Does not implicitly {@link CarServer.PiiKeyResponse.verify|verify} messages.
+         * @param message PiiKeyResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encodeDelimited(message: CarServer.PiiKeyResponse.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a PiiKeyResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns {CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape} PiiKeyResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape;
+
+        /**
+         * Decodes a PiiKeyResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns {CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape} PiiKeyResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): CarServer.PiiKeyResponse & CarServer.PiiKeyResponse.$Shape;
+
+        /**
+         * Verifies a PiiKeyResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a PiiKeyResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns PiiKeyResponse
+         */
+        static fromObject(object: { [k: string]: any }): CarServer.PiiKeyResponse;
+
+        /**
+         * Creates a plain object from a PiiKeyResponse message. Also converts values to other types if specified.
+         * @param message PiiKeyResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        static toObject(message: CarServer.PiiKeyResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this PiiKeyResponse to JSON.
+         * @returns JSON object
+         */
+        toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the type url for PiiKeyResponse
+         * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns The type url
+         */
+        static getTypeUrl(prefix?: string): string;
+    }
+
+    namespace PiiKeyResponse {
+
+        /** Properties of a PiiKeyResponse. */
+        interface $Properties {
+
+            /** PiiKeyResponse encryptedPiiKey */
+            encryptedPiiKey?: (Uint8Array|null);
+
+            /** Unknown fields preserved while decoding when enabled */
+            $unknowns?: Uint8Array[];
+        }
+
+        /** Shape of a PiiKeyResponse. */
+        type $Shape = CarServer.PiiKeyResponse.$Properties;
     }
 
     /**
@@ -12253,6 +12571,12 @@ export namespace CarServer {
         /** VehicleData closuresState. */
         closuresState?: (CarServer.ClosuresState.$Properties|null);
 
+        /** VehicleData encryptedData. */
+        encryptedData: CarServer.EncryptedData.$Properties[];
+
+        /** VehicleData piiKeyResponse. */
+        piiKeyResponse: CarServer.PiiKeyResponse.$Properties[];
+
         /** VehicleData chargeScheduleState. */
         chargeScheduleState?: (CarServer.ChargeScheduleState.$Properties|null);
 
@@ -12373,6 +12697,12 @@ export namespace CarServer {
             /** VehicleData closuresState */
             closuresState?: (CarServer.ClosuresState.$Properties|null);
 
+            /** VehicleData encryptedData */
+            encryptedData?: (CarServer.EncryptedData.$Properties[]|null);
+
+            /** VehicleData piiKeyResponse */
+            piiKeyResponse?: (CarServer.PiiKeyResponse.$Properties[]|null);
+
             /** VehicleData chargeScheduleState */
             chargeScheduleState?: (CarServer.ChargeScheduleState.$Properties|null);
 
@@ -12405,6 +12735,8 @@ export namespace CarServer {
           driveState?: CarServer.DriveState.$Shape|null;
           locationState?: CarServer.LocationState.$Shape|null;
           closuresState?: CarServer.ClosuresState.$Shape|null;
+          encryptedData?: CarServer.EncryptedData.$Shape[]|null;
+          piiKeyResponse?: CarServer.PiiKeyResponse.$Shape[]|null;
           chargeScheduleState?: CarServer.ChargeScheduleState.$Shape|null;
           preconditioningScheduleState?: CarServer.PreconditioningScheduleState.$Shape|null;
           tirePressureState?: CarServer.TirePressureState.$Shape|null;

@@ -58,7 +58,7 @@ import {
   navigateSearchAction,
   navigateWaypointsAction,
   vehicleDataSubscriptionAction,
-  encodePiiKeyRequest,
+  piiKeyRequestFor,
   pingAction,
   cancelVehicleDataSubscriptionAction,
   VDS_DEFAULTS,
@@ -264,7 +264,7 @@ test('vehicleDataSubscriptionAction matches the RESPONSE-15 golden frame byte fo
 
   const decoded = decodeAction(bytes).vehicleAction?.vehicleDataSubscription;
   assert.equal(decoded?.subscriptionDurationS, VDS_DEFAULTS.durationS);
-  assert.equal(decoded?.locationStateMaxUpdateRateMs, VDS_DEFAULTS.locationRateMs);
+  assert.equal(decoded?.LocationStateMaxUpdateRateMs, VDS_DEFAULTS.locationRateMs);
   assert.equal(decoded?.subscriptionPingS, VDS_DEFAULTS.pingS);
 });
 
@@ -287,32 +287,39 @@ test('locationRateMs:null OMITS field 10 entirely (the guess-free default probe)
   const d = decodeAction(bytes).vehicleAction?.vehicleDataSubscription;
   assert.equal(d?.subscriptionDurationS, 40);
   assert.equal(d?.subscriptionPingS, 5);
-  assert.ok(!d?.locationStateMaxUpdateRateMs, 'field 10 must be absent, not zero');
+  assert.ok(!d?.LocationStateMaxUpdateRateMs, 'field 10 must be absent, not zero');
 });
 
-test('encodePiiKeyRequest emits a length-delimited key at the candidate tag', () => {
-  const key = Uint8Array.from([0x04, 0xaa, 0xbb]);
-  // tag 1, wire type 2 → 0x0a, then length 3, then the key.
-  assert.equal(Buffer.from(encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: key })).toString('hex'), '0a03' + '04aabb');
-  // tag 2 → 0x12.
-  assert.equal(Buffer.from(encodePiiKeyRequest({ keyTag: 2, publicKeyRaw: key })).toString('hex'), '1203' + '04aabb');
+test('piiKeyRequestFor demands a PKCS#1 PEM — the encoding the sweep got wrong', () => {
+  // RESPONSE-19 Q1a, PROVEN: field 2 is a protobuf STRING holding PKCS#1 PEM
+  // TEXT, and the key is RSA-2048. Our on-car sweep sent 65 raw SEC1 bytes and
+  // killed the subscription with no diagnostic, so this fails loudly instead.
+  const pem = '-----BEGIN RSA PUBLIC KEY-----\nMIIB\n-----END RSA PUBLIC KEY-----\n';
+  assert.equal(piiKeyRequestFor({ publicKeyPkcs1Pem: pem }).subscriberPublicKey, pem);
+  assert.throws(() => piiKeyRequestFor({ publicKeyPkcs1Pem: 'MIIBdeadbeef' }));
+  // SPKI ("BEGIN PUBLIC KEY") is the easy wrong turn — reject it too.
+  assert.throws(() => piiKeyRequestFor({ publicKeyPkcs1Pem: '-----BEGIN PUBLIC KEY-----\nMIIB\n' }));
 });
 
-test('encodePiiKeyRequest appends the expiry as a varint at its own tag', () => {
-  const key = Uint8Array.from([0x04]);
-  // key@1 then expiry@2 = 0x10, value 300 = 0xac 0x02.
-  assert.equal(
-    Buffer.from(encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: key, expiryTag: 2, expiresAtUnix: 300 })).toString('hex'),
-    '0a0104' + '10ac02',
-  );
-  // A real unix timestamp exceeds 32 bits of shifting — check it still encodes.
-  const big = encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: key, expiryTag: 2, expiresAtUnix: 1785000000 });
-  assert.ok(big.length > 3);
+test('piiKeyRequestFor omits the expiry unless asked, and splits it as a Timestamp', () => {
+  const pem = '-----BEGIN RSA PUBLIC KEY-----\nMIIB\n-----END RSA PUBLIC KEY-----\n';
+  // Cold request: omit, so the car mints and wraps a fresh key.
+  assert.equal(piiKeyRequestFor({ publicKeyPkcs1Pem: pem }).piiKeyExpiration, undefined);
+  // Field 4 is an Instant (seconds + nanos), NOT a varint — the sweep's guess.
+  const withExp = piiKeyRequestFor({ publicKeyPkcs1Pem: pem, expiresAtMs: 1785068142_039 });
+  assert.equal(withExp.piiKeyExpiration?.seconds, 1785068142);
+  assert.equal(withExp.piiKeyExpiration?.nanos, 39_000_000);
 });
 
-test('encodePiiKeyRequest rejects a missing key or a bogus tag', () => {
-  assert.throws(() => encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: new Uint8Array(0) }));
-  assert.throws(() => encodePiiKeyRequest({ keyTag: 0, publicKeyRaw: Uint8Array.from([1]) }));
+test('per-state rates ride their PROVEN tags — DriveState is 7', () => {
+  const d = decodeAction(
+    vehicleDataSubscriptionAction({ locationRateMs: null, driveRateMs: 2000, chargeRateMs: 3000 }).bytes,
+  ).vehicleAction?.vehicleDataSubscription;
+  assert.equal(d?.DriveStateMaxUpdateRateMs, 2000);
+  assert.equal(d?.ChargeStateMaxUpdateRateMs, 3000);
+  // 0x38 = tag 7 varint. Pinned on the wire, since a wrong tag is skipped
+  // silently by the car and looks exactly like "state not supported".
+  assert.match(Buffer.from(vehicleDataSubscriptionAction({ locationRateMs: null, driveRateMs: 2000 }).bytes).toString('hex'), /38d00f/);
 });
 
 test('a subscription WITHOUT pii_key_request stays byte-identical to the golden frame', () => {
@@ -321,12 +328,18 @@ test('a subscription WITHOUT pii_key_request stays byte-identical to the golden 
   assert.equal(Buffer.from(vehicleDataSubscriptionAction().bytes).toString('hex'), '120aaa0207183c508827600a');
 });
 
-test('a subscription WITH pii_key_request carries it at field 13', () => {
-  const pii = encodePiiKeyRequest({ keyTag: 1, publicKeyRaw: Uint8Array.from([0x04, 0x01, 0x02]) });
-  const decoded = decodeAction(vehicleDataSubscriptionAction({ piiKeyRequest: pii }).bytes);
+test('a subscription WITH pii_key_request carries it at field 13, as a message', () => {
+  const pem = '-----BEGIN RSA PUBLIC KEY-----\nMIIB\n-----END RSA PUBLIC KEY-----\n';
+  const decoded = decodeAction(
+    vehicleDataSubscriptionAction({ piiKeyRequest: piiKeyRequestFor({ publicKeyPkcs1Pem: pem }) }).bytes,
+  );
   const got = decoded.vehicleAction?.vehicleDataSubscription?.piiKeyRequest;
   assert.ok(got, 'field 13 must be present');
-  assert.equal(Buffer.from(got).toString('hex'), Buffer.from(pii).toString('hex'));
+  assert.equal(got.subscriberPublicKey, pem);
+  // 0x6A = field 13 wire type 2, and 0x12 = the inner field 2. Pinned on the
+  // wire because these two tags are the whole answer to Q1a.
+  const hex = Buffer.from(vehicleDataSubscriptionAction({ piiKeyRequest: piiKeyRequestFor({ publicKeyPkcs1Pem: pem }) }).bytes).toString('hex');
+  assert.match(hex, /6a[0-9a-f]{2}12/);
 });
 
 test('cancelVehicleDataSubscriptionAction is an EMPTY sub-message (duration 0 is a proto3 default)', () => {
