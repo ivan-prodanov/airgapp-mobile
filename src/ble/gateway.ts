@@ -427,9 +427,24 @@ export function createCarGateway({
             // that exhausts its retries above lands here and classifies as
             // 'timeout', which is how a background drive read was destroying the
             // VCSEC session that locks the car.
+            // A STALE FRAME IS NOT AN UNREACHABLE TRANSPORT.
+            //
+            // classifyTransportError returns 'unreachable' as its CATCH-ALL for
+            // anything without a recognised kind, and a stale frame has none. So
+            // a stale frame that exhausts its retries above lands here, gets
+            // called unreachable, and takes down BOTH domains — measured
+            // 2026-07-26 19:00: every link-scoped eviction in that window read
+            // reason=unreachable, while the link re-opened 2ms later and
+            // exchanged at 73ms. It was never unreachable.
+            //
+            // What a stale frame actually means is "the channel handed us a
+            // response to a DIFFERENT request" — the link is fine and our
+            // request/response pairing is off. A fresh handshake for THAT domain
+            // is a reasonable reset; tearing down the other one is collateral.
+            const stale = isStaleFrameError(e);
             await evictSession(vin, action.domain, {
-              scope: evictScopeFor(kind),
-              reason: kind,
+              scope: stale ? 'domain' : evictScopeFor(kind),
+              reason: stale ? 'stale-frame-exhausted' : kind,
             }).catch(() => {});
             await sleep(TRANSIENT_DELAY_MS);
             continue;

@@ -700,3 +700,16 @@ test('EVERY evictSession call site passes a reason — an unlabelled one is invi
   }
   assert.deepEqual(offenders, [], 'an eviction with no reason cannot be diagnosed from a log');
 });
+
+test('a stale frame must never be scoped as a dead LINK', () => {
+  // The catch-all in classifyTransportError calls anything unrecognised
+  // 'unreachable', and a stale frame has no kind — so it inherited a full
+  // link teardown. Measured 19:00 on 2026-07-26: every link-scoped eviction read
+  // reason=unreachable while the link re-opened 2ms later.
+  //
+  // evictScopeFor still says 'link' for a genuine unreachable; the CALLER is
+  // what must not hand it a stale frame in the first place. This pins the
+  // distinction so a future refactor cannot collapse them again.
+  assert.equal(evictScopeFor('unreachable'), 'link', 'a real unreachable still takes the link');
+  assert.equal(evictScopeFor('timeout'), 'domain');
+});
