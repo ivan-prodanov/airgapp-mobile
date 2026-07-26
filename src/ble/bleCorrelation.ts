@@ -15,13 +15,20 @@
 //   - `Destination.routingAddress` (`Uint8Array | null | undefined`,
 //     part of the `domain | routingAddress` oneof).
 //
-// Correlation rule (spec §6): routing_address is PRIMARY. VCSEC
-// GET_STATUS replies (every lock/closure read) carry
-// `to_destination.routing_address` but an EMPTY `request_uuid` — a
-// uuid-only matcher silently drops every one of those replies forever.
-// Accept iff:
-//   (want.routingAddress && frame.toDestination.routingAddress == want.routingAddress)
-//   || (want.uuid && frame.requestUuid == want.uuid)
+// Correlation rule. The frame's own request_uuid DECIDES when it has one;
+// routing_address is only the fallback for frames that carry none:
+//
+//   frame.requestUuid present  → accept iff it equals want.uuid
+//   frame.requestUuid absent   → accept iff to_destination.routing_address
+//                                 equals want.routingAddress
+//
+// The fallback exists because VCSEC GET_STATUS replies (every lock/closure read)
+// carry `to_destination.routing_address` and an EMPTY `request_uuid`; a
+// uuid-only matcher would silently drop all of them forever.
+//
+// The spec called routing_address PRIMARY and this file implemented that — which
+// was the wedge, because routing_address is per-SESSION, not per-request. See
+// frameAnswersRequest for the full failure mode.
 
 import { RoutableMessage, decodeMessage } from './proto';
 
@@ -72,10 +79,28 @@ export function frameAnswersRequest(frameBytes: Uint8Array, want: Correlators): 
   const gotRoutingAddress = nonEmpty(decoded.toDestination?.routingAddress);
   const gotUuid = nonEmpty(decoded.requestUuid);
 
-  if (want.routingAddress && gotRoutingAddress && bytesEqual(want.routingAddress, gotRoutingAddress)) {
-    return true;
+  // A frame that carries a request_uuid is SELF-IDENTIFYING: it names the
+  // request it answers, so it either matches ours or it is not ours. Decide on
+  // the uuid alone and never fall through to routing address.
+  //
+  // ⚠ THIS ORDERING IS THE WEDGE FIX. It used to check routing address FIRST and
+  // return true on a match, which meant a mismatched uuid was ignored.
+  // routingAddress is minted ONCE PER SESSION (session.ts, at
+  // openDirectSession) and reused by every request in it — it identifies the
+  // SESSION, never the request. So a LATE reply to request A satisfied request
+  // B, B failed on the uuid check downstream, retried, and consumed the next
+  // stale reply. Permanently one-behind, until the car went quiet or the app was
+  // restarted. Measured on-car 2026-07-26: every exchange timing out for 60-90s
+  // while the car was demonstrably still pushing to us.
+  if (gotUuid) {
+    return !!want.uuid && bytesEqual(want.uuid, gotUuid);
   }
-  if (want.uuid && gotUuid && bytesEqual(want.uuid, gotUuid)) {
+
+  // No uuid on the frame — fall back to the session's routing address. This is
+  // what that matcher exists for: VCSEC GET_STATUS replies (every lock/closure
+  // read) carry to_destination.routing_address and an EMPTY request_uuid, and a
+  // uuid-only matcher would drop all of them forever.
+  if (want.routingAddress && gotRoutingAddress && bytesEqual(want.routingAddress, gotRoutingAddress)) {
     return true;
   }
   return false;

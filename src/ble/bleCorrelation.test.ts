@@ -45,11 +45,42 @@ test('frameAnswersRequest: falls back to request_uuid when routingAddress is abs
   assert.equal(frameAnswersRequest(response, { uuid: U }), true);
 });
 
-test('frameAnswersRequest: routing_address takes priority — matches even when uuid also present but different', () => {
+test('REGRESSION (the WEDGE): a frame whose request_uuid MISMATCHES is NOT our answer', () => {
+  // This test previously asserted the OPPOSITE — "routing_address takes
+  // priority, matches even when uuid also present but different" — and that
+  // assertion was the wedge.
+  //
+  // routingAddress is minted ONCE PER SESSION (session.ts: randomBytes at
+  // openDirectSession) and reused for every request in it. So it identifies the
+  // SESSION, never the request. With it checked first and short-circuiting, a
+  // LATE reply to request A satisfies request B:
+  //
+  //   1. request A times out; we stop waiting
+  //   2. request B goes out
+  //   3. A's late reply arrives, carrying the session routing address
+  //   4. this matcher accepts it as B's answer
+  //   5. sendCommand then throws "sent uuid=… got request_uuid=…" or fails the
+  //      AAD decrypt — B fails, retries, and consumes the NEXT stale reply
+  //
+  // Permanently one-behind. Measured on-car 2026-07-26: exchanges timing out for
+  // 60-90s while the car was demonstrably still pushing, self-healing only when
+  // the car went quiet, always cleared by an app restart.
+  //
+  // A frame carrying a request_uuid is SELF-IDENTIFYING. If it does not match,
+  // it is not ours, whatever the routing address says.
   const response = encodeMessage(RoutableMessage, {
     toDestination: { routingAddress: R },
     requestUuid: hexToBytes('ffffffffffffffffffffffffffffffff'),
   });
+  assert.equal(frameAnswersRequest(response, { routingAddress: R, uuid: U }), false);
+});
+
+test('routing_address still matches when the frame carries NO uuid — the VCSEC path is preserved', () => {
+  // The reason routing_address matching exists at all: VCSEC GET_STATUS replies
+  // (every lock/closure read) carry to_destination.routing_address and an EMPTY
+  // request_uuid. A uuid-only matcher drops all of them forever. The fix above
+  // must not break this, so it is asserted right next to it.
+  const response = encodeMessage(RoutableMessage, { toDestination: { routingAddress: R } });
   assert.equal(frameAnswersRequest(response, { routingAddress: R, uuid: U }), true);
 });
 
@@ -73,4 +104,35 @@ test('frameAnswersRequest: empty want correlators never match (no false positive
     requestUuid: U,
   });
   assert.equal(frameAnswersRequest(response, {}), false);
+});
+
+test('the one-behind sequence: A times out, B is sent, A late reply must NOT satisfy B', () => {
+  // The wedge end to end, in the terms the log showed it. Same session, so the
+  // same routing address on both replies — which is exactly why routing address
+  // could never have told them apart.
+  const uuidA = hexToBytes('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  const uuidB = hexToBytes('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+  const lateReplyToA = encodeMessage(RoutableMessage, {
+    toDestination: { routingAddress: R },
+    requestUuid: uuidA,
+  });
+  // We are now waiting on B.
+  assert.equal(frameAnswersRequest(lateReplyToA, { routingAddress: R, uuid: uuidB }), false);
+  // And B's own reply still lands.
+  const replyToB = encodeMessage(RoutableMessage, {
+    toDestination: { routingAddress: R },
+    requestUuid: uuidB,
+  });
+  assert.equal(frameAnswersRequest(replyToB, { routingAddress: R, uuid: uuidB }), true);
+});
+
+test('a uuid-bearing frame is rejected when we asked with routingAddress ONLY', () => {
+  // Guards the strict reading: if the frame names a request and we have no uuid
+  // to compare, we cannot claim it is ours. Accepting it on routing address
+  // alone is precisely the old behaviour.
+  const response = encodeMessage(RoutableMessage, {
+    toDestination: { routingAddress: R },
+    requestUuid: hexToBytes('cccccccccccccccccccccccccccccccc'),
+  });
+  assert.equal(frameAnswersRequest(response, { routingAddress: R }), false);
 });
