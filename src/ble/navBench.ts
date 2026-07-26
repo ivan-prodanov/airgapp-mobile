@@ -39,6 +39,13 @@ export interface RouteRead {
   milesToArrival: number | null;
   shiftState: string;
   userPresent: boolean | null;
+  // From VCSEC, which answers even while the car sleeps — so this is populated in
+  // exactly the cases where the DriveState read below is not.
+  sleepStatus: string;
+  // Why DriveState could not be read, when it could not. This is a RESULT, not an
+  // error to swallow: "car asleep, route unreadable" is the finding in the sleep
+  // test, and an aborted read would have thrown that information away.
+  readError: string | null;
 }
 
 // "42.6977, 23.3219" → a coordinate, or null if it isn't one. Rejects out-of-range
@@ -72,7 +79,9 @@ export function metresBetween(a: ProbeCoord, b: ProbeCoord): number {
 // inferred.
 export function formatRouteRead(r: RouteRead): string {
   const presence = r.userPresent === null ? '?' : r.userPresent ? 'yes' : 'no';
-  const where = `shift=${r.shiftState} driver=${presence}`;
+  const where = `shift=${r.shiftState} driver=${presence} car=${r.sleepStatus}`;
+  // An unreadable DriveState is not the same claim as "no route" — say which.
+  if (r.readError) return `ROUTE: UNREADABLE (${r.readError}) | ${where}`;
   if (!r.present) return `ROUTE: none (no active-route fields in the reply) | ${where}`;
   const eta = [
     r.minutesToArrival === null ? null : `${r.minutesToArrival}min`,
@@ -88,6 +97,11 @@ export function formatRouteRead(r: RouteRead): string {
 // name changed. Both are observations; neither is a conclusion about `order`.
 export function formatRouteDelta(prev: RouteRead | null, next: RouteRead): string {
   if (!prev) return 'DELTA: (first read this session — nothing to compare)';
+  // An unreadable side cannot be compared. Saying so beats reporting a change
+  // that is really just a failed read.
+  if (prev.readError || next.readError) {
+    return `DELTA: not comparable — ${next.readError ? 'this' : 'the previous'} read failed`;
+  }
   if (prev.present !== next.present) {
     return `DELTA: route ${prev.present ? 'DISAPPEARED' : 'APPEARED'} since the last read`;
   }

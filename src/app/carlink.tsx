@@ -368,6 +368,9 @@ export default function CarLinkScreen() {
     append(line);
     const out: string[] = [line];
     try {
+      // Same reason as READ ROUTE: a cached session skips openSession, leaving the
+      // 'auto' selector with no active transport after a relaunch.
+      await closeAllCachedSessions();
       const gw = await makeGateway();
       const res = await gw.runRawAction(benchMessage(c, order), `bench-${benchMsg}-${benchOrder}`);
       // Loud on failure: the previous probes' worst results all came from reading
@@ -386,34 +389,64 @@ export default function CarLinkScreen() {
     }
   };
 
+  // READ ROUTE deliberately never wakes the car. Two of the questions on the bench
+  // — is the route readable with nobody aboard, and does it survive sleep — are
+  // destroyed by a wake, so this reads whatever the car will answer as it is.
+  //
+  // Order matters. VCSEC answers while the car SLEEPS; DriveState is
+  // DOMAIN_INFOTAINMENT and faults on a sleeping car. Reading VCSEC first means a
+  // sleeping car still yields presence + sleep state, and the DriveState failure
+  // is recorded as a RESULT rather than aborting the whole read. The earlier
+  // version read DriveState first and threw away everything on a fault — which is
+  // precisely the case the sleep test is about.
   const handleBenchRead = async () => {
     benchPaceWarning();
     const out: string[] = [];
     try {
+      // In 'auto' mode the selector only acquires an active transport inside
+      // openSession, but the module-global session cache serves a cached session
+      // and calls exchange directly — so a selector minted after a relaunch throws
+      // "no active transport (openSession first)". Dropping the cached sessions
+      // forces a fresh handshake through the selector. Costs one handshake per
+      // read; on a hand-driven bench that is free, and it also removes the stale
+      // -session class of fault that corrupted the automated runs.
+      await closeAllCachedSessions();
       const gw = await makeGateway();
-      const snap = await gw.awakeSync({ states: ['drive'] });
+
       let userPresent: boolean | null = null;
+      let sleepStatus = 'unknown';
       try {
         const vcsec = await gw.readVcsecStatus();
         if (vcsec.userPresence !== 'unknown') userPresent = vcsec.userPresence === 'present';
-      } catch {
-        // Presence is context, not the measurement — leave it unknown rather than
-        // guessing, and let the printed '?' say so.
+        sleepStatus = vcsec.sleepStatus;
+      } catch (err) {
+        append(`  (VCSEC read failed: ${errMsg(err)} — presence/sleep unknown)`);
       }
+
+      let snap: Awaited<ReturnType<typeof gw.awakeSync>> | null = null;
+      let readError: string | null = null;
+      try {
+        snap = await gw.awakeSync({ states: ['drive'] });
+      } catch (err) {
+        readError = errMsg(err);
+      }
+
       const next: RouteRead = {
-        present: !!snap.route,
-        destination: snap.route?.destination ?? null,
-        coordinates: snap.route?.coordinates ?? null,
-        minutesToArrival: snap.route?.minutesToArrival ?? null,
-        milesToArrival: snap.route?.milesToArrival ?? null,
-        shiftState: snap.drive?.gear ?? 'unknown',
+        present: !!snap?.route,
+        destination: snap?.route?.destination ?? null,
+        coordinates: snap?.route?.coordinates ?? null,
+        minutesToArrival: snap?.route?.minutesToArrival ?? null,
+        milesToArrival: snap?.route?.milesToArrival ?? null,
+        shiftState: snap?.drive?.gear ?? 'unknown',
         userPresent,
+        sleepStatus,
+        readError,
       };
       out.push(formatRouteRead(next), formatRouteDelta(lastBenchReadRef.current, next));
       lastBenchReadRef.current = next;
       out.forEach(append);
     } catch (err) {
-      const e = `READ FAILED: ${errMsg(err)}`;
+      const e = `READ FAILED (before any car contact): ${errMsg(err)}`;
       out.push(e);
       append(e);
     } finally {

@@ -17,6 +17,8 @@ const read = (over: Partial<RouteRead> = {}): RouteRead => ({
   milesToArrival: 4.5,
   shiftState: 'P',
   userPresent: true,
+  sleepStatus: 'awake',
+  readError: null,
   ...over,
 });
 
@@ -50,7 +52,14 @@ describe('formatRouteRead', () => {
   it('states destination, coordinate, ETA and the gate inputs', () => {
     assert.equal(
       formatRouteRead(read()),
-      'ROUTE: "Keros Blue" @ 42.69770,23.32190 (12min 4.5mi) | shift=P driver=yes',
+      'ROUTE: "Keros Blue" @ 42.69770,23.32190 (12min 4.5mi) | shift=P driver=yes car=awake',
+    );
+  });
+
+  it('distinguishes an unreadable DriveState from a car with no route', () => {
+    assert.equal(
+      formatRouteRead(read({ present: false, readError: 'car asleep', sleepStatus: 'asleep', userPresent: false })),
+      'ROUTE: UNREADABLE (car asleep) | shift=P driver=no car=asleep',
     );
   });
 
@@ -59,13 +68,13 @@ describe('formatRouteRead', () => {
     // the same claim as "the car is not navigating".
     assert.equal(
       formatRouteRead(read({ present: false, userPresent: false })),
-      'ROUTE: none (no active-route fields in the reply) | shift=P driver=no',
+      'ROUTE: none (no active-route fields in the reply) | shift=P driver=no car=awake',
     );
   });
 
   it('renders unknown presence and a missing coordinate without inventing either', () => {
     const line = formatRouteRead(read({ userPresent: null, coordinates: null, minutesToArrival: null, milesToArrival: null }));
-    assert.equal(line, 'ROUTE: "Keros Blue" @ no coord | shift=P driver=?');
+    assert.equal(line, 'ROUTE: "Keros Blue" @ no coord | shift=P driver=? car=awake');
   });
 });
 
@@ -88,5 +97,13 @@ describe('formatRouteDelta', () => {
 
   it('has nothing to compare on the first read', () => {
     assert.match(formatRouteDelta(null, read()), /first read this session/);
+  });
+
+  it('refuses to compare against an unreadable side rather than inventing a change', () => {
+    // The sleep test's normal outcome: DriveState faults on a sleeping car. That
+    // must not read as "the route disappeared".
+    const asleep = read({ present: false, readError: 'car asleep', sleepStatus: 'asleep' });
+    assert.match(formatRouteDelta(read(), asleep), /not comparable — this read failed/);
+    assert.match(formatRouteDelta(asleep, read()), /not comparable — the previous read failed/);
   });
 });
