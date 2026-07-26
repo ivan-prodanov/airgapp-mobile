@@ -119,15 +119,6 @@ const POLL_MS = 20_000;
 // every POLL_MS; this rides on top far less often. Charge state changes slowly,
 // and a cold domain-3 open is ~8s of shared-queue time — see the tick.
 const INFOTAINMENT_MS = 60_000;
-// …but while the car is DRIVING, the same read carries speed/gear/odometer, which
-// change by the second — at 60s the status line only moved on pull-to-refresh.
-//
-// Safe to shorten precisely here: the documented cost of frequent domain-3 reads
-// was COLD re-opens blocking commands ~8s each when the car dozed between ticks
-// (see the throttle comment in the tick). A driving car is unambiguously awake, so
-// the session stays warm and these are cheap — that was the "suddenly went fast"
-// case in the same report. Reverts to INFOTAINMENT_MS the moment it parks.
-const INFOTAINMENT_DRIVING_MS = 5_000;
 
 // Flat backoff before retrying a dropped Pi event-stream socket. The 20s poll
 // is the backstop meanwhile (it'll re-establish the stream on its next
@@ -1362,15 +1353,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // a still-asleep car (caught below), matching the Tesla app, which fetches
         // vehicle_data on pull-to-refresh. The automatic poll keeps the awake gate.
         const now = Date.now();
-        // Drive state moves fast; charge state doesn't. Poll on the shorter cadence
-        // only while the car reports a driving gear.
-        const infotainmentInterval = getActiveStateRef.current()?.driving
-          ? INFOTAINMENT_DRIVING_MS
-          : INFOTAINMENT_MS;
         if (
           (patch.awake === true || opts?.forceInfotainment === true) &&
           inFlightRef.current === 0 &&
-          now - lastInfotainmentAtRef.current >= infotainmentInterval
+          now - lastInfotainmentAtRef.current >= INFOTAINMENT_MS
         ) {
           try {
             const it0 = Date.now();
