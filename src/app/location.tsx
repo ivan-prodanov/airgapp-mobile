@@ -213,10 +213,12 @@ export default function LocationView() {
       const intent = sharedLocationStore.consume();
       if (!intent) return;
       const { coordinate, name, address } = intent.location;
+      setSelectedCharger(null); // showing a shared place supersedes any open charger detail (don't restore it on close)
+      setTab('location'); // a share exits charging mode → chargers clear off the map behind the preview
       setDroppedPin({
         coordinate,
         name: name ?? 'Shared Location',
-        subtitle: `${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)}`,
+        subtitle: address || `${coordinate.latitude.toFixed(4)}, ${coordinate.longitude.toFixed(4)}`,
         fromPoi: false,
       });
       setPendingShareFrame(coordinate);
