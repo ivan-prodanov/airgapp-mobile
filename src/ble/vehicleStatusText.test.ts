@@ -251,3 +251,22 @@ describe('drive gate (RESPONSE-17)', () => {
   });
 
 });
+
+describe('driving subtext (the blue second line)', () => {
+  const live = { linked: true, lastVehicleDataAt: 1_000, awake: true, wakeInFlight: false, now: 1_500 };
+
+  it('driving emits the blue "Driving" subtext alongside the speed', () => {
+    const s = vehicleStatusText({ ...live, parked: false, speedMph: 69, gear: 'D' });
+    assert.equal(s.text, '111 km/h · D');
+    assert.equal(s.subtext, 'Driving');
+  });
+
+  it('parked / charging / stale carry no subtext', () => {
+    assert.equal(vehicleStatusText({ ...live, parked: true }).subtext, undefined);
+    assert.equal(vehicleStatusText({ ...live, charging: true, parked: false, speedMph: 30 }).subtext, undefined);
+    assert.equal(
+      vehicleStatusText({ ...live, lastVehicleDataAt: 0, now: 5 * 60 * 1000, parked: false, speedMph: 60 }).subtext,
+      undefined,
+    );
+  });
+});

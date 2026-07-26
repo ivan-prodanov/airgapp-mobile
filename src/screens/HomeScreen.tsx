@@ -392,6 +392,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
         <VehicleStatusText
           text={status.text}
           spinner={status.spinner}
+          subtext={status.subtext ?? null}
           onPress={onRefresh}
           // Only show the transport dot while actually connected — `transport`
           // holds the LAST transport and never clears, so gate on the live

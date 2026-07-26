@@ -85,6 +85,9 @@ export interface VehicleStatus {
   // Data older than DATA_STALE_MS. Also drives the battery row's 50% dim
   // (findings §C3), which is why it's exposed rather than kept internal.
   stale: boolean;
+  // Optional SECOND line, rendered in blue beneath the status. Occupies the slot
+  // the official app uses for its Autopilot indicator — see DRIVING_SUBTEXT.
+  subtext?: string;
 }
 
 // relativeAge ports moment's `fromNow` — the exact formatter the official app
@@ -139,6 +142,13 @@ export function isVehicleDataUnreliable(lastVehicleDataAt: number | null, now: n
 // between phone and car, which needs the phone's position and so does not belong
 // in this pure module. Returns '' when nothing is known, so the caller can fall
 // back rather than render an empty status.
+// The blue second line. OURS, deliberately — the official app's blue line in this
+// position is its AUTOPILOT indicator ("Samodzielna jazda" = Autopilot in Polish),
+// which we structurally cannot reproduce: RESPONSE-17 proved there is no
+// autopilot/FSD field anywhere in the CarServer or VCSEC protos we read over BLE.
+// We reuse the same slot and styling to say something we CAN prove from the gear.
+export const DRIVING_SUBTEXT = 'Driving';
+
 export function composeDriveText(speedMph: number | null, gear?: string): string {
   const parts: string[] = [];
   if (speedMph !== null && Number.isFinite(speedMph) && speedMph > 0) {
@@ -175,7 +185,9 @@ export function vehicleStatusText(input: VehicleStatusInput): VehicleStatus {
     // Not parked → the composed, speed-bearing line (never the word "Driving").
     if (input.parked === false) {
       const composed = composeDriveText(input.speedMph ?? null, input.gear);
-      if (composed) return { text: composed, spinner: false, stale: false };
+      if (composed) {
+        return { text: composed, spinner: false, stale: false, subtext: DRIVING_SUBTEXT };
+      }
     }
     return { text: 'Parked', spinner: false, stale: false };
   }

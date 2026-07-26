@@ -19,6 +19,7 @@ export function VehicleStatusText({
   onPress,
   transport = null,
   live = false,
+  subtext = null,
 }: {
   // null renders nothing at all (findings §A: empty text = zero nodes).
   text: string | null;
@@ -33,10 +34,15 @@ export function VehicleStatusText({
   // Whether a live PUSH channel is active (BLE native notify, or the Pi WS
   // stream) vs poll-only. BRIGHT dot = live pushes; DIM dot = 20s polling only.
   live?: boolean;
+  // Optional second line, rendered BLUE beneath the status — the slot the official
+  // app uses for its Autopilot label ("Samodzielna jazda"). Ours says "Driving",
+  // which we can actually prove from the gear; Autopilot state is not on the BLE
+  // protos at all (RESPONSE-17).
+  subtext?: string | null;
 }) {
   if (text === null) return null;
 
-  const body = (
+  const row = (
     <View style={styles.container}>
       {spinner ? (
         <View style={styles.spinner}>
@@ -54,6 +60,15 @@ export function VehicleStatusText({
         />
       ) : null}
     </View>
+  );
+
+  const body = subtext ? (
+    <View>
+      {row}
+      <Text style={styles.subtext}>{subtext}</Text>
+    </View>
+  ) : (
+    row
   );
 
   if (!onPress) return body;
@@ -87,6 +102,16 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     letterSpacing: 0.1,
     color: TEXT_COLOR_LIGHT_DARK,
+  },
+  // The blue second line. Same type ramp as the status text so the two read as one
+  // block, in Tesla's brand blue (#3E6AE1) — matching the official app's Autopilot
+  // label, which occupies this exact slot.
+  subtext: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: '#3E6AE1',
   },
   // Transport cue: 5px dot sitting just after the status text. Brightness
   // (opacity) encodes live-push vs poll-only; hue encodes the transport.
