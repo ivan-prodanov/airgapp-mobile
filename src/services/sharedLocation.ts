@@ -1,7 +1,7 @@
 import type { LatLng } from '@/state/mockLocation';
 
 export type ShareSource = 'apple' | 'google' | 'waze' | 'unknown';
-export interface SharedLocation { coordinate: LatLng; name?: string; source: ShareSource }
+export interface SharedLocation { coordinate: LatLng; name?: string; address?: string; source: ShareSource }
 export interface RawExtract { coordinate?: LatLng; name?: string; address?: string; source: ShareSource }
 
 const GEOHASH_ALPHABET = '0123456789bcdefghjkmnpqrstuvwxyz';
@@ -138,7 +138,7 @@ export function isShortLink(url: string): boolean {
 }
 
 function toShared(r: RawExtract | null): SharedLocation | null {
-  return r && r.coordinate ? { coordinate: r.coordinate, name: r.name, source: r.source } : null;
+  return r && r.coordinate ? { coordinate: r.coordinate, name: r.name, address: r.address, source: r.source } : null;
 }
 
 export async function parseSharedLocation(raw: string, deps: ParseDeps): Promise<SharedLocation | null> {
@@ -174,7 +174,7 @@ export async function parseSharedLocation(raw: string, deps: ParseDeps): Promise
   const address = extract?.address;
   if (address) {
     const c = await deps.geocode(address);
-    if (c) return { coordinate: c, name: extract?.name, source: extract?.source ?? 'unknown' };
+    if (c) return { coordinate: c, name: extract?.name, address, source: extract?.source ?? 'unknown' };
   }
   return null;
 }

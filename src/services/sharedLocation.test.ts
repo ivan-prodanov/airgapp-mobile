@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeGeohash, extractFromUrl } from './sharedLocation';
+import { destinationTitle } from './destinationTitle';
 
 const near = (a: number, b: number, eps = 1e-3) => assert.ok(Math.abs(a - b) < eps, `${a} !~= ${b}`);
 
@@ -122,6 +123,17 @@ test('parse: address-only apple → geocode fallback', async () => {
   const deps = { resolveUrl: async () => null, geocode: async (a: string) => (a ? { latitude: 9, longitude: 8 } : null) };
   const loc = await parseSharedLocation('https://maps.apple.com/place?address=1000%20Fifth%20Ave', deps);
   near(loc!.coordinate.latitude, 9);
+});
+
+test('parse: address-only apple → geocode fallback carries the address forward, not just the coordinate', async () => {
+  // Regression for the review finding: a share that resolves to an address but no place name (the
+  // resolver's own geocodeFallback path) must reach the car as the street address, not a bare
+  // "lat, lng" — destinationTitle only gets there if SharedLocation actually carries `address`.
+  const deps = { resolveUrl: async () => null, geocode: async (a: string) => (a ? { latitude: 9, longitude: 8 } : null) };
+  const loc = await parseSharedLocation('https://maps.apple.com/place?address=1000%20Fifth%20Ave', deps);
+  assert.equal(loc!.name, undefined);
+  assert.equal(loc!.address, '1000 Fifth Ave');
+  assert.equal(destinationTitle(loc!), '1000 Fifth Ave');
 });
 
 test('parse: garbage → null', async () => {

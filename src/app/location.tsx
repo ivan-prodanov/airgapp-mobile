@@ -212,7 +212,7 @@ export default function LocationView() {
     const consume = () => {
       const intent = sharedLocationStore.consume();
       if (!intent) return;
-      const { coordinate, name } = intent.location;
+      const { coordinate, name, address } = intent.location;
       setDroppedPin({
         coordinate,
         name: name ?? 'Shared Location',
@@ -220,9 +220,7 @@ export default function LocationView() {
         fromPoi: false,
       });
       setPendingShareFrame(coordinate);
-      // SharedLocation carries no address field (see src/services/sharedLocation.ts) — Task 7's native
-      // side does not resolve one either, so this is always undefined for now.
-      sendToCar({ name, address: undefined, coordinate });
+      sendToCar({ name, address, coordinate });
     };
     consume();
     return sharedLocationStore.subscribe(consume);

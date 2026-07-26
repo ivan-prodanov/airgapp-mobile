@@ -91,8 +91,8 @@ export function useSharedLocationIntake(): void {
 
           let loc: SharedLocation | null = null;
           if (intent.location) {
-            const { lat, lng, name, source } = intent.location;
-            loc = { coordinate: { latitude: lat, longitude: lng }, name, source };
+            const { lat, lng, name, address, source } = intent.location;
+            loc = { coordinate: { latitude: lat, longitude: lng }, name, address, source };
           } else if (intent.raw) {
             loc = await parseSharedLocation(intent.raw, deps); // degraded fallback
           }
