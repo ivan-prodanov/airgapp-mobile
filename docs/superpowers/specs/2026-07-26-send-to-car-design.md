@@ -71,13 +71,36 @@ with "Sharing to car" — Google URL resolution takes seconds and the wait needs
 be visible — resolves the location, writes `{lat, lon, title}` to the App Group,
 opens the app, and dismisses. The app sends on intake and shows a toast.
 
-The title comes from the sharing app where one exists: `MKMapItem.name` for Apple
-shares, the parsed or geocoded name for Google and Waze. `ResolvedLocation.name`
-already carries this and `writeIntent` already writes it — no new plumbing, the
-label just has to reach `sendNavigation` instead of being used as a trip stop.
+## Where the title comes from
 
-Where no title resolves, send the address; where neither resolves, send the
-coordinate and let the car name it.
+The label we send is what shows on the car's screen, so it is worth more care than
+"whatever the object already has". Every source needs an audited path, and two of
+them are currently broken for this purpose.
+
+| Source | Today | Work needed |
+|---|---|---|
+| Apple Maps share | `MKMapItem.name` | none — good |
+| Google / Waze share, coords in the URL | `RawExtract.name`, often nil | fall back to the reverse-geocoded address |
+| Google share, coords found in the page BODY | **hardcoded `name: nil`** (`SharedLocationResolver.swift:37`) | reverse-geocode for a name; today this path has no title at all |
+| Address-only share | `ex?.name ?? item.name` | none — good |
+| Tapped Apple POI | `pin.name` from the map feature | none — good |
+| Search result | `place.title` | none — good |
+| Charger detail | `c.name` | none — good |
+| **Long-pressed map pin** | literal `'Dropped Pin'`, improved to `addr.name ?? addr.street` only if reverse-geocoding succeeds (`location.tsx:347`) | must never reach the car — see below |
+
+**One shared fallback chain**, applied at the send boundary rather than at each
+call site, so there is a single place this can go wrong:
+
+1. a real name from the source (POI, place, charger, share)
+2. else the reverse-geocoded street address
+3. else the formatted coordinate
+
+Placeholders — `'Dropped Pin'` and anything else we synthesised for display — are
+explicitly **not** titles and must be filtered before the send. A destination
+called "Dropped Pin" in the car's route list is worse than one called
+"42.6977, 23.3219", which at least says where it is.
+
+This lives in one pure function so it can be tested without a car.
 
 ## What gets deleted
 
@@ -92,6 +115,23 @@ coordinate and let the car name it.
 Kept: the map, the charger DB and Charging tab, `useNavigateSearch` and its
 recents, `LocationSheet`, `PlacePreviewSheet`, and the nav bench in `carlink.tsx`
 (isolated debug tooling, useful for the next RE round).
+
+### Dependencies
+
+Audited by grepping every consumer, not assumed:
+
+- **`react-native-reorderable-list` — remove from `package.json`.** Its only
+  consumer is `TripSheet` (drag-to-reorder stops). It ships native code, so
+  removing it needs `pod install` + a full rebuild — which this change already
+  requires for the share extension, so it costs nothing extra.
+- **`src/services/appleDirections.ts` — delete.** `appleRoute` has exactly one
+  caller, `useTripRoute`, which is going. The `expo-apple-search` native module
+  stays (search and completion are still used by the Navigate tab); only its
+  MKDirections method becomes dead. Stripping that from Swift is optional and can
+  wait — it is inert, not harmful.
+- **`react-native-gesture-handler` and `react-native-reanimated` stay.** Both look
+  trip-only from `TripSheet` but have other consumers: `_layout.tsx` for the
+  former, `animated-icon` and `collapsible` for the latter.
 
 ## Also in scope
 
@@ -121,7 +161,8 @@ is three lines: emit `null` when a DriveState read reports no route.
 ## Testing
 
 Node tests for the intake reducer (intent → send), the title fallback chain
-(name → address → coordinate), and the `activeRoute: null` clearing. The f106
+(name → address → coordinate, including the placeholder filter that stops
+"Dropped Pin" reaching the car), and the `activeRoute: null` clearing. The f106
 encoding is already covered by `commands.test.ts`.
 
 On-car: share from Apple Maps, Google Maps and Waze; confirm the car receives the
