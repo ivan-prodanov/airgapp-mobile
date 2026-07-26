@@ -21,7 +21,16 @@ export interface TitleInput {
 
 // Labels our own UI invents for display. Compared case-insensitively after
 // trimming. Keep this list in sync with the strings the screens synthesise.
-const PLACEHOLDERS = new Set(['dropped pin', 'location', 'shared location', 'unknown location', 'pin']);
+// ('place' is the POI-tap fallback in location.tsx when Apple hands us a
+// feature with no name of its own.)
+const PLACEHOLDERS = new Set([
+  'dropped pin',
+  'location',
+  'shared location',
+  'unknown location',
+  'pin',
+  'place',
+]);
 
 export function isPlaceholderTitle(s: string): boolean {
   return PLACEHOLDERS.has(s.trim().toLowerCase());

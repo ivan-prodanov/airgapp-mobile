@@ -25,6 +25,10 @@ describe('destinationTitle', () => {
     assert.equal(destinationTitle({ name: 'dropped pin', address: 'ul. Filip Avramov 1', coordinate: coord }), 'ul. Filip Avramov 1');
     assert.equal(destinationTitle({ name: 'Location', coordinate: coord }), '42.6977, 23.3219');
     assert.equal(destinationTitle({ name: 'Shared Location', coordinate: coord }), '42.6977, 23.3219');
+    // 'Place' is what the POI-tap handler synthesises when Apple's map feature
+    // has no name — a label for our own callout, meaningless in a route list.
+    assert.equal(destinationTitle({ name: 'Place', coordinate: coord }), '42.6977, 23.3219');
+    assert.equal(destinationTitle({ name: 'place', address: 'ul. Filip Avramov 1', coordinate: coord }), 'ul. Filip Avramov 1');
   });
 
   it('treats blank and whitespace-only strings as absent', () => {

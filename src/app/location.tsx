@@ -241,14 +241,26 @@ export default function LocationView() {
     try {
       const [addr] = await Location.reverseGeocodeAsync(coordinate);
       if (!addr) return;
-      const name = addr.name ?? addr.street ?? 'Dropped Pin';
-      const subtitle =
-        [addr.street ?? addr.name, addr.city ?? addr.subregion, addr.region]
-          .filter((s): s is string => !!s && s !== name)
+      // ⚠️ DEVICE-VERIFIED: `addr.name` / `addr.street` are NOT reliably a street here — on this phone
+      // reverse-geocoding returns a POSTAL CODE ('814 01') or a bare house number in them. Neither may
+      // become the pin's `name`, because that is exactly what destinationTitle prefers and therefore what
+      // the CAR displays: "814 01" in the route list tells you nothing. So take a street segment only when
+      // it actually contains a letter, and always compose it with the locality — the composed line is both
+      // the pin's on-screen title and the label we hand the car. (This is the knowledge the deleted
+      // `carName` effect carried: fall back through city → district → subregion → region.)
+      const hasLetter = (s: string | null | undefined): s is string => !!s && /[^\d\s.,\-]/.test(s);
+      const street = [addr.street, addr.name].find(hasLetter);
+      const locality = [addr.city, addr.district, addr.subregion, addr.region].find(hasLetter);
+      const name =
+        [street, locality, addr.region]
+          .filter((s): s is string => !!s)
+          .filter((s, i, all) => all.indexOf(s) === i)
           .join(', ') || coords;
+      // The coordinate moves to the detail row: the composed address is now the title, so repeating it
+      // underneath would just be the same line twice.
       setDroppedPin((cur) =>
         cur && cur.coordinate.latitude === coordinate.latitude && cur.coordinate.longitude === coordinate.longitude
-          ? { coordinate, name, subtitle, fromPoi: false }
+          ? { coordinate, name, subtitle: coords, fromPoi: false }
           : cur,
       );
     } catch {
