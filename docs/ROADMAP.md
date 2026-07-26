@@ -89,11 +89,43 @@ probably explains, RESPONSE-19's observation that the official app registers its
 is live SPEED, because `DriveState` is PII-gated here. The subscription itself works fine — 7
 pushes arrived on the 1024 rung — we simply cannot open the envelopes.
 
-What is NOT ruled out, and would need the miner (REQUEST-20):
-- whether the car has a minimum subscriber key size, or refused the 1024 key for another reason;
-- whether any BLE-reachable path registers a subscriber key at all, or whether the cloud
-  registration is architecturally required;
-- whether the ~452B cap is negotiable (MTU, or a fragmenting path we have not found).
+**RESPONSE-20 CLOSED IT. Impossible by construction — do not reopen.**
+
+`CarDataEncryptionManager::encryptPiiKey` (QtCarServer @0x978770) wraps the PII key to our public
+key and then checks the ciphertext length:
+
+```
+0x978972  cmp   ebp, 0x200      ; 512 = RSA-4096 wrap size
+0x978978  je    mint            ; the ONLY success path in the function
+          else → "cipher length was <N> instead of <512>", no key minted
+```
+
+The car requires **exactly RSA-4096**. There is no `cmp 0x100` (2048) or `0x80` (1024) branch. A
+4096 SPKI PEM is ~800 chars ⇒ **~900 B on the wire**, against the car's own ~452 B cap. The size
+requirement and the cap are set by the same vendor to be mutually exclusive over BLE. Cloud
+registration is not a preference, it is the only route large enough — which is the air-gap line.
+
+Our 1024 run failed for TWO independent reasons: wrong size (128B wrap ≠ 512) **and** wrong format
+— RESPONSE-19 said PKCS#1, the car actually parses SPKI (`PEM_read_bio_RSA_PUBKEY`). Both
+corrections make the negative more certain, not less.
+
+Q5 (persistence) came back YES — the car keeps a subscriber DB, so it WOULD be one-time
+provisioning — but it does not help, because no air-gapped route can carry the key even once.
+
+**Live LOCATION is gone. Full stop, no workaround.**
+
+⚠ **One claim in RESPONSE-20 is WRONG for our car, and it is the one that matters.** It says the
+poll and the subscription "both lose live speed, since both flow through the same PII gating".
+Measured otherwise: the SUBSCRIPTION returns DriveState empty with a field-11 envelope, but the
+screen-keyed POLL (a `getVehicleData` read) returns it cleartext — Ivan watched the km/h and the
+blue Driving line update while driving, at 1-3s, and `poll: focused {"states":"drive"}` succeeds
+every ~1.8s. **Read and subscribe are gated differently on this car.** So we keep live speed; only
+location is lost. Worth a confirmation run, but a human watching a speedometer in a moving car is
+strong evidence.
+
+Still worth the five-minute check the RE suggests: subscribe with ONLY cleartext state rates
+(ChargeState=5, ClimateState=6, ClosuresState=11) and confirm they arrive populated with no
+field-11 envelope — that maps the exact cleartext surface for live UI.
 
 Until then the screen-keyed poll below is the live-data story, and it is a good one.
 
