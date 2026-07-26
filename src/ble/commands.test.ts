@@ -57,6 +57,9 @@ import {
   navigateGpsWithLabelAction,
   navigateSearchAction,
   navigateWaypointsAction,
+  vehicleDataSubscriptionAction,
+  cancelVehicleDataSubscriptionAction,
+  VDS_DEFAULTS,
   boomboxAction,
   getChargeStateAction,
   getClimateStateAction,
@@ -231,6 +234,55 @@ test('navigation: GPS, GPS+label, search, waypoints (Place-ID string) builders',
 
   const wp = decodeAction(navigateWaypointsAction('refId:ChIJ1,refId:ChIJ2').bytes);
   assert.equal(wp.vehicleAction?.navigationWaypointsRequest?.waypoints, 'refId:ChIJ1,refId:ChIJ2');
+});
+
+// VDS-M1. This is a GOLDEN-VECTOR test, and it carries more weight than the
+// usual round-trip ones: the field numbers here were recovered from a decompiled
+// app (fc0/g5.java:1388 + fc0/x5), NOT from any public .proto, and no test
+// vehicle will tell us we got them wrong — an unknown field is silently skipped
+// by the car, so a typo'd tag looks exactly like "the car does not support it".
+// Byte-equality against the RE's own hex is the only thing standing between a
+// clean negative result and an uninterpretable one.
+test('vehicleDataSubscriptionAction matches the RESPONSE-15 golden frame byte for byte', () => {
+  const bytes = vehicleDataSubscriptionAction().bytes;
+  //  12 0A        Action field 2 (vehicleAction), len 10
+  //    AA 02 07   VehicleAction field 37 (vehicleDataSubscription), len 7
+  //      18 3C    f3  subscription_duration_s          = 60
+  //      50 88 27 f10 LocationState_max_update_rate_ms = 5000
+  //      60 0A    f12 subscription_ping_s              = 10
+  assert.equal(
+    Buffer.from(bytes).toString('hex'),
+    '120aaa0207183c50882760 0a'.replace(/ /g, ''),
+    'encoded subscription must equal the RE-supplied frame exactly',
+  );
+  // Field ORDER is part of the vector: protobuf readers do not care, but a
+  // reordering here would mean our generated writer stopped tracking the
+  // declared tags, which is the failure this test exists to catch.
+  assert.equal(bytes.length, 12);
+
+  const decoded = decodeAction(bytes).vehicleAction?.vehicleDataSubscription;
+  assert.equal(decoded?.subscriptionDurationS, VDS_DEFAULTS.durationS);
+  assert.equal(decoded?.locationStateMaxUpdateRateMs, VDS_DEFAULTS.locationRateMs);
+  assert.equal(decoded?.subscriptionPingS, VDS_DEFAULTS.pingS);
+});
+
+test('cancelVehicleDataSubscriptionAction is an EMPTY sub-message (duration 0 is a proto3 default)', () => {
+  const bytes = cancelVehicleDataSubscriptionAction().bytes;
+  // ⚠ RESPONSE-15 writes this frame as `12 02 AA 02 00`. That is a TYPO in the
+  // doc: the sub-message body is `AA 02 00`, three bytes, so the Action length
+  // prefix is 03 and the correct frame is `12 03 AA 02 00`. Verified by the same
+  // arithmetic that validates the subscribe vector above (there, 0A = 3 + 7 ✓).
+  // Trusting the doc's literal hex here would have produced a malformed frame.
+  assert.equal(Buffer.from(bytes).toString('hex'), '1203aa0200');
+  // The presence of the sub-message is the whole signal — assert it survives a
+  // round trip, since an absent oneof arm would be a no-op command instead.
+  assert.ok(decodeAction(bytes).vehicleAction?.vehicleDataSubscription);
+});
+
+test('vehicleDataSubscriptionAction rejects nonsense parameters', () => {
+  assert.throws(() => vehicleDataSubscriptionAction({ durationS: -1 }));
+  assert.throws(() => vehicleDataSubscriptionAction({ pingS: 1.5 }));
+  assert.throws(() => vehicleDataSubscriptionAction({ locationRateMs: Number.NaN }));
 });
 
 test('boomboxAction encodes sound id, rejects out-of-range', () => {

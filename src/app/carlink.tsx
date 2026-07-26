@@ -36,7 +36,8 @@ import {
   DOMAIN_VEHICLE_SECURITY,
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
-import { navigateWaypointsAction } from '@/ble/builders';
+import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, VDS_DEFAULTS } from '@/ble/builders';
+import { armVdsCapture, disarmVdsCapture, buildVdsReport } from '@/ble/vdsProbe';
 // Model (b): the real BLE path is the native central (BridgedBleTransport) — the
 // ONLY phone-central path. react-native-ble-plx (DirectBleTransport) was removed
 // 2026-07-23, so a second phone central is impossible to construct.
@@ -567,6 +568,90 @@ export default function CarLinkScreen() {
     }
   };
 
+  // VDS-M1 — the vehicle-data subscription experiment. See src/ble/vdsProbe.ts
+  // for what it measures and why a negative result is the expected one.
+  //
+  // Structure of the run, and why each part is there:
+  //   1. BASELINE window with nothing subscribed. The car already pushes VCSEC
+  //      status unprompted, so without this a run cannot tell "the subscription
+  //      worked" from "the car was chatty anyway".
+  //   2. Send the 12-byte subscribe and record the car's answer verbatim. Even a
+  //      rejection is informative: it tells us the field number reached a parser.
+  //   3. WATCH window ~= the TTL, looking for domain-3 frames with no request_uuid.
+  //   4. Cancel, always — including on the error path, so a probe that throws
+  //      halfway cannot leave the car pushing at us for the rest of the TTL.
+  const handleVdsProbe = async () => {
+    const BASELINE_MS = 15_000;
+    const WATCH_MS = 45_000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      // Wake first: a sleeping MCU cannot answer a domain-3 action at all, and a
+      // failure to reach it would otherwise be misread as "no push support".
+      say('waking car (domain 3 needs the MCU up)…');
+      await gw.wake();
+
+      say(`baseline: listening ${BASELINE_MS / 1000}s with NOTHING subscribed…`);
+      armVdsCapture(Date.now());
+      await wait(BASELINE_MS);
+
+      say(
+        `subscribing: duration=${VDS_DEFAULTS.durationS}s ping=${VDS_DEFAULTS.pingS}s ` +
+          `LocationState rate=${VDS_DEFAULTS.locationRateMs}ms (ONE state — the app's 8-state map ` +
+          `is several KB and would not fit our 1024B inbound cap)`,
+      );
+      const sub = await gw.runRawAction(vehicleDataSubscriptionAction(), 'vds-subscribe');
+      const outcome = sub.outcome.ok ? 'ok' : `${sub.outcome.kind}: ${sub.outcome.message}`;
+      const respHex = sub.result?.decryptedPayload
+        ? Array.from(sub.result.decryptedPayload)
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join(' ')
+        : null;
+      say(`subscribe outcome: ${outcome}`);
+      // ⚠ An "ok" here means the car ACKed, NOT that it understood — the same
+      // trap that made the multi-stop nav work look successful for a day.
+      // Protobuf skips unknown fields silently, so if tag 37 is wrong or
+      // unsupported the car ACKs an empty action. Only the push count below is
+      // evidence.
+      say('  (ACK ≠ understood — protobuf skips unknown fields; the push count is the evidence)');
+
+      say(`watching ${WATCH_MS / 1000}s for unsolicited domain-3 frames…`);
+      await wait(WATCH_MS);
+
+      const observations = disarmVdsCapture();
+      const report = buildVdsReport({
+        observations,
+        baselineEndMs: BASELINE_MS,
+        subscribeOutcome: outcome,
+        subscribeResponseHex: respHex,
+        windowEndMs: BASELINE_MS + WATCH_MS,
+      });
+      for (const line of report.lines) say(line);
+    } catch (err) {
+      say(`ERROR vds probe: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      // Always cancel. The car's TTL would expire it anyway, but leaving it
+      // armed means the car keeps pushing for the remainder of the duration.
+      try {
+        if (gw) {
+          const c = await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+          say(`cancel: ${c.outcome.ok ? 'ok' : c.outcome.message}`);
+        }
+      } catch (err) {
+        say(`WARN cancel failed (TTL will expire it in ≤${VDS_DEFAULTS.durationS}s): ${errMsg(err)}`);
+      }
+      const path = await appendDiagnostic('VDS-M1 subscription probe', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   const handleWake = async () => {
     try {
       const gw = await makeGateway();
@@ -695,6 +780,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Unlock" onPress={() => runCarCommand('unlock', { type: 'unlock' })} theme={theme} />
               <ActionButton label="Read VCSEC status" onPress={handleReadStatus} theme={theme} />
               <ActionButton label="Probe key permissions" onPress={handleProbeWhitelist} theme={theme} />
+              <ActionButton label="VDS-M1 subscription probe" onPress={handleVdsProbe} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />

@@ -132,6 +132,13 @@ export interface CarGateway {
   readWhitelistEntry(): Promise<WhitelistEntryProbe>;
   awakeSync(): Promise<InfotainmentSnapshot>;
   wake(): Promise<CommandOutcome>;
+  // EXPERIMENT-ONLY escape hatch: drive one hand-built ActionPayload through the
+  // normal seal/retry/session machinery and hand back the raw reply. It exists
+  // for on-car probes of messages that have no CarCommand variant because we do
+  // not yet know whether the car honours them at all (VDS-M1). Anything that
+  // turns out to work should graduate to a real CarCommand rather than keep
+  // calling this.
+  runRawAction(action: ActionPayload, label: string): Promise<{ outcome: CommandOutcome; result: CommandResult | null }>;
 }
 
 export interface CreateCarGatewayArgs {
@@ -646,5 +653,5 @@ export function createCarGateway({
     return runCommand({ type: 'wake' });
   }
 
-  return { runCommand, readVcsecStatus, readWhitelistEntry, awakeSync, wake };
+  return { runCommand, readVcsecStatus, readWhitelistEntry, awakeSync, wake, runRawAction: runAction };
 }

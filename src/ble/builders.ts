@@ -505,6 +505,74 @@ export function getFullVehicleDataAction(): ActionPayload {
   };
 }
 
+// --- Vehicle-data subscription (EXPERIMENT — see VDS-M1) --------------------
+//
+// Ask the car to PUSH state at a rate it enforces, instead of us polling for it.
+// The full evidence for and AGAINST this living on BLE is on the proto message
+// (car_server.proto `VehicleDataSubscription`) — read it before extending this.
+// The short version: the car implements it transport-agnostically, but the
+// official app deliberately sends it over Hermes only and 4.58.0 kill-switches
+// it outright. So this is a measurement, not a feature.
+//
+// The parameters below are NOT the app's. The app subscribes to 8 states for
+// 600 s at 1000 ms (250 ms for LocationState) and re-arms every 60 s — several
+// KB of request, and a push rate that would swamp a BLE link whose inbound cap
+// is 1024 B. We deliberately ask for the SMALLEST thing that can still answer
+// the question: ONE state, a TTL short enough that a wedged subscription
+// expires on its own before the user notices, and a ping slow enough that a
+// silent car is distinguishable from a dead link.
+export const VDS_DEFAULTS = Object.freeze({
+  durationS: 60, // car-enforced absolute TTL — it expires itself
+  locationRateMs: 5000, // car-side rate limit + change detection
+  pingS: 10, // the CAR emits these; silence for >1 ping = no push arm
+});
+
+export function vehicleDataSubscriptionAction(opts?: {
+  durationS?: number;
+  locationRateMs?: number;
+  pingS?: number;
+}): ActionPayload {
+  const durationS = opts?.durationS ?? VDS_DEFAULTS.durationS;
+  const locationRateMs = opts?.locationRateMs ?? VDS_DEFAULTS.locationRateMs;
+  const pingS = opts?.pingS ?? VDS_DEFAULTS.pingS;
+  for (const [name, v] of [
+    ['durationS', durationS],
+    ['locationRateMs', locationRateMs],
+    ['pingS', pingS],
+  ] as const) {
+    if (!Number.isInteger(v) || v < 0) throw new Error(`${name} must be a non-negative integer`);
+  }
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    // Same flag as every other state read: the car requires the response
+    // encrypted. Whether the PUSHES also come back sealed is one of the things
+    // M1 measures — if they arrive plaintext, that is itself a finding.
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({
+      vehicleDataSubscription: {
+        subscriptionDurationS: durationS,
+        locationStateMaxUpdateRateMs: locationRateMs,
+        subscriptionPingS: pingS,
+      },
+    }),
+  };
+}
+
+// cancelVehicleDataSubscriptionAction — duration 0. The car's TTL means a
+// subscription always dies on its own, but leaving one running after a probe
+// would keep the car pushing at us for the rest of the TTL, so the probe always
+// cancels explicitly when it finishes.
+//
+// Encodes to `12 02 AA 02 00` only because subscription_duration_s=0 is a proto3
+// default and is therefore NOT serialized — the empty sub-message IS the signal.
+export function cancelVehicleDataSubscriptionAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ vehicleDataSubscription: {} }),
+  };
+}
+
 // --- Defrost + temperature -------------------------------------------------
 
 export function defrostOnAction(): ActionPayload {

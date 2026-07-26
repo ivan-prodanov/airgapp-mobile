@@ -5,6 +5,46 @@
 
 ---
 
+---
+
+# ADDENDUM B — "what options do we have for adding a GPS to an existing route?"
+
+**Complete option set.** There are **six** nav messages in the `VehicleAction` union, **four of which carry an `Order` field** — and each lands on a **different car-side handler**. You have tested exactly one of them.
+
+| VehicleAction field | message | fields | car-side handler | order? | status |
+|---|---|---|---|---|---|
+| **53** | `NavigationGpsRequest` | f1 lat(double), f2 lon(double), **f3 order** | `navigation_gps_request(RKd, RKd, order)` | ✅ | ❌ **you tested — APPEND ignored** |
+| **106** | `NavigationGpsDestinationRequest` | f1 lat, f2 lon, **f3 destination(string)**, **f4 order** | `navigation_gps_destination_request(RKd, RKd, RK7QString, order)` | ✅ | **untested — different handler** |
+| **21** | `NavigationRequest` | **f1 destination(string)**, **f2 order** | `navigation_request(RK7QString, order)` | ✅ | **untested — ⭐ see below** |
+| **22** | `NavigationSuperchargerRequest` | f1 id(long), **f2 order** | `navigation_sc_request(RKi, order)` | ✅ | **untested** |
+| **90** | `NavigationWaypointsRequest` | waypoints(string), tripPlanOptions | `navigation_waypoints_request(QString, QMap)` | ❌ **no order** | ACKs, drops coord tokens |
+| **69** | `NavigationRouteAction` | **empty message — no fields at all** | — | ❌ | unknown trigger |
+
+### ⭐ The standout: field 21 `NavigationRequest{destination: "lat,lon", order: APPEND}`
+
+This is the one I'd try first, because **the official app itself sends coordinates as text through this exact message.** Proven: `#30228 generateNavigationRequestPayload` builds
+
+```js
+payload = coord.lat + ',' + coord.long        // 0011 'lat', 0017 ',', 0028 'long'
+```
+
+…and `#114892 @0219–0228` feeds that payload into **`navigationRequest`** (field 21). So `"42.697700,23.321900"` as a *destination string* is a **format the app genuinely emits and the car genuinely geocodes** — and field 21 carries an **`Order`** (f2) right beside it.
+
+That gives you a coordinate-bearing message with an order flag, on a handler you have not exercised. It is the only combination that has both properties.
+
+### Why these aren't just "the same failed test again"
+`RemoteNavTripOrder` dies at the CarAPI boundary for **`navigation_gps_request`** — but each of the four is a **separate `CarAPIImpl` function with its own downstream dispatch**. The GPS result tells you nothing about the other three. Worth noting the app's *own* multi-stop flow never uses field 53 at all; it uses 90 (waypoints) and, for single sends, 21/106/22.
+
+### Suggested order of attack
+1. **f21** `NavigationRequest{destination:"lat,lon", order:APPEND}` — coordinates-as-text is app-proven, and it has an order.
+2. **f106** `NavigationGpsDestinationRequest{lat, lon, destination:"<name>", order:APPEND}` — true doubles *plus* a name, different handler from f53. **Check which of 53/106 you're actually on today** — you described sending `{lat, lon, destination, order}`, but field 53 has **no destination field**; if you're on 53, then 106 is genuinely new.
+3. **f22** `NavigationSuperchargerRequest{id, order:APPEND}` — the canonical multi-stop case; also pairs with the proven `superchargerId:` token path.
+4. **f90** with `superchargerId:` tokens — proven format, no order, replaces the whole stop list (which is a legitimate way to "add": read current stops, append yours, resend the full list).
+
+**Honest status:** that any of 21/106/22 honours APPEND is **unverified** — the parser/dispatch beyond `CarAPIImpl` isn't in this image, and this image is MCU2-Intel while your car is HW4-Ryzen. But unlike the coordinate-token guesses, these are **four distinct, enumerated, order-carrying entry points**, and #1 uses a payload format the app demonstrably produces. Verify each with a `DriveState.active_route_*` read-back, not the ACK.
+
+---
+
 ## TL;DR — your string is wrong in two independent ways
 
 The official app **never sends coordinates** in `waypoints`. It sends **prefixed reference tokens joined by commas**:

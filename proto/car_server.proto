@@ -106,7 +106,62 @@ message VehicleAction {
         ParentalControlsSetSpeedLimitAction parentalControlsSetSpeedLimitAction = 113;
         SetLowPowerModeAction setLowPowerModeAction = 130;
         SetKeepAccessoryPowerModeAction setKeepAccessoryPowerModeAction = 138;
+        // Absent from teslamotors/vehicle-command. Recovered from the shipping app:
+        // `fc0/g5.java:1388` encodes getVehicleDataSubscription() at tag 37
+        // (RESPONSE-15 P0-1). See VehicleDataSubscription below for the field map
+        // and for why only three of its fields are declared.
+        VehicleDataSubscription vehicleDataSubscription = 37;
     }
+}
+
+// VehicleDataSubscription — ask the car to PUSH state instead of being polled.
+//
+// ⚠ THIS IS AN EXPERIMENT, NOT A SHIPPING PATH. Read before extending it.
+//
+// What is settled (RESPONSE-15 P0-1, HIGH confidence):
+//   • Protocol-legal over BLE: domain 3, SIGNATURE_TYPE_AES_GCM, FLAG_ENCRYPT_RESPONSE.
+//   • The car implements the whole mechanism transport-agnostically. QtCarServer:
+//     SignedCarAPIServiceImpl::Process(…, int handle, …) → sendSubscription →
+//     CarDataHandler::handleSubscription(handle, …) → transmitCarData →
+//     handleSendToInfotainmentDispatcher(handle, Response). HANDLE-KEYED, with zero
+//     transport selection — which is why a push over our BLE link is plausible.
+//   • duration_s is a car-enforced absolute TTL; the CAR generates the pings;
+//     max_update_rate_ms is a car-side rate limiter WITH change-detection (state
+//     that has not changed is not resent); pii_key_request is optional.
+//
+// What is settled AGAINST it (equally HIGH confidence — do not skip):
+//   • The official app NEVER sends this over BLE. All three call sites pass
+//     useBluetooth=false → [TRANSPORT_HERMES] unconditionally, while the sibling
+//     saga startBleVehicleUpdates in the same module passes useBluetooth=TRUE.
+//     That asymmetry is deliberate: over BLE, Tesla polls per-state reads — which
+//     is exactly what airgapp already does.
+//   • It is kill-switched in app 4.58.0 on both platforms
+//     (vehicleSupportsVehicleDataSubscription → unconditional `return false`).
+//   • The app's real parameters are NOT replayable on BLE: Android caps inbound
+//     routables at MAX_RX_BUFFER_SIZE=452 (ours is MAX_BLE_MESSAGE_SIZE=1024) and
+//     the app's 8-state subscription is several KB.
+//
+// So this exists to answer ONE question no static analysis can: does the car's
+// dispatcher deliver UNSOLICITED pushes over the BLE arm? That binary is not in
+// any firmware image we hold. One state, short TTL — see vehicleDataSubscriptionAction.
+message VehicleDataSubscription {
+    // Only the three fields with a recovered tag number are declared. The app's
+    // message also carries per-state *_max_update_rate_ms for ChargeState,
+    // ClimateState, ClosuresState, DriveState, GuiSettings, VehicleConfig,
+    // VehicleState, ParkedAccessoryState, ChargeScheduleState,
+    // PreconditioningScheduleState, AlertState, SuspensionState and
+    // ChildPresenceDetectionState, plus pii_key_request — but RESPONSE-15
+    // recovered a tag for NONE of those, only their existence. Guessing tags
+    // here would silently target the wrong state and make a negative result
+    // uninterpretable, so they stay undeclared until the miner supplies them.
+    uint32 subscription_duration_s = 3;
+    uint32 location_state_max_update_rate_ms = 10;
+    uint32 subscription_ping_s = 12;
+    // reserved 13 = pii_key_request (fc0/z2 subscriber_public_key + fc0/a3
+    // expiration). Deliberately omitted, not forgotten: QtCarServer's
+    // "No PII request" path proceeds without it, and it is the field that
+    // "smells like Fleet-Telemetry". Note this is NOT the top-level
+    // piiKeyRequest, which is Action field 51 and IS cloud-pinned.
 }
 
 message GetVehicleData {
