@@ -395,10 +395,39 @@ export default function CarLinkScreen() {
       // Loud on failure: the previous probes' worst results all came from reading
       // state after a send that had not landed.
       const verdict = res.outcome.ok
-        ? '  → ACK ok (an ACK is not a route — look at the centre screen)'
+        ? '  → transport ACK ok (says the car received it, NOT that it navigated)'
         : `  → SEND FAILED: ${res.outcome.kind}: ${res.outcome.message}`;
       out.push(verdict);
       append(verdict);
+
+      // The car's OWN verdict, which nothing in this codebase has ever read.
+      // Response.actionStatus carries {result: OK|ERROR, result_reason.plain_text}
+      // — and a rejection like "no results found" would arrive here, in the reply
+      // we have been discarding. This is what makes point D (failed) and point E
+      // (worked) distinguishable in the log instead of both reading "ACK ok".
+      const payload = res.result?.decryptedPayload;
+      if (!payload) {
+        const none = '  → car sent no payload to inspect';
+        out.push(none);
+        append(none);
+      } else {
+        try {
+          const resp = CarServerResponse.decode(payload) as {
+            actionStatus?: { result?: number; resultReason?: { plainText?: string } };
+          };
+          const st = resp.actionStatus;
+          const result = st?.result === 1 ? 'ERROR' : st?.result === 0 ? 'OK' : `(absent:${st?.result})`;
+          const reason = st?.resultReason?.plainText;
+          const carLine = `  → CAR SAYS: ${result}${reason ? ` — "${reason}"` : ' (no reason text)'}`;
+          out.push(carLine);
+          append(carLine);
+        } catch (e) {
+          // Never let a decode problem hide the bytes — print them raw instead.
+          const hexLine = `  → reply undecodable (${errMsg(e)}); raw: ${Array.from(payload).map((b) => b.toString(16).padStart(2, '0')).join(' ')}`;
+          out.push(hexLine);
+          append(hexLine);
+        }
+      }
     } catch (err) {
       const e = `  → SEND FAILED: ${errMsg(err)}`;
       out.push(e);
