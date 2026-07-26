@@ -1634,8 +1634,9 @@ export default function CarLinkScreen() {
       const ma = median(a);
       const mb = median(b);
       const worstB = Math.max(...b);
+      const worstA = Math.max(...a);
       say('');
-      say(`quiet: median ${ma}ms worst ${Math.max(...a)}ms`);
+      say(`quiet: median ${ma}ms worst ${worstA}ms`);
       say(`loaded: median ${mb}ms WORST ${worstB}ms`);
       // ⚠ The verdict is on the WORST, not the median.
       //
@@ -1647,7 +1648,24 @@ export default function CarLinkScreen() {
       // Latency questions are TAIL questions. A summary that averages away the
       // bad case is measuring the wrong thing, which is the same mistake as
       // gating a hex dump on the classification under test.
-      if (worstB <= 500) {
+      // BASELINE GATE, before any judgement about the load.
+      //
+      // Measured 2026-07-26 19:09: both MARGINAL runs had a QUIET phase twice as
+      // slow as the passing ones (median 237/209ms vs 91-120ms, worst ~390ms vs
+      // ~120ms). The load ratio was actually BETTER in those runs — 1.6-2.0x
+      // against 2.5x — so the load was handled fine and the LINK was slow. The
+      // verdict blamed the load anyway, because it judges an absolute number.
+      //
+      // A probe that cannot measure its variable must say so rather than
+      // produce a verdict about it. Same rule as PE-1's INCONCLUSIVE and M4's
+      // VOID. 250ms separates cleanly: healthy quiet worst is 120-151ms,
+      // degraded was 392-394ms.
+      if (worstA > 250) {
+        say(`VERDICT: BASELINE DEGRADED — the QUIET phase alone hit ${worstA}ms.`);
+        say('  This run says NOTHING about the focused read: the link was already slow with');
+        say('  nothing running. Re-run when the quiet phase is back under ~150ms.');
+        say(`  (for the record: loaded worst ${worstB}ms, ratio ${(worstB / worstA).toFixed(1)}x)`);
+      } else if (worstB <= 500) {
         say('VERDICT: SAFE TO ENABLE — even the worst command stayed responsive.');
       } else if (worstB <= 1500) {
         say(`VERDICT: MARGINAL — worst tap ${worstB}ms. Fix the cause before enabling.`);
