@@ -122,9 +122,15 @@ export default function CarLinkScreen() {
   // SEND will use. See the handlers further down for why this is a manual bench.
   const [navPointA, setNavPointA] = useState('42.6977,23.3219');
   const [navPointB, setNavPointB] = useState('42.7105,23.3219');
+  // Point C is the GEOCODING DISCRIMINATOR: open water in the north Aegean, with no
+  // road, address or POI anywhere near it. If the car pins this exact spot, it
+  // parsed our string as two numbers. If it lands on a named place (an island, a
+  // port) or refuses, it ran the string through its own search instead — which
+  // would mean arbitrary dropped pins are not safe to send as "lat,lon".
+  const [navPointC, setNavPointC] = useState('39.936693,25.306087');
   const [benchMsg, setBenchMsg] = useState<'f53' | 'f106' | 'f21'>('f53');
   const [benchOrder, setBenchOrder] = useState<'REPLACE' | 'PREPEND' | 'APPEND'>('REPLACE');
-  const [benchTarget, setBenchTarget] = useState<'A' | 'B'>('A');
+  const [benchTarget, setBenchTarget] = useState<'A' | 'B' | 'C'>('A');
   // The previous read, so each read can state how far the destination moved. A ref,
   // not state: it must survive re-renders without causing them, and it is only ever
   // read inside the handler.
@@ -335,7 +341,8 @@ export default function CarLinkScreen() {
   // command's reply to the next request. Not enforced — just flagged in the log.
   const BENCH_MIN_GAP_MS = 3_000;
 
-  const benchCoord = () => parseCoord(benchTarget === 'A' ? navPointA : navPointB);
+  const benchCoord = () =>
+    parseCoord(benchTarget === 'A' ? navPointA : benchTarget === 'B' ? navPointB : navPointC);
 
   const benchMessage = (c: ProbeCoord, order: number): ActionPayload => {
     if (benchMsg === 'f53') return navigateGpsAction({ lat: c.lat, lon: c.lon, order });
@@ -1651,6 +1658,14 @@ export default function CarLinkScreen() {
                 autoCapitalize="none"
                 theme={theme}
               />
+              <Field
+                label="1 · Point C — open sea, no road/address/POI (geocoding test)"
+                value={navPointC}
+                onChangeText={setNavPointC}
+                placeholder="39.936693,25.306087"
+                autoCapitalize="none"
+                theme={theme}
+              />
 
               <View style={styles.field}>
                 <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>2 · Message</Text>
@@ -1675,6 +1690,7 @@ export default function CarLinkScreen() {
                 <View style={styles.transportRow}>
                   <TransportPill label="Point A" active={benchTarget === 'A'} onPress={() => setBenchTarget('A')} theme={theme} />
                   <TransportPill label="Point B" active={benchTarget === 'B'} onPress={() => setBenchTarget('B')} theme={theme} />
+                  <TransportPill label="Point C sea" active={benchTarget === 'C'} onPress={() => setBenchTarget('C')} theme={theme} />
                 </View>
               </View>
 
