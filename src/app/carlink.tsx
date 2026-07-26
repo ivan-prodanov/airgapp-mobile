@@ -1121,6 +1121,147 @@ export default function CarLinkScreen() {
     }
   };
 
+  // VDS-M9 — which states arrive in the CLEAR? (keep-or-delete for the VDS code)
+  //
+  // The PII gate is per-state and decided car-side, and we have only ever probed
+  // two of them — with a result nobody predicted:
+  //
+  //   LocationState (8)  subscription: GATED     measured
+  //   DriveState (5)     subscription: GATED     measured
+  //   DriveState (5)     poll / read: CLEARTEXT  measured (Ivan, driving)
+  //
+  // Read and subscribe are gated DIFFERENTLY on this car. RESPONSE-20 assumed
+  // they were the same and concluded we had lost live speed; we have not.
+  //
+  // This decides whether the subscription is worth keeping at all now that the
+  // PII key is unreachable (RESPONSE-20: the car requires exactly RSA-4096, whose
+  // ~900B key cannot fit under its own ~452B cap — closed, three ways):
+  //
+  //   • cleartext charge/climate/closures ⇒ the subscription still beats polling
+  //     for those states — car-driven cadence, no per-poll round trip, no queue
+  //     contention. Worth wiring into the app.
+  //   • all gated ⇒ the subscription can deliver NOTHING we can read, and
+  //     vdsProbe.ts, piiKey.ts, node-forge and four probes are dead weight to be
+  //     deleted rather than carried.
+  //
+  // Part 2 costs nothing extra and checks the assumption that just cost the RE a
+  // wrong conclusion: is a READ of LocationState also more permissive than a
+  // subscribe? Probably not. But "probably" is what got the speed claim wrong.
+  const handleVdsCleartextSurface = async () => {
+    const WATCH_MS = 14_000;
+    const out: string[] = [];
+    const say = (line: string) => {
+      out.push(line);
+      append(line);
+    };
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    try {
+      gw = await makeGateway();
+      say('waking car…');
+      await gw.wake();
+
+      // ---- Part 1: subscribe to the cleartext CANDIDATES, no PII key ----
+      say('');
+      say('PART 1 — subscribe: ChargeState(5) + ClimateState(6) + ClosuresState(11), no PII key');
+      const sub = await gw.runRawAction(
+        vehicleDataSubscriptionAction({
+          durationS: 40,
+          pingS: 10,
+          locationRateMs: null,
+          chargeRateMs: 2000,
+          climateRateMs: 2000,
+          closuresRateMs: 2000,
+        }),
+        'vds-cleartext',
+      );
+      say(`  subscribe: ${sub.outcome.ok ? 'ok' : sub.outcome.kind}`);
+
+      armVdsCapture(Date.now());
+      await wait(WATCH_MS);
+      const seen = disarmVdsCapture();
+
+      // VehicleData tag numbers double as the EncryptedData field_number, so the
+      // same id identifies a state whether it arrives clear or gated.
+      const WANT = [
+        { id: 3, name: 'ChargeState', slice: 'charge' },
+        { id: 4, name: 'ClimateState', slice: 'climate' },
+        { id: 9, name: 'ClosuresState', slice: 'closures' },
+      ];
+      const clear = new Map<number, number>();
+      const gated = new Map<number, number>();
+      let decoded = 0;
+      for (const o of seen) {
+        const dec = sub.result?.decryptPush?.(o.raw);
+        if (!dec) continue;
+        decoded++;
+        for (const env of parsePiiEnvelopes(dec.plaintext)) {
+          gated.set(env.fieldNumber, (gated.get(env.fieldNumber) ?? 0) + 1);
+        }
+        try {
+          const snap = parseCarServerResponse(CarServerResponse.decode(dec.plaintext));
+          for (const w of WANT) {
+            const slice = (snap as Record<string, unknown>)[w.slice];
+            // "Populated" means the slice exists AND carries a non-null value —
+            // a gated state still produces an EMPTY slice, which is exactly how
+            // VDS-M5 first fooled this probe's ancestor.
+            if (slice && Object.values(slice as object).some((v) => v !== undefined && v !== null)) {
+              clear.set(w.id, (clear.get(w.id) ?? 0) + 1);
+            }
+          }
+        } catch {
+          /* not a Response — counted only via envelopes above */
+        }
+      }
+      say(`  ${seen.length} pushes, ${decoded} decrypted`);
+      for (const w of WANT) {
+        const c = clear.get(w.id) ?? 0;
+        const g = gated.get(w.id) ?? 0;
+        say(`  ${w.name.padEnd(14)} cleartext:${c}  gated:${g}  → ${c > 0 ? 'CLEARTEXT' : g > 0 ? 'GATED' : 'no data'}`);
+      }
+
+      // ---- Part 2: does a READ of LocationState behave differently? ----
+      say('');
+      say('PART 2 — poll READ of LocationState (the read path is more permissive for DriveState)');
+      try {
+        const snap = await gw.awakeSync({ states: ['location'] });
+        const loc = snap.location;
+        const populated = !!loc && loc.lat !== undefined && loc.lon !== undefined;
+        say(`  location slice: ${JSON.stringify(loc ?? null)}`);
+        say(
+          populated
+            ? '  *** POPULATED — live location IS reachable by READ. RESPONSE-20 is wrong here too. ***'
+            : '  empty — location is gated on the read path as well, as expected.',
+        );
+      } catch (e) {
+        say(`  read failed: ${errMsg(e)} — inconclusive for location`);
+      }
+
+      say('');
+      const anyClear = WANT.some((w) => (clear.get(w.id) ?? 0) > 0);
+      if (anyClear) {
+        say('VERDICT: KEEP the subscription — some states stream in the clear, so it beats');
+        say('  polling for those (car-driven cadence, no per-poll round trip).');
+      } else if (decoded > 0) {
+        say('VERDICT: DELETE the VDS path — every state we asked for is gated behind a key');
+        say('  we can never register. vdsProbe/piiKey/node-forge become dead weight.');
+      } else {
+        say('VERDICT: inconclusive — nothing decoded. Re-run with the car awake.');
+      }
+    } catch (err) {
+      say(`ERROR cleartext surface: ${errMsg(err)}`);
+      disarmVdsCapture();
+    } finally {
+      try {
+        if (gw) await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+      } catch {
+        /* the TTL will expire it */
+      }
+      const path = await appendDiagnostic('VDS-M9 cleartext surface', out);
+      append(path ? 'written to diagnostics file (pull with devicectl)' : 'WARN: diagnostics file write failed');
+    }
+  };
+
   // VDS-M8 — will a key that FITS get us a PII key back?
   //
   // VDS-M7 found the wall: the car answers a 276B sealed body and goes silent at
@@ -2110,6 +2251,7 @@ export default function CarLinkScreen() {
               <ActionButton label="VDS-M6 full PII run" onPress={() => withBackgroundReadsSuspended(handleVdsPiiRun)} theme={theme} />
               <ActionButton label="VDS-M7 size ladder" onPress={() => withBackgroundReadsSuspended(handleVdsSizeLadder)} theme={theme} />
               <ActionButton label="VDS-M8 key encodings" onPress={() => withBackgroundReadsSuspended(handleVdsKeyEncodings)} theme={theme} />
+              <ActionButton label="VDS-M9 cleartext surface" onPress={() => withBackgroundReadsSuspended(handleVdsCleartextSurface)} theme={theme} />
               <ActionButton label="VDS-M3 default-state probe" onPress={() => withBackgroundReadsSuspended(handleVdsDefaultProbe)} theme={theme} />
               <ActionButton label="VDS-M4 ping/ack probe" onPress={() => withBackgroundReadsSuspended(handleVdsAckProbe)} theme={theme} />
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
