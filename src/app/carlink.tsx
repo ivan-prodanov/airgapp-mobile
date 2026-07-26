@@ -831,6 +831,16 @@ export default function CarLinkScreen() {
         }
         await wait(5000);
       }
+      // acksSent is the ONLY trustworthy record that this phase happened.
+      //
+      // ⚠ Do NOT try to corroborate it from the `txp` log category: that log
+      // covers useCarLink's transport, NOT the gateway this screen builds. A
+      // probe's own wake/subscribe/ack traffic never appears there. Verified the
+      // hard way — an M4 verdict was withdrawn on the reasoning "zero exchanges
+      // in the txp log, so the acks never left the phone", and the subscribe
+      // that had demonstrably succeeded was missing from that same window. An
+      // absence only means something once you have shown the log covers the
+      // thing you are looking for.
       say(`  acks: ${acksSent} delivered, ${ackErrors.length} failed`);
       for (const e of [...new Set(ackErrors)].slice(0, 3)) say(`    ack error: ${e}`);
       const acked = summarise('acked', disarmVdsCapture());
