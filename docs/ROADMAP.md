@@ -65,14 +65,37 @@ This very likely explains Tesla's own architecture: RESPONSE-19 noted the offici
 its subscriber key through the **standalone cloud path** and only then subscribes over BLE. The
 embedded field is real and BLE-legal, but unusable at RSA-2048 because it does not fit.
 
-Next things to try, cheapest first:
-1. **RSA-1024** — PEM ~220 chars ⇒ sealed ~240B, comfortably under. Settles whether the wall is the
-   KEY SIZE or the mechanism. The car may refuse a 1024 key; that refusal would itself be an
-   answer, and a reply of any kind beats silence.
-2. **PKCS#1 DER instead of PEM** — ~270B for RSA-2048 versus 434 as PEM, which might just fit.
-   ⚠ RESPONSE-19 says PEM text explicitly, so this is a guess and must be labelled one.
-3. If neither works, the PII path is closed to an air-gapped client over BLE, and live LOCATION
-   (and, on this HW4 car, live SPEED) stays out of reach. Say so plainly rather than grinding.
+**Both fitting encodings tried (VDS-M8). The path is CLOSED over BLE, and here is why plainly.**
+
+```
+RSA-1024 PKCS#1 PEM        sealed 276B   REPLIED (0a 00)   7 pushes, wrapped key ABSENT
+RSA-2048 PEM, stripped     sealed 380B   SILENT            over the cap
+```
+
+The two constraints are **mutually exclusive**:
+
+- a key large enough for the car to accept (2048) produces a request that does not FIT;
+- a key that fits (1024) is parsed and answered — and the car mints NO PII key for it.
+
+Raw DER is not an escape: `subscriber_public_key` is a protobuf STRING, i.e. UTF-8 on the wire, so
+bytes above 0x7F are re-encoded and DER arrives corrupted AND longer. It is an invalid encoding of
+this field, not a compact one.
+
+So an air-gapped client cannot register a subscriber key over BLE. This is consistent with, and
+probably explains, RESPONSE-19's observation that the official app registers its key through the
+**standalone cloud path** and only then subscribes over BLE — a route we will not take.
+
+**Consequence, stated rather than hedged:** live LOCATION is out of reach, and on this HW4 car so
+is live SPEED, because `DriveState` is PII-gated here. The subscription itself works fine — 7
+pushes arrived on the 1024 rung — we simply cannot open the envelopes.
+
+What is NOT ruled out, and would need the miner (REQUEST-20):
+- whether the car has a minimum subscriber key size, or refused the 1024 key for another reason;
+- whether any BLE-reachable path registers a subscriber key at all, or whether the cloud
+  registration is architecturally required;
+- whether the ~452B cap is negotiable (MTU, or a fragmenting path we have not found).
+
+Until then the screen-keyed poll below is the live-data story, and it is a good one.
 
 Prior context: the car DOES stream over BLE — proven by rate sweep (asked 5000ms → got 4979/5010;
 asked 2000ms → got 1982/1983; zero domain-3 frames in the baseline), 23/23 pushes decrypt, and
