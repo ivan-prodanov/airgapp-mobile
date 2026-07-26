@@ -1365,47 +1365,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // a still-asleep car (caught below), matching the Tesla app, which fetches
         // vehicle_data on pull-to-refresh. The automatic poll keeps the awake gate.
         const now = Date.now();
-        // FOCUSED READ — the official app's real BLE strategy (viewFocusReads.ts).
-        // ONE state, chosen by the visible panel, at ~5s. This is what makes the
-        // status line live: speed and the blue "Driving" label come from
-        // DriveState, which previously only arrived on the 60s tick or a
-        // pull-to-refresh.
-        //
-        // Same awake + nothing-in-flight gates as the full read below, so it can
-        // never contend with a user command. It is simply much cheaper — one
-        // round trip instead of four — and the per-tick COST, not the interval,
-        // is what forced the 60s throttle in the first place.
-        const focusPlan = planForCameraMode(getActiveStateRef.current()?.cameraMode);
-        if (
-          patch.awake === true &&
-          inFlightRef.current === 0 &&
-          now - lastFocusedAtRef.current >= focusPlan.intervalMs &&
-          // Skip when the full read is due anyway: it is a superset, so running
-          // both back to back would just double the traffic for no new data.
-          now - lastInfotainmentAtRef.current < INFOTAINMENT_MS - focusPlan.intervalMs
-        ) {
-          try {
-            const focusSnap = await gw.awakeSync({ states: focusPlan.states });
-            if (stopped || paused) return;
-            lastFocusedAtRef.current = Date.now();
-            const focusPatch = filterPatchUnderIntent(
-              infotainmentToPatch(focusSnap),
-              intentRef.current,
-              Date.now(),
-              getActiveStateRef.current(),
-            );
-            if (Object.keys(focusPatch).length) {
-              applyTelemetryRef.current(focusPatch);
-              cacheInfotainment(focusPatch);
-            }
-          } catch {
-            // Best-effort, exactly like the full read: the VCSEC half above is
-            // what 'online' means, so a scoped read failing must not change it.
-            // Stamped on failure too, so a persistently faulting read backs off
-            // to its interval instead of retrying every tick.
-            lastFocusedAtRef.current = Date.now();
-          }
-        }
         if (
           (patch.awake === true || opts?.forceInfotainment === true) &&
           inFlightRef.current === 0 &&
@@ -1452,6 +1411,59 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
 
     tickRef.current = tick;
 
+    // FOCUSED READ — its own loop, deliberately NOT a branch inside tick().
+    //
+    // First cut put it inside tick(), which is scheduled every POLL_MS (20s), so
+    // a 5s interval check could only ever be evaluated every 20s — it silently
+    // polled at 20s and the status line was no livelier than before. A separate
+    // timer is also the more faithful shape: the app's own
+    // `startBleVehicleUpdates` is a DEDICATED polling task, not a step of
+    // another loop.
+    //
+    // It yields to everything: the VCSEC tick (inFlight), any user command
+    // (inFlightRef) and a sleeping car. See viewFocusReads.ts for the state
+    // choice and the interval's provenance.
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
+    let focusInFlight = false;
+    const focusTick = async () => {
+      if (stopped || paused || inFlight || focusInFlight) return;
+      if (inFlightRef.current !== 0) return; // a user command owns the link
+      const active = getActiveStateRef.current();
+      if (!active?.awake) return; // domain-3 reads fault on a sleeping car
+      focusInFlight = true;
+      try {
+        const gw = getGateway();
+        if (!gw || stopped || paused) return;
+        const plan = planForCameraMode(active.cameraMode);
+        const snap = await gw.awakeSync({ states: plan.states });
+        if (stopped || paused) return;
+        const focusPatch = filterPatchUnderIntent(
+          infotainmentToPatch(snap),
+          intentRef.current,
+          Date.now(),
+          getActiveStateRef.current(),
+        );
+        if (Object.keys(focusPatch).length) {
+          applyTelemetryRef.current(focusPatch);
+          cacheInfotainment(focusPatch);
+        }
+      } catch {
+        // Best-effort. The VCSEC tick is what 'online' means, so a scoped read
+        // failing must never change the connection state.
+      } finally {
+        focusInFlight = false;
+      }
+    };
+    const scheduleFocus = () => {
+      if (stopped || paused) return;
+      const plan = planForCameraMode(getActiveStateRef.current()?.cameraMode);
+      focusTimer = setTimeout(focusLoop, plan.intervalMs);
+    };
+    const focusLoop = async () => {
+      await focusTick();
+      scheduleFocus();
+    };
+
     const scheduleNext = () => {
       if (stopped || paused) return;
       timer = setTimeout(loop, POLL_MS);
@@ -1466,12 +1478,17 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       if (timer || inFlight) return; // already running
       setConnection((prev) => (prev === 'online' ? prev : 'connecting'));
       void loop();
+      if (!focusTimer) scheduleFocus();
     };
     const stopPolling = () => {
       paused = true;
       if (timer) {
         clearTimeout(timer);
         timer = null;
+      }
+      if (focusTimer) {
+        clearTimeout(focusTimer);
+        focusTimer = null;
       }
     };
 
