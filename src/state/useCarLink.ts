@@ -309,10 +309,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // Last INFOTAINMENT (charge/range) read. Throttles the heavy domain-3 poll so
   // it can't block interactive commands — see the poll tick.
   const lastInfotainmentAtRef = useRef(0);
-  // Separate clock for the FOCUSED read (see viewFocusReads.ts). Kept apart
-  // from lastInfotainmentAtRef so the cheap scoped read and the expensive
-  // four-state read never throttle each other.
-  const lastFocusedAtRef = useRef(0);
   const deferredTeardownRef = useRef(false);
   // Keep the latest applyTelemetry without restarting the poll effect: its
   // identity can change per render, but the poll must not tear down/rebuild.
