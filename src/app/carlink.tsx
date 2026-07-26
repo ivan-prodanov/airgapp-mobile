@@ -37,7 +37,7 @@ import {
   DOMAIN_INFOTAINMENT,
 } from '@/ble/session';
 import { navigateWaypointsAction, vehicleDataSubscriptionAction, cancelVehicleDataSubscriptionAction, VDS_DEFAULTS } from '@/ble/builders';
-import { armVdsCapture, disarmVdsCapture, buildVdsReport } from '@/ble/vdsProbe';
+import { armVdsCapture, disarmVdsCapture, buildVdsReport, type VdsWindow } from '@/ble/vdsProbe';
 // Model (b): the real BLE path is the native central (BridgedBleTransport) — the
 // ONLY phone-central path. react-native-ble-plx (DirectBleTransport) was removed
 // 2026-07-23, so a second phone central is impossible to construct.
@@ -581,19 +581,36 @@ export default function CarLinkScreen() {
   //   4. Cancel, always — including on the error path, so a probe that throws
   //      halfway cannot leave the car pushing at us for the rest of the TTL.
   const handleVdsProbe = async () => {
+    // VDS-M1 — the vehicle-data subscription experiment. See src/ble/vdsProbe.ts.
+    //
+    // RUN 2 is a RATE SWEEP, because run 1 could not interpret itself. It saw
+    // nine 243B frames at a clean 5.0s cadence, exactly the 5000ms it had asked
+    // for, and reported NO PUSHES — because the push predicate read the wrong
+    // oneof arm for `domain` and additionally excluded frames carrying a
+    // request_uuid, which RESPONSE-15 says is the subscription's own correlation
+    // tag. Both bugs are fixed, but a fixed classifier still only counts frames.
+    //
+    // Counting cannot distinguish "the car answered us" from "the car was
+    // chatty". Varying the parameter can: subscribe at two DIFFERENT rates in one
+    // run and see whether the observed cadence follows. Nothing else on this link
+    // — not our 20s poll, not VCSEC pushes, not the passive-entry challenge —
+    // has any reason to track a number we picked. That is the measurement.
     const BASELINE_MS = 15_000;
-    const WATCH_MS = 45_000;
+    const WINDOW_MS = 30_000;
+    const RATES = [5000, 2000];
     const out: string[] = [];
     const say = (line: string) => {
       out.push(line);
       append(line);
     };
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const hex = (b: Uint8Array | null | undefined) =>
+      b ? Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join(' ') : null;
     let gw: Awaited<ReturnType<typeof makeGateway>> | null = null;
+    const windows: VdsWindow[] = [];
+    const armedAt = Date.now();
     try {
       gw = await makeGateway();
-      // Wake first: a sleeping MCU cannot answer a domain-3 action at all, and a
-      // failure to reach it would otherwise be misread as "no push support".
       say('waking car (domain 3 needs the MCU up)…');
       await gw.wake();
 
@@ -601,48 +618,44 @@ export default function CarLinkScreen() {
       armVdsCapture(Date.now());
       await wait(BASELINE_MS);
 
-      say(
-        `subscribing: duration=${VDS_DEFAULTS.durationS}s ping=${VDS_DEFAULTS.pingS}s ` +
-          `LocationState rate=${VDS_DEFAULTS.locationRateMs}ms (ONE state — the app's 8-state map ` +
-          `is several KB and would not fit our 1024B inbound cap)`,
-      );
-      const sub = await gw.runRawAction(vehicleDataSubscriptionAction(), 'vds-subscribe');
-      const outcome = sub.outcome.ok ? 'ok' : `${sub.outcome.kind}: ${sub.outcome.message}`;
-      const respHex = sub.result?.decryptedPayload
-        ? Array.from(sub.result.decryptedPayload)
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join(' ')
-        : null;
-      say(`subscribe outcome: ${outcome}`);
-      // ⚠ An "ok" here means the car ACKed, NOT that it understood — the same
-      // trap that made the multi-stop nav work look successful for a day.
-      // Protobuf skips unknown fields silently, so if tag 37 is wrong or
-      // unsupported the car ACKs an empty action. Only the push count below is
-      // evidence.
-      say('  (ACK ≠ understood — protobuf skips unknown fields; the push count is the evidence)');
+      for (const rate of RATES) {
+        const startMs = Date.now() - armedAt;
+        say(`subscribing: LocationState rate=${rate}ms duration=${VDS_DEFAULTS.durationS}s…`);
+        const sub = await gw.runRawAction(
+          vehicleDataSubscriptionAction({ locationRateMs: rate }),
+          `vds-subscribe-${rate}`,
+        );
+        const outcome = sub.outcome.ok ? 'ok' : `${sub.outcome.kind}: ${sub.outcome.message}`;
+        say(`  outcome: ${outcome} (ACK ≠ understood — the cadence is the evidence)`);
+        say(`watching ${WINDOW_MS / 1000}s…`);
+        await wait(WINDOW_MS);
+        windows.push({
+          label: `${rate}ms`,
+          startMs,
+          endMs: Date.now() - armedAt,
+          requestedRateMs: rate,
+          subscribeOutcome: outcome,
+          subscribeResponseHex: hex(sub.result?.decryptedPayload),
+        });
+        // Cancel BETWEEN windows, so the second window measures the second rate
+        // rather than two overlapping subscriptions.
+        try {
+          await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
+        } catch {
+          say('  WARN: inter-window cancel failed; next window may overlap the previous subscription');
+        }
+      }
 
-      say(`watching ${WATCH_MS / 1000}s for unsolicited domain-3 frames…`);
-      await wait(WATCH_MS);
-
-      const observations = disarmVdsCapture();
-      const report = buildVdsReport({
-        observations,
-        baselineEndMs: BASELINE_MS,
-        subscribeOutcome: outcome,
-        subscribeResponseHex: respHex,
-        windowEndMs: BASELINE_MS + WATCH_MS,
-      });
+      const report = buildVdsReport({ observations: disarmVdsCapture(), baselineEndMs: BASELINE_MS, windows });
       for (const line of report.lines) say(line);
     } catch (err) {
       say(`ERROR vds probe: ${errMsg(err)}`);
       disarmVdsCapture();
     } finally {
-      // Always cancel. The car's TTL would expire it anyway, but leaving it
-      // armed means the car keeps pushing for the remainder of the duration.
       try {
         if (gw) {
           const c = await gw.runRawAction(cancelVehicleDataSubscriptionAction(), 'vds-cancel');
-          say(`cancel: ${c.outcome.ok ? 'ok' : c.outcome.message}`);
+          say(`final cancel: ${c.outcome.ok ? 'ok' : c.outcome.message}`);
         }
       } catch (err) {
         say(`WARN cancel failed (TTL will expire it in ≤${VDS_DEFAULTS.durationS}s): ${errMsg(err)}`);

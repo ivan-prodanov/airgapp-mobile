@@ -95,7 +95,13 @@ const RM_FLAGS = 52;
 // Destination.domain — the arm of the oneof that names an ECU (2 = VCSEC,
 // 3 = INFOTAINMENT). A subscription push must come FROM domain 3; a VCSEC status
 // push comes from 2. That single byte is the primary discriminator.
-const DEST_DOMAIN = 2;
+//
+// ⚠ This is field 1, NOT 2. The first run of this probe had it as 2 —
+// `routing_address`, the OTHER arm of the same oneof — which is length-delimited,
+// so scalarField correctly refused to read it as a number and every frame came
+// back `domain=?`. The probe then dutifully reported NO_PUSHES on nine frames it
+// simply could not classify. Read the oneof, not the neighbour.
+const DEST_DOMAIN = 1;
 
 export interface VdsObservation {
   // Milliseconds since the probe armed — the axis the whole report is read on.
@@ -201,72 +207,149 @@ export function observeVdsFrame(frame: Uint8Array, nowMs: number): void {
 
 // --- report ----------------------------------------------------------------
 
-// A push is a frame that (a) came from the INFOTAINMENT domain and (b) is not a
-// reply to anything we sent. Both halves matter: VCSEC status pushes satisfy (b)
-// but come from domain 2, and the subscribe ACK satisfies (a) but not (b).
+// A push is a frame from the INFOTAINMENT domain arriving on the unsolicited path.
+//
+// The first version of this ALSO required `!hasRequestUuid`, to exclude the
+// subscribe ACK. That was wrong twice over:
+//   1. RESPONSE-15 says the 16-byte request_uuid IS the subscription's
+//      CORRELATION TAG — so pushes are expected to echo it. The predicate
+//      excluded precisely the frames it was hunting.
+//   2. The exclusion was not needed anyway: the ACK is consumed by the gateway's
+//      own correlator inside exchange(), so it never reaches the unsolicited path.
+// Both halves of that mistake pointed the same way, which is how nine 5-second
+// frames got reported as "no pushes".
 export function isSubscriptionPush(o: VdsObservation): boolean {
-  return o.fromDomain === 3 && !o.hasRequestUuid;
+  return o.fromDomain === 3;
+}
+
+// medianIntervalMs — the decisive statistic. If the gap between pushes tracks the
+// max_update_rate_ms WE chose, the frames are answering our subscription and
+// nothing else: no other timer in this app or on this link has any reason to
+// follow a parameter we picked at random. Median, not mean, so one late frame
+// (BLE retransmit, app hiccup) cannot drag the answer.
+export function medianIntervalMs(observations: VdsObservation[]): number | null {
+  if (observations.length < 2) return null;
+  const sorted = [...observations].sort((a, b) => a.atMs - b.atMs);
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i].atMs - sorted[i - 1].atMs);
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  return gaps.length % 2 ? gaps[mid] : Math.round((gaps[mid - 1] + gaps[mid]) / 2);
+}
+
+// Does an observed cadence match a requested rate? Deliberately loose (±40%):
+// the car rate-limits, it does not run a metronome, and BLE adds jitter. The
+// test that matters is whether cadence CHANGES with the parameter, not whether
+// it hits the number exactly.
+export function cadenceMatches(medianMs: number | null, requestedMs: number): boolean {
+  if (medianMs === null) return false;
+  return medianMs >= requestedMs * 0.6 && medianMs <= requestedMs * 1.4;
+}
+
+// A probe run is now a BASELINE plus N subscription windows at DIFFERENT
+// requested rates. The rate sweep is the whole point: frame counts alone cannot
+// separate "the car answered our subscription" from "the car happened to be
+// chatty", but a cadence that TRACKS a parameter we chose can only come from the
+// subscription. Run 1 produced nine frames at a clean 5.0s while asking for
+// 5000ms, which is suggestive — and suggestive is not the same as measured.
+export interface VdsWindow {
+  label: string;
+  startMs: number;
+  endMs: number;
+  requestedRateMs: number;
+  subscribeOutcome: string;
+  subscribeResponseHex: string | null;
 }
 
 export function buildVdsReport(args: {
   observations: VdsObservation[];
   baselineEndMs: number;
-  subscribeOutcome: string;
-  subscribeResponseHex: string | null;
-  windowEndMs: number;
+  windows: VdsWindow[];
 }): VdsProbeReport {
-  const { observations, baselineEndMs, subscribeOutcome, subscribeResponseHex, windowEndMs } = args;
+  const { observations, baselineEndMs, windows } = args;
   const baseline = observations.filter((o) => o.atMs < baselineEndMs);
-  const window = observations.filter((o) => o.atMs >= baselineEndMs);
-  const pushes = window.filter(isSubscriptionPush);
 
   const lines: string[] = [];
-  lines.push(`VDS-M1 vehicle-data subscription probe`);
-  lines.push(`subscribe outcome: ${subscribeOutcome}`);
-  if (subscribeResponseHex) lines.push(`  response: ${subscribeResponseHex}`);
+  lines.push(`VDS-M1 vehicle-data subscription probe (rate sweep)`);
   lines.push(
-    `baseline ${Math.round(baselineEndMs / 1000)}s: ${baseline.length} car-initiated frames ` +
-      `(${baseline.filter(isSubscriptionPush).length} from domain 3 without request_uuid)`,
+    `baseline ${(baselineEndMs / 1000).toFixed(0)}s, nothing subscribed: ${baseline.length} car-initiated ` +
+      `frames (${baseline.filter(isSubscriptionPush).length} from domain 3)`,
   );
-  lines.push(
-    `window   ${Math.round((windowEndMs - baselineEndMs) / 1000)}s: ${window.length} car-initiated frames ` +
-      `(${pushes.length} from domain 3 without request_uuid)`,
-  );
-  // Print every frame in the window. The counts above are the headline, but a
-  // negative result is only trustworthy if the raw frames are there to check it
-  // against — that is the lesson from the first inconclusive whitelist probe.
-  for (const o of window) {
+
+  let totalPushes = 0;
+  let tracked = 0;
+  let measurable = 0;
+  for (const w of windows) {
+    const inWin = observations.filter((o) => o.atMs >= w.startMs && o.atMs < w.endMs);
+    const pushes = inWin.filter(isSubscriptionPush);
+    totalPushes += pushes.length;
+    const median = medianIntervalMs(pushes);
+    const matches = cadenceMatches(median, w.requestedRateMs);
+    if (median !== null) {
+      measurable++;
+      if (matches) tracked++;
+    }
+    lines.push('');
     lines.push(
-      `  +${(o.atMs / 1000).toFixed(1)}s ${o.byteLen}B domain=${o.fromDomain ?? '?'} ` +
-        `${o.hasRequestUuid ? 'reply' : 'PUSH'} flags=${o.flags ?? '-'} inner=[${o.innerFields.join(',')}]`,
+      `window "${w.label}" — requested rate ${w.requestedRateMs}ms, ` +
+        `${((w.endMs - w.startMs) / 1000).toFixed(0)}s long`,
     );
-    if (isSubscriptionPush(o)) lines.push(`    raw: ${o.hex}`);
+    lines.push(`  subscribe outcome: ${w.subscribeOutcome}`);
+    if (w.subscribeResponseHex) lines.push(`  subscribe response: ${w.subscribeResponseHex}`);
+    lines.push(
+      `  ${inWin.length} car-initiated frames, ${pushes.length} from domain 3; ` +
+        `median gap ${median === null ? 'n/a' : `${median}ms`} ` +
+        `→ ${median === null ? 'not measurable' : matches ? 'TRACKS the requested rate' : 'does NOT track'}`,
+    );
+    // Raw hex for EVERY frame, unconditionally. Run 1 printed it only for frames
+    // that passed the (broken) push predicate, so the nine most interesting
+    // frames of the run were logged as one-line summaries with no bytes behind
+    // them — nothing left to re-examine once the predicate turned out wrong.
+    // Never gate the evidence on the classification being tested.
+    for (const o of inWin) {
+      lines.push(
+        `  +${(o.atMs / 1000).toFixed(1)}s ${o.byteLen}B domain=${o.fromDomain ?? '?'} ` +
+          `uuid=${o.hasRequestUuid ? 'yes' : 'no'} flags=${o.flags ?? '-'}`,
+      );
+      lines.push(`    raw: ${o.hex}`);
+    }
   }
 
   let verdict: VdsProbeReport['verdict'];
-  if (pushes.length > 0) {
+  if (measurable >= 2 && tracked === measurable) {
     verdict = 'PUSHES';
+    lines.push('');
     lines.push(
-      `VERDICT: THE CAR PUSHES over BLE — ${pushes.length} unsolicited domain-3 frames. ` +
-        `Decode the inner fields above before building on this.`,
+      `VERDICT: THE CAR PUSHES over BLE — ${totalPushes} domain-3 frames, and the cadence tracked the ` +
+        `requested rate in ${tracked}/${measurable} windows at DIFFERENT rates. Nothing else on this link ` +
+        `follows a parameter we chose, so these are answers to our subscription. This contradicts the ` +
+        `prior (the app never uses VDS over BLE, and 4.58.0 kill-switches it) — the car supports more ` +
+        `than the app exercises. Decode the payloads before building on it.`,
     );
-  } else if (window.length === 0 && baseline.length === 0) {
-    // Nothing at all arrived, in either window. That does not measure the
-    // subscription — it measures a link with no traffic on it, and reporting it
-    // as a negative would be the "uninterpretable negative" this probe exists to
-    // avoid. Re-run with the car awake and the direct link up.
+  } else if (totalPushes > 0) {
     verdict = 'INCONCLUSIVE';
+    lines.push('');
     lines.push(
-      `VERDICT: INCONCLUSIVE — no car-initiated frames at all, not even in the baseline. ` +
-        `The link was silent, so this says nothing about subscriptions. Re-run with the car awake.`,
+      `VERDICT: INCONCLUSIVE — ${totalPushes} domain-3 frames arrived, but the cadence did not clearly ` +
+        `track the requested rate (${tracked}/${measurable} windows). Something is pushing; whether it is ` +
+        `our subscription is unproven. Re-run, and decode the raw frames above.`,
+    );
+  } else if (baseline.length === 0 && observations.length === 0) {
+    verdict = 'INCONCLUSIVE';
+    lines.push('');
+    lines.push(
+      `VERDICT: INCONCLUSIVE — no car-initiated frames at all, not even in the baseline. The link was ` +
+        `silent, so this says nothing about subscriptions. Re-run with the car awake and in range.`,
     );
   } else {
     verdict = 'NO_PUSHES';
+    lines.push('');
     lines.push(
-      `VERDICT: NO PUSHES — the link carried ${window.length} frames in the window but none were ` +
-        `unsolicited domain-3. The subscription's BLE arm does not deliver. Keep the per-state poll ` +
-        `(which is what the official app does over BLE too).`,
+      `VERDICT: NO PUSHES — frames crossed the link but none came from domain 3 in any subscription ` +
+        `window. The subscription's BLE arm does not deliver. Keep the per-state poll (which is what the ` +
+        `official app does over BLE too).`,
     );
   }
-  return { lines, baselineFrames: baseline.length, windowFrames: window.length, domain3Pushes: pushes.length, verdict };
+  const windowFrames = observations.filter((o) => o.atMs >= baselineEndMs).length;
+  return { lines, baselineFrames: baseline.length, windowFrames, domain3Pushes: totalPushes, verdict };
 }
