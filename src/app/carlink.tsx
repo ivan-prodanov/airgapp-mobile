@@ -811,15 +811,39 @@ export default function CarLinkScreen() {
 
       say(`phase 2 — ${ACKED_MS / 1000}s, answering every ~5s with our own Ping`);
       armVdsCapture(Date.now());
-      const ackTimer = setInterval(() => {
-        void gw?.runRawAction(pingAction({ pingId: 1 }), 'vds-ack-ping').catch(() => undefined);
-      }, 5000);
-      await wait(ACKED_MS);
-      clearInterval(ackTimer);
+      // Sequential and AWAITED, with every result logged.
+      //
+      // Run 1 fired these from a setInterval with `.catch(() => undefined)`, and
+      // the transport log later showed ZERO exchanges for the whole phase — the
+      // acks never reached the car, so phase 2 was just a second copy of the
+      // control and the "acks are optional" verdict was worthless. Swallowing
+      // the error hid the fact that the experiment had not run.
+      let acksSent = 0;
+      const ackErrors: string[] = [];
+      const ackDeadline = Date.now() + ACKED_MS;
+      while (Date.now() < ackDeadline) {
+        try {
+          const r = await gw.runRawAction(pingAction({ pingId: 1 }), 'vds-ack-ping');
+          if (r.outcome.ok) acksSent++;
+          else ackErrors.push(`${r.outcome.kind}: ${r.outcome.message}`);
+        } catch (e) {
+          ackErrors.push(errMsg(e));
+        }
+        await wait(5000);
+      }
+      say(`  acks: ${acksSent} delivered, ${ackErrors.length} failed`);
+      for (const e of [...new Set(ackErrors)].slice(0, 3)) say(`    ack error: ${e}`);
       const acked = summarise('acked', disarmVdsCapture());
 
       say('');
-      if (acked.withRemote > 0 && silent.withRemote === 0) {
+      // The verdict is now CONDITIONAL ON THE MANIPULATION HAVING HAPPENED. A
+      // probe that cannot show it did the thing it was testing must not report a
+      // result about it — that is the general form of the mistake that produced
+      // run 1's answer.
+      if (acksSent === 0) {
+        say('VERDICT: VOID — not one ack reached the car, so phase 2 never differed from the control.');
+        say('  → this says NOTHING about whether acks matter. See the ack errors above.');
+      } else if (acked.withRemote > 0 && silent.withRemote === 0) {
         say('VERDICT: ACK CHANNEL FOUND — last_remote_timestamp appears only once we ping back.');
         say('  → VehicleAction.ping(46) is how a phone acks a BLE subscription.');
       } else if (silent.total > 0 && acked.total > 0 && acked.withRemote === 0) {
