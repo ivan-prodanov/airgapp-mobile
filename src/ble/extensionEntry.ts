@@ -22,17 +22,22 @@
 //   __exchange(sessionId, payloadB64, ms) -> Promise<responseB64>
 //   __closeSession(sessionId)             -> Promise<void>
 //   crypto.getRandomValues(u8)            -> the SAME array, filled
-//   TextDecoder, TextEncoder             -> standard constructors
 //
 // crypto.getRandomValues is NOT optional and NOT stubbable: @noble/hashes draws
 // its randomness from it, JavaScriptCore does not provide it, and a weak or
 // missing implementation is a silent crypto break rather than a crash. Swift must
 // back it with SecRandomCopyBytes.
 //
-// TextDecoder/TextEncoder are required because protobufjs uses them UNGUARDED and
-// throws at load without them — found by the bundle's own bare-context check, and
-// it would otherwise have been a crash on device inside a process with no
-// console. They are not optional either.
+// TextDecoder/TextEncoder are NOT in that list because the bundle polyfills them
+// itself (jscPolyfills.ts). protobufjs uses them unguarded and throws at load
+// without them — found by the bundle's bare-context check — but UTF-8 conversion
+// is pure computation with no reason to cross the bridge, and every symbol Swift
+// must install is another one that can be forgotten or subtly differ between the
+// app and the extension.
+
+// FIRST, before anything that might touch these at module scope — protobufjs
+// calls TextDecoder while LOADING and throws without it.
+import './jscPolyfills';
 
 import { createCarGateway } from './gateway';
 import { hexToBytes } from './crypto';

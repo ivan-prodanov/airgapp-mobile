@@ -58,12 +58,10 @@ const code = readFileSync(OUT, 'utf8');
 // process, no require, no fetch, no console — and only the symbols Swift will
 // inject. If it survives this, its host assumptions are ones JSC can meet.
 const sandbox = {
-  // protobufjs uses TextDecoder/TextEncoder UNGUARDED — it throws at load without
-  // them. Found by this check on 2026-07-27; node has them, an app extension's
-  // JSC may not, and the failure would have been a crash on device with no
-  // console. Swift must install both before evaluating the bundle.
-  TextDecoder,
-  TextEncoder,
+  // TextDecoder/TextEncoder are DELIBERATELY absent here. protobufjs uses them
+  // unguarded and throws at load without them, so the bundle polyfills them
+  // itself — and this check only proves that if the sandbox genuinely lacks them.
+  // Adding them back would make the check pass for the wrong reason.
   // The one host symbol the engine genuinely requires. Swift backs this with
   // SecRandomCopyBytes; here it only has to be present and fill the array.
   crypto: {
