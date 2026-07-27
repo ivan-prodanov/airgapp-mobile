@@ -35,6 +35,7 @@ import {
   closeAllCachedSessions,
   peekPiSessionId,
   loadPiConfig,
+  loadCarConfig,
   loadOrCreateDeviceKeys,
   isCarLinkEnabled,
   type CarCommand,
@@ -42,6 +43,7 @@ import {
   type CarTransport,
   type CommandOutcome,
   type PiConfig,
+  type CarConfig,
   type DeviceKeys,
   type TransportCandidate,
 } from '@/ble';
@@ -302,6 +304,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const enabled = isCarLinkEnabled();
 
   const cfgRef = useRef<PiConfig | null>(null);
+  // The paired CAR, held separately from the forwarder credentials. Split
+  // 2026-07-27: `linked` depends on the VIN alone, so bundling it with the Pi
+  // config meant losing a token also lost the vehicle. See config.ts.
+  const carCfgRef = useRef<CarConfig | null>(null);
   const keysRef = useRef<DeviceKeys | null>(null);
   // The single stable selector + gateway (see the header invariant). Built
   // lazily on first dispatch and torn down on background/unmount.
@@ -502,6 +508,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     (async () => {
       try {
         const cfg = await loadPiConfig(store);
+        const carCfg = await loadCarConfig(store);
         const keys = await loadOrCreateDeviceKeys(store);
         // Seed the transport preference from last session BEFORE cfgRef/keysRef
         // are set — those are what let getGateway build the selector, so the seed
@@ -510,6 +517,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         if (cancelled) return;
         if (savedTxp === 'ble' || savedTxp === 'pi') lastGoodTransportRef.current = savedTxp;
         cfgRef.current = cfg;
+        carCfgRef.current = carCfg;
         keysRef.current = keys;
         setPiConfigured(!!cfg?.baseUrl);
         // Restore a wedge proven in an earlier launch. Without this the app
@@ -517,14 +525,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // — is still broken, and the card only returns once a fresh BLE attempt
         // happens to fail again.
         bondWedgeStore.hydrate(parsePersistedWedge(await appStorage.getItem(BOND_WEDGE_STORAGE_KEY)));
-        setLinked(!!cfg?.vin);
-        setVin(cfg?.vin ?? null);
+        setLinked(!!carCfg?.vin);
+        setVin(carCfg?.vin ?? null);
         // Rehydrate the cached telemetry BEFORE the first poll lands, so the
         // header opens on "Last seen {age} ago" + cached battery rather than
         // "Connecting" + a mock level (findings §B).
-        if (cfg?.vin) {
-          saveCacheRef.current = makeCarLinkCacheSaver(appStorage, cfg.vin);
-          const cached = await loadCarLinkCache(appStorage, cfg.vin);
+        if (carCfg?.vin) {
+          saveCacheRef.current = makeCarLinkCacheSaver(appStorage, carCfg.vin);
+          const cached = await loadCarLinkCache(appStorage, carCfg.vin);
           if (cancelled) return;
           if (cached) {
             cacheRef.current = cached;
@@ -579,11 +587,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // session-cache hit that skips openSession still has an active transport.
   const getGateway = useCallback((): CarGateway | null => {
     const cfg = cfgRef.current;
+    const carCfg = carCfgRef.current;
     const keys = keysRef.current;
-    if (!cfg?.vin || !keys) return null;
+    if (!carCfg?.vin || !keys) return null;
     // Capture the narrowed VIN: the closures below (make(), authResponder) lose
-    // cfg's narrowing, and `cfg.vin!` would hide a real nullability question.
-    const vin = cfg.vin;
+    // cfg's narrowing, and `carCfg.vin!` would hide a real nullability question.
+    const vin = carCfg.vin;
     if (!gatewayRef.current) {
       if (!selectorRef.current) {
         const candidates: TransportCandidate[] = [];
@@ -597,10 +606,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           make: () =>
             withTransportLogging('ble', new BridgedBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS })),
         });
-        if (cfg.baseUrl && cfg.token) {
+        // The Pi arm is optional now: no credentials simply means no Pi
+        // candidate, and direct BLE carries on. `cfg` is no longer narrowed by
+        // the VIN guard above — the VIN moved to CarConfig — so check it here.
+        const piCfg = cfg;
+        if (piCfg?.baseUrl && piCfg?.token) {
           candidates.push({
             name: 'pi',
-            make: () => withTransportLogging('pi', wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store)),
+            make: () => withTransportLogging('pi', wrapPiClient({ baseUrl: piCfg.baseUrl, token: piCfg.token }, store)),
           });
         }
         // onSelect records which transport connected so a successful poll tick
@@ -633,7 +646,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       }
       gatewayRef.current = createCarGateway({
         transport: selectorRef.current,
-        vin: cfg.vin,
+        vin: carCfg.vin,
         deviceKeys: keys,
       });
     }
@@ -679,10 +692,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     streamReconnectTimerRef.current = setTimeout(() => {
       streamReconnectTimerRef.current = null;
       const cfg = cfgRef.current;
-      if (!cfg?.vin) return; // unlinked/torn down meanwhile
+    const carCfg = carCfgRef.current;
+      if (!carCfg?.vin) return; // unlinked/torn down meanwhile
       if (selectedTransportRef.current !== 'pi') return; // BLE took over
       if (AppState.currentState !== 'active') return; // backgrounded
-      const liveId = peekPiSessionId(cfg.vin);
+      const liveId = peekPiSessionId(carCfg.vin);
       if (!liveId) return; // no Pi session open right now; the next poll tick restarts it
       startStreamRef.current(liveId);
     }, STREAM_RECONNECT_MS);
@@ -693,6 +707,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const startStream = useCallback(
     (sessionId: string) => {
       const cfg = cfgRef.current;
+    const carCfg = carCfgRef.current;
       if (!cfg?.baseUrl || !cfg?.token) return;
       stopStream();
       streamSessionIdRef.current = sessionId;
@@ -733,12 +748,13 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // itself never runs for one.
   const syncStream = useCallback(() => {
     const cfg = cfgRef.current;
-    if (!cfg?.vin || selectedTransportRef.current !== 'pi') {
+    const carCfg = carCfgRef.current;
+    if (!carCfg?.vin || selectedTransportRef.current !== 'pi') {
       // BLE selected (delivers pushes itself) or nothing to stream against.
       stopStream();
       return;
     }
-    const sessionId = peekPiSessionId(cfg.vin);
+    const sessionId = peekPiSessionId(carCfg.vin);
     if (!sessionId) {
       // No live Pi session cached — shouldn't happen right after a
       // successful Pi poll, but never stream against nothing.
@@ -1132,7 +1148,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // touch native once armed, so we never instantiate the central early.
         if (nativePassiveArmedRef.current) {
           setPassiveEntryForegroundActive(true);
-          const v = cfgRef.current?.vin;
+          const v = carCfgRef.current?.vin;
           if (v) foregroundBleLink.start(v); // resume the always-on foreground responder
         }
       } else if (next === 'background') {

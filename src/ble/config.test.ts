@@ -1,7 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadPiConfig, savePiConfig, clearPiConfig, clearVehicleIdentity, parseEnrolUrl, isValidVin } from './config';
+import {
+  loadPiConfig,
+  savePiConfig,
+  clearPiConfig,
+  loadCarConfig,
+  saveCarConfig,
+  clearCarConfig,
+  parseEnrolUrl,
+  isValidVin,
+} from './config';
 import { createMemorySecretStore } from './__testutils__/memorySecretStore';
 
 test('loadPiConfig returns null when nothing has been saved', async () => {
@@ -9,18 +18,12 @@ test('loadPiConfig returns null when nothing has been saved', async () => {
   assert.equal(await loadPiConfig(store), null);
 });
 
-test('savePiConfig / loadPiConfig round-trip the full shape', async () => {
+test('savePiConfig / loadPiConfig round-trip the credentials', async () => {
+  // Credentials ONLY — the VIN moved to CarConfig, see the split below.
   const store = createMemorySecretStore();
-  const cfg = {
-    baseUrl: 'https://host.ts.net/api/ble',
-    token: 'abc123',
-    vin: '5YJ3E1EA1AAAA0001',
-    nickname: 'Phone',
-    vehicleId: 'v1',
-  };
+  const cfg = { baseUrl: 'https://pi.example', token: 'tok' };
   await savePiConfig(store, cfg);
-  const loaded = await loadPiConfig(store);
-  assert.deepEqual(loaded, cfg);
+  assert.deepEqual(await loadPiConfig(store), cfg);
 });
 
 test('savePiConfig / loadPiConfig round-trip with only required fields', async () => {
@@ -117,50 +120,59 @@ test('isValidVin accepts lowercase letters (case-insensitive)', () => {
 
 const VALID_VIN = '5YJ3E1EA7KF000316';
 
-// ── VIN survives losing the Pi credentials ────────────────────────────────────
-// 2026-07-27: the VIN lived only inside PiConfig, so losing the config took the
-// car's identity with it. useCarLink gates `linked` on the VIN alone, so a
-// working direct-BLE setup silently became a demo vehicle — every command a
-// no-op, no error anywhere.
+// ── The split: car identity vs forwarder credentials ─────────────────────────
+// 2026-07-27. The VIN used to live inside PiConfig. useCarLink gates `linked` on
+// the VIN alone and direct BLE needs only the VIN + device key, so losing the Pi
+// credentials took the car with them: a working BLE setup silently became a demo
+// vehicle, every command a no-op with no error anywhere.
 
-test('savePiConfig mirrors the VIN to its own key', async () => {
+test('the two configs are independent: forgetting the Pi keeps the car', async () => {
   const store = createMemorySecretStore();
-  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
-  assert.equal(await store.getItem('ble.vin.v1'), VALID_VIN);
-});
-
-test('loadPiConfig recovers a BLE-only config when the Pi config is gone but the VIN remains', async () => {
-  const store = createMemorySecretStore();
-  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
-
-  // Simulate exactly what happened: the Pi config vanishes, the VIN does not.
-  await store.removeItem('ble.piConfig.v1');
-
-  const cfg = await loadPiConfig(store);
-  assert.equal(cfg?.vin, VALID_VIN, 'the car must still be identifiable over BLE');
-  assert.equal(cfg?.baseUrl, '', 'no Pi credentials — the Pi arm is simply unavailable');
-  assert.equal(cfg?.token, '');
-});
-
-test('clearPiConfig forgets the Pi but NOT the car', async () => {
-  const store = createMemorySecretStore();
-  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
+  await saveCarConfig(store, { vin: VALID_VIN });
+  await savePiConfig(store, { baseUrl: 'https://pi', token: 't' });
 
   await clearPiConfig(store);
 
-  assert.equal((await loadPiConfig(store))?.vin, VALID_VIN, 'direct BLE keeps working');
+  assert.equal(await loadPiConfig(store), null, 'forwarder gone');
+  assert.deepEqual(await loadCarConfig(store), { vin: VALID_VIN }, 'car survives — direct BLE keeps working');
 });
 
-test('clearVehicleIdentity forgets the car', async () => {
+test('clearCarConfig is the explicit way to forget the vehicle', async () => {
   const store = createMemorySecretStore();
-  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
+  await saveCarConfig(store, { vin: VALID_VIN });
 
-  await clearPiConfig(store);
-  await clearVehicleIdentity(store);
+  await clearCarConfig(store);
 
-  assert.equal(await loadPiConfig(store), null);
+  assert.equal(await loadCarConfig(store), null);
 });
 
-test('loadPiConfig returns null on a genuinely fresh install', async () => {
-  assert.equal(await loadPiConfig(createMemorySecretStore()), null);
+test('a car can be configured with no forwarder at all (BLE-only)', async () => {
+  const store = createMemorySecretStore();
+  await saveCarConfig(store, { vin: VALID_VIN });
+
+  assert.equal((await loadCarConfig(store))?.vin, VALID_VIN);
+  assert.equal(await loadPiConfig(store), null, 'no Pi arm, and that is fine');
+});
+
+test('loadCarConfig reads a pre-split PiConfig that still carries the VIN', async () => {
+  // Upgrade path: an install from before the split must not need a re-enrol.
+  const store = createMemorySecretStore();
+  await store.setItem(
+    'ble.piConfig.v1',
+    JSON.stringify({ baseUrl: 'https://pi', token: 't', vin: VALID_VIN, nickname: 'Keros' }),
+  );
+
+  assert.deepEqual(await loadCarConfig(store), { vin: VALID_VIN, nickname: 'Keros', vehicleId: undefined });
+});
+
+test('loadPiConfig rejects a legacy VIN-only blob as credentials', async () => {
+  const store = createMemorySecretStore();
+  await store.setItem('ble.piConfig.v1', JSON.stringify({ vin: VALID_VIN }));
+
+  assert.equal(await loadPiConfig(store), null, 'a VIN is not a baseUrl+token');
+  assert.equal((await loadCarConfig(store))?.vin, VALID_VIN, 'but it IS a car');
+});
+
+test('loadCarConfig returns null on a genuinely fresh install', async () => {
+  assert.equal(await loadCarConfig(createMemorySecretStore()), null);
 });

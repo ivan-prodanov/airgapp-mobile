@@ -53,18 +53,29 @@ export interface SecretStore {
   removeItem(key: string): Promise<void>;
 }
 
-// PiConfig is the persisted shape of one Pi connection: the base URL +
-// bearer token (both secret — the token is what proves this device is
-// enrolled) plus optional user-facing/display metadata. Owned by config.ts
-// (load/save/clear/parseEnrolUrl); kept here alongside the other shared BLE
-// interfaces so keystore.ts, config.ts, transport.ts and index.ts all share
-// one definition instead of each declaring their own shape.
+// CarConfig is WHICH CAR this device is paired with. Identity, not credentials.
+//
+// Split out of PiConfig on 2026-07-27. The VIN used to live inside the Pi config,
+// which coupled two unrelated things: useCarLink gates `linked` on the VIN alone,
+// and direct BLE needs only the VIN (to derive the car's advertised name) plus the
+// device key — baseUrl and token are the Pi arm's business exclusively. So losing
+// the Pi credentials took the car's identity with it, `linked` went false, and a
+// working BLE setup silently behaved like a demo vehicle: every command a no-op,
+// no error anywhere. Forgetting a forwarder should never mean forgetting the car.
+export interface CarConfig {
+  vin: string;
+  nickname?: string;
+  vehicleId?: string;
+}
+
+// PiConfig is one Pi forwarder's CREDENTIALS: base URL + bearer token (both
+// secret — the token is what proves this device is enrolled). Nothing about which
+// car; see CarConfig. Owned by config.ts (load/save/clear/parseEnrolUrl); kept
+// here alongside the other shared BLE interfaces so keystore.ts, config.ts,
+// transport.ts and index.ts all share one definition.
 export interface PiConfig {
   baseUrl: string;
   token: string;
-  vin?: string;
-  nickname?: string;
-  vehicleId?: string;
 }
 
 // Domain is the BLE routing domain a session targets.

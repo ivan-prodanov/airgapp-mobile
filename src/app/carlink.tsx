@@ -18,6 +18,9 @@ import {
   publicKeyBase64,
   deviceKeyFingerprint,
   loadPiConfig,
+  clearPiConfig,
+  loadCarConfig,
+  saveCarConfig,
   savePiConfig,
   parseEnrolUrl,
   isValidVin,
@@ -195,12 +198,15 @@ export default function CarLinkScreen() {
       let cfg: PiConfig | null = null;
       try {
         cfg = await loadPiConfig(store);
+        // The car is loaded independently — a device with no forwarder still has
+        // a VIN, and the field must show it.
+        const carCfg = await loadCarConfig(store);
+        setVin(carCfg?.vin ?? '');
         if (cfg) {
           setBaseUrl(cfg.baseUrl);
           setToken(cfg.token);
-          setVin(cfg.vin ?? '');
-          append(`loaded saved config: ${JSON.stringify(cfg)}`);
         }
+        if (cfg || carCfg) append(`loaded saved config: car=${JSON.stringify(carCfg)} pi=${JSON.stringify(cfg)}`);
       } catch (err) {
         append(`ERROR load config: ${errMsg(err)}`);
       }
@@ -391,6 +397,7 @@ export default function CarLinkScreen() {
   const benchPiConfigured = async (): Promise<boolean> => {
     if (transport !== 'pi') return true;
     const cfg = await loadPiConfig(store);
+    const carCfg = await loadCarConfig(store);
     if (cfg?.baseUrl && cfg?.token) return true;
     append('ERROR bench: transport is Pi but no baseUrl/token saved — tap "Save config" first');
     return false;
@@ -675,9 +682,10 @@ export default function CarLinkScreen() {
       const keys = await loadOrCreateDeviceKeys(store);
       append(`device key fingerprint: ${deviceKeyFingerprint(keys)}`);
       const cfg = await loadPiConfig(store);
-      if (!cfg?.vin) throw new Error('no VIN saved — set VIN and tap "Save config" first');
+      const carCfg = await loadCarConfig(store);
+      if (!carCfg?.vin) throw new Error('no VIN saved — set VIN and tap "Save config" first');
       const t = getBleTransport();
-      await t.openSession(cfg.vin);
+      await t.openSession(carCfg.vin);
       await t.sendAddKey(publicKeyBase64(keys));
       append('add-key sent over BLE — TAP YOUR NFC KEY CARD on the console now, then tap Lock/Read to verify');
     } catch (err) {
@@ -701,7 +709,12 @@ export default function CarLinkScreen() {
       return;
     }
     try {
-      await savePiConfig(store, { baseUrl, token, vin });
+      // Two separate saves. The car is always recorded; the forwarder only when
+      // credentials were actually entered, so a BLE-only setup does not persist an
+      // empty Pi config that later reads as "configured".
+      await saveCarConfig(store, { vin });
+      if (baseUrl && token) await savePiConfig(store, { baseUrl, token });
+      else await clearPiConfig(store);
       // Config changed — the cached selector captured the old baseUrl/token/vin
       // in its candidate factories; drop it so the next command rebuilds it.
       if (selectorRef.current) {
@@ -769,11 +782,12 @@ export default function CarLinkScreen() {
   const makeGateway = async () => {
     const keys = await loadOrCreateDeviceKeys(store);
     const cfg = await loadPiConfig(store);
+    const carCfg = await loadCarConfig(store);
     if (!cfg) throw new Error('no config saved — tap "Save config" first');
-    if (!cfg.vin) throw new Error('no VIN saved — set VIN and tap "Save config" first');
+    if (!carCfg?.vin) throw new Error('no VIN saved — set VIN and tap "Save config" first');
 
     if (transport === 'ble') {
-      return createCarGateway({ transport: getBleTransport(), vin: cfg.vin, deviceKeys: keys });
+      return createCarGateway({ transport: getBleTransport(), vin: carCfg.vin, deviceKeys: keys });
     }
 
     if (transport === 'auto') {
@@ -781,7 +795,7 @@ export default function CarLinkScreen() {
       // commands that hit the session cache (see selectorRef's comment).
       if (!selectorRef.current) {
         const candidates: TransportCandidate[] = [];
-        if (cfg.vin) {
+        if (carCfg.vin) {
           candidates.push({
             name: 'ble',
             make: () => new BridgedBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
@@ -792,12 +806,12 @@ export default function CarLinkScreen() {
         }
         selectorRef.current = createSelectingTransport(candidates, (name) => append(`transport selected: ${name}`));
       }
-      return createCarGateway({ transport: selectorRef.current, vin: cfg.vin, deviceKeys: keys });
+      return createCarGateway({ transport: selectorRef.current, vin: carCfg.vin, deviceKeys: keys });
     }
 
     return createCarGateway({
       transport: wrapPiClient({ baseUrl: cfg.baseUrl, token: cfg.token }, store),
-      vin: cfg.vin,
+      vin: carCfg.vin,
       deviceKeys: keys,
     });
   };
@@ -1011,7 +1025,8 @@ export default function CarLinkScreen() {
     };
     try {
       const cfg = await loadPiConfig(store);
-      if (!cfg?.vin) throw new Error('no VIN saved');
+      const carCfg = await loadCarConfig(store);
+      if (!carCfg?.vin) throw new Error('no VIN saved');
       const gw = await makeGateway();
       say('waking car…');
       await gw.wake();
@@ -1030,7 +1045,7 @@ export default function CarLinkScreen() {
       say(`  VCSEC warm baseline: ${warm}ms`);
 
       say('evicting DOMAIN 3 with scope=domain (what a timed-out read now does)…');
-      await evictSession(cfg.vin, DOMAIN_INFOTAINMENT, { scope: 'domain' });
+      await evictSession(carCfg.vin, DOMAIN_INFOTAINMENT, { scope: 'domain' });
 
       const after = await timeVcsec();
       say(`  VCSEC after the domain-3 eviction: ${after}ms`);
