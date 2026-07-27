@@ -112,7 +112,20 @@ corrections make the negative more certain, not less.
 Q5 (persistence) came back YES — the car keeps a subscriber DB, so it WOULD be one-time
 provisioning — but it does not help, because no air-gapped route can carry the key even once.
 
-**Live LOCATION is gone. Full stop, no workaround.**
+~~**Live LOCATION is gone. Full stop, no workaround.**~~ **WRONG — see below.**
+
+**VDS-M9 (2026-07-27, run twice, identical): live location is NOT gone.** A `getVehicleData` READ
+of LocationState returns it populated:
+
+```
+{"lat":39.92477798461914,"lon":25.332660675048828,"heading":268}
+```
+
+That is the SECOND state where read and subscribe are gated differently on this car (DriveState was
+the first). RESPONSE-20 assumed one gate for both paths and concluded we had lost live location;
+we never had. The map pin and the passive-entry geofence have been using it all along.
+
+**What IS lost is the SUBSCRIPTION**, which is a much smaller thing than it sounded.
 
 ⚠ **One claim in RESPONSE-20 is WRONG for our car, and it is the one that matters.** It says the
 poll and the subscription "both lose live speed, since both flow through the same PII gating".
@@ -123,9 +136,23 @@ every ~1.8s. **Read and subscribe are gated differently on this car.** So we kee
 location is lost. Worth a confirmation run, but a human watching a speedometer in a moving car is
 strong evidence.
 
-Still worth the five-minute check the RE suggests: subscribe with ONLY cleartext state rates
-(ChargeState=5, ClimateState=6, ClosuresState=11) and confirm they arrive populated with no
-field-11 envelope — that maps the exact cleartext surface for live UI.
+**VDS-M9 also answers the keep-or-delete question: DELETE.** Subscribing with ChargeState(5),
+ClimateState(6) and ClosuresState(11) and no PII key produced, twice:
+
+```
+8 pushes, 0 decrypted
+ChargeState / ClimateState / ClosuresState  →  no data
+```
+
+Eight frames over 14s is ~1.75s apart, i.e. the VCSEC push cadence — so those were almost certainly
+ordinary status pushes, not subscription pushes, and the subscription delivered NOTHING. (Stated
+with the hedge it deserves: the probe reports "0 decrypted", not "0 domain-3 frames", so this is
+strong rather than airtight. It reproduced identically twice.)
+
+Combined with the PII gate being closed for good, the subscription can deliver only LocationState
+and DriveState, both of which are gated, and both of which we can already READ. **It has no path to
+value.** `piiKey.ts`, `node-forge`, and the VDS-M1/M3/M5/M6/M7/M8/M9 probes are dead weight and
+should be deleted rather than carried.
 
 Until then the screen-keyed poll below is the live-data story, and it is a good one.
 
