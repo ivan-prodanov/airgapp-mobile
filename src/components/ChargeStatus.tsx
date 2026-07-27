@@ -22,12 +22,18 @@ export function ChargeStatus({
   // sends `energyDisplayFormat` to the car, which counts as a userInitiatedCommand
   // and so lights the same wake/spinner path — see findings §C4/§A.)
   onRefresh,
+  // The charge panel's show/hide. Recovered: the official app hands
+  // VehicleHomeHeader a `toggleCharge` that IS the `useState` setter behind the
+  // panel, so the battery tap and the panel are the same piece of state. Optional
+  // so every other caller (and the tests) is unaffected.
+  onToggleChargePanel,
 }: {
   batteryLevel: number | null;
   rangeMiles: number | null;
   charging: boolean;
   stale: boolean;
   onRefresh?: () => void;
+  onToggleChargePanel?: () => void;
 }) {
   // findings §C4: tapping the % text toggles % <-> distance. In the official app
   // the tap ALSO sends `energyDisplayFormat` to the car so the choice persists
@@ -52,7 +58,12 @@ export function ChargeStatus({
 
   return (
     <Animated.View style={[styles.container, { opacity }]}>
-      <MiniBatteryView pct={batteryLevel} charging={charging} />
+      {/* The BATTERY GLYPH is the charge-panel toggle, not the % text — the %
+          keeps its own job (percent <-> distance, plus a refresh). Splitting
+          them means neither tap has to guess which one you meant. */}
+      <Pressable hitSlop={8} onPress={onToggleChargePanel} disabled={!onToggleChargePanel}>
+        <MiniBatteryView pct={batteryLevel} charging={charging} />
+      </Pressable>
       <Pressable
         hitSlop={8}
         onPress={() => {

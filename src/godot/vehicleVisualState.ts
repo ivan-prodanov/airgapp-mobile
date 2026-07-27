@@ -29,6 +29,11 @@ const IGNORED_KEYS = new Set<keyof VehicleViewState>([
   'mediaPlaying',
   // Now playing is a card on the home screen, never anything the 3D car shows.
   'media',
+  // Charge-panel detail: a card on the home screen, never the 3D car.
+  'chargingState',
+  'minutesToChargeLimit',
+  'chargerPowerKw',
+  'chargeRateMph',
   // The car's GPS position drives the map pin only, never the 3D product payload.
   'carLocation',
   // Climate/charging setpoints + comfort toggles: sheet state, never rendered on the car. Without

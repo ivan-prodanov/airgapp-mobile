@@ -45,6 +45,11 @@ export interface VcsecStatus {
 
 export interface InfotainmentSnapshot {
   charge?: {
+    // Charge-panel detail. All null when the car does not report them, which is
+    // normal when unplugged — the panel hides those lines rather than showing 0.
+    minutesToChargeLimit?: number | null;
+    chargerPowerKw?: number | null;
+    chargeRateMph?: number | null;
     soc: number | undefined;
     rangeMiles: number | null;
     chargingState: string | undefined;
@@ -281,6 +286,13 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     const batteryRange = num(cs.batteryRange);
     snap.charge = {
       soc: num(cs.batteryLevel),
+      // The charge panel's own fields. `minutesToChargeLimit` is the one the
+      // panel shows — time to the LIMIT the user set, not to 100% — so it is
+      // preferred and minutesToFullCharge is the fallback for a car that only
+      // reports the latter.
+      minutesToChargeLimit: num(cs.minutesToChargeLimit) ?? num(cs.minutesToFullCharge) ?? null,
+      chargerPowerKw: num(cs.chargerPower) ?? null,
+      chargeRateMph: num(cs.chargeRateMph) ?? null,
       // RAW miles: `battery_range` is already in miles and the official app converts
       // at display time (Round 5 §2a). Rounding to km here would compound error.
       rangeMiles: batteryRange ?? null,
@@ -589,7 +601,14 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.rangeMiles !== null) patch.rangeMiles = snap.charge.rangeMiles;
     if (snap.charge.chargingState !== undefined) {
       patch.charging = snap.charge.chargingState.toLowerCase() === 'charging';
+      // The full name too, not just the boolean. The charge panel distinguishes
+      // Complete / Stopped / Starting / NoPower, which `charging` collapses.
+      patch.chargingState = snap.charge.chargingState;
     }
+    if (snap.charge.chargeLimitSoc !== undefined) patch.chargeLimitPercent = snap.charge.chargeLimitSoc;
+    if (snap.charge.minutesToChargeLimit != null) patch.minutesToChargeLimit = snap.charge.minutesToChargeLimit;
+    if (snap.charge.chargerPowerKw != null) patch.chargerPowerKw = snap.charge.chargerPowerKw;
+    if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
   }
 
   // Gated on the MediaState half, not on either half. That read carries the

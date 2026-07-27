@@ -58,6 +58,12 @@ export interface CarLinkCache {
   // cached. A relaunch shows the last known track dimmed rather than an
   // empty card.
   media: MediaNowPlaying | null;
+  // Charge panel. Same rule: rendered from telemetry, so cached — a relaunch
+  // shows the last known charge state rather than an empty panel.
+  chargingState: string | null;
+  minutesToChargeLimit: number | null;
+  chargerPowerKw: number | null;
+  chargeRateMph: number | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -124,6 +130,10 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     // "not read yet" must stay distinguishable from "the car said no" and
     // from "stopped", or a cold start renders disabled buttons on a car that
     // would happily accept them.
+    chargingState: str(cached?.chargingState),
+    minutesToChargeLimit: num(cached?.minutesToChargeLimit),
+    chargerPowerKw: num(cached?.chargerPowerKw),
+    chargeRateMph: num(cached?.chargeRateMph),
     media:
       cached?.media && typeof cached.media === 'object'
         ? {

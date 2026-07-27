@@ -216,6 +216,16 @@ export interface VehicleViewState {
   // Charging setpoints. Limit is a percentage clamped to LIMIT_MIN..LIMIT_MAX; amps clamp to
   // AMP_MIN..AMP_MAX. Map to ChargeState.charge_limit_soc / charge_current_request.
   chargeLimitPercent: number;
+  // ── Charge panel (home screen, below favourites) ──────────────────────────
+  // The car's own ChargingState name — Charging / Complete / Stopped / Starting /
+  // NoPower / Disconnected. `charging` above collapses all of those to a boolean,
+  // which is enough for the status line but not for the panel.
+  chargingState: string | null;
+  // Minutes to the LIMIT the user set (falling back to full). null = not
+  // reported, which is normal unplugged — the panel omits the line.
+  minutesToChargeLimit: number | null;
+  chargerPowerKw: number | null;
+  chargeRateMph: number | null;
   chargingAmps: number;
 }
 
@@ -296,6 +306,10 @@ export const initialVehicleState: VehicleViewState = {
   campModeOn: false,
   petModeOn: false,
   chargeLimitPercent: 80,
+  chargingState: null,
+  minutesToChargeLimit: null,
+  chargerPowerKw: null,
+  chargeRateMph: null,
   chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
 };
 

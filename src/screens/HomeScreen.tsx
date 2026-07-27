@@ -22,6 +22,7 @@ import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
+import { ChargeCard } from '@/components/ChargeCard';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
@@ -208,6 +209,28 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
   // ONE refresh for all three entry points — the pull, the status tap and the
   // battery-% tap — so they cannot drift apart.
+  // ── Charge panel ──────────────────────────────────────────────────────────
+  // Recovered contract (tesla-charge-row-FINDINGS.md §6): the official app holds
+  //   const [showCharge, toggleCharge] = useState(chargePortOpen)
+  // and hands `toggleCharge` — the raw setter — to the header, which is why the
+  // battery tap and the panel are one piece of state.
+  //
+  // It keys on the PORT, not on `charging`: it appears when you plug in before
+  // current flows, STAYS when the charge completes, and hides when you unplug.
+  // `useState` only reads its argument once, so the port transition needs the
+  // effect below — theirs has the same pair for the same reason.
+  const [showCharge, setShowCharge] = useState(state.chargePortOpen);
+  const prevPortOpen = useRef(state.chargePortOpen);
+  useEffect(() => {
+    const open = state.chargePortOpen;
+    if (open !== prevPortOpen.current) {
+      prevPortOpen.current = open;
+      // Auto-show on plug-in, auto-hide on unplug. A manual toggle in between is
+      // preserved because this only fires on a TRANSITION, not on every render.
+      setShowCharge(open);
+    }
+  }, [state.chargePortOpen]);
+
   // ── Media bar ─────────────────────────────────────────────────────────────
   // CarServer.MediaPlaybackStatus: 0 Stopped, 1 Playing, 2 Paused.
   //
@@ -323,6 +346,33 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           {/* Card layout recovered from the official app's StyleSheet — see
               MediaCard.tsx. Driven by the car, not by the `mediaPlaying` debug
               toggle this used to be gated on. */}
+          {/* Their row ORDER below favourites is ChargingAlerts -> Charging ->
+              MediaControl, so the charge panel sits above the media card. */}
+          {state.awake && showCharge ? (
+            <ChargeCard
+              batteryLevel={state.batteryLevel}
+              rangeMiles={state.rangeMiles}
+              chargeLimitPercent={state.chargeLimitPercent}
+              chargingState={state.chargingState}
+              charging={state.charging}
+              chargePortOpen={state.chargePortOpen}
+              cableAttached={state.cableAttached}
+              minutesToChargeLimit={state.minutesToChargeLimit}
+              chargerPowerKw={state.chargerPowerKw}
+              chargeRateMph={state.chargeRateMph}
+              useMiles={false}
+              onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
+              // All three go through actions.patch, not a bespoke sender: the
+              // reconciler ALREADY maps charging -> chargeStart/chargeStop,
+              // chargeLimitPercent -> setChargeLimit and chargePortOpen ->
+              // openChargePort/closeChargePort. So they get the optimistic
+              // mirror, the rollback and the grace window for free, and there is
+              // no second code path to keep in step.
+              onStartStopCharging={(start) => actions.patch({ charging: start })}
+              onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
+            />
+          ) : null}
+
           {state.awake && mediaShowing && media ? (
             <MediaCard media={media} onAction={fleet.sendMedia} />
           ) : null}
@@ -381,6 +431,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               charging={state.charging}
               stale={status.stale}
               onRefresh={onRefresh}
+              onToggleChargePanel={() => setShowCharge((v) => !v)}
             />
           </View>
           <View style={styles.headerIcons}>
