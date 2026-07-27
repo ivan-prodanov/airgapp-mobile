@@ -43,6 +43,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { ToastProvider } from '@/components/ToastHost';
 import { TESLA_FONT_MAP } from '@/constants/fonts';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
+import { useOutboxDrain } from '@/hooks/useOutboxDrain';
 import { VehicleProvider } from '@/state/VehicleProvider';
 
 // Home is the root screen; Explore is pushed on top (reached from the Home header, dismissed with its
@@ -68,7 +69,12 @@ export default function RootLayout() {
   // So every Text must mount AFTER the faces are registered. The cost is a frame
   // or two on a cold start — the files are local to the bundle.
   const [fontsLoaded] = useFonts(TESLA_FONT_MAP);
+  // Drains one last pre-outbox intent from an older build, then does nothing.
   useSharedLocationIntake();
+  // Drains the durable outbox the Share Extension appends to. Mounted here rather
+  // than on a screen: a queued destination should reach the car because the app
+  // is running, not because the user happened to open the map.
+  useOutboxDrain();
   if (!fontsLoaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

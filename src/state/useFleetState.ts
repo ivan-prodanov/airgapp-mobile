@@ -231,6 +231,7 @@ export function useFleetState(): {
       lastVehicleDataAt: carLink.lastVehicleDataAt,
       wakeInFlight: carLink.wakeInFlight,
       refresh: carLink.refresh,
+      sendWithOutcome: carLink.sendWithOutcome,
       pending: carLink.pending,
       // NOT narrowed by activeIsLive: a bond wedge is a property of the PHONE,
       // so it is equally true whichever car is on screen.

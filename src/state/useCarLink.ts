@@ -227,6 +227,22 @@ export interface CarLinkStatus {
   // Pull-to-refresh / tap-status: really wake the car and re-read it, like
   // their vehicleWakeUp(vin, PULL_DOWN_REFRESH). No-op for a demo/unlinked car.
   refresh: () => void;
+  // Send ONE command and report the car's verdict, instead of fire-and-reconcile.
+  //
+  // For the share outbox, which must know whether the car actually accepted a
+  // destination before it may remove it from the queue. dispatch cannot answer
+  // that: it is deliberately fire-and-forget and surfaces failures as a toast.
+  //
+  // Bypasses the coalescer, which costs nothing here — a nav send declares no
+  // affected keys, so the coalescer would run it unlaned and unsupersedable
+  // anyway. Still goes through the gateway's per-VIN queue and retry loop.
+  //
+  // No toast on failure: the outbox is its own surface, and a queue that retries
+  // must not fire a banner on every attempt. Returns null when there is no live
+  // car (demo/unlinked), which the caller must treat as "not sent" rather than
+  // as a refusal.
+  sendWithOutcome: (cmd: CarCommand) => Promise<CommandOutcome | null>;
+
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
   // Controls read this to show a pending affordance; demo/unlinked cars never
@@ -556,6 +572,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // one would put the map pin at 0,0 in the Gulf of Guinea.
             if (cached.tirePressures) patch.tirePressures = cached.tirePressures;
             if (cached.media) patch.media = cached.media;
+            if (cached.chargingState != null) patch.chargingState = cached.chargingState;
+            if (cached.minutesToChargeLimit != null) patch.minutesToChargeLimit = cached.minutesToChargeLimit;
+            if (cached.chargerPowerKw != null) patch.chargerPowerKw = cached.chargerPowerKw;
+            if (cached.chargeRateMph != null) patch.chargeRateMph = cached.chargeRateMph;
             if (
               cached.carLocation &&
               Number.isFinite(cached.carLocation.lat) &&
@@ -986,6 +1006,19 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     );
   }
 
+  const sendWithOutcome = useCallback(
+    async (cmd: CarCommand): Promise<CommandOutcome | null> => {
+      const gw = getGateway();
+      if (!gw) return null; // demo / unlinked — not sent, and NOT a refusal
+      try {
+        return await gw.runCommand(cmd);
+      } catch (err) {
+        return { ok: false, kind: 'exhausted', message: err instanceof Error ? err.message : String(err) };
+      }
+    },
+    [getGateway],
+  );
+
   const dispatch = useCallback(
     (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => {
       // Stamp on USER ACTION, before the coalescer decides when (or whether)
@@ -1198,6 +1231,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       carLocation: patch.carLocation ?? base.carLocation,
       tirePressures: patch.tirePressures ?? base.tirePressures,
       media: patch.media ?? base.media,
+      chargingState: patch.chargingState ?? base.chargingState,
+      minutesToChargeLimit: patch.minutesToChargeLimit ?? base.minutesToChargeLimit,
+      chargerPowerKw: patch.chargerPowerKw ?? base.chargerPowerKw,
+      chargeRateMph: patch.chargeRateMph ?? base.chargeRateMph,
     };
     cacheRef.current = next;
     saveCacheRef.current?.(next);
@@ -1234,6 +1271,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         carLocation: null,
         tirePressures: null,
         media: null,
+        chargingState: null,
+        minutesToChargeLimit: null,
+        chargerPowerKw: null,
+        chargeRateMph: null,
         interiorTempC: null,
         exteriorTempC: null,
         targetTempC: null,
@@ -1657,8 +1698,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       piConfigured,
       vehicleBleName: bondWedge.bleName,
       dispatch,
+      sendWithOutcome,
       refresh,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, refresh],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, sendWithOutcome, refresh],
   );
 }
