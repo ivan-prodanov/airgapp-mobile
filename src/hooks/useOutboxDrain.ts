@@ -32,6 +32,11 @@ import { planDrain, transitionFor, type SendResult } from '@/state/outboxDrain';
 // concurrent read-modify-writes would lose an item, which is the bug this
 // replaces.
 export function useOutboxDrain(): void {
+  // MUST be mounted inside <VehicleProvider>: useCarLinkStatus throws outside it,
+  // and on 2026-07-27 a bare call one level above the provider took the entire app
+  // down at launch — a runtime context assertion the typechecker cannot see. The
+  // <OutboxDrain /> component in _layout exists solely to give this hook a legal
+  // home; do not "simplify" it back into a direct call.
   const carLink = useCarLinkStatus();
   const busy = useRef(false);
   const sendWithOutcome = carLink.sendWithOutcome;

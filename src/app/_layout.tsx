@@ -44,6 +44,12 @@ import { ToastProvider } from '@/components/ToastHost';
 import { TESLA_FONT_MAP } from '@/constants/fonts';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
 import { useOutboxDrain } from '@/hooks/useOutboxDrain';
+
+// Renders nothing; exists only so useOutboxDrain runs inside <VehicleProvider>.
+function OutboxDrain(): null {
+  useOutboxDrain();
+  return null;
+}
 import { VehicleProvider } from '@/state/VehicleProvider';
 
 // Home is the root screen; Explore is pushed on top (reached from the Home header, dismissed with its
@@ -71,16 +77,18 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts(TESLA_FONT_MAP);
   // Drains one last pre-outbox intent from an older build, then does nothing.
   useSharedLocationIntake();
-  // Drains the durable outbox the Share Extension appends to. Mounted here rather
-  // than on a screen: a queued destination should reach the car because the app
-  // is running, not because the user happened to open the map.
-  useOutboxDrain();
   if (!fontsLoaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <ToastProvider>
         <VehicleProvider>
+          {/* Inside the provider, because the drain reads carLink to know whether
+              there is a live car — useCarLinkStatus THROWS outside it, which took
+              the whole app down when this was a bare hook call in the component
+              above (2026-07-27). A render-nothing component is how a hook that
+              needs context gets mounted at the root. */}
+          <OutboxDrain />
           <AnimatedSplashOverlay />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
