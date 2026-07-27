@@ -32,8 +32,16 @@
 //     security screen    1250 ms   PROVEN
 //     scheduling screen  2500 ms   PROVEN
 //     location screen    5000 ms   PROVEN
-//     controls screen    1650 ms   INFERRED (by elimination + cluster adjacency)
-//     climate screen     5000 ms   INFERRED (same)
+//     controls screen    1650 ms   PROVEN (2026-07-27, upgraded from INFERRED)
+//     climate screen     5000 ms   INFERRED (by elimination + cluster adjacency)
+//     home / media       1250 ms   PROVEN (2026-07-27)
+//
+// The 1650 upgrade and the media tier both come from reading
+// `startBleVehicleUpdates`' DISPATCH SITES rather than its constant pool: each
+// site ends `r6 = <label>; r7 = <interval>` into a shared tail, so the pairing is
+// explicit. setGetparkedaccessorystate (logged "on controls screen") carries
+// 1650, and setGetmediastate carries 1250. Adjacency in the pool would have
+// paired 'media state' with 1650 and been wrong.
 //
 // Also settled, and worth stating because it retires an idea of mine: the
 // cadence is a PURE FUNCTION OF THE FOREGROUNDED SCREEN. Nothing in that loop
@@ -66,6 +74,9 @@ export const CADENCE_MS = Object.freeze({
   security: 1250,
   scheduling: 2500,
   location: 5000,
+  // RECOVERED, not inferred: `startBleVehicleUpdates` dispatches
+  // setGetmediastate with interval 1250, grouped with closures/charge/climate.
+  home: 1250,
 });
 
 export function focusFromCameraMode(cameraMode: string | null | undefined): ViewFocus {
@@ -102,20 +113,37 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
 
 // nextRotatedState — which ONE state to read on this tick.
 //
-// Recovered mechanism (Tesla iOS v4.56): they do not push or subscribe, they
-// POLL. `getPollingInterval` returns
-//   VEHICLE_DATA_POLLING_INTERVAL_ONLINE  = TimeInMs.FIVE_SECONDS     = 5000
-//   VEHICLE_DATA_POLLING_INTERVAL_OFFLINE = TimeInMs.ONE_SECOND * 1.2 = 1200
-// (offline is FASTER on purpose — it is watching for the car to come up), and
-// the payload is `VehicleDataSlicesSet`, a 23-slice set that includes both
-// MEDIA_STATE and MEDIA_DETAIL_STATE. So: every slice they show refreshes every
-// five seconds, media included.
+// ⚠️ CORRECTED. The first version of this cited
+// `VEHICLE_DATA_POLLING_INTERVAL_ONLINE = 5000`. That constant is real but it is
+// the CLOUD path — it sits beside `VehiclePollingType.ENERGY_PAIRED_VEHICLE` and
+// feeds their 23-slice `VehicleDataSlicesSet` request, which needs one HTTP call
+// the BLE transport cannot make. Ivan caught it. Do not cite it for BLE.
 //
-// We cannot copy the SET — the car's 452-byte inbound cap allows one submessage
-// per request, so their one cloud call is 23 round trips for us. We can copy the
-// CADENCE, by rotating: one state per tick, so N states each land every
-// N * intervalMs. At three states and 1650ms that is 4950ms — Tesla's 5000
-// almost exactly, at the same per-tick link cost as reading one state forever.
+// The BLE mechanism is a separate generator, `startBleVehicleUpdates`, whose own
+// first log line is "starting BLE vehicle data polling task". It fetches ONE
+// state per step and delays; every dispatch site ends with the same two
+// registers — a label and an interval — feeding a shared tail:
+//
+//   setGetmediastate  ...  r6 = 'media state'   r7 = 1250
+//   setGetchargestate ...  r6 = 'charge state'  r7 = 1250      <- same group
+//   setGetclosuresstate .. r6 = 'closures state' r7 = 1250
+//   setGetparkedaccessorystate ... r7 = 1650                   <- "on controls screen"
+//   setGetlocationstate ...        r7 = 5000                   <- "on location screen"
+//
+// So: **media state IS fetched over BLE, at 1250ms**, grouped with
+// closures/charge/climate — the set a home screen needs. Read from the dispatch
+// sites, not from the constant pool: in the pool `'media state'` sits next to
+// 1650, and pairing by adjacency would have given the wrong number.
+//
+// Two things this also settles: 1650 really is the controls tier (the 1650 group
+// contains parked-accessory, whose log says "on controls screen"), which had been
+// INFERRED; and `'media state'` is the only entry with no "on X screen..." log
+// line, which is why it is not screen-keyed the way the others are.
+//
+// We rotate because we must: the car's 452-byte cap allows one submessage per
+// request, so a set is N round trips. Tesla's home set is four states at 1250 =
+// 5000ms per slice. Ours is three, so each lands every 3750ms — slightly fresher
+// than theirs, on a smaller set.
 export function nextRotatedState(states: readonly string[], tick: number): string[] {
   if (states.length <= 1) return [...states];
   return [states[tick % states.length]];
@@ -133,7 +161,7 @@ export function planForCameraMode(
   // than ~3.3s. Gated on the card being VISIBLE, exactly like the tyre overlay:
   // a card nobody is looking at is not worth a round trip.
   if (focus === 'home' && opts?.mediaVisible) {
-    return { states: ['drive', 'media', 'mediaDetail'], intervalMs: CADENCE_MS.controls };
+    return { states: ['drive', 'media', 'mediaDetail'], intervalMs: CADENCE_MS.home };
   }
   // TPMS is fetched ONLY while the tyre overlay is open. This is the same
   // screen-keyed principle one level finer: the app's own screens decide what is

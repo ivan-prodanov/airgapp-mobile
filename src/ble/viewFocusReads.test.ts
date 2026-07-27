@@ -115,17 +115,17 @@ test('rotation: a single-state plan is passed through untouched', () => {
   assert.deepEqual(nextRotatedState([], 3), []);
 });
 
-test('rotation: three states at the controls tier land on Tesla`s 5s per slice', () => {
-  // The number that justifies the design: 3 * 1650 = 4950ms, against their
-  // recovered 5000. If someone retunes CADENCE_MS.controls this should be
-  // re-checked, which is why it is asserted rather than left in a comment.
+test('the home tick is the BLE-recovered 1250, not the cloud path`s 5000', () => {
+  // startBleVehicleUpdates dispatches setGetmediastate with interval 1250.
+  // VEHICLE_DATA_POLLING_INTERVAL_ONLINE (5000) is the CLOUD path and must not
+  // be used here — that mix-up is exactly what this test exists to prevent.
   const plan = planForCameraMode('PARKED', { mediaVisible: true });
+  assert.equal(plan.intervalMs, 1250);
   assert.equal(plan.states.length, 3);
-  const perSlice = plan.states.length * plan.intervalMs;
-  assert.ok(
-    Math.abs(perSlice - 5000) <= 250,
-    `each slice should refresh at ~5s (Tesla's VEHICLE_DATA_POLLING_INTERVAL_ONLINE); got ${perSlice}ms`,
-  );
+  // Their home set is four states at 1250 = 5000ms per slice; ours is three, so
+  // each lands sooner. Asserted as a bound, not an equality, because the set
+  // size is ours to choose and the TICK is the recovered number.
+  assert.ok(plan.states.length * plan.intervalMs <= 5000);
 });
 
 test('media is only polled when the card is actually on screen', () => {
