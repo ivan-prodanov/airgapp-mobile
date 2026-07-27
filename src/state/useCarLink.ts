@@ -1486,7 +1486,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       try {
         const gw = getGateway();
         if (!gw || stopped || paused) return;
-        const plan = planForCameraMode(active.cameraMode);
+        const plan = planForCameraMode(active.cameraMode, {
+        tirePressureVisible: active.tirePressureVisible,
+      });
         const t0 = Date.now();
         const snap = await gw.awakeSync({ states: plan.states, priority: 'background' });
         if (stopped || paused) return;
@@ -1514,7 +1516,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     };
     const scheduleFocus = () => {
       if (stopped || paused) return;
-      const plan = planForCameraMode(getActiveStateRef.current()?.cameraMode);
+      const st = getActiveStateRef.current();
+      const plan = planForCameraMode(st?.cameraMode, { tirePressureVisible: st?.tirePressureVisible });
       focusTimer = setTimeout(focusLoop, plan.intervalMs);
     };
     const focusLoop = async () => {

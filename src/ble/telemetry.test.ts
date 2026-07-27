@@ -585,3 +585,54 @@ test('closures: absent extras stay absent (never fabricate a false)', () => {
   assert.equal('userPresent' in patch, false);
   assert.equal('centerDisplay' in patch, false);
 });
+
+test('TPMS: parses four wheels, warnings and the car-supplied recommended pressure', () => {
+  // Values are BAR — the proto says so twice and Ivan's car agrees with its own
+  // door placard (2.9), so nothing is converted on the way through.
+  const snap = parseCarServerResponse({
+    vehicleData: {
+      tirePressureState: {
+        tpmsPressureFl: 2.8,
+        tpmsPressureFr: 2.9,
+        tpmsPressureRl: 2.9,
+        tpmsPressureRr: 2.9,
+        tpmsRcpFrontValue: 2.9,
+        tpmsRcpRearValue: 2.9,
+        tpmsSoftWarningFl: true,
+      },
+    },
+  });
+  assert.equal(snap.tires?.fl, 2.8);
+  assert.equal(snap.tires?.rr, 2.9);
+  assert.equal(snap.tires?.rcpFront, 2.9);
+  assert.equal(snap.tires?.softWarning.fl, true);
+  assert.equal(snap.tires?.softWarning.fr, false, 'an absent flag is false, not undefined');
+  assert.equal(snap.tires?.hardWarning.fl, false, 'soft must not imply hard — they mean different things');
+});
+
+test('TPMS: a wheel whose sensor has not reported is NULL, never 0.0 bar', () => {
+  // proto3 synthetic optionals: an absent wheel is absent. Rendering it as 0.0
+  // would be a confident lie about a tyre, which is the one place in this app
+  // where a wrong number could matter physically.
+  const snap = parseCarServerResponse({
+    vehicleData: { tirePressureState: { tpmsPressureFl: 2.8 } },
+  });
+  assert.equal(snap.tires?.fl, 2.8);
+  assert.equal(snap.tires?.fr, null);
+  assert.equal(snap.tires?.rcpFront, null, 'no placard value ⇒ null, not a guessed default');
+});
+
+test('TPMS reaches view state as ONE patch, not field by field', () => {
+  // The four wheels and the recommendation are a single reading; a half-applied
+  // patch would render a wheel against the wrong recommendation.
+  const patch = infotainmentToPatch({
+    tires: {
+      fl: 2.8, fr: 2.9, rl: 2.9, rr: 2.9,
+      rcpFront: 2.9, rcpRear: 2.9,
+      hardWarning: { fl: false, fr: false, rl: false, rr: false },
+      softWarning: { fl: false, fr: false, rl: false, rr: false },
+    },
+  });
+  assert.equal(patch.tirePressures?.fl, 2.8);
+  assert.equal(patch.tirePressures?.rcpRear, 2.9);
+});

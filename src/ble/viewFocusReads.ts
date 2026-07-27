@@ -101,6 +101,21 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
 }
 
 // planForCameraMode — the one call site's convenience wrapper.
-export function planForCameraMode(cameraMode: string | null | undefined): FocusReadPlan {
-  return readPlanFor(focusFromCameraMode(cameraMode));
+export function planForCameraMode(
+  cameraMode: string | null | undefined,
+  opts?: { tirePressureVisible?: boolean },
+): FocusReadPlan {
+  const focus = focusFromCameraMode(cameraMode);
+  // TPMS is fetched ONLY while the tyre overlay is open. This is the same
+  // screen-keyed principle one level finer: the app's own screens decide what is
+  // worth a round trip, and a panel nobody has opened is worth none. Closing the
+  // overlay stops the read immediately.
+  //
+  // It REPLACES drive rather than adding to it: two states is two round trips
+  // per tick, and nothing on the Controls screen renders speed — the status line
+  // lives on Home.
+  if (focus === 'controls' && opts?.tirePressureVisible) {
+    return { states: ['tires'], intervalMs: CADENCE_MS.controls };
+  }
+  return readPlanFor(focus);
 }

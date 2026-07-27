@@ -26,6 +26,7 @@ import {
 
 export interface VehicleActions {
   setCameraMode: (cameraMode: CameraMode) => void;
+  setTirePressureVisible: (visible: boolean) => void;
   setScreenCameraMode: (cameraMode: CameraMode) => void;
   toggle: (key: VehicleStateKey) => void;
   patch: (patch: Partial<VehicleViewState>) => void;
@@ -51,6 +52,7 @@ export function buildVehicleActions(
 ): VehicleActions {
   return {
     setCameraMode: (cameraMode) => apply((s) => setCameraModeState(s, cameraMode)),
+    setTirePressureVisible: (visible) => apply((s) => ({ ...s, tirePressureVisible: visible })),
     setScreenCameraMode: (cameraMode) => apply((s) => setScreenCameraModeState(s, cameraMode)),
     toggle: (key) => apply((s) => toggleState(s, key)),
     patch: (partial) => apply((s) => patchState(s, partial)),

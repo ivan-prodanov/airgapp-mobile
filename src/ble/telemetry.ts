@@ -78,6 +78,24 @@ export interface InfotainmentSnapshot {
     coordinates: { lat: number; lon: number } | null;
   };
   location?: { lat: number | undefined; lon: number | undefined; heading: number | undefined };
+  // TPMS. Values are BAR — the proto says so twice ("tpms pressure values in
+  // bar", "rcp values in bar") and the car agrees with its own placard, so
+  // nothing is converted on the way through.
+  tires?: {
+    fl: number | null;
+    fr: number | null;
+    rl: number | null;
+    rr: number | null;
+    // Recommended COLD pressure, front and rear, straight from the car (fields
+    // 18/19). This is the placard value — never hardcode it per model.
+    rcpFront: number | null;
+    rcpRear: number | null;
+    // A wheel is "warned" if the car raised either flag for it. Hard and soft
+    // are kept separate because they mean different things: soft is "check it",
+    // hard is "it is unsafe".
+    hardWarning: { fl: boolean; fr: boolean; rl: boolean; rr: boolean };
+    softWarning: { fl: boolean; fr: boolean; rl: boolean; rr: boolean };
+  };
   closures?: {
     sentryOn: boolean | undefined;
     windows: Partial<Record<'leftFront' | 'rightFront' | 'leftRear' | 'rightRear', boolean>>;
@@ -320,6 +338,37 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     }
   }
 
+  const tp = pick(vehicleData, root, 'tirePressureState');
+  if (tp) {
+    // proto3 `optional` (synthetic oneof): a wheel whose sensor has not reported
+    // is ABSENT, not zero. num() carries undefined through as null so the UI can
+    // show "—" rather than a confident 0.0 bar on a wheel we know nothing about.
+    const flag = (v: unknown): boolean => v === true;
+    // num() carries undefined through (deliberately — see the header note on
+    // synthetic optionals); this slice models "no reading" as null, so pin it.
+    const bar = (v: unknown): number | null => num(v) ?? null;
+    snap.tires = {
+      fl: bar(tp.tpmsPressureFl),
+      fr: bar(tp.tpmsPressureFr),
+      rl: bar(tp.tpmsPressureRl),
+      rr: bar(tp.tpmsPressureRr),
+      rcpFront: bar(tp.tpmsRcpFrontValue),
+      rcpRear: bar(tp.tpmsRcpRearValue),
+      hardWarning: {
+        fl: flag(tp.tpmsHardWarningFl),
+        fr: flag(tp.tpmsHardWarningFr),
+        rl: flag(tp.tpmsHardWarningRl),
+        rr: flag(tp.tpmsHardWarningRr),
+      },
+      softWarning: {
+        fl: flag(tp.tpmsSoftWarningFl),
+        fr: flag(tp.tpmsSoftWarningFr),
+        rl: flag(tp.tpmsSoftWarningRl),
+        rr: flag(tp.tpmsSoftWarningRr),
+      },
+    };
+  }
+
   const loc = pick(vehicleData, root, 'locationState');
   if (loc) {
     snap.location = {
@@ -475,6 +524,13 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.chargingState !== undefined) {
       patch.charging = snap.charge.chargingState.toLowerCase() === 'charging';
     }
+  }
+
+  if (snap.tires) {
+    // Emitted whole rather than field-by-field: the four wheels, their warnings
+    // and the placard value are one reading, and a half-applied patch would
+    // render a wheel against the wrong recommendation.
+    patch.tirePressures = snap.tires;
   }
 
   if (snap.climate) {

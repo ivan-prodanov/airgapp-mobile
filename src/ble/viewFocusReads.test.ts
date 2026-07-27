@@ -66,3 +66,27 @@ test('the focused read is strictly cheaper than the full read it rides beside', 
   const tripsPerMinute = (60_000 / plan.intervalMs) * plan.states.length;
   assert.ok(tripsPerMinute <= 40, `focused read costs ${tripsPerMinute} round trips/min`);
 });
+
+test('the tyre overlay is what makes us read TPMS at all', () => {
+  // Screen-keyed, one level finer: a panel nobody has opened is worth no round
+  // trip. Opening it starts the read; closing it stops it immediately.
+  assert.deepEqual(planForCameraMode('TOP_DOWN', { tirePressureVisible: true }).states, ['tires']);
+  assert.deepEqual(planForCameraMode('TOP_DOWN', { tirePressureVisible: false }).states, ['drive']);
+  assert.deepEqual(planForCameraMode('TOP_DOWN').states, ['drive'], 'absent flag ⇒ no TPMS read');
+});
+
+test('TPMS REPLACES drive on controls rather than adding to it', () => {
+  // Two states is two round trips per tick, and nothing on the Controls screen
+  // renders speed — the status line lives on Home. Keeping both would double the
+  // cost for a number nobody can see.
+  const plan = planForCameraMode('TOP_DOWN', { tirePressureVisible: true });
+  assert.equal(plan.states.length, 1);
+  assert.equal(plan.intervalMs, CADENCE_MS.controls, 'same cadence as the screen it belongs to');
+});
+
+test('the tyre flag does NOT leak onto other screens', () => {
+  // fleet.ts already forces the flag false when leaving TOP_DOWN, but the read
+  // plan must not depend on that staying true.
+  assert.deepEqual(planForCameraMode('CLIMATE', { tirePressureVisible: true }).states, ['climate']);
+  assert.deepEqual(planForCameraMode('PARKED', { tirePressureVisible: true }).states, ['drive']);
+});

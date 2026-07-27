@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
+
+import { recommendedColdPressure } from '@/ble/tirePressureText';
 
 import { CARD_FADE_MS, cardFadeEasing } from '@/godot/cardTransition';
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
@@ -192,7 +195,39 @@ export default function Index() {
                 <Pressable style={styles.backButton} onPress={() => actions.setCameraMode('PARKED')}>
                   <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
                 </Pressable>
-                {renderedPush === 'controls' ? <Text style={styles.title}>Controls</Text> : null}
+                {renderedPush === 'controls' ? (
+                  <View style={styles.titleStack}>
+                    <Text style={styles.title}>Controls</Text>
+                    {/* The car supplies its own placard value (TirePressureState
+                        fields 18/19) — never hardcoded per model. Shown only
+                        while the overlay is open, and only once we actually have
+                        it, so the header never claims a recommendation we have
+                        not read. Front and rear are usually equal; when they
+                        differ, say both rather than picking one. */}
+                    {state.tirePressureVisible && state.tirePressures
+                      ? (() => {
+                          const rcp = recommendedColdPressure(state.tirePressures);
+                          return rcp ? <Text style={styles.subtitle}>{rcp}</Text> : null;
+                        })()
+                      : null}
+                  </View>
+                ) : null}
+                {renderedPush === 'controls' ? (
+                  <Pressable
+                    style={styles.tireButton}
+                    hitSlop={8}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                      actions.setTirePressureVisible(!state.tirePressureVisible);
+                    }}
+                  >
+                    <SymbolView
+                      name="tirepressure"
+                      tintColor={state.tirePressureVisible ? 'white' : 'rgba(255,255,255,0.6)'}
+                      size={26}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
             </SafeAreaView>
           </Animated.View>
@@ -237,6 +272,24 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   topBarRow: {
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The title and its subtitle stack, so adding the recommendation does not
+  // shift the title off the row's centre.
+  titleStack: {
+    alignItems: 'center',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 1,
+  },
+  tireButton: {
+    position: 'absolute',
+    right: 0,
+    width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',

@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
 import { MarkerOverlay } from '../godot/MarkerOverlay';
+import { TirePressureOverlay } from '../godot/TirePressureOverlay';
 import { CONTROL_ACTIONS, type ControlActionId } from '../state/controlActions';
 import { controlHaptic } from '../state/controlHaptic';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -37,6 +38,7 @@ export function ControlsScreen({ state, actions }: Props) {
   return (
     <>
       <MarkerOverlay state={state} actions={actions} />
+      <TirePressureOverlay state={state} />
       <SafeAreaView edges={['bottom']} style={styles.bar}>
         {/* Same actions as the Customize Controls grid — they run identically. */}
         <Action id="flash" state={state} actions={actions} />

@@ -44,6 +44,7 @@ import {
   getClimateStateAction,
   getDriveStateAction,
   getLocationStateAction,
+  getTirePressureStateAction,
 } from "./builders";
 import { decodeMessage, FromVCSECMessage, Response } from "./proto";
 import { parseCarActionStatus, type CarActionStatus } from "./carActionStatus";
@@ -149,7 +150,7 @@ export interface WhitelistEntryProbe {
 }
 
 // The state slices awakeSync can read, named so a caller can ask for a subset.
-export type InfotainmentStateKey = "charge" | "climate" | "drive" | "location";
+export type InfotainmentStateKey = "charge" | "climate" | "drive" | "location" | "tires";
 
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
@@ -827,6 +828,7 @@ export function createCarGateway({
       climate: getClimateStateAction,
       drive: getDriveStateAction,
       location: getLocationStateAction,
+      tires: getTirePressureStateAction,
     };
     const keys =
       opts?.states ??

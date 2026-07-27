@@ -503,6 +503,24 @@ export function getClosuresStateAction(): ActionPayload {
     bytes: encodeInfotainmentAction({ getVehicleData: { getClosuresState: {} } }),
   };
 }
+// getTirePressureStateAction — TPMS.
+//
+// The proto is explicit that the values are BAR ("tpms pressure values in bar",
+// "rcp values in bar"), and Ivan's car agrees: the official app shows 2.8-2.9 bar
+// against a placard of 2.9. So no conversion — render what the car sends.
+//
+// The message also carries per-wheel hard/soft warning flags and, in fields
+// 18/19, the RECOMMENDED COLD PRESSURE front and rear. That is where the Tesla
+// app's "Recommended Cold Pressure: 2.9 bar" subtitle comes from — it is the
+// car's own placard value, not something we hardcode per model.
+export function getTirePressureStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getTirePressureState: {} } }),
+  };
+}
+
 export function getFullVehicleDataAction(): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
