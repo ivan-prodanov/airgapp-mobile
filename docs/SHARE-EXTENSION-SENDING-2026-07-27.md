@@ -213,9 +213,18 @@ must agree forever is the worst outcome available here.**
    }): Promise<{ ok: boolean; reason?: string }>
    ```
    It builds `navigateGpsWithLabelAction({lat, lon, label})` (`builders.ts:365`) and drives it
-   through the session engine. Note that builder already sets `FLAG_ENCRYPT_RESPONSE_BIT` — measured
-   2026-07-27, without it the car answers status-only and `parseCarActionStatus` returns null, so
-   an accepted send and a refused one are byte-identical to us. Keep it.
+   through the session engine. That builder sets `FLAG_ENCRYPT_RESPONSE_BIT` — keep it, but note
+   what is and is not established (correction accepted from the reply, §3):
+
+   - **Measured:** nine cold nav sends on 2026-07-27, every one logging *"car sent no payload to
+     inspect"*. So today `decryptedPayload` is never populated, `parseCarActionStatus` returns null,
+     and an accepted send is byte-identical to a refused one.
+   - **Inferred, not verified:** that setting the flag fixes that. The infotainment reads set the
+     same flag and their responses decrypt reliably, so the round-trip is proven on this firmware —
+     but never on a WRITE. `e04ebe6` is the fix and needs one bench send showing `CAR SAYS:`.
+
+   **Do not build "show the car's own rejection reason" UX on the inferred half until that run
+   happens.** (The commit is in HEAD and has been deployed twice since — see the reply, §1.)
 2. **Bundle** — esbuild to one IIFE, `--platform=neutral --format=iife --target=es2020`. Exclude
    `transport.ts` (it uses `fetch`) and anything RN-only; the engine proper is already node-clean.
 3. **Host it** in `JSContext`, and inject from Swift:
@@ -323,12 +332,38 @@ If a full lock is too much for v1: have the app write `bleOwnerHeartbeatMs` into
 is younger than 3 s. Sloppier (racy), but it is monotone in the safe direction — it only ever makes
 the extension *more* likely to back off — and it is twenty lines.
 
-### 6.3 The queue fallback already exists — mind its known bug
+### 6.3 The queue fallback — two live data-loss paths
 
-`pendingSharedIntent` in the App Group is a **single slot that each share overwrites**. The
-extension's Cancel must **rewind to the pre-share snapshot**, not clear the slot, or you destroy a
-previously queued intent. Also: `uid()` must be unique per launch — snapshots persist ids while the
-counter resets, which produced collisions before.
+> **Corrected 2026-07-27** after the reply, §2. My first draft told you to make Cancel "rewind to
+> the pre-share snapshot". That mechanism was deleted earlier the same day along with
+> `SharePreviewView.swift` and the trip planner; `grep -rn "restorePreShareIntent\|preShareIntent"
+> ios/ShareExtension/` returns nothing. The current extension is spinner-only — resolve → write
+> intent → `completeRequest` — so there is no Cancel path to rewind. The underlying warning stands;
+> only the mechanism changed.
+
+Current intent shape in the App Group:
+
+```json
+{ "raw": "...", "ts": 1234567890,
+  "location": { "lat": 0, "lng": 0, "source": "google", "name": "…", "address": "…" } }
+```
+
+`SharedAction` and `ReorderedStop` are gone from `sharedLocationStore.ts`. `address` is new and
+load-bearing — it is the middle rung of the name → address → coordinate chain in
+`destinationTitle.ts`.
+
+Two live data-loss paths remain, and both matter more once the extension can send:
+
+1. **The slot is a single value that each share overwrites.** Share two places in a row before
+   either is delivered and the first is gone.
+2. **`consumeSharedIntent` clears the slot BEFORE anything is sent.** A send that then fails loses
+   the intent entirely.
+
+The fix for both is the same: **a durable outbox** — an append-only list, entries removed only on
+confirmed delivery, with a retry on next launch. That is worth building *before* the extension
+starts sending, because the extension's fallback path is precisely "queue it", and a fallback that
+loses writes is worse than no fallback. Also keep the old rule: `uid()` must be unique per launch —
+snapshots persist ids while the counter resets, which produced collisions before.
 
 ---
 
@@ -393,7 +428,25 @@ A probe that cannot show it did the thing it was testing must report **VOID**, n
    a stripped 15 MB binary is weak evidence. A `SharedProtocol` class-dump would likely answer it.
 3. **Does the car count the extension as a separate central?** Our roadmap already lists "max
    centrals + eviction order" as unknown. If the extension's connection counts separately, it could
-   evict something. Worth asking the RE agent.
+   evict something. Worth asking the RE agent. **Added from the reply:** the car's link is already
+   contended by the in-car Pi, so the extension would be a **third** client, not a second —
+   whatever the eviction rule is, it is being asked to arbitrate one more.
+
+---
+
+## 11. Superseded by the reply thread — read these before acting on §6.2
+
+`SHARE-EXTENSION-SENDING-2026-07-27-REPLY.md` and `-REPLY-2.md` revise this document in two places:
+
+- **§6.2's heartbeat is wrong.** A backgrounded app with `bluetooth-central` is resumed by the car's
+  ~1.75 s VCSEC pushes, so it refreshes the heartbeat faster than any staleness threshold and looks
+  alive while being unable to act. Replaced by: **lock only around actual writes, with a short
+  lease.** Holding a link and holding the lock are different things.
+- **§6.1's BLE arm may not earn its risk.** A concurrent passive-entry answer written into the car's
+  mid-frame reassembler corrupts *both* frames, so no lock discipline makes it safe; the extension
+  must simply not take the radio when the car is in passive-entry range — which is most of when the
+  BLE arm would be useful. Ship the Pi arm plus a durable outbox that records *why* each send fell
+  back, and let the fallback statistics justify the BLE arm before anyone writes the lock.
 
 Reproduce §1 with:
 
