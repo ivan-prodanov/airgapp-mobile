@@ -325,9 +325,15 @@ func DecodeLockSignal(frame []byte) LockSignal {
 		return LockSignal{Kind: SignalActivity}
 	}
 	return LockSignal{
-		Kind:    SignalStatus,
-		Locked:  vs.GetVehicleLockState() == vcsec.VehicleLockState_E_VEHICLELOCKSTATE_LOCKED,
-		Present: vs.GetUserPresence() == vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_PRESENT,
+		Kind:   SignalStatus,
+		Locked: vs.GetVehicleLockState() == vcsec.VehicleLockState_E_VEHICLELOCKSTATE_LOCKED,
+		// UserPresence_E is THREE-valued: UNKNOWN, NOT_PRESENT, PRESENT. Test
+		// against NOT_PRESENT, not PRESENT — `Present` means "not confirmed
+		// absent", so UNKNOWN counts as present and fails open. Testing
+		// `== PRESENT` would collapse UNKNOWN into "nobody there" and take the
+		// AP down on a locked car whose presence sensor said nothing, which is
+		// the exact case the fail-open constraint names.
+		Present: vs.GetUserPresence() != vcsec.UserPresence_E_VEHICLE_USER_PRESENCE_NOT_PRESENT,
 	}
 }
 
