@@ -375,6 +375,20 @@ export function navigateGpsWithLabelAction({
 }): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
+    // Ask for an ENCRYPTED response, exactly as the infotainment reads do.
+    //
+    // Measured on-car 2026-07-27: nine cold nav sends, every one of them
+    // "car sent no payload to inspect". Without this flag the car answers with a
+    // status-only frame — no AES_GCM_ResponseData — so `decryptedPayload` is never
+    // populated, `parseCarActionStatus` always returns null, and the car's own
+    // verdict is unobtainable. That made the rejection-reason work inert: a send
+    // the car refused and one it accepted were byte-identical to us, which is the
+    // exact defect that work existed to fix.
+    //
+    // The reads (getChargeState/getDriveState/…) already set this and their
+    // responses decrypt reliably, so the flag's round-trip is proven on this
+    // firmware — it had simply never been set on a WRITE.
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
     bytes: encodeInfotainmentAction({
       navigationGpsDestinationRequest: {
         lat: Number(lat),
