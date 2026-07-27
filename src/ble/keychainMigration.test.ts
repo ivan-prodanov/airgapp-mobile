@@ -34,7 +34,7 @@ describe('migrateSecretsToAccessGroup', () => {
     assert.equal(r.ok, true);
     assert.deepEqual(r.outcomes, [{ key: KEY, status: 'migrated' }]);
     assert.equal(to.map.get(KEY), 'scalar-hex', 'value must land in the new group');
-    assert.equal(from.map.has(KEY), false, 'original removed only after a verified read-back');
+    assert.equal(from.map.get(KEY), 'scalar-hex', 'ORIGINAL IS KEPT — copy, never move');
   });
 
   it('is a no-op when the old location is empty', async () => {
@@ -128,7 +128,7 @@ describe('migrateSecretsToAccessGroup', () => {
     assert.equal(r.ok, false);
     assert.equal(r.outcomes.find((o) => o.key === deviceKey)?.status, 'migrated');
     assert.equal(r.outcomes.find((o) => o.key === piConfig)?.status, 'error');
-    assert.equal(from.map.has(deviceKey), false, 'the one that worked is done');
+    assert.equal(from.map.get(deviceKey), 'scalar', 'kept — copy, never move');
     assert.equal(from.map.get(piConfig), 'cfg', 'the one that failed is untouched');
   });
 
@@ -177,7 +177,7 @@ describe('makeMigratingSecretStore — the race that would mint a new device key
     await store.getItem(KEY);
 
     assert.equal(shared.map.get(KEY), 'enrolled-scalar');
-    assert.equal(legacy.map.has(KEY), false);
+    assert.equal(legacy.map.get(KEY), 'enrolled-scalar', 'legacy copy is KEPT — a verified read-back in-process does not prove the item survives a relaunch');
   });
 
   it('still returns the value when promotion fails, and keeps the legacy copy', async () => {

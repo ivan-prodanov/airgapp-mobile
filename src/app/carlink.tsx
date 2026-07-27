@@ -27,7 +27,8 @@ import {
   type CarTransport,
   type TransportCandidate,
 } from '@/ble';
-import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
+import { secureStoreSecretStore as store, sharedSecretStore, legacySecretStore } from '@/ble/secureStoreSecretStore';
+import { SHARED_SECRET_KEYS } from '@/ble/keychainMigration';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
 // DRIVE assertion is the unlock passive response with level = DRIVE(2).
 import {
@@ -228,6 +229,28 @@ export default function CarLinkScreen() {
     closeAllCachedSessions();
     await store.removeItem(LAST_SESSION_KEY).catch(() => {});
     append('closed cached Pi session(s) + cleared last-session id');
+  };
+
+  // WHERE ARE MY SECRETS — added 2026-07-27 after a Keychain access-group change
+  // lost the VIN/Pi link on device. Reports, per secret, whether each physical
+  // location can see it, WITHOUT writing, moving or deleting anything. This is a
+  // read-only diagnostic: the whole problem is not knowing which store holds what.
+  const handleSecretProbe = async () => {
+    const out: string[] = ['secret location probe (read-only, nothing is written)'];
+    const peek = async (label: string, st: typeof store, key: string) => {
+      try {
+        const v = await st.getItem(key);
+        out.push(`  ${key} @ ${label}: ${v === null ? 'ABSENT' : `present (${v.length} chars)`}`);
+      } catch (err) {
+        out.push(`  ${key} @ ${label}: THREW — ${errMsg(err)}`);
+      }
+    };
+    for (const key of SHARED_SECRET_KEYS) {
+      await peek('grouped', sharedSecretStore, key);
+      await peek('ungrouped', legacySecretStore, key);
+    }
+    out.forEach(append);
+    await appendDiagnostic('secret location probe', out);
   };
 
   const handleSelfTest = async () => {
@@ -1423,6 +1446,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
+              <ActionButton label="WHERE ARE MY SECRETS (read-only)" onPress={handleSecretProbe} theme={theme} />
               <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />
             </View>
 

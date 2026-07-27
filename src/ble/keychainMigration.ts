@@ -86,7 +86,11 @@ export async function migrateSecretsToAccessGroup(
         continue;
       }
 
-      await from.removeItem(key);
+      // NO DELETE. 2026-07-27: this deleted the ungrouped Pi config after a
+      // verified read-back, and the grouped copy was then unreadable on a later
+      // launch — baseUrl, token and VIN gone. A same-process read-back does not
+      // prove an item survives a relaunch, and moving a secret buys nothing that
+      // copying does not. Both copies stay; reads prefer the grouped one.
       outcomes.push({ key, status: 'migrated' });
     } catch (err) {
       outcomes.push({ key, status: 'error', detail: err instanceof Error ? err.message : String(err) });
@@ -133,10 +137,11 @@ export function makeMigratingSecretStore(shared: SecretStore, legacy: SecretStor
       // must never see null for a key we demonstrably hold, or it will mint a
       // replacement.
       try {
+        // COPY, never move. See the note in migrateSecretsToAccessGroup: the
+        // delete that used to live here lost a live Pi config.
         await shared.setItem(key, old);
-        if ((await shared.getItem(key)) === old) await legacy.removeItem(key);
       } catch {
-        // Keep the legacy copy and try again on the next read.
+        // Grouped store unavailable; the legacy copy is still authoritative.
       }
       return old;
     },
