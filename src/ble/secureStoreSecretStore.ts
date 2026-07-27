@@ -29,7 +29,7 @@
 // goes in the shared store, with its key added to SHARED_SECRET_KEYS.
 
 import * as SecureStore from 'expo-secure-store';
-import { makeMigratingSecretStore } from './keychainMigration';
+import { makeMigratingSecretStore, makeReadOnlyFallbackStore } from './keychainMigration';
 import type { SecretStore } from './types';
 
 // Must match `keychain-access-groups` in BOTH ios/airgapp/airgapp.entitlements
@@ -82,7 +82,22 @@ export const legacySecretStore: SecretStore = {
 // would mint a new device key and silently re-enrol the phone against a car that
 // no longer recognises it. Ordering effects against every reader is not a
 // guarantee. Removing the race is.
-export const secureStoreSecretStore: SecretStore = makeMigratingSecretStore(
+// ROLLED BACK 2026-07-27 while the grouped store is diagnosed. Commands stopped
+// working on device after the group landed and the cause is not yet identified,
+// so this reads from BOTH locations and moves nothing — whichever place holds the
+// key, we find it — and writes to the ungrouped one, as before this work started.
+//
+// Restore makeMigratingSecretStore (below, kept and tested) once the failure is
+// understood. Do NOT revert to a plain ungrouped store: the promotion may already
+// have moved the key, and a store that cannot see the grouped location would read
+// null and let loadOrCreateDeviceKeys mint a replacement.
+export const secureStoreSecretStore: SecretStore = makeReadOnlyFallbackStore(
+  sharedSecretStore,
+  legacySecretStore,
+);
+
+// The intended production store, once the grouped path is proven on device.
+export const migratingSecretStore: SecretStore = makeMigratingSecretStore(
   sharedSecretStore,
   legacySecretStore,
 );

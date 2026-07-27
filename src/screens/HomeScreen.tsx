@@ -207,6 +207,18 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
   // ONE refresh for all three entry points — the pull, the status tap and the
   // battery-% tap — so they cannot drift apart.
+  // ── Media bar ─────────────────────────────────────────────────────────────
+  // CarServer.MediaPlaybackStatus: 0 Stopped, 1 Playing, 2 Paused.
+  //
+  // The bar shows for Playing OR Paused — a paused track is still "what the car
+  // is on", and hiding the controls is what would stop you resuming it. Stopped
+  // hides it. A car that has told us a TITLE but no status still shows: the
+  // title is the stronger signal that something is loaded, and the alternative
+  // is a car playing music with no bar, which is the bug being fixed here.
+  const media = state.media;
+  const mediaIsPlaying = media?.playbackStatus === 1;
+  const mediaShowing = !!media && (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
+
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -308,18 +320,39 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             })}
           </Pressable>
 
-          {state.awake && state.mediaPlaying ? (
+          {/* Driven by the car now, not by the `mediaPlaying` debug toggle it
+              used to be gated on — which is why this bar never appeared for a
+              car that was actually playing. `mediaShowing` treats "the car told
+              us about a track" as the signal; a Stopped source hides the bar,
+              matching the official app. */}
+          {state.awake && mediaShowing ? (
             <View style={styles.mediaBar}>
               <View style={styles.mediaGroup}>
-                <SymbolView name="backward.end.fill" tintColor="white" size={22} />
-                <SymbolView name="play.fill" tintColor="white" size={26} />
-                <SymbolView name="forward.end.fill" tintColor="white" size={22} />
+                <MediaButton symbol="backward.end.fill" size={22} onPress={() => fleet.sendMedia('prev')} />
+                {/* The glyph is the ACTION, not the state: showing "pause" while
+                    playing is what every transport control does. */}
+                <MediaButton
+                  symbol={mediaIsPlaying ? 'pause.fill' : 'play.fill'}
+                  size={26}
+                  onPress={() => fleet.sendMedia('toggle')}
+                />
+                <MediaButton symbol="forward.end.fill" size={22} onPress={() => fleet.sendMedia('next')} />
               </View>
               <View style={styles.mediaDivider} />
               <View style={styles.mediaGroup}>
-                <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={20} />
+                <MediaButton
+                  symbol="chevron.left"
+                  size={20}
+                  tint="rgba(255,255,255,0.5)"
+                  onPress={() => fleet.sendMedia('volumeDown')}
+                />
                 <SymbolView name="speaker.wave.2.fill" tintColor="white" size={22} />
-                <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={20} />
+                <MediaButton
+                  symbol="chevron.right"
+                  size={20}
+                  tint="rgba(255,255,255,0.5)"
+                  onPress={() => fleet.sendMedia('volumeUp')}
+                />
               </View>
             </View>
           ) : null}
@@ -652,3 +685,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
   },
 });
+
+// MediaButton — a transport control. Pressable with the same light impact the
+// rest of the home-screen controls use, and a pressed-state dim so a tap on a
+// car that is slow to answer still feels acknowledged. The car owns the truth,
+// so nothing here is optimistic: the glyph flips when the next read says so.
+function MediaButton({
+  symbol,
+  size,
+  tint = 'white',
+  onPress,
+}: {
+  symbol: SFSymbol;
+  size: number;
+  tint?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      hitSlop={12}
+      onPress={() => {
+        controlHaptic();
+        onPress();
+      }}
+      style={({ pressed }) => ({ opacity: pressed ? 0.45 : 1 })}
+    >
+      <SymbolView name={symbol} tintColor={tint} size={size} />
+    </Pressable>
+  );
+}

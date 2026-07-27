@@ -161,6 +161,37 @@ export function makeMigratingSecretStore(shared: SecretStore, legacy: SecretStor
   };
 }
 
+// makeReadOnlyFallbackStore — the SAFE ROLLBACK.
+//
+// Reads from BOTH locations (grouped first, then ungrouped) and MOVES NOTHING.
+// Writes go to the ungrouped location, exactly as before any of this work.
+//
+// Why not simply revert to the plain ungrouped store: by the time you need a
+// rollback, the promotion may already have moved the key into the grouped
+// location and deleted the original. A plain ungrouped store would then find
+// nothing — and loadOrCreateDeviceKeys would mint a replacement, turning a
+// recoverable problem into a lost enrolment. Reading both is the only revert that
+// is safe regardless of how far the migration got.
+export function makeReadOnlyFallbackStore(shared: SecretStore, legacy: SecretStore): SecretStore {
+  const tryGet = async (st: SecretStore, key: string): Promise<string | null> => {
+    try {
+      return await st.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  return {
+    async getItem(key) {
+      return (await tryGet(shared, key)) ?? (await tryGet(legacy, key));
+    },
+    setItem: (key, value) => legacy.setItem(key, value),
+    async removeItem(key) {
+      await shared.removeItem(key).catch(() => {});
+      await legacy.removeItem(key).catch(() => {});
+    },
+  };
+}
+
 // One line per key, for the diagnostics file. The migration runs before anything
 // user-visible, so this log is the only record of what happened.
 export function formatMigrationReport(r: MigrationReport): string[] {

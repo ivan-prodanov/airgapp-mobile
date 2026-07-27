@@ -35,6 +35,10 @@ export interface Fleet {
   // state-diff reconciler above can never infer them. Navigation is the first:
   // "Send to Car" is an event, not a toggle. No-op for a demo (non-live) car.
   sendNavigation: (lat: number, lon: number, label?: string) => void;
+  // Media transport. Same one-shot shape as sendNavigation and for the same
+  // reason: play/pause/next/prev have no local-state counterpart the diff
+  // reconciler could infer. The car owns the truth; we ask and re-read.
+  sendMedia: (action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown') => void;
 }
 
 export function useFleetState(): {
@@ -159,9 +163,18 @@ export function useFleetState(): {
     [activeIsLive, carLink],
   );
 
+  const sendMedia = useCallback(
+    (action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown') => {
+      if (!activeIsLive) return;
+      carLink.dispatch({ type: 'media', action }, () => {});
+    },
+    [activeIsLive, carLink],
+  );
+
   const fleetApi = useMemo<Fleet>(
     () => ({
       sendNavigation,
+      sendMedia,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),

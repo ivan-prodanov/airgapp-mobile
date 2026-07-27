@@ -1427,6 +1427,33 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
               priority: opts?.forceInfotainment === true ? 'user' : 'background',
             });
             logi('poll', 'infotainment', { ms: Date.now() - it0 });
+            // Media is new and has no UI yet, so without this line a sync that
+            // read it and a sync that didn't are indistinguishable in the log —
+            // the exact "probe that cannot show it did the thing" failure this
+            // project keeps paying for. Reports BOTH halves separately (they are
+            // two reads and either can fault alone) and never assumes: `ms`/`md`
+            // say whether each slice arrived at all, which is the difference
+            // between "the car has no media" and "we never asked properly".
+            // EVERY value coerced to a primitive with a default. The first cut
+            // passed `undefined` through for unread fields and the line never
+            // appeared in the log at all — the sink is wrapped in a swallowing
+            // try/catch, so a payload it dislikes is dropped in silence. A
+            // diagnostic that can vanish without saying so is worse than none.
+            logi('read', 'media', {
+              hasState: !!snap.media,
+              hasDetail: !!snap.mediaDetail,
+              rce: String(snap.media?.remoteControlEnabled ?? 'unread'),
+              status: snap.media?.playbackStatus ?? -1,
+              src: snap.media?.sourceType ?? -1,
+              title: snap.media?.title ?? '',
+              artist: snap.media?.artist ?? '',
+              album: snap.mediaDetail?.album ?? '',
+              station: snap.mediaDetail?.station ?? '',
+              srcName: snap.mediaDetail?.sourceName ?? '',
+              vol: snap.media?.volume ?? -1,
+              elapsed: snap.mediaDetail?.elapsedSec ?? -1,
+              dur: snap.mediaDetail?.durationSec ?? -1,
+            });
             if (stopped || paused) return;
             lastInfotainmentAtRef.current = Date.now();
             const infoPatch = filterPatchUnderIntent(
