@@ -24,7 +24,7 @@ import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard } from '@/components/ChargeCard';
 // ⚠️ TEMPORARY — remove with the strip (one revert).
-import { ChargeCardDebugStrip, type ChargePreset } from '@/components/ChargeCardDebugStrip';
+import { useChargePreset } from '@/components/ChargeCardDebugStrip';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
@@ -211,8 +211,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
   // ONE refresh for all three entry points — the pull, the status tap and the
   // battery-% tap — so they cannot drift apart.
-  // ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert).
-  const [fakeCharge, setFakeCharge] = useState<ChargePreset | null>(null);
+  // ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert). Read from the
+  // shared store because the chips live on the DEMO page, not here.
+  const fakeCharge = useChargePreset();
 
   // ── Charge panel ──────────────────────────────────────────────────────────
   // Recovered contract (tesla-charge-row-FINDINGS.md §6): the official app holds
@@ -353,10 +354,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               toggle this used to be gated on. */}
           {/* Their row ORDER below favourites is ChargingAlerts -> Charging ->
               MediaControl, so the charge panel sits above the media card. */}
-          {/* ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert). */}
-          <ChargeCardDebugStrip activeLabel={fakeCharge?.label ?? null} onPick={setFakeCharge} />
-
-          {state.awake && (showCharge || fakeCharge) ? (
+          {/* ⚠️ TEMPORARY `|| fakeCharge` — and it is the FIX for "nothing
+              happens": the panel is gated on state.awake, so with the car asleep
+              no preset could ever render it. A forced preset bypasses both gates. */}
+          {(state.awake && showCharge) || fakeCharge ? (
             <ChargeCard
               batteryLevel={state.batteryLevel}
               rangeMiles={state.rangeMiles}

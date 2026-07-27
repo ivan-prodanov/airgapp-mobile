@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { TeslaFonts } from '@/constants/fonts';
@@ -25,6 +26,12 @@ import type { ChargeCardProps } from './ChargeCard';
 // The panel's OWN buttons stay fully live while a preset is showing — Ivan's
 // call, explicitly: tapping Start or the port button really does command the
 // car. Only the DISPLAYED values are faked.
+//
+// The chips live on the DEMO page and the panel lives on HOME — two different
+// screens — so the selection sits in a module-level store rather than either
+// screen's local state. useSyncExternalStore keeps both in step without a
+// provider, which matters because a provider would be a permanent change to
+// support a temporary feature.
 
 // The states worth looking at. `charging` and `chargingState` are kept
 // consistent with each other on purpose — the panel derives its headline colour
@@ -139,17 +146,35 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   },
 ];
 
-export function ChargeCardDebugStrip({
-  activeLabel,
-  onPick,
-}: {
-  activeLabel: string | null;
-  onPick: (preset: ChargePreset | null) => void;
-}) {
+// ── The shared selection ───────────────────────────────────────────────────
+let currentPreset: ChargePreset | null = null;
+const listeners = new Set<() => void>();
+
+export function setChargePreset(preset: ChargePreset | null): void {
+  currentPreset = preset;
+  for (const l of listeners) l();
+}
+
+export function useChargePreset(): ChargePreset | null {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => currentPreset,
+    () => currentPreset,
+  );
+}
+
+export function ChargeCardDebugStrip() {
+  const active = useChargePreset();
+  const activeLabel = active?.label ?? null;
+  const onPick = setChargePreset;
   return (
     <View style={styles.wrap}>
       <Text style={styles.caption}>
-        FAKE charge states — temporary. The panel&apos;s own buttons are still LIVE.
+        Forces the Home charge panel into a state. It shows even with the car asleep. The panel&apos;s
+        own buttons stay LIVE and really do command the car.
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         <Chip label="Live" active={activeLabel === null} onPress={() => onPick(null)} />

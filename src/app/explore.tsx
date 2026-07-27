@@ -8,6 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useFleet, useVehicle } from '@/state/VehicleProvider';
+// ⚠️ TEMPORARY — remove with the strip (one revert).
+import { ChargeCardDebugStrip } from '@/components/ChargeCardDebugStrip';
 import type { CameraMode, CarModel, LightingMode, ThemeMode, VehicleStateKey } from '@/types/vehicleTypes';
 
 const ACCENT = '#3E6AE1'; // Tesla blue for the active state
@@ -199,6 +201,11 @@ export default function ExploreScreen() {
         <ToggleRow icon="fanblades.fill" label="A/C" stateKey="climateOn" value={state.climateOn} onToggle={actions.toggle} theme={theme} />
         <ToggleRow icon="windshield.front.and.heat.waves" label="Front defrost" stateKey="frontDefrostOn" value={state.frontDefrostOn} onToggle={actions.toggle} theme={theme} />
         <ToggleRow icon="windshield.rear.and.heat.waves" label="Rear defrost" stateKey="rearDefrostOn" value={state.rearDefrostOn} onToggle={actions.toggle} theme={theme} />
+      </Section>
+
+      {/* ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert). */}
+      <Section title="Charge panel states (fake)">
+        <ChargeCardDebugStrip />
       </Section>
 
       <Section title="Charging">
