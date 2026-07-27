@@ -5,6 +5,7 @@
 // lets the key through AND is pruned from the map; unrelated keys pass; and the
 // map's expired entries are pruned even when they aren't in the incoming patch.
 
+import { initialVehicleState } from '../types/vehicleTypes';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -102,4 +103,39 @@ test('THE FRUNK BUG: confirm on open, then a real close applies immediately (no 
   //    window. With the grace released, the close now applies instantly.
   out = filterPatchUnderIntent({ frunkOpen: false }, intent, 5_000, { frunkOpen: true } as VehicleViewState);
   assert.deepEqual(out, { frunkOpen: false });
+});
+
+// Regression: a media command must NOT put `media` under the intent grace.
+//
+// `media` is a single VehicleStateKey holding title, artist, album AND
+// playbackStatus. Stamping it for GRACE_MS (30s) to protect an optimistic
+// play/pause flip suppressed the entire card's telemetry for half a minute —
+// press pause, then next, and the title could not change until the window
+// expired. Measured on-car as "stuck 20+ seconds".
+test('media under grace freezes the WHOLE card, which is why we do not stamp it', () => {
+  const now = 1_000_000;
+  const intent = new Map<VehicleStateKey, number>([['media', now + GRACE_MS]]);
+  const patch = {
+    media: {
+      remoteControlEnabled: true,
+      title: 'A different song',
+      artist: 'A different artist',
+      album: null,
+      station: null,
+      playbackStatus: 1,
+      sourceType: 12,
+      sourceName: null,
+      volume: 5,
+      volumeMax: 11,
+      volumeIncrement: 1,
+      elapsedSec: 3,
+      durationSec: 200,
+    },
+  } as unknown as Partial<VehicleViewState>;
+
+  const filtered = filterPatchUnderIntent(patch, intent, now, initialVehicleState);
+
+  // This is the DAMAGE, asserted so nobody re-adds the stamp thinking it is
+  // harmless: a track change is invisible for the whole window.
+  assert.equal('media' in filtered, false);
 });

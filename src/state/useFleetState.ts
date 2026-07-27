@@ -184,10 +184,23 @@ export function useFleetState(): {
         const optimistic = playing ? 2 : 1;
         const restore = prev.playbackStatus;
         applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: optimistic } } : s));
-        carLink.dispatch(
-          { type: 'media', action },
-          () => applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: restore } } : s)),
-          ['media'],
+        // ⚠️ NO affected keys, deliberately — and this is a FIX, not an omission.
+        //
+        // Passing ['media'] stamped the key with the 30s intent grace, and
+        // `media` is ONE key holding title, artist, album and playbackStatus
+        // together. So a single play/pause tap suppressed the WHOLE card's
+        // telemetry for 30 seconds: press pause then next, and the title could
+        // not change until the window expired. Ivan hit exactly that — "stuck
+        // 20+ seconds". It is the frunk grace defect, which I filed this morning
+        // and then built into media the same afternoon.
+        //
+        // The grace exists to stop a stale read reverting a fresh user change.
+        // Media does not need it: the rotation re-reads media every ~3.75s, so
+        // the optimistic glyph is corrected almost immediately — and if the car
+        // REFUSED the command, being corrected is the right outcome, not
+        // something to suppress for half a minute.
+        carLink.dispatch({ type: 'media', action }, () =>
+          applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: restore } } : s)),
         );
         return;
       }
