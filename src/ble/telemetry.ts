@@ -50,6 +50,7 @@ export interface InfotainmentSnapshot {
     // normal when unplugged — the panel hides those lines rather than showing 0.
     minutesToChargeLimit?: number | null;
     chargerPowerKw?: number | null;
+    energyAddedKwh?: number | null;
     chargeRateMph?: number | null;
     soc: number | undefined;
     rangeMiles: number | null;
@@ -293,6 +294,8 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       // reports the latter.
       minutesToChargeLimit: num(cs.minutesToChargeLimit) ?? num(cs.minutesToFullCharge) ?? null,
       chargerPowerKw: num(cs.chargerPower) ?? null,
+      // kWh put in during the LAST session — their panel's second line.
+      energyAddedKwh: num(cs.chargeEnergyAdded) ?? null,
       chargeRateMph: num(cs.chargeRateMph) ?? null,
       // RAW miles: `battery_range` is already in miles and the official app converts
       // at display time (Round 5 §2a). Rounding to km here would compound error.
@@ -623,6 +626,7 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.chargeLimitSoc !== undefined) patch.chargeLimitPercent = snap.charge.chargeLimitSoc;
     if (snap.charge.minutesToChargeLimit != null) patch.minutesToChargeLimit = snap.charge.minutesToChargeLimit;
     if (snap.charge.chargerPowerKw != null) patch.chargerPowerKw = snap.charge.chargerPowerKw;
+    if (snap.charge.energyAddedKwh != null) patch.energyAddedKwh = snap.charge.energyAddedKwh;
     if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
   }
 

@@ -225,6 +225,8 @@ export interface VehicleViewState {
   // reported, which is normal unplugged — the panel omits the line.
   minutesToChargeLimit: number | null;
   chargerPowerKw: number | null;
+  // kWh added during the last charging session — the charge panel's second line.
+  energyAddedKwh: number | null;
   chargeRateMph: number | null;
   chargingAmps: number;
 }
@@ -309,6 +311,7 @@ export const initialVehicleState: VehicleViewState = {
   chargingState: null,
   minutesToChargeLimit: null,
   chargerPowerKw: null,
+  energyAddedKwh: null,
   chargeRateMph: null,
   chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
 };

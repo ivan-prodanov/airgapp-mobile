@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
@@ -37,8 +36,6 @@ const PANEL_RADIUS = 0.5 * GUTTER;
 const PANEL_BG = '#222324';
 const TEXT = '#F3F3F3';
 const TEXT_LIGHT = '#8A8B8B';
-const TEXT_WARNING = '#DAA300';
-const CHARGING_GREEN = '#00E286'; // Colors.batteryCharging
 
 // Their slider is `sliderMax` + `sliderSnapPoints`. The car supplies the real
 // bounds (charge_limit_soc_min/max/std); these are the fallbacks for a car that
@@ -54,9 +51,14 @@ export interface ChargeCardProps {
   charging: boolean;
   chargePortOpen: boolean;
   cableAttached: boolean;
+  // Still plumbed, deliberately unrendered. Their idle panel's second line is
+  // the LAST session's energy (verified from Ivan's side-by-side); what it shows
+  // WHILE charging is not verified, and the fake presets cannot settle it since
+  // they are my own invention. These are the fields that line would need.
   minutesToChargeLimit: number | null;
   chargerPowerKw: number | null;
   chargeRateMph: number | null;
+  energyAddedKwh: number | null;
   chargingAmps: number;
   ampMin: number;
   ampMax: number;
@@ -76,53 +78,13 @@ export interface ChargeCardProps {
   onToggleChargePort: (open: boolean) => void;
 }
 
-// The car's ChargingState oneof name -> the headline. Their panel distinguishes
-// these; `charging` (a boolean) collapses them, which is why the raw name is
-// plumbed through telemetry alongside it.
-function headline(chargingState: string | null, cableAttached: boolean): string {
-  switch ((chargingState ?? '').toLowerCase()) {
-    case 'charging':
-      return 'Charging';
-    case 'complete':
-      return 'Charge Complete';
-    case 'stopped':
-      return 'Charging Stopped';
-    case 'starting':
-      return 'Starting to Charge';
-    case 'nopower':
-      return 'No Power';
-    case 'calibrating':
-      return 'Calibrating';
-    case 'disconnected':
-      return cableAttached ? 'Cable Connected' : 'Not Charging';
-    default:
-      return cableAttached ? 'Cable Connected' : 'Not Charging';
-  }
-}
-
-// "1 hr 24 min" / "24 min". Null when the car does not report it, which is
-// normal unplugged — the line is omitted rather than showing 0.
-function remainingText(minutes: number | null): string | null {
-  if (minutes == null || minutes <= 0) return null;
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  if (h === 0) return `${m} min remaining`;
-  if (m === 0) return `${h} hr remaining`;
-  return `${h} hr ${m} min remaining`;
-}
-
 export function ChargeCard({
   batteryLevel,
-  rangeMiles,
   chargeLimitPercent,
-  chargingState,
   charging,
   chargePortOpen,
   cableAttached,
-  minutesToChargeLimit,
-  chargerPowerKw,
-  chargeRateMph,
-  useMiles,
+  energyAddedKwh,
   chargingAmps,
   ampMin,
   ampMax,
@@ -138,56 +100,24 @@ export function ChargeCard({
   // change until the end.
   const [liveLimit, setLiveLimit] = useState<number | null>(null);
 
-  const remaining = remainingText(minutesToChargeLimit);
-  const range =
-    rangeMiles == null ? null : `${Math.round(useMiles ? rangeMiles : rangeMiles * 1.609344)} ${useMiles ? 'mi' : 'km'}`;
-  // Rate line: kW is what the car reports while actually delivering current, so
-  // it is shown only while charging — a stale "11 kW" on a finished charge would
-  // read as still going.
-  const rate =
-    charging && chargerPowerKw != null && chargerPowerKw > 0
-      ? `${chargerPowerKw.toFixed(chargerPowerKw < 10 ? 1 : 0)} kW`
-      : null;
-  const addedRate =
-    charging && chargeRateMph != null && chargeRateMph > 0
-      ? `${Math.round(useMiles ? chargeRateMph : chargeRateMph * 1.609344)} ${useMiles ? 'mph' : 'km/h'}`
-      : null;
-
   return (
     <View style={styles.card}>
-      {/* headerContainer { flexDirection: 'row' } + headerMain { flex: 1 } */}
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.headline,
-            charging ? { color: CHARGING_GREEN } : null,
-            (chargingState ?? '').toLowerCase() === 'stopped' || (chargingState ?? '').toLowerCase() === 'nopower'
-              ? { color: TEXT_WARNING }
-              : null,
-          ]}
-          numberOfLines={1}
-        >
-          {headline(chargingState, cableAttached)}
-        </Text>
-        <Text style={styles.headlineRight} numberOfLines={1}>
-          {batteryLevel == null ? '--' : `${Math.round(batteryLevel)}%`}
-          {range ? `  ·  ${range}` : ''}
-        </Text>
-      </View>
+      {/* Their panel has NO status/battery header row — Ivan's side-by-side is
+          unambiguous: the FIRST line is "Charge limit: N%". The percentage and
+          range live in the app header above, so repeating them here was mine,
+          not theirs, and it pushed everything else down.
 
-      {/* Charge limit reads as its own line, like app/charging.tsx's
-          "Charge limit: 80%", rather than a caption under the track. */}
-      <View style={styles.limitRow}>
-        <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
-      </View>
+          Type comes from app/charging.tsx's own limitLabel (19/700), so the two
+          screens read the same. */}
+      <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
 
-      {/* `statusText` sits directly under the header and ABOVE the slider — my
-          first cut had it after the slider, which is what Ivan flagged as "not
-          on the right position". Omitted entirely when the car reports nothing,
-          so the layout does not keep a blank line. */}
-      {remaining || rate || addedRate ? (
+      {/* Their second line is the LAST SESSION's energy, not a live rate:
+          "58 kWh added during last charging session" — charge_energy_added.
+          I had put time-remaining and kW here, which is a different fact about a
+          different session. Omitted entirely when the car reports nothing. */}
+      {energyAddedKwh != null && energyAddedKwh > 0 ? (
         <Text style={styles.statusText} numberOfLines={1}>
-          {[remaining, rate, addedRate].filter(Boolean).join('  ·  ')}
+          {Math.round(energyAddedKwh)} kWh added during last charging session
         </Text>
       ) : null}
 
@@ -239,8 +169,7 @@ export function ChargeCard({
             its own command is in flight, which is their actual use of disabled. */}
         {cableAttached ? (
           <ChargeButton
-            symbol={charging ? 'stop.fill' : 'bolt.fill'}
-            label={charging ? 'Stop' : 'Start'}
+            label={charging ? 'Stop Charging' : 'Start Charging'}
             disabled={!!pending?.has('charging')}
             onPress={() => onStartStopCharging(!charging)}
           />
@@ -249,8 +178,7 @@ export function ChargeCard({
             control goes rather than sitting there greyed. */}
         {chargePortOpen && cableAttached ? null : (
           <ChargeButton
-            symbol={chargePortOpen ? 'xmark' : 'chevron.up'}
-            label={chargePortOpen ? 'Close Port' : 'Open Port'}
+            label={chargePortOpen ? 'Close Charge Port' : 'Open Charge Port'}
             disabled={!!pending?.has('chargePortOpen')}
             onPress={() => onToggleChargePort(!chargePortOpen)}
           />
@@ -261,16 +189,15 @@ export function ChargeCard({
 }
 
 function ChargeButton({
-  symbol,
   label,
   disabled,
   onPress,
 }: {
-  symbol: SFSymbol;
   label: string;
   disabled: boolean;
   onPress: () => void;
 }) {
+  // Text only — theirs carries no icon, and it renders DIM rather than white.
   return (
     <Pressable
       style={({ pressed }) => [styles.controlButton, { opacity: disabled ? 0.35 : pressed ? 0.5 : 1 }]}
@@ -280,7 +207,6 @@ function ChargeButton({
         onPress();
       }}
     >
-      <SymbolView name={symbol} tintColor={TEXT} size={20} />
       <Text style={styles.controlLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -298,28 +224,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     justifyContent: 'space-between',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   // TextCategory.BodyLabel, the same 14/20/0.1 the rest of the recovered UI uses.
-  headline: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: TEXT,
-    flexShrink: 1,
-  },
-  headlineRight: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: TEXT_LIGHT,
-    marginLeft: 12,
-  },
   sliderContainer: {
     alignSelf: 'stretch',
     marginVertical: 2,
@@ -374,10 +279,9 @@ const styles = StyleSheet.create({
     height: 44,
   },
   controlLabel: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: TEXT,
+    fontSize: 17,
+    fontWeight: '600',
+    // Dim, not white — theirs reads as a secondary action.
+    color: TEXT_LIGHT,
   },
 });
