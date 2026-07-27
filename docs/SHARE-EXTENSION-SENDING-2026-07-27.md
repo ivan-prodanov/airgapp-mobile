@@ -89,11 +89,16 @@ those resolve to Realm and Sentry, which are also linked in — do not read them
 path over BLE, another over the network, with a fallback between them — is the shape the vendor
 ships. For us the network arm is the Pi instead of their cloud.
 
-> ⚠️ **Read the limit of this evidence.** It proves Tesla *runs* CoreBluetooth in a share extension.
-> It does **not** prove they run it concurrently with the app's link without ill effect, and it
-> does not tell us how they sequence the two. Absence of a lock in the binary is weak evidence of
-> absence of coordination. Treat §1 as "the platform allows this and the vendor does it", not as
-> "concurrency is free".
+> ✅ **Upgraded 2026-07-27** — see [SHARE-EXTENSION-TESLA-TEARDOWN-2026-07-27.md](SHARE-EXTENSION-TESLA-TEARDOWN-2026-07-27.md).
+> The symbols above prove *linkage*, which is weaker than it sounded. The teardown proves the real
+> thing: the extension's **own compiled source files** include `BluetoothTransport.swift`,
+> `CommandCenter+TMBLE.swift`, `PeripheralWriteListener.swift`,
+> `LocalRoutableMessageBuilder+Signing.swift` and `LocalKeyPairEnclave.swift` — a BLE command path
+> written for this extension — alongside a full OwnerAPI/Hermes network path, with
+> `CommandCenter.transports` (plural) and `VehicleRequestPriorityQueue` arbitrating between them.
+>
+> Still not proven: the transport **order**, and whether they coordinate with the containing app at
+> all. Absence of a lock in the binary remains weak evidence of absence of coordination.
 
 ---
 
@@ -442,11 +447,19 @@ A probe that cannot show it did the thing it was testing must report **VOID**, n
   ~1.75 s VCSEC pushes, so it refreshes the heartbeat faster than any staleness threshold and looks
   alive while being unable to act. Replaced by: **lock only around actual writes, with a short
   lease.** Holding a link and holding the lock are different things.
-- **§6.1's BLE arm may not earn its risk.** A concurrent passive-entry answer written into the car's
-  mid-frame reassembler corrupts *both* frames, so no lock discipline makes it safe; the extension
-  must simply not take the radio when the car is in passive-entry range — which is most of when the
-  BLE arm would be useful. Ship the Pi arm plus a durable outbox that records *why* each send fell
-  back, and let the fallback statistics justify the BLE arm before anyone writes the lock.
+- ~~**§6.1's BLE arm may not earn its risk.**~~ **WITHDRAWN 2026-07-27 — parity overrules the risk
+  calculation.** The teardown shows Tesla ships the BLE arm *and* the network arm *and* an arbiter,
+  inside the extension. Ivan's call stands: do it the way they do it. Build **both** arms with a
+  `CommandCenter`-equivalent, rather than sequencing the BLE arm behind fallback statistics.
+
+  The physics in §3.1 does not go away — a passive-entry answer written into the car's mid-frame
+  reassembler still corrupts both frames. What changes is its status: it is no longer a reason to
+  skip the arm, it is **the thing to measure** (§10.1). Tesla's `InFlightRequests` + completion
+  handler + bounded timeout is consistent with "accept rare corruption, retry"; that is a guess,
+  and it is the guess worth testing first.
+
+  Keep the durable outbox regardless — today's single-slot store loses writes whether or not the
+  extension ever sends.
 
 Reproduce §1 with:
 
