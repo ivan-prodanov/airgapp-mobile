@@ -191,7 +191,6 @@ export function ChargeCard({
           limitPercent={chargeLimitPercent}
           min={LIMIT_MIN}
           max={LIMIT_MAX}
-          surfaceColor={PANEL_BG}
           onChange={onSetChargeLimit}
           onSlidingChange={onSlidingChange}
         />

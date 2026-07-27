@@ -11,8 +11,6 @@ import { useVehicle } from '@/state/VehicleProvider';
 import { ChargeLimitSlider } from '@/components/ChargeLimitSlider';
 
 const DIM = 'rgba(255,255,255,0.22)';
-// The card the slider sits on — its breaks are punched in this colour.
-const CARD_BG = '#1F1F22';
 // Detent "click" shared by the charge-limit stoppers and the current stepper, so both feel the same.
 const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
@@ -94,8 +92,7 @@ export default function ChargingScreen() {
               limitPercent={chargeLimit}
               min={LIMIT_MIN}
               max={LIMIT_MAX}
-              surfaceColor={CARD_BG}
-              onChange={(v) => actions.setChargeLimit(v)}
+                  onChange={(v) => actions.setChargeLimit(v)}
               onSlidingChange={setSliding}
             />
 

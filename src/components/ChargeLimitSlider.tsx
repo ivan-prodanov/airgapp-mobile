@@ -42,21 +42,24 @@ const THUMB_CHANGING = 21;
 const TRACK_H = 5;
 const BREAK_W = 2;
 
-// ── Colours, verbatim from Tesla's palette ────────────────────────────────
-// Ours were invented and that is why the breaks vanished: on our old
-// rgba(255,255,255,0.18) track there was too little separation for a punched
-// gap to read. Theirs has THREE zones, which is why the palette carries two
-// distinct track colours rather than one:
+// ── Colours ───────────────────────────────────────────────────────────────
+// Measured off the reference by Ivan, and they replace TWO wrong guesses of
+// mine. First I invented Apple's #34C759 over rgba(255,255,255,0.18). Then I
+// "recovered" Colors.chargeSliderUnfinishedTrack / chargeSliderMaxTrack from the
+// bundle and built a three-zone track out of them — but those constants belong
+// to a DIFFERENT slider. Finding a plausible constant is not the same as finding
+// the right one.
 //
-//   Colors.batteryGreen / batteryCharging  #00E286   charged so far
-//   Colors.chargeSliderUnfinishedTrack     #3D3D3D   charged-so-far -> limit
-//   Colors.chargeSliderMaxTrack            #292929   limit -> 100%
+// The real thing is ONE flat track:
+const GREEN = '#00d780';
+const TRACK = '#2c2e32';
+// And the breakers are LIGHTER than the track — thin vertical bars drawn ON it,
+// standing proud top and bottom. Not gaps punched through in the surface colour,
+// which is what made them invisible: I had them darker than their background.
 //
-// Ours was Apple's #34C759 over one flat grey. #00E286 is noticeably more mint,
-// and the two greys are what make the limit legible without reading the number.
-const GREEN = '#00E286';
-const TRACK_UNFINISHED = '#3D3D3D';
-const TRACK_MAX = '#292929';
+// ⚠️ This one value is ESTIMATED off the zoomed crop, not measured from a
+// constant — it reads as a mid grey against the #2c2e32 track. Say if it is off.
+const BREAK_COLOR = '#6E7075';
 
 const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
@@ -67,8 +70,6 @@ export interface ChargeLimitSliderProps {
   limitPercent: number;
   min: number;
   max: number;
-  /** The colour BEHIND the track — the breaks are punched in this colour. */
-  surfaceColor: string;
   onChange: (percent: number) => void;
   /** Lets a parent freeze its ScrollView while the drag owns the touch. */
   onSlidingChange?: (sliding: boolean) => void;
@@ -79,7 +80,6 @@ export function ChargeLimitSlider({
   limitPercent,
   min,
   max,
-  surfaceColor,
   onChange,
   onSlidingChange,
 }: ChargeLimitSliderProps) {
@@ -191,12 +191,6 @@ export function ChargeLimitSlider({
   return (
     <View style={styles.row} {...pan.panHandlers}>
       <View ref={trackRef} style={styles.track} onLayout={measureTrack}>
-        {/* Zone 2: charged-so-far -> limit. Drawn first, under everything. */}
-        <View
-          pointerEvents="none"
-          style={[styles.zone, { left: 0, width: `${limitFrac * 100}%`, backgroundColor: TRACK_UNFINISHED }]}
-        />
-        {/* Zone 1: charged so far. */}
         <View pointerEvents="none" style={[styles.fill, { width: `${batteryFrac * 100}%` }]} />
         {/* Breaks, drawn in the SURFACE colour so the bar reads as interrupted
             rather than marked. Hidden entirely in normal state. */}
@@ -204,7 +198,7 @@ export function ChargeLimitSlider({
           <Animated.View
             key={d}
             pointerEvents="none"
-            style={[styles.break, { left: `${d}%`, backgroundColor: surfaceColor, opacity: breakOpacity }]}
+            style={[styles.break, { left: `${d}%`, opacity: breakOpacity }]}
           />
         ))}
         <Animated.View
@@ -234,16 +228,8 @@ const styles = StyleSheet.create({
     width: '100%',
     height: TRACK_H,
     borderRadius: 3,
-    // Zone 3 (limit -> 100%) is the track's own background; the other two are
-    // drawn over it.
-    backgroundColor: TRACK_MAX,
+    backgroundColor: TRACK,
     justifyContent: 'center',
-  },
-  zone: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    borderRadius: 3,
   },
   fill: {
     position: 'absolute',
@@ -255,14 +241,16 @@ const styles = StyleSheet.create({
   },
   // A gap punched through the bar. Slightly taller than the track so the ends
   // read as a clean cut rather than a smudge.
+  // A thin light bar standing proud of the track top and bottom — 5pt track,
+  // ~9pt bar — matching the zoomed crop, where the breakers clearly overhang.
   break: {
     position: 'absolute',
-    // Slightly proud of the track top and bottom (5pt track -> 7pt break), so
-    // the cut reads as deliberate rather than as a smudge in the bar.
-    top: -1,
-    bottom: -1,
+    top: -2,
+    bottom: -2,
     width: BREAK_W,
     marginLeft: -BREAK_W / 2,
+    borderRadius: 1,
+    backgroundColor: BREAK_COLOR,
   },
   thumb: {
     position: 'absolute',
