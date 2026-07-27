@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadPiConfig, savePiConfig, clearPiConfig, parseEnrolUrl, isValidVin } from './config';
+import { loadPiConfig, savePiConfig, clearPiConfig, clearVehicleIdentity, parseEnrolUrl, isValidVin } from './config';
 import { createMemorySecretStore } from './__testutils__/memorySecretStore';
 
 test('loadPiConfig returns null when nothing has been saved', async () => {
@@ -113,4 +113,54 @@ test('isValidVin rejects VINs containing I, O, or Q', () => {
 
 test('isValidVin accepts lowercase letters (case-insensitive)', () => {
   assert.equal(isValidVin('5yj3e1ea1aaaa0001'), true);
+});
+
+const VALID_VIN = '5YJ3E1EA7KF000316';
+
+// ── VIN survives losing the Pi credentials ────────────────────────────────────
+// 2026-07-27: the VIN lived only inside PiConfig, so losing the config took the
+// car's identity with it. useCarLink gates `linked` on the VIN alone, so a
+// working direct-BLE setup silently became a demo vehicle — every command a
+// no-op, no error anywhere.
+
+test('savePiConfig mirrors the VIN to its own key', async () => {
+  const store = createMemorySecretStore();
+  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
+  assert.equal(await store.getItem('ble.vin.v1'), VALID_VIN);
+});
+
+test('loadPiConfig recovers a BLE-only config when the Pi config is gone but the VIN remains', async () => {
+  const store = createMemorySecretStore();
+  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
+
+  // Simulate exactly what happened: the Pi config vanishes, the VIN does not.
+  await store.removeItem('ble.piConfig.v1');
+
+  const cfg = await loadPiConfig(store);
+  assert.equal(cfg?.vin, VALID_VIN, 'the car must still be identifiable over BLE');
+  assert.equal(cfg?.baseUrl, '', 'no Pi credentials — the Pi arm is simply unavailable');
+  assert.equal(cfg?.token, '');
+});
+
+test('clearPiConfig forgets the Pi but NOT the car', async () => {
+  const store = createMemorySecretStore();
+  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
+
+  await clearPiConfig(store);
+
+  assert.equal((await loadPiConfig(store))?.vin, VALID_VIN, 'direct BLE keeps working');
+});
+
+test('clearVehicleIdentity forgets the car', async () => {
+  const store = createMemorySecretStore();
+  await savePiConfig(store, { baseUrl: 'https://pi', token: 't', vin: VALID_VIN });
+
+  await clearPiConfig(store);
+  await clearVehicleIdentity(store);
+
+  assert.equal(await loadPiConfig(store), null);
+});
+
+test('loadPiConfig returns null on a genuinely fresh install', async () => {
+  assert.equal(await loadPiConfig(createMemorySecretStore()), null);
 });

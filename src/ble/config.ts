@@ -20,13 +20,28 @@
 import type { PiConfig, SecretStore } from './types';
 
 const PI_CONFIG_STORAGE_KEY = 'ble.piConfig.v1';
+// The VIN, stored independently of the Pi credentials. See loadPiConfig.
+const VIN_STORAGE_KEY = 'ble.vin.v1';
 
 // loadPiConfig returns the persisted PiConfig, or null if nothing has been
 // saved yet (fresh install / not yet enrolled).
 export async function loadPiConfig(store: SecretStore): Promise<PiConfig | null> {
   const raw = await store.getItem(PI_CONFIG_STORAGE_KEY);
-  if (!raw) return null;
-  return JSON.parse(raw) as PiConfig;
+  if (raw) return JSON.parse(raw) as PiConfig;
+
+  // No Pi config — but the VIN is vehicle IDENTITY, not a Pi credential, and it
+  // is persisted separately for exactly this case. Direct BLE needs only the VIN
+  // (to derive the car's advertised name) and the device key; baseUrl and token
+  // are the Pi arm's business alone.
+  //
+  // 2026-07-27: losing the Pi config took the VIN with it, which flipped
+  // useCarLink's `setLinked(!!cfg?.vin)` to false and made a perfectly working
+  // BLE setup behave like a demo vehicle — every command silently no-opping.
+  // Recovering the VIN here keeps direct BLE alive through the loss of Pi
+  // credentials, which is what the transport split already implied.
+  const vin = await store.getItem(VIN_STORAGE_KEY);
+  if (!vin) return null;
+  return { baseUrl: '', token: '', vin };
 }
 
 // savePiConfig persists the whole config as JSON (overwrites any previous
@@ -34,11 +49,22 @@ export async function loadPiConfig(store: SecretStore): Promise<PiConfig | null>
 // single `this.cfg`).
 export async function savePiConfig(store: SecretStore, cfg: PiConfig): Promise<void> {
   await store.setItem(PI_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+  // Mirror the VIN to its own key so "forget this Pi" — or losing the config any
+  // other way — cannot take the car's identity with it.
+  if (cfg.vin) await store.setItem(VIN_STORAGE_KEY, cfg.vin);
 }
 
 // clearPiConfig wipes the saved config — "forget this Pi".
 export async function clearPiConfig(store: SecretStore): Promise<void> {
+  // Deliberately leaves the VIN. "Forget this Pi" means forget the Pi, not forget
+  // the car — direct BLE keeps working. Use clearVehicleIdentity for the latter.
   await store.removeItem(PI_CONFIG_STORAGE_KEY);
+}
+
+// clearVehicleIdentity forgets the CAR: the VIN, and with it the ability to find
+// the car over BLE at all. Separate from clearPiConfig on purpose.
+export async function clearVehicleIdentity(store: SecretStore): Promise<void> {
+  await store.removeItem(VIN_STORAGE_KEY);
 }
 
 const ENROL_PREFIX = 'airgap://enrol?';
