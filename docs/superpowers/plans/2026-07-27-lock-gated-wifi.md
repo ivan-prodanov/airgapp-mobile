@@ -1008,9 +1008,10 @@ In `internal/handlers/tesla.go`, next to the `bleSessions` interface:
 // of standing up a whole Services graph.
 type lockWatcher interface {
 	Status() services.LockWatchStatus
-	ReportExternal(locked, present bool, now time.Time)
 }
 ```
+
+Only `Status()` — Task 9 adds `ReportExternal` when it adds the caller. Declaring it here would leave a method on the interface that nothing invokes.
 
 Add the field to the struct:
 
@@ -1129,7 +1130,8 @@ In `web/templates/dashboard.html`, inside the `<div class="stat-grid">` block (a
                 <span>Car lock (observing)</span>
             </div>
             <div class="stat-card-value" x-text="data.lock_state || 'Unknown'">Unknown</div>
-            <div class="stat-card-sub"><span x-text="data.lock_occupant || 'Unknown'"></span><strong x-text="data.lock_wifi_verdict || ''"></strong></div>
+            <div class="stat-card-sub"><span>Occupant</span><strong x-text="data.lock_occupant || 'Unknown'"></strong></div>
+            <div class="stat-card-sub"><span>WiFi verdict</span><strong x-text="data.lock_wifi_verdict || ''"></strong></div>
             <div class="stat-card-sub"><span>Last signal</span><strong x-text="data.lock_last_signal || 'never'"></strong></div>
         </div>
 ```
@@ -1186,10 +1188,19 @@ type Executor struct {
 Add the recorder and its accessor:
 
 ```go
-// record keeps every invocation so service tests can assert on what was run
-// rather than on a bare nil error. Always on — the slice is tiny and only ever
-// grows within a single test or a single ApplyAll.
+// record keeps invocations so service tests can assert on what was run rather
+// than on a bare nil error.
+//
+// DryRun ONLY. This Executor is a process-lifetime singleton shared by every
+// service (cmd/netfilterd/main.go constructs exactly one), and the dashboard
+// polls system info + connectivity every 10s — so recording in production
+// would append ~4 strings every 10s, forever, on a Raspberry Pi. The real path
+// already logs each command to journald via the [EXEC] line, so nothing is
+// lost by not recording there.
 func (e *Executor) record(cmdStr string) {
+	if !e.DryRun {
+		return
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.recorded = append(e.recorded, cmdStr)
@@ -1687,17 +1698,21 @@ journalctl -u dnsmasq -n 20 | grep DHCPACK
 ```bash
 cd /Users/ivan/Work/airgapp/rpi && git add internal/services && git commit -m "feat(airgap): never raise the AP over an unverified firewall
 
-sysctl sets ip_forward=1 unconditionally, so the default-deny is not a kernel
-property — it exists only while a table with 'policy drop' is loaded. An empty
-ruleset forwards everything. hostapd was enabled as an independent unit, so it
-raised the AP whether or not any ruleset had loaded, and nothing checked.
+The security decision for the car's HTTPS is the SNI proxy's, not nftables'.
+nftables only supplies the prerouting REDIRECT that delivers :443 to it — so the
+bypass shape is \"redirect rule gone, proxy healthy\", and a forward-policy-only
+check would sail straight past it. Verify asserts the redirect, plus the forward
+chain's drop policy because sysctl sets ip_forward=1 unconditionally and the
+deny exists only while a table with 'policy drop' is loaded.
 
-Raising the AP is now gated on verifying the forward chain is default-deny;
-lowering it never is. A firewall fault must not be able to leave the car online.
+Raising the AP is now gated on that proof; lowering it never is. This
+deliberately inverts the fail-open rule used everywhere else in the feature: an
+offline car is recoverable, a car that reached Tesla is not.
 
-hostapd is no longer enabled at boot: netfilterd owns the AP's lifecycle, so the
-gate is the single door. This also closes the pre-existing boot-time window,
-which this feature would otherwise have turned from once-per-boot into daily."
+Boot-time hardening (netfilterd owning hostapd's lifecycle) is NOT here — it
+belongs with the first caller in Task 8. Disabling hostapd at boot now, while
+nothing raises the AP, would leave the car with no WiFi for the whole
+observation period."
 ```
 
 ---
@@ -2266,7 +2281,16 @@ The Pi holds no keys and cannot poll `GET_STATUS`. The phone can, and already do
 
 Append to `internal/handlers/tesla_session_test.go`:
 
-The `lockWatcher` interface from Task 4 is what makes this cheap — no `Services` graph, just a fake:
+First extend the `lockWatcher` interface from Task 4 — it currently declares only `Status()`:
+
+```go
+type lockWatcher interface {
+	Status() services.LockWatchStatus
+	ReportExternal(locked, present bool, now time.Time)
+}
+```
+
+That interface is what makes the test cheap — no `Services` graph, just a fake:
 
 ```go
 // fakeLockWatcher records what the handler forwarded.
