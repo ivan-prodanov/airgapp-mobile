@@ -121,22 +121,25 @@ Mitigated for the eight **probes** (they hold the app's polling while they run).
 the debug screen's Lock / Unlock / Wake buttons.** Proper fix is one shared gateway — a real
 refactor of `carlink.tsx`, deliberately not started at the end of a long day.
 
-### The second share of a session queues nothing — OPEN
-The first share after an app launch goes all the way to the car; the next one leaves the outbox
-empty. One half is explained and fixed: `ShareOutboxStore.writeRaw` coordinated with
-`.forReplacing`, which lets `NSFileCoordinator` relocate the item, so an atomic write left the
-bytes in a temp location and the original was already gone — the file *disappeared* from the App
-Group rather than being emptied, and `readRaw` cannot tell a missing file from an empty queue
-(both are `"[]"`).
+### Share extension sends natively — DONE, confirmed 10/10
+Sharing reaches the car with the app closed, across Google Maps, Apple Maps and Waze. The extension
+runs the app's own TypeScript protocol in JavaScriptCore rather than a second Swift implementation.
+Four things bit, all of which presented as something else — see the
+`share-extension-sends-natively` memory. The two worth repeating here:
 
-Unexplained: why the extension queues nothing on a later share. The build of 2026-07-27 23:2x adds
-the trace to answer it — `resolved=nil` (the silent early return after the spinner) and `append`'s
-discarded `Bool` are the two candidates, and both are now recorded.
+**JavaScriptCore has no `setTimeout`.** No clock, no run loop. The engine arms one around every
+exchange, so every send died instantly. Swift installs it, on the engine's own serial queue.
 
-**Diagnostic lesson, the expensive one:** the `outbox` log category was dropped by an allow-list in
-`logFileSink`, so seven call sites could never reach the file — and the resulting silence was read
-as evidence the code never ran. The sink now persists every category by default. Absence of a log
-line is only evidence once you have confirmed the line could have been written.
+**Absence of a log line is not evidence.** `logFileSink` had an allow-list that silently dropped
+every `outbox` line — seven call sites that could never reach the file — and that silence was read
+as proof the code never ran. Twice tonight a check passed for a reason unrelated to what it claimed:
+the log filter, and a build check whose stub transport failed so fast the timer path never ran. Make
+the check fail for the right reason first.
+
+**Still open here:** the BLE arm does not exist, so `arms = [pi]`. That is the ONLY reason the outbox
+survives — Ivan wants it gone ("if it didn't work, I'd retry, not open the app"), and it goes when
+the BLE arm lands. `unverified` still queues, so a send that landed without a readable verdict can
+arrive twice.
 
 ### The Share Extension's Swift is not under version control
 `/ios` is gitignored wholesale (it holds the hand-built Godot project that `expo prebuild` must
