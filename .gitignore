@@ -64,3 +64,6 @@ scripts/osm/out/
 # Gazetteer build artifacts — GeoNames cities1000 → bundled SQLite (build via scripts/geonames/build-places-db.ts)
 scripts/geonames/out/
 assets/places.db
+
+# generated JSC bundle for the Share Extension (rebuild with npm run build:extension-bundle)
+modules/shared-intake/ios/AirgappEngine.js
