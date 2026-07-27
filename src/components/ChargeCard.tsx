@@ -63,6 +63,13 @@ export interface ChargeCardProps {
   useMiles: boolean;
   onSetChargeLimit: (percent: number) => void;
   onSetAmps: (amps: number) => void;
+  /**
+   * Keys with a command in flight. Their pattern, recovered:
+   *   disabled = useCommandTypeBusyStatus(CHARGINGSTARTSTOPACTION).busy
+   * i.e. a control is DISABLED only while ITS OWN command is running — never to
+   * express "this does not apply here". That case is a HIDE.
+   */
+  pending?: ReadonlySet<string>;
   /** Lets Home freeze its ScrollView while the slider drag owns the touch. */
   onSlidingChange?: (sliding: boolean) => void;
   onStartStopCharging: (start: boolean) => void;
@@ -121,6 +128,7 @@ export function ChargeCard({
   ampMax,
   onSetChargeLimit,
   onSetAmps,
+  pending,
   onSlidingChange,
   onStartStopCharging,
   onToggleChargePort,
@@ -230,18 +238,28 @@ export function ChargeCard({
           full-width horizontal rule ABOVE them. */}
       <View style={styles.controlsDivider} />
       <View style={styles.controls}>
-        <ChargeButton
-          symbol={charging ? 'stop.fill' : 'bolt.fill'}
-          label={charging ? 'Stop' : 'Start'}
-          disabled={!cableAttached}
-          onPress={() => onStartStopCharging(!charging)}
-        />
-        <ChargeButton
-          symbol={chargePortOpen ? 'xmark' : 'chevron.up'}
-          label={chargePortOpen ? 'Close Port' : 'Open Port'}
-          disabled={chargePortOpen && cableAttached}
-          onPress={() => onToggleChargePort(!chargePortOpen)}
-        />
+        {/* HIDDEN, not disabled, when there is no cable — start/stop is not a
+            thing you can do to an unplugged car, and their ControlButtons omits
+            the button in that case rather than dimming it. Disabled ONLY while
+            its own command is in flight, which is their actual use of disabled. */}
+        {cableAttached ? (
+          <ChargeButton
+            symbol={charging ? 'stop.fill' : 'bolt.fill'}
+            label={charging ? 'Stop' : 'Start'}
+            disabled={!!pending?.has('charging')}
+            onPress={() => onStartStopCharging(!charging)}
+          />
+        ) : null}
+        {/* Same rule: with the cable latched the port cannot close, so the
+            control goes rather than sitting there greyed. */}
+        {chargePortOpen && cableAttached ? null : (
+          <ChargeButton
+            symbol={chargePortOpen ? 'xmark' : 'chevron.up'}
+            label={chargePortOpen ? 'Close Port' : 'Open Port'}
+            disabled={!!pending?.has('chargePortOpen')}
+            onPress={() => onToggleChargePort(!chargePortOpen)}
+          />
+        )}
       </View>
     </View>
   );

@@ -400,6 +400,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               ampMin={AMP_MIN}
               ampMax={AMP_MAX}
               onSetAmps={(a) => actions.patch({ chargingAmps: a })}
+              pending={carLink.pending}
               onSlidingChange={setChargeSliding}
               useMiles={false}
               onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
