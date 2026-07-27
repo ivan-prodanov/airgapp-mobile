@@ -34,7 +34,7 @@ import {
   secureStoreSecretStore as store,
   sharedSecretStore,
   legacySecretStore,
-  purgeUngroupedLeftovers,
+  wipeStoredSecrets,
 } from '@/ble/secureStoreSecretStore';
 import { SHARED_SECRET_KEYS } from '@/ble/keychainMigration';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
@@ -315,13 +315,27 @@ export default function CarLinkScreen() {
     await appendDiagnostic('secret location probe', out);
   };
 
-  // Remove the OLD ungrouped copies once the grouped store is confirmed working.
-  // Explicit and user-triggered on purpose — silent deletion of secrets is what
-  // caused the loss in the first place.
-  const handlePurgeGrouped = async () => {
-    const lines = await purgeUngroupedLeftovers(SHARED_SECRET_KEYS);
-    ['purge grouped leftovers:', ...lines.map((l) => `  ${l}`)].forEach(append);
-    await appendDiagnostic('purge grouped leftovers', lines);
+  // WIPE EVERY KEY ON THE DEVICE — both JS Keychain locations and the native
+  // responder's own copy. Destructive: the device is unenrolled afterwards and
+  // needs the NFC card again.
+  //
+  // The native copy is cleared through setDeviceKey(''), which does a
+  // SecItemDelete before writing, so the old key material really is erased. JS
+  // re-pushes its key on the next launch (useCarLink), so native is a cache of
+  // the one JS key rather than an independent secret — which is exactly the
+  // property that makes "one key on this device" true rather than aspirational.
+  const handleWipeAllKeys = async () => {
+    const lines = await wipeStoredSecrets(SHARED_SECRET_KEYS);
+    try {
+      setPassiveEntryDeviceKey('');
+      lines.push('native responder copy: ERASED');
+    } catch (err) {
+      lines.push(`native responder copy: FAILED — ${errMsg(err)}`);
+    }
+    ['WIPE ALL KEYS:', ...lines.map((l) => `  ${l}`), 'device is now UNENROLLED — re-enrol with the NFC card'].forEach(
+      append,
+    );
+    await appendDiagnostic('wipe all keys', lines);
   };
 
   const handleSelfTest = async () => {
@@ -1527,7 +1541,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
               <ActionButton label="WHERE ARE MY SECRETS (read-only)" onPress={handleSecretProbe} theme={theme} />
-              <ActionButton label="Purge OLD ungrouped copies (after re-enrol works)" onPress={handlePurgeGrouped} theme={theme} />
+              <ActionButton label="WIPE ALL KEYS (unenrols — needs NFC re-tap)" onPress={handleWipeAllKeys} theme={theme} />
               <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />
             </View>
 

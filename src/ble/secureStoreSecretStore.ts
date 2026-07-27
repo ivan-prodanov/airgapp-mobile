@@ -86,9 +86,9 @@ export const sharedSecretStore: SecretStore = {
   removeItem: (k) => SecureStore.deleteItemAsync(k, OPTS),
 };
 
-// The pre-split ungrouped location. Nothing reads or writes it any more; it
-// exists so purgeGroupedLeftovers' counterpart can clear the old copies once the
-// grouped path is confirmed working.
+// The pre-split ungrouped location. Nothing reads or writes it in normal
+// operation; it exists so wipeStoredSecrets can clear copies left there before
+// the move to the shared group.
 export const legacySecretStore: SecretStore = {
   getItem: (k) => SecureStore.getItemAsync(k),
   setItem: (k, v) => SecureStore.setItemAsync(k, v),
@@ -97,21 +97,31 @@ export const legacySecretStore: SecretStore = {
 
 export const secureStoreSecretStore: SecretStore = sharedSecretStore;
 
-// Clears the OLD ungrouped copies. Explicit, user-triggered: run it once the
-// grouped store is confirmed working end to end.
-export async function purgeUngroupedLeftovers(keys: readonly string[]): Promise<string[]> {
+// wipeStoredSecrets erases every JS-side copy of every shared secret — grouped
+// AND ungrouped. Destructive by design: after this the device is unenrolled and
+// must be re-enrolled with the NFC card.
+//
+// Exists so "there is exactly one key on this device" can be established by
+// construction rather than argued about. Today proved that a device carrying
+// several copies of a secret, some stale, is a device nobody can reason about.
+export async function wipeStoredSecrets(keys: readonly string[]): Promise<string[]> {
   const done: string[] = [];
   for (const key of keys) {
-    try {
-      const present = (await legacySecretStore.getItem(key)) !== null;
-      if (!present) {
-        done.push(`${key}: nothing in the ungrouped location`);
-        continue;
+    for (const [label, st] of [
+      ['grouped', sharedSecretStore],
+      ['ungrouped', legacySecretStore],
+    ] as const) {
+      try {
+        const present = (await st.getItem(key)) !== null;
+        if (!present) {
+          done.push(`${key} @ ${label}: nothing to remove`);
+          continue;
+        }
+        await st.removeItem(key);
+        done.push(`${key} @ ${label}: ERASED`);
+      } catch (err) {
+        done.push(`${key} @ ${label}: FAILED — ${err instanceof Error ? err.message : String(err)}`);
       }
-      await legacySecretStore.removeItem(key);
-      done.push(`${key}: ungrouped copy removed`);
-    } catch (err) {
-      done.push(`${key}: purge failed — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   return done;
