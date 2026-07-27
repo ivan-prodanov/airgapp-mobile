@@ -391,9 +391,24 @@ export default function CarLinkScreen() {
     try {
       // Same reason as READ ROUTE: a cached session skips openSession, leaving the
       // 'auto' selector with no active transport after a relaunch.
+      //
+      // That drop also makes every bench SEND a COLD one — handshake included —
+      // which is exactly the thing being timed here. The number decides whether a
+      // Share Extension can do this send inside its own lifetime: an appex has no
+      // background modes and no state restoration, so it pays this cost on every
+      // single share, against a hard kill deadline. The Pi client budgets
+      // OPEN_SESSION_TIMEOUT_MS = 45_000 because a cold Pi-side BLE scan "can
+      // legitimately take 8-15s" — if that is what we measure, an in-sheet send is
+      // a spinner nobody will wait for, and the answer is a warm link on the Pi
+      // rather than a rescan per share.
       await closeAllCachedSessions();
+      const t0 = Date.now();
       const gw = await makeGateway();
       const res = await gw.runRawAction(benchMessage(c, order), `bench-${benchMsg}-${benchOrder}`);
+      const elapsed = Date.now() - t0;
+      const timing = `  → COLD total ${(elapsed / 1000).toFixed(1)}s (handshake + command, from zero cached sessions)`;
+      out.push(timing);
+      append(timing);
       // Loud on failure: the previous probes' worst results all came from reading
       // state after a send that had not landed.
       const verdict = res.outcome.ok
@@ -485,6 +500,7 @@ export default function CarLinkScreen() {
       // read; on a hand-driven bench that is free, and it also removes the stale
       // -session class of fault that corrupted the automated runs.
       await closeAllCachedSessions();
+      const readT0 = Date.now();
       const gw = await makeGateway();
 
       let userPresent: boolean | null = null;
@@ -516,7 +532,11 @@ export default function CarLinkScreen() {
         sleepStatus,
         readError,
       };
-      out.push(formatRouteRead(next), formatRouteDelta(lastBenchReadRef.current, next));
+      out.push(
+        formatRouteRead(next),
+        formatRouteDelta(lastBenchReadRef.current, next),
+        `COLD total ${((Date.now() - readT0) / 1000).toFixed(1)}s (VCSEC + DriveState, from zero cached sessions)`,
+      );
       lastBenchReadRef.current = next;
       out.forEach(append);
     } catch (err) {
