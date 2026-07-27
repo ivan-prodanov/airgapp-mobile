@@ -40,6 +40,7 @@
 import './jscPolyfills';
 
 import { createCarGateway } from './gateway';
+import { ExtensionBleTransport } from './extensionBleTransport';
 import { hexToBytes } from './crypto';
 import { p256 } from '@noble/curves/p256';
 import type { CarTransport, DeviceKeys } from './types';
@@ -53,6 +54,11 @@ export interface ExtensionSendArgs {
   label?: string;
   // The device private scalar as hex, read from the shared Keychain group.
   privateScalarHex: string;
+  // Which arm to use. 'host' is a transport Swift implements behind
+  // __openSession/__exchange/__closeSession (the Pi); 'ble' is THIS bundle's own
+  // transport driving a dumb Swift byte pipe, because framing and correlation
+  // must not be reimplemented in Swift. Defaults to 'host'.
+  transport?: 'host' | 'ble';
 }
 
 export interface ExtensionSendResult {
@@ -105,7 +111,7 @@ function keysFromHex(hex: string): DeviceKeys {
 export async function sendNavigationFromExtension(args: ExtensionSendArgs): Promise<ExtensionSendResult> {
   let transport: CarTransport;
   try {
-    transport = hostTransport();
+    transport = args.transport === 'ble' ? new ExtensionBleTransport() : hostTransport();
   } catch (err) {
     return { ok: false, verdict: 'failed', reason: err instanceof Error ? err.message : String(err) };
   }

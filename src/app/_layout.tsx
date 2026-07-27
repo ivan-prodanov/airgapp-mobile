@@ -43,13 +43,11 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { ToastProvider } from '@/components/ToastHost';
 import { TESLA_FONT_MAP } from '@/constants/fonts';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
-import { useOutboxDrain } from '@/hooks/useOutboxDrain';
 import { useCarPresencePublish } from '@/hooks/useCarPresencePublish';
 import { useShareTraceMirror } from '@/hooks/useShareTraceMirror';
 
-// Renders nothing; exists only so useOutboxDrain runs inside <VehicleProvider>.
-function OutboxDrain(): null {
-  useOutboxDrain();
+// Renders nothing; exists only so these hooks run inside <VehicleProvider>.
+function ShareSupport(): null {
   useCarPresencePublish();
   useShareTraceMirror();
   return null;
@@ -92,7 +90,7 @@ export default function RootLayout() {
               the whole app down when this was a bare hook call in the component
               above (2026-07-27). A render-nothing component is how a hook that
               needs context gets mounted at the root. */}
-          <OutboxDrain />
+          <ShareSupport />
           <AnimatedSplashOverlay />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />

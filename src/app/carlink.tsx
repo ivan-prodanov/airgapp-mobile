@@ -6,7 +6,6 @@ import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import SharedIntake from '../../modules/shared-intake';
-import { parseOutbox } from '@/state/shareOutbox';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -281,65 +280,28 @@ export default function CarLinkScreen() {
     await appendDiagnostic('secret probe', out);
   };
 
-  // READ OUTBOX — what the Share Extension actually queued, verbatim.
+  // SHARE TRACE — the extension's own account of its runs.
   //
-  // The app and the extension are separate processes sharing one file in the App
-  // Group container, and the extension has no console: if a share never arrives,
-  // the only way to tell "the extension did not write" from "the app cannot read"
-  // is to look at the file from the app's side and, when it is empty, prove the
-  // app's own read/write path works.
-  const handleOutboxProbe = async () => {
-    const out: string[] = ['outbox probe'];
-    try {
-      const raw = await SharedIntake.readOutbox();
-      const items = parseOutbox(raw);
-      out.push(`  raw: ${raw.length} chars, parses to ${items.length} item(s)`);
-      // Verbatim, truncated. A shape mismatch between Swift and TS shows up here
-      // as a file full of JSON that parses to nothing.
-      out.push(`  ${raw.length > 400 ? `${raw.slice(0, 400)}…` : raw}`);
-      for (const it of items) {
-        out.push(`  · ${it.status} ${it.location.name ?? `${it.location.lat},${it.location.lng}`} attempts=${it.attempts}`);
-      }
-
-      // "[]" means the file is missing OR genuinely empty — readRaw cannot tell
-      // those apart. So when it is empty, write a sentinel and read it back: that
-      // separates "the extension never wrote" from "this process cannot reach the
-      // container at all", which are opposite bugs with the same symptom.
-      if (items.length === 0) {
-        const sentinel = `[{"id":"probe","ts":${Date.now()},"location":{"lat":1,"lng":2,"source":"probe"},"status":"pending","attempts":0}]`;
-        const wrote = await SharedIntake.writeOutbox(sentinel);
-        const back = await SharedIntake.readOutbox();
-        const survived = back.includes('"id":"probe"');
-        out.push(`  self-test: write=${wrote} read-back=${survived ? 'OK' : 'FAILED'}`);
-        // Always restore, even if the read-back failed — leaving a fake pending
-        // item behind would send coordinates 1,2 to the car on the next drain.
-        await SharedIntake.writeOutbox('[]');
-        out.push(
-          survived
-            ? '  → the app CAN read+write the App Group file, so an empty queue means the extension did not write'
-            : '  → the app CANNOT reach the App Group container (entitlement/group id)',
-        );
-      }
-    } catch (err) {
-      out.push(`  THREW — ${errMsg(err)}`);
-      out.push('  → the native readOutbox/writeOutbox functions are missing from this build');
-    }
-
-    // The extension's own account of its runs. Without this the only evidence a
-    // share ever happened is whether a destination appeared on the car screen.
+  // The extension is a separate process with no console, and it now SENDS rather
+  // than queueing, so this is the only record of what it did: which arm it chose,
+  // what the car said, and why a share failed. It also prints the App Group path
+  // each process resolved — if the two ever disagree, that one line explains
+  // every other symptom.
+  const handleShareTraceProbe = async () => {
+    const out: string[] = ['share-extension trace'];
     try {
       const trace = await SharedIntake.readShareTrace();
-      out.push('  share-extension trace:');
       trace
         .trim()
         .split('\n')
-        .slice(-12)
-        .forEach((l) => out.push(`    ${l}`));
-    } catch {
-      out.push('  share-extension trace: unavailable (needs the native rebuild)');
+        .slice(-20)
+        .forEach((l) => out.push(`  ${l}`));
+    } catch (err) {
+      out.push(`  THREW — ${errMsg(err)}`);
+      out.push('  → readShareTrace is missing from this build');
     }
     out.forEach(append);
-    await appendDiagnostic('outbox probe', out);
+    await appendDiagnostic('share trace', out);
   };
 
   // WIPE EVERY KEY ON THE DEVICE — the one Keychain store, plus the native
@@ -1567,7 +1529,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Wake" onPress={handleWake} theme={theme} />
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
-              <ActionButton label="READ OUTBOX (what the share queued)" onPress={handleOutboxProbe} theme={theme} />
+              <ActionButton label="SHARE TRACE (what the extension did)" onPress={handleShareTraceProbe} theme={theme} />
               <ActionButton label="WHERE ARE MY SECRETS (read-only)" onPress={handleSecretProbe} theme={theme} />
               <ActionButton label="WIPE ALL KEYS (unenrols — needs NFC re-tap)" onPress={handleWipeAllKeys} theme={theme} />
               <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />

@@ -124,3 +124,16 @@ public final class PiTransport: EngineTransport {
     }.resume()
   }
 }
+
+// A transport that is never called: the BLE arm's transport lives in JavaScript
+// (see extensionBleTransport.ts), driven through BleBytePipe, so the engine's
+// Swift-side EngineTransport slot has nothing to do. It fails loudly rather than
+// silently in case the arm selection ever gets crossed.
+public final class UnusedTransport: EngineTransport {
+  public init() {}
+  private var refusal: Error { PiTransport.TransportError.malformed("the BLE arm must not use the Swift transport") }
+  public func openSession(vin: String, completion: @escaping (Result<String, Error>) -> Void) { completion(.failure(refusal)) }
+  public func exchange(sessionId: String, payloadB64: String, timeoutMs: Int,
+                       completion: @escaping (Result<String, Error>) -> Void) { completion(.failure(refusal)) }
+  public func closeSession(sessionId: String, completion: @escaping () -> Void) { completion() }
+}

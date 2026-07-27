@@ -22,9 +22,12 @@ import Foundation
 public final class TransportArbiter {
   public struct Arm {
     public let name: String
-    public let make: () -> EngineTransport?
+    // Builds the engine for this arm. Each arm knows how it reaches the car —
+    // the Pi behind a Swift EngineTransport, BLE through a JS transport over a
+    // dumb byte pipe — and the arbiter only cares that it produces a verdict.
+    public let make: () -> (engine: AirgappEngine, transport: String)?
 
-    public init(name: String, make: @escaping () -> EngineTransport?) {
+    public init(name: String, make: @escaping () -> (engine: AirgappEngine, transport: String)?) {
       self.name = name
       self.make = make
     }
@@ -36,15 +39,27 @@ public final class TransportArbiter {
   }
 
   private let arms: [Arm]
-  private let engineFor: (EngineTransport) -> AirgappEngine
 
-  public init(arms: [Arm], engineFor: @escaping (EngineTransport) -> AirgappEngine) {
+  public init(arms: [Arm]) {
     self.arms = arms
-    self.engineFor = engineFor
   }
+
+  // TEMPORARY: force BLE first regardless of presence.
+  //
+  // Set 2026-07-28 at Ivan's request so the BLE arm actually gets exercised in
+  // the field — with the gate on, the common case (in range) always chose the Pi
+  // and the BLE path would have shipped essentially untested.
+  //
+  // Safe enough to leave on for now: cross-process central contention is not the
+  // hazard it looked like (one ACL link, owned by bluetoothd), and BLE is the
+  // faster arm on a warm link. Revert to the gate once BLE has real field time —
+  // the Pi is the arm that works when the car is NOT nearby, and BLE-first costs
+  // a scan timeout in that case.
+  public static let forceBleFirst = true
 
   // Build the ordered arm list for the current presence reading.
   public static func order(inRange: Bool, pi: Arm?, ble: Arm?) -> [Arm] {
+    if forceBleFirst { return [ble, pi].compactMap { $0 } }
     let ordered = inRange ? [pi, ble] : [ble, pi]
     return ordered.compactMap { $0 }
   }
@@ -73,13 +88,14 @@ public final class TransportArbiter {
       }
       remaining = remaining.dropFirst()
 
-      guard let transport = arm.make() else {
+      guard let built = arm.make() else {
         ShareOutboxStore.trace("arbiter: \(arm.name) unavailable (not configured) → next")
         return next()
       }
 
-      engineFor(transport).sendNavigation(
-        vin: vin, lat: lat, lon: lon, label: label, privateScalarHex: privateScalarHex
+      built.engine.sendNavigation(
+        vin: vin, lat: lat, lon: lon, label: label,
+        privateScalarHex: privateScalarHex, transport: built.transport
       ) { result in
         attempts.append(Attempt(arm: arm.name, result: result))
         switch result {

@@ -72,8 +72,14 @@ public final class AirgappEngine {
   private var timers: [Int: DispatchWorkItem] = [:]
   private var nextTimerId = 1
 
-  public init(transport: EngineTransport) {
+  // Non-nil for the BLE arm: the transport then lives in JS (framing and
+  // correlation must not be reimplemented in Swift) and this is the dumb pipe it
+  // drives. The Pi arm leaves it nil and uses the EngineTransport above.
+  private let blePipe: BleBytePipe?
+
+  public init(transport: EngineTransport, blePipe: BleBytePipe? = nil) {
     self.transport = transport
+    self.blePipe = blePipe
   }
 
   // MARK: - Loading
@@ -175,9 +181,53 @@ public final class AirgappEngine {
     context.setObject(setTimeoutFn, forKeyedSubscript: "setTimeout" as NSString)
     context.setObject(clearTimeoutFn, forKeyedSubscript: "clearTimeout" as NSString)
 
+    if let pipe = blePipe { installBleGlobals(pipe) }
+
     context.setObject(open, forKeyedSubscript: "__openSession" as NSString)
     context.setObject(exchange, forKeyedSubscript: "__exchange" as NSString)
     context.setObject(close, forKeyedSubscript: "__closeSession" as NSString)
+  }
+
+  // The BLE arm's host contract: connect, write, disconnect, and a callback for
+  // every raw notification. Swift never interprets any of these bytes.
+  private func installBleGlobals(_ pipe: BleBytePipe) {
+    pipe.onFrame = { [weak self] data in
+      guard let self = self else { return }
+      // Onto the engine queue: notifications arrive on CoreBluetooth's queue and
+      // the context must only ever be touched from one.
+      self.queue.async {
+        let fn = self.context.objectForKeyedSubscript("__onBleFrame")
+        guard let fn = fn, !fn.isUndefined else { return }
+        fn.call(withArguments: [data.base64EncodedString()])
+      }
+    }
+
+    let connect: @convention(block) (String, Int) -> JSValue? = { [weak self] vin, timeoutMs in
+      self?.promise { done in
+        pipe.connect(vin: vin, timeoutMs: timeoutMs) { done($0.map { $0 as Any }) }
+      }
+    }
+    let write: @convention(block) (String) -> JSValue? = { [weak self] chunkB64 in
+      self?.promise { done in
+        guard let data = Data(base64Encoded: chunkB64) else {
+          return done(.failure(EngineError.threw("__bleWrite got invalid base64")))
+        }
+        pipe.write(data)
+        // CoreBluetooth's .withResponse ack is not surfaced here: the reply
+        // itself is the acknowledgement that matters, and TS is already waiting
+        // on a correlated frame with its own timeout.
+        done(.success(true))
+      }
+    }
+    let disconnect: @convention(block) () -> JSValue? = { [weak self] in
+      self?.promise { done in
+        pipe.disconnect()
+        done(.success(true))
+      }
+    }
+    context.setObject(connect, forKeyedSubscript: "__bleConnect" as NSString)
+    context.setObject(write, forKeyedSubscript: "__bleWrite" as NSString)
+    context.setObject(disconnect, forKeyedSubscript: "__bleDisconnect" as NSString)
   }
 
   // Wraps an async Swift call as a JS promise. The transport may call back on any
@@ -209,7 +259,7 @@ public final class AirgappEngine {
 
   // Send one destination. `completion` fires on an arbitrary queue.
   public func sendNavigation(vin: String, lat: Double, lon: Double, label: String?,
-                             privateScalarHex: String,
+                             privateScalarHex: String, transport: String = "host",
                              completion: @escaping (Result<EngineSendResult, Error>) -> Void) {
     queue.async {
       do {
@@ -218,7 +268,9 @@ public final class AirgappEngine {
         return completion(.failure(error))
       }
 
-      var args: [String: Any] = ["vin": vin, "lat": lat, "lon": lon, "privateScalarHex": privateScalarHex]
+      var args: [String: Any] = [
+        "vin": vin, "lat": lat, "lon": lon, "privateScalarHex": privateScalarHex, "transport": transport,
+      ]
       if let label = label, !label.isEmpty { args["label"] = label }
       guard
         let data = try? JSONSerialization.data(withJSONObject: args),

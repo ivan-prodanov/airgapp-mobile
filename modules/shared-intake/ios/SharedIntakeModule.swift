@@ -14,19 +14,6 @@ public class SharedIntakeModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SharedIntake")
 
-    // The durable outbox. readOutbox never clears anything: an item leaves only
-    // when the app writes back a queue without it, and only after the CAR
-    // confirmed the destination. Reading is not consuming — that distinction is
-    // the whole point, since the old consumeSharedIntent cleared the slot BEFORE
-    // anything was sent, so every downstream failure lost the place.
-    AsyncFunction("readOutbox") { () -> String in
-      ShareOutboxStore.readRaw()
-    }
-
-    AsyncFunction("writeOutbox") { (json: String) -> Bool in
-      ShareOutboxStore.writeRaw(json)
-    }
-
     // The app publishes whether it holds a live BLE link to the car; the Share
     // Extension reads it to choose a transport. See CarPresence for why a missing
     // or stale value must mean "in range" rather than "out of range".
