@@ -62,7 +62,6 @@ import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
-import { observeVdsFrame } from '@/ble/vdsProbe';
 import { planForCameraMode } from '@/ble/viewFocusReads';
 import { backgroundReadsSuspended } from '@/ble/backgroundReads';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
@@ -1235,12 +1234,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // filtered out by the decoder (returns null). Only DirectBleTransport ever
   // calls this — Pi is request/response, so instant-over-Pi needs streaming.
   const handleVcsecPush = useCallback((frame: Uint8Array) => {
-    // VDS-M1 TAP. Inert (one boolean test) unless the subscription probe is
-    // running. It sits FIRST, ahead of every filter below, for the same reason
-    // the M0 capture does: a subscription push would arrive in a domain-3
-    // envelope that none of the VCSEC decoders below recognise, so anywhere
-    // later would drop precisely the frame the experiment is looking for.
-    observeVdsFrame(frame, Date.now());
     // M0 CAPTURE (passive entry). Log EVERY car-initiated frame — including the
     // ones we cannot decode — BEFORE the VehicleStatus filter below. A
     // passive-entry AuthenticationRequest is by definition a frame that does NOT
