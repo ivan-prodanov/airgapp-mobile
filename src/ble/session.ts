@@ -29,6 +29,7 @@
 //     and safe (deferred as P5.T1). _persistSessionMetadata is a no-op.
 
 import { randomBytes } from '@noble/hashes/utils';
+import { __resetSharedSessionQueue } from './queue';
 import { sha1 } from '@noble/hashes/sha1';
 
 import {
@@ -1168,6 +1169,10 @@ export function __resetSessionCaches(): void {
   _domainCache.clear();
   _piSessionRefcounts.clear();
   _openInFlight.clear();
+  // The command queue is now a process-wide singleton (see sharedSessionQueue),
+  // so it has to be reset alongside the caches or work from one test leaks into
+  // the next. Every existing caller of this function gets that for free.
+  __resetSharedSessionQueue();
 }
 
 // --- Shared encode helpers (consumed by P1d builders) ----------------------

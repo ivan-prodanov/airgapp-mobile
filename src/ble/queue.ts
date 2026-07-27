@@ -117,3 +117,26 @@ export class SessionQueue {
     }
   }
 }
+
+// sharedSessionQueue — THE queue. One per process, not one per gateway.
+//
+// Why a singleton rather than a parameter callers remember to pass: the session
+// cache (_domainCache in session.ts) is already MODULE-LEVEL, so every gateway
+// in the app operates on the SAME cached session — same monotonic counter, same
+// routing address. A gateway with its own queue therefore does not get its own
+// session; it gets a second, unsynchronised writer onto the shared one.
+//
+// Measured 2026-07-27 04:38-04:41: the Car Link debug screen builds its own
+// gateway, so its commands and the app's polls interleaved on one counter. The
+// probe's commands degraded to 25 SECONDS while the app's own polls in the same
+// seconds completed in 170ms. The link was fine; the counter was being raced.
+//
+// CreateCarGatewayArgs.queue stays injectable for tests, but the DEFAULT is now
+// this one, so a new call site is safe by omission rather than by remembering.
+export const sharedSessionQueue = new SessionQueue();
+
+// Test hook. Drops queued work — jobs already awaiting stay unresolved, which is
+// fine between tests and would be a bug anywhere else.
+export function __resetSharedSessionQueue(): void {
+  (sharedSessionQueue as unknown as { lanes: Map<string, unknown> }).lanes.clear();
+}

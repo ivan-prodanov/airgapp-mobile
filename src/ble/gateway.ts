@@ -19,7 +19,7 @@
 // real clock.
 
 import { buildCommand, type CarCommand } from "./commands";
-import { SessionQueue, type JobPriority } from "./queue";
+import { SessionQueue, sharedSessionQueue, type JobPriority } from "./queue";
 import {
   withCachedSession,
   refreshCachedSession,
@@ -183,8 +183,10 @@ export interface CreateCarGatewayArgs {
   transport: PiTransport;
   vin: string;
   deviceKeys: DeviceKeys;
-  // Injectable so multiple gateways / the app can share one per-VIN FIFO.
-  // Defaults to a fresh queue.
+  // Injectable so tests can isolate. DEFAULTS TO THE SHARED QUEUE — see
+  // sharedSessionQueue. A gateway with its own queue does NOT get its own
+  // session (the session cache is module-level), it gets a second
+  // unsynchronised writer onto the same counter.
   queue?: SessionQueue;
   // Injectable retry-delay timer (defaults to a real setTimeout). Tests pass a
   // no-op recorder so the 100ms transient/stale-frame waits are instantaneous
@@ -302,7 +304,7 @@ export function createCarGateway({
   transport,
   vin,
   deviceKeys,
-  queue = new SessionQueue(),
+  queue = sharedSessionQueue,
   sleep = realSleep,
   now = Date.now,
   commandDeadlineMs = DEFAULT_COMMAND_DEADLINE_MS,

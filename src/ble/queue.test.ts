@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SessionQueue } from './queue';
+import { SessionQueue, sharedSessionQueue, __resetSharedSessionQueue } from './queue';
 
 // deferred() gives a promise plus external resolve/reject, so tests can
 // control exactly when a "job" completes and observe ordering without
@@ -232,4 +232,59 @@ test('depth reports what is WAITING, so a backlog is visible', async () => {
   assert.deepEqual(queue.depth('VIN1'), { user: 1, background: 1 });
   gate.resolve();
   await running;
+});
+
+test('TWO gateways created with NO queue argument share one — asserted on the DEFAULT', async () => {
+  // The bug this closes: CreateCarGatewayArgs.queue defaulted to `new
+  // SessionQueue()`, so the Car Link debug screen's gateway and the app's each
+  // had their own FIFO. But the SESSION cache (_domainCache) is module-level, so
+  // both operated on the SAME cached session — same monotonic counter, same
+  // routing address. Two unsynchronised writers onto one counter.
+  //
+  // Measured 2026-07-27 04:38-04:41: the probe's commands degraded to 25 SECONDS
+  // while the app's own polls in the very same seconds completed in 170ms. The
+  // link was never the problem.
+  //
+  // ⚠ My first attempt at this test exercised sharedSessionQueue DIRECTLY, so it
+  // passed with the old `new SessionQueue()` default still in place — it proved
+  // the singleton was a singleton, which nobody doubted, and nothing about the
+  // gateway. Verified by putting the old default back and watching the suite stay
+  // green. This version reads the default out of the module instead.
+  const src = await (await import('node:fs/promises')).readFile(
+    new URL('./gateway.ts', import.meta.url).pathname,
+    'utf8',
+  );
+  assert.match(
+    src,
+    /queue\s*=\s*sharedSessionQueue/,
+    'createCarGateway must DEFAULT to the shared queue — a per-gateway queue is a second writer on one counter',
+  );
+  assert.doesNotMatch(
+    src,
+    /queue\s*=\s*new SessionQueue\(\)/,
+    'a fresh per-gateway queue is exactly the bug',
+  );
+});
+
+test('the shared queue serializes across callers — one runner, never interleaved', async () => {
+  const order: string[] = [];
+  const gate = deferred<void>();
+  const a = sharedSessionQueue.enqueue('VIN1', async () => {
+    await gate.promise;
+    order.push('gatewayA');
+  });
+  const b = sharedSessionQueue.enqueue('VIN1', async () => {
+    order.push('gatewayB');
+  });
+  assert.deepEqual(order, [], 'B must not start while A is in flight');
+  gate.resolve();
+  await Promise.all([a, b]);
+  assert.deepEqual(order, ['gatewayA', 'gatewayB']);
+});
+
+test('__resetSharedSessionQueue clears queued work so tests do not leak into each other', () => {
+  sharedSessionQueue.enqueue('VIN1', async () => {}, { priority: 'background' });
+  sharedSessionQueue.enqueue('VIN1', async () => {}, { priority: 'background' });
+  __resetSharedSessionQueue();
+  assert.deepEqual(sharedSessionQueue.depth('VIN1'), { user: 0, background: 0 });
 });
