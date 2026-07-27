@@ -324,6 +324,20 @@ export default function CarLinkScreen() {
       out.push(`  THREW — ${errMsg(err)}`);
       out.push('  → the native readOutbox/writeOutbox functions are missing from this build');
     }
+
+    // The extension's own account of its runs. Without this the only evidence a
+    // share ever happened is whether a destination appeared on the car screen.
+    try {
+      const trace = await SharedIntake.readShareTrace();
+      out.push('  share-extension trace:');
+      trace
+        .trim()
+        .split('\n')
+        .slice(-12)
+        .forEach((l) => out.push(`    ${l}`));
+    } catch {
+      out.push('  share-extension trace: unavailable (needs the native rebuild)');
+    }
     out.forEach(append);
     await appendDiagnostic('outbox probe', out);
   };

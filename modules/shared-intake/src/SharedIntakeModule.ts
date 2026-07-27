@@ -7,6 +7,10 @@ declare class SharedIntakeModule {
   // confirmed the destination.
   readOutbox(): Promise<string>;
   writeOutbox(json: string): Promise<boolean>;
+  // What the Share Extension recorded about its own runs, plus the App Group
+  // container path it resolved. The extension has no console; this is the only
+  // way to see why a share queued nothing.
+  readShareTrace(): Promise<string>;
   // Legacy single-slot intent, drained once on upgrade. The extension no longer
   // writes it — it is the store whose clear-before-send behaviour lost places.
   consumeSharedIntent(): Promise<string | null>;

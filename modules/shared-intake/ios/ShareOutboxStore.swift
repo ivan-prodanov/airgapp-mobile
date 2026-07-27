@@ -31,10 +31,52 @@ public enum ShareOutboxStore {
   public static let appGroup = "group.local.airgapp.mobile"
   public static let fileName = "share-outbox.json"
 
+  public static let traceFileName = "share-trace.log"
+
   private static var url: URL? {
     FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: appGroup)?
       .appendingPathComponent(fileName)
+  }
+
+  // trace records what the Share Extension did, because the extension has no
+  // console and a share that writes nothing otherwise leaves no evidence at all —
+  // "I shared it and nothing happened" was indistinguishable from the extension
+  // never launching. Best-effort and UNCO-ORDINATED on purpose: this is a
+  // diagnostic, and it must never be the reason a share fails or blocks.
+  //
+  // Bounded, since it is append-only and nothing prunes it: an unbounded log in a
+  // shared container is a disk leak that outlives the bug it was added for.
+  public static func trace(_ line: String) {
+    guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else { return }
+    let traceURL = dir.appendingPathComponent(traceFileName)
+    let stamp = ISO8601DateFormatter().string(from: Date())
+    guard let data = "\(stamp) \(line)\n".data(using: .utf8) else { return }
+    if let handle = try? FileHandle(forWritingTo: traceURL) {
+      defer { try? handle.close() }
+      if (try? handle.seekToEnd()) != nil, (try? handle.write(contentsOf: data)) != nil {
+        if let size = try? handle.offset(), size > 64_000 {
+          // Keep the tail; the newest lines are the ones being read.
+          if let all = try? String(contentsOf: traceURL, encoding: .utf8) {
+            try? String(all.suffix(20_000)).write(to: traceURL, atomically: true, encoding: .utf8)
+          }
+        }
+      }
+    } else {
+      try? data.write(to: traceURL)
+    }
+  }
+
+  public static func readTrace() -> String {
+    guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else {
+      return "(no App Group container — entitlement missing in this process)"
+    }
+    let traceURL = dir.appendingPathComponent(traceFileName)
+    // The resolved container path is part of the answer: if the extension and the
+    // app ever disagree about where the group lives, every other symptom here is
+    // explained by that one line.
+    let head = "container: \(dir.path)\n"
+    return head + ((try? String(contentsOf: traceURL, encoding: .utf8)) ?? "(no trace file — the extension has not run since this was added)")
   }
 
   // readRaw returns the file's contents, or "[]" when there is nothing yet.
@@ -61,8 +103,20 @@ public enum ShareOutboxStore {
     guard let url = url, let data = json.data(using: .utf8) else { return false }
     var ok = false
     var coordinatorError: NSError?
-    NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinatorError) { writeURL in
+    // options: [] — deliberately NOT .forReplacing.
+    //
+    // .forReplacing declares that the item is being swapped for a DIFFERENT item,
+    // and the coordinator is then free to move the existing item aside and hand
+    // the accessor a URL somewhere else entirely. Writing atomically to that URL
+    // leaves the bytes in a temporary location that nothing moves into place,
+    // and the original is already gone. Replacing a file's CONTENTS is a plain
+    // write intent — which is what append(), the writer that has always worked,
+    // uses. Keeping the two writers on the same intent is the point.
+    NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinatorError) { writeURL in
       ok = (try? data.write(to: writeURL, options: .atomic)) != nil
+    }
+    if !ok || coordinatorError != nil {
+      trace("writeRaw FAILED bytes=\(data.count) coordErr=\(coordinatorError?.localizedDescription ?? "none")")
     }
     return ok && coordinatorError == nil
   }
