@@ -65,6 +65,13 @@ public final class AirgappEngine {
   private let transport: EngineTransport
   private var loaded = false
 
+  // Timers. JavaScriptCore has NO event loop and no setTimeout — it is a host
+  // global, not part of the language — and the engine arms one around every
+  // exchange. Keyed so clearTimeout can cancel; all access is on `queue`, which
+  // is also where the callbacks fire, so JS stays single-threaded.
+  private var timers: [Int: DispatchWorkItem] = [:]
+  private var nextTimerId = 1
+
   public init(transport: EngineTransport) {
     self.transport = transport
   }
@@ -142,6 +149,32 @@ public final class AirgappEngine {
         self?.transport.closeSession(sessionId: id) { done(.success(true)) }
       }
     }
+    // setTimeout/clearTimeout. This is the one part of the host contract that
+    // genuinely CANNOT be polyfilled in JS: a timer needs a clock and a run loop,
+    // and JSC provides neither. The engine uses it to bound an exchange, so
+    // without it every send dies with "Can't find variable: setTimeout" the
+    // moment it tries to arm one — which is exactly how this shipped once.
+    //
+    // Scheduled on `queue`, the same serial queue everything else uses, so a
+    // firing timer cannot race a transport callback into the context.
+    let setTimeoutFn: @convention(block) (JSValue, Double) -> Int = { [weak self] callback, ms in
+      guard let self = self else { return 0 }
+      let id = self.nextTimerId
+      self.nextTimerId += 1
+      let work = DispatchWorkItem { [weak self] in
+        self?.timers.removeValue(forKey: id)
+        callback.call(withArguments: [])
+      }
+      self.timers[id] = work
+      self.queue.asyncAfter(deadline: .now() + max(0, ms) / 1000, execute: work)
+      return id
+    }
+    let clearTimeoutFn: @convention(block) (Int) -> Void = { [weak self] id in
+      self?.timers.removeValue(forKey: id)?.cancel()
+    }
+    context.setObject(setTimeoutFn, forKeyedSubscript: "setTimeout" as NSString)
+    context.setObject(clearTimeoutFn, forKeyedSubscript: "clearTimeout" as NSString)
+
     context.setObject(open, forKeyedSubscript: "__openSession" as NSString)
     context.setObject(exchange, forKeyedSubscript: "__exchange" as NSString)
     context.setObject(close, forKeyedSubscript: "__closeSession" as NSString)

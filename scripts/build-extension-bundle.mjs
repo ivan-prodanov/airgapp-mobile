@@ -62,6 +62,12 @@ const sandbox = {
   // unguarded and throws at load without them, so the bundle polyfills them
   // itself — and this check only proves that if the sandbox genuinely lacks them.
   // Adding them back would make the check pass for the wrong reason.
+  //
+  // setTimeout/clearTimeout ARE here because Swift installs them: JSC has no
+  // event loop, and a timer cannot be polyfilled without a clock and a run loop.
+  // The sandbox must mirror what the host provides — no more, no less.
+  setTimeout,
+  clearTimeout,
   // The one host symbol the engine genuinely requires. Swift backs this with
   // SecRandomCopyBytes; here it only has to be present and fill the array.
   crypto: {
@@ -70,12 +76,18 @@ const sandbox = {
       return arr;
     },
   },
-  // The transport, stubbed to fail — we are testing that the bundle LOADS and
-  // runs in a bare context, not that it can reach a car.
-  __openSession: async () => {
-    throw new Error('no transport in the build check');
-  },
-  __exchange: async () => '',
+  // The transport HANGS rather than failing fast.
+  //
+  // It used to throw immediately, and that is precisely why this check shipped a
+  // bundle that died on the device with "Can't find variable: setTimeout": the
+  // engine gave up before it ever armed a timeout, so the timer code — the code
+  // that needed a host global we had not installed — never ran. The check
+  // reported a clean pass on a send that had exercised almost nothing.
+  //
+  // A transport that never settles forces the engine down its timeout path, which
+  // is where the host contract is actually used.
+  __openSession: () => new Promise(() => {}),
+  __exchange: () => new Promise(() => {}),
   __closeSession: async () => {},
 };
 sandbox.globalThis = sandbox;
@@ -96,17 +108,25 @@ if (typeof sandbox.airgappSendNavigation !== 'function') {
   process.exit(1);
 }
 
-// Drive it once end to end. The transport fails by design, so a well-formed
-// 'failed' verdict proves the crypto, protobuf and gateway layers all ran.
-const raw = await sandbox.airgappSendNavigation(
-  JSON.stringify({ vin: '5YJ3E1EA7KF000316', lat: 42.6977, lon: 23.3219, privateScalarHex: 'a'.repeat(64) }),
-);
+// Drive it once end to end. The transport never settles, so the engine must arm
+// and fire its own timeout to finish at all — exercising the host globals a
+// fast-failing stub would skip. A well-formed 'failed' verdict then proves the
+// crypto, protobuf, gateway AND timer paths all ran under host-only globals.
+const raw = await Promise.race([
+  sandbox.airgappSendNavigation(
+    JSON.stringify({ vin: '5YJ3E1EA7KF000316', lat: 42.6977, lon: 23.3219, privateScalarHex: 'a'.repeat(64) }),
+  ),
+  new Promise((_, rej) =>
+    setTimeout(() => rej(new Error('the engine never settled — its own timeout did not fire')), 120_000),
+  ),
+]);
 const parsed = JSON.parse(raw);
 if (parsed.ok !== false || parsed.verdict !== 'failed') {
   console.error('\nREFUSING TO SHIP: the bundle ran but did not behave as expected.');
-  console.error('Expected a clean {ok:false, verdict:"failed"} with no transport. Got:', parsed);
+  console.error('Expected a clean {ok:false, verdict:"failed"} after the engine timed out. Got:', parsed);
   process.exit(1);
 }
+console.log(`  timeout path exercised — engine settled on its own: ${parsed.reason ?? parsed.verdict}`);
 
 writeFileSync(
   OUT,
