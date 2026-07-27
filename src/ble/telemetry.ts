@@ -96,6 +96,36 @@ export interface InfotainmentSnapshot {
     hardWarning: { fl: boolean; fr: boolean; rl: boolean; rr: boolean };
     softWarning: { fl: boolean; fr: boolean; rl: boolean; rr: boolean };
   };
+  // Now playing, in TWO slices because it takes two reads: the 452-byte cap
+  // allows one submessage per request, and the fields a now-playing line needs
+  // are split across MediaState (15) and MediaDetailState (16).
+  //
+  // They are kept as DISTINCT sub-keys deliberately. `awakeSync` merges its
+  // per-read slices with a shallow spread that is safe "only because each read
+  // writes a DISTINCT sub-key" — one shared `media` key would have the second
+  // read clobber the first with its own absent fields.
+  media?: {
+    // The car's own opinion on whether it will accept transport commands.
+    // undefined = not read yet, which is NOT the same as false.
+    remoteControlEnabled: boolean | undefined;
+    title: string | null;
+    artist: string | null;
+    // MediaPlaybackStatus: 0 Stopped, 1 Playing, 2 Paused. Kept as the raw enum
+    // rather than a bare `playing` boolean — "stopped" and "paused" render
+    // differently and collapsing them loses that.
+    playbackStatus: number | undefined;
+    sourceType: number | undefined;
+    volume: number | null;
+    volumeMax: number | null;
+    volumeIncrement: number | null;
+  };
+  mediaDetail?: {
+    album: string | null;
+    station: string | null;
+    sourceName: string | null;
+    elapsedSec: number | null;
+    durationSec: number | null;
+  };
   closures?: {
     sentryOn: boolean | undefined;
     windows: Partial<Record<'leftFront' | 'rightFront' | 'leftRear' | 'rightRear', boolean>>;
@@ -338,6 +368,42 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     }
   }
 
+  // `mediaStr` maps absent AND empty-string to null: the car sends "" for a
+  // field it has no value for (no artist on a radio station), and an empty
+  // line renders worse than no line.
+  const mediaStr = (v: unknown): string | null =>
+    typeof v === 'string' && v.length > 0 ? v : null;
+  const mediaNum = (v: unknown): number | null => num(v) ?? null;
+
+  const ms = pick(vehicleData, root, 'mediaState');
+  if (ms) {
+    snap.media = {
+      remoteControlEnabled:
+        typeof ms.remoteControlEnabled === 'boolean' ? ms.remoteControlEnabled : undefined,
+      title: mediaStr(ms.nowPlayingTitle),
+      artist: mediaStr(ms.nowPlayingArtist),
+      playbackStatus: num(ms.mediaPlaybackStatus),
+      sourceType: num(ms.nowPlayingSource),
+      volume: mediaNum(ms.audioVolume),
+      volumeMax: mediaNum(ms.audioVolumeMax),
+      volumeIncrement: mediaNum(ms.audioVolumeIncrement),
+    };
+  }
+
+  const md = pick(vehicleData, root, 'mediaDetailState');
+  if (md) {
+    snap.mediaDetail = {
+      album: mediaStr(md.nowPlayingAlbum),
+      station: mediaStr(md.nowPlayingStation),
+      // a2dp_source_name is the paired PHONE's name when the source is
+      // Bluetooth; now_playing_source_string is the car's own label. Prefer the
+      // label, fall back to the device.
+      sourceName: mediaStr(md.nowPlayingSourceString) ?? mediaStr(md.a2dpSourceName),
+      elapsedSec: mediaNum(md.nowPlayingElapsed),
+      durationSec: mediaNum(md.nowPlayingDuration),
+    };
+  }
+
   const tp = pick(vehicleData, root, 'tirePressureState');
   if (tp) {
     // proto3 `optional` (synthetic oneof): a wheel whose sensor has not reported
@@ -524,6 +590,23 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.chargingState !== undefined) {
       patch.charging = snap.charge.chargingState.toLowerCase() === 'charging';
     }
+  }
+
+  // Gated on the MediaState half, not on either half. That read carries the
+  // card's identity — title, artist, playback status — and the patch is applied
+  // by a shallow spread, so emitting on a detail-only tick would replace a
+  // populated card with one that has no title. A detail-only tick therefore
+  // contributes nothing rather than half-erasing the card; the read plan asks
+  // for both together, so that only happens when one read faulted.
+  if (snap.media) {
+    patch.media = {
+      ...snap.media,
+      album: snap.mediaDetail?.album ?? null,
+      station: snap.mediaDetail?.station ?? null,
+      sourceName: snap.mediaDetail?.sourceName ?? null,
+      elapsedSec: snap.mediaDetail?.elapsedSec ?? null,
+      durationSec: snap.mediaDetail?.durationSec ?? null,
+    };
   }
 
   if (snap.tires) {

@@ -45,6 +45,8 @@ import {
   getDriveStateAction,
   getLocationStateAction,
   getTirePressureStateAction,
+  getMediaStateAction,
+  getMediaDetailStateAction,
 } from "./builders";
 import { decodeMessage, FromVCSECMessage, Response } from "./proto";
 import { parseCarActionStatus, type CarActionStatus } from "./carActionStatus";
@@ -150,7 +152,14 @@ export interface WhitelistEntryProbe {
 }
 
 // The state slices awakeSync can read, named so a caller can ask for a subset.
-export type InfotainmentStateKey = "charge" | "climate" | "drive" | "location" | "tires";
+export type InfotainmentStateKey =
+  | "charge"
+  | "climate"
+  | "drive"
+  | "location"
+  | "tires"
+  | "media"
+  | "mediaDetail";
 
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
@@ -829,10 +838,25 @@ export function createCarGateway({
       drive: getDriveStateAction,
       location: getLocationStateAction,
       tires: getTirePressureStateAction,
+      media: getMediaStateAction,
+      mediaDetail: getMediaDetailStateAction,
     };
+    // Media joins the DEFAULT set (the 60s background sync + pull-to-refresh),
+    // deliberately NOT the fast screen-keyed poll. Two more round trips per tick
+    // — the cost the 60s throttle exists to bound — but a track changes every
+    // few minutes, so it has no business on a 1650ms cadence competing with the
+    // unlock path. Whether it earns a faster poll is a question for after we
+    // have seen what a parked car actually returns.
     const keys =
       opts?.states ??
-      (["charge", "climate", "drive", "location"] as InfotainmentStateKey[]);
+      ([
+        "charge",
+        "climate",
+        "drive",
+        "location",
+        "media",
+        "mediaDetail",
+      ] as InfotainmentStateKey[]);
     if (keys.length === 0)
       throw new Error("awakeSync: states must not be empty");
     const reads: ActionPayload[] = keys.map((k) => byKey[k]());

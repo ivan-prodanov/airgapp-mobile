@@ -521,6 +521,32 @@ export function getTirePressureStateAction(): ActionPayload {
   };
 }
 
+// getMediaStateAction / getMediaDetailStateAction — now playing.
+//
+// TWO reads, not one, and that is forced rather than chosen: the 452-byte
+// inbound cap means one submessage per request (RESPONSE-15 P2-1), and the
+// fields a "now playing" line needs are split across both messages —
+// title/artist/volume/playback-status live in MediaState (15), while
+// album/station/elapsed/duration live in MediaDetailState (16).
+//
+// MediaState.remote_control_enabled is the car's own opinion on whether it will
+// accept the transport commands at all. Read it before offering the buttons;
+// do not infer it from a successful read, which only proves the car answered.
+export function getMediaStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getMediaState: {} } }),
+  };
+}
+export function getMediaDetailStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getMediaDetailState: {} } }),
+  };
+}
+
 export function getFullVehicleDataAction(): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,

@@ -66,6 +66,29 @@ export interface TirePressures {
   softWarning: { fl: boolean; fr: boolean; rl: boolean; rr: boolean };
 }
 
+// Now playing, assembled from MediaState (15) + MediaDetailState (16). Two
+// reads, because the 452-byte inbound cap allows one submessage per request.
+export interface MediaNowPlaying {
+  // The car's own opinion on whether it will accept transport commands.
+  // `undefined` means "not read yet" and must not be treated as false — the
+  // difference decides whether the buttons are absent or merely disabled.
+  remoteControlEnabled: boolean | undefined;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  station: string | null;
+  // CarServer.MediaPlaybackStatus: 0 Stopped, 1 Playing, 2 Paused.
+  playbackStatus: number | undefined;
+  // CarServer.MediaSourceType (2 FM, 8 Bluetooth, 12 Spotify, …).
+  sourceType: number | undefined;
+  sourceName: string | null;
+  volume: number | null;
+  volumeMax: number | null;
+  volumeIncrement: number | null;
+  elapsedSec: number | null;
+  durationSec: number | null;
+}
+
 export interface CarLocation {
   lat: number;
   lon: number;
@@ -171,6 +194,10 @@ export interface VehicleViewState {
   // `null` until a tire read lands; a single wheel is null when its sensor has
   // not reported, which the UI shows as "—" rather than a confident 0.0.
   tirePressures: TirePressures | null;
+  // Now playing. `null` until a media read lands. Cached like every other
+  // rendered field, so a relaunch shows the last known track rather than an
+  // empty card — see CarLinkCache.
+  media: MediaNowPlaying | null;
   // ── Climate/charging setpoints ────────────────────────────────────────────────────────────────
   // These are the car's *requested* values (vs. the measured interior/exterior temps above). They
   // live here rather than in the screens so a command can be dispatched for them and telemetry can
@@ -261,6 +288,7 @@ export const initialVehicleState: VehicleViewState = {
   exteriorTempC: null,
   carLocation: null,
   tirePressures: null,
+  media: null,
   targetTempC: 19.5,
   cabinOverheatMode: 'on',
   cabinOverheatTemp: '40',

@@ -515,7 +515,11 @@ test('awakeSync: merges charge + climate + drive + location on one session', asy
     { kind: 'ok', response: locationResp },
   ]);
 
-  const snap = await gateway.awakeSync();
+  // States pinned explicitly: this test is about MERGING onto one warm session,
+  // not about how many states the default happens to include. Leaving it
+  // implicit made it break when media was added, which is noise, not signal —
+  // the default's own contract is pinned by its own test below.
+  const snap = await gateway.awakeSync({ states: ['charge', 'climate', 'drive', 'location'] });
 
   assert.equal(snap.charge?.soc, 72);
   assert.equal(snap.charge?.chargeLimitSoc, 90);
@@ -539,7 +543,7 @@ test('awakeSync: all four reads fault (car asleep/unreachable) → rejects, no s
     { kind: 'fault', fault: 2 },
   ]);
 
-  await assert.rejects(() => gateway.awakeSync(), /no vehicle data|awake/);
+  await assert.rejects(() => gateway.awakeSync({ states: ['charge', 'climate', 'drive', 'location'] }), /no vehicle data|awake/);
   // All four reads were attempted on the one warm session before rejecting.
   assert.equal(car.decryptedCommands.length, 4);
 });
@@ -559,13 +563,32 @@ test('awakeSync: partial success (charge + climate ok, drive + location fault) r
     { kind: 'fault', fault: 2 },
   ]);
 
-  const snap = await gateway.awakeSync();
+  const snap = await gateway.awakeSync({ states: ['charge', 'climate', 'drive', 'location'] });
 
   assert.equal(snap.charge?.soc, 55);
   assert.equal(snap.climate?.insideTempC, 19);
   assert.equal(snap.drive, undefined);
   assert.equal(snap.location, undefined);
   assert.equal(car.decryptedCommands.length, 4);
+});
+
+// The DEFAULT state list is a real contract — it is what the 60s background sync
+// and pull-to-refresh actually fetch, and its size is the per-tick cost that
+// forced the 60s throttle in the first place. Three unrelated tests used to pin
+// it incidentally via `decryptedCommands.length === 4`, so adding a state broke
+// them for reasons that had nothing to do with what they were testing. Pin it
+// here, once, by name.
+test('awakeSync: the default state list is charge/climate/drive/location/media/mediaDetail', async () => {
+  __resetSessionCaches();
+  const empty = encodeMessage(Response, { vehicleData: {} });
+  const { car, gateway } = makeGateway(Array.from({ length: 6 }, () => ({ kind: 'ok' as const, response: empty })));
+
+  await gateway.awakeSync();
+
+  // Six reads, one warm session. If you change the default, change this and say
+  // why in the commit — every extra state is another round trip per sync.
+  assert.equal(car.decryptedCommands.length, 6);
+  assert.equal(car.openCount, 1);
 });
 
 // ── wake ────────────────────────────────────────────────────────────────────

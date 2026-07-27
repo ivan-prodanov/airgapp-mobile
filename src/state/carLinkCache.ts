@@ -1,4 +1,4 @@
-import type { CarLocation, TirePressures } from '@/types/vehicleTypes';
+import type { CarLocation, MediaNowPlaying, TirePressures } from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
 
 // The linked car's last-known telemetry, cached across app launches.
@@ -54,6 +54,10 @@ export interface CarLinkCache {
   // the day before, repeated on the very next field I added. The rule is simply
   // that anything rendered from telemetry belongs in this cache.
   tirePressures: TirePressures | null;
+  // Now playing. Same rule again: it is rendered from telemetry, so it is
+  // cached. A relaunch shows the last known track dimmed rather than an
+  // empty card.
+  media: MediaNowPlaying | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -68,6 +72,9 @@ export function carLinkCacheKey(vin: string): string {
 // Anything absent or non-finite becomes null, so a stale cache degrades to "no
 // value" instead of leaking undefined into vehicle state.
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+// Same contract for strings: absent, wrong-typed, or empty all become null so
+// a stale cache renders no line rather than a blank one.
+const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
 
 export async function loadCarLinkCache(storage: AppStorage, vin: string): Promise<CarLinkCache | null> {
@@ -110,6 +117,32 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
               rl: cached.tirePressures.softWarning?.rl === true,
               rr: cached.tirePressures.softWarning?.rr === true,
             },
+          }
+        : null,
+    // Validated field-by-field like the rest. `remoteControlEnabled` and
+    // `playbackStatus` rehydrate as undefined when absent, NOT as false/0 —
+    // "not read yet" must stay distinguishable from "the car said no" and
+    // from "stopped", or a cold start renders disabled buttons on a car that
+    // would happily accept them.
+    media:
+      cached?.media && typeof cached.media === 'object'
+        ? {
+            remoteControlEnabled:
+              typeof cached.media.remoteControlEnabled === 'boolean'
+                ? cached.media.remoteControlEnabled
+                : undefined,
+            title: str(cached.media.title),
+            artist: str(cached.media.artist),
+            album: str(cached.media.album),
+            station: str(cached.media.station),
+            playbackStatus: num(cached.media.playbackStatus) ?? undefined,
+            sourceType: num(cached.media.sourceType) ?? undefined,
+            sourceName: str(cached.media.sourceName),
+            volume: num(cached.media.volume),
+            volumeMax: num(cached.media.volumeMax),
+            volumeIncrement: num(cached.media.volumeIncrement),
+            elapsedSec: num(cached.media.elapsedSec),
+            durationSec: num(cached.media.durationSec),
           }
         : null,
     carLocation:

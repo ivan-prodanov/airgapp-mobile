@@ -636,3 +636,72 @@ test('TPMS reaches view state as ONE patch, not field by field', () => {
   assert.equal(patch.tirePressures?.fl, 2.8);
   assert.equal(patch.tirePressures?.rcpRear, 2.9);
 });
+
+// ── Media ───────────────────────────────────────────────────────────────────
+//
+// Media is the first state that needs TWO reads (MediaState 15 +
+// MediaDetailState 16 — the 452-byte cap allows one submessage per request),
+// which makes it the first that could clobber itself on the way through
+// awakeSync's shallow slice merge. These tests pin that it doesn't.
+
+test('media: MediaState and MediaDetailState land in SEPARATE slices', () => {
+  // awakeSync merges per-read slices with a shallow spread that is safe "only
+  // because each read writes a DISTINCT sub-key". One shared `media` key would
+  // have the second read overwrite the first with its own absent fields.
+  const fromState = parseCarServerResponse({
+    vehicleData: { mediaState: { nowPlayingTitle: 'Wish You Were Here', nowPlayingArtist: 'Pink Floyd' } },
+  });
+  const fromDetail = parseCarServerResponse({
+    vehicleData: { mediaDetailState: { nowPlayingAlbum: 'Wish You Were Here', nowPlayingElapsed: 42 } },
+  });
+
+  assert.equal(fromState.media?.title, 'Wish You Were Here');
+  assert.equal(fromState.mediaDetail, undefined, 'a MediaState read must not fabricate a detail slice');
+  assert.equal(fromDetail.mediaDetail?.album, 'Wish You Were Here');
+  assert.equal(fromDetail.media, undefined, 'a MediaDetailState read must not fabricate a media slice');
+});
+
+test('media: an empty string is null, not an empty line', () => {
+  // The car sends "" for a field it has no value for — artist on a radio
+  // station, album on a Bluetooth stream. Rendering a blank line is worse than
+  // rendering none.
+  const snap = parseCarServerResponse({
+    vehicleData: { mediaState: { nowPlayingTitle: 'BBC Radio 4', nowPlayingArtist: '' } },
+  });
+  assert.equal(snap.media?.title, 'BBC Radio 4');
+  assert.equal(snap.media?.artist, null);
+});
+
+test('media: patch merges both halves when both reads landed', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: {
+      mediaState: { nowPlayingTitle: 'Shine On', mediaPlaybackStatus: 1, audioVolume: 5, remoteControlEnabled: true },
+      mediaDetailState: { nowPlayingAlbum: 'Wish You Were Here', nowPlayingElapsed: 42, nowPlayingDuration: 810 },
+    },
+  });
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.media?.title, 'Shine On');
+  assert.equal(patch.media?.album, 'Wish You Were Here');
+  assert.equal(patch.media?.elapsedSec, 42);
+  assert.equal(patch.media?.playbackStatus, 1);
+  assert.equal(patch.media?.remoteControlEnabled, true);
+});
+
+test('media: a detail-only tick emits NO media patch rather than half-erasing the card', () => {
+  // The patch is applied by a shallow spread, so emitting on a detail-only read
+  // would replace a populated card with one that has no title. Happens when the
+  // MediaState read faults but the detail one succeeds.
+  const snap = parseCarServerResponse({
+    vehicleData: { mediaDetailState: { nowPlayingAlbum: 'Wish You Were Here' } },
+  });
+  const patch = infotainmentToPatch(snap);
+  assert.equal('media' in patch, false);
+});
+
+test('media: remoteControlEnabled absent stays UNDEFINED, never false', () => {
+  // "not read yet" and "the car said no" must stay distinguishable — the
+  // difference decides whether the transport buttons are absent or disabled.
+  const snap = parseCarServerResponse({ vehicleData: { mediaState: { nowPlayingTitle: 'x' } } });
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.media?.remoteControlEnabled, undefined);
+});
