@@ -357,6 +357,10 @@ export const NAV_ORDER = Object.freeze({ REPLACE: 0, PREPEND: 1, APPEND: 2 });
 export function navigateGpsAction({ lat, lon, order }: { lat: number; lon: number; order?: number }): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
+    // See navigateGpsWithLabelAction — without this the car answers status-only and
+    // its verdict is unreadable. Applies to every nav action, not just the one that
+    // happened to be under test when the absence was measured.
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
     bytes: encodeInfotainmentAction({
       navigationGpsRequest: { lat: Number(lat), lon: Number(lon), order: order ?? NAV_ORDER.REPLACE },
     }),
@@ -402,6 +406,12 @@ export function navigateGpsWithLabelAction({
 export function navigateSearchAction({ query, order }: { query: string; order?: number }): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
+    // Same reason as the other two — and this one matters most for diagnosing
+    // failures. f21 is the only nav message that SEARCHES, so it is the only one
+    // that can refuse on its merits ("no results found", observed on-car at Point
+    // C). Without the flag that refusal reaches us as a status-only frame and is
+    // indistinguishable from success.
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
     bytes: encodeInfotainmentAction({ navigationRequest: { destination: query, order: order ?? NAV_ORDER.REPLACE } }),
   };
 }
