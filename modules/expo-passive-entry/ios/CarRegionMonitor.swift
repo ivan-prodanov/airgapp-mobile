@@ -56,6 +56,32 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
   // lot thrash relaunches.
   private static let beaconDebounceSec: TimeInterval = 30
   private var lastBeaconWakeSec: TimeInterval = 0
+
+  // Ranging reads the major/minor the car ACTUALLY advertises, so we can tell
+  // this car from any other Tesla the UUID-only region also wakes us for.
+  //
+  // Deliberately NOT used to constrain the monitored region. RESPONSE-16:
+  // a right-UUID/wrong-major region fires NOTHING, silently, with no error and
+  // no log — so betting the whole wake path on an unverified derivation would
+  // fail closed and look exactly like "the car doesn't beacon". Range instead:
+  // observe the real values, log them beside the expected ones, and only gate
+  // on the derivation once field data has confirmed it.
+  //
+  // Derivation (RESPONSE-16, disassembled): v = last 5 VIN chars via
+  // NSString.integerValue; major = bswap16(v >> 16), minor = bswap16(v & 0xFFFF).
+  // BOTH halves are byte-swapped.
+  private var rangingUntil: TimeInterval = 0
+  private static let rangeWindowSec: TimeInterval = 12
+
+  private static func expectedMajorMinor(fromVIN vin: String) -> (UInt16, UInt16)? {
+    guard vin.count >= 5 else { return nil }
+    let last5 = String(vin.suffix(5))
+    // NSString.integerValue semantics: scan leading digits, stop at the first
+    // non-digit, 0 if none. Swift's Int() would return nil on "4A019" instead.
+    let v = UInt32((last5 as NSString).integerValue)
+    let bswap: (UInt16) -> UInt16 = { ($0 << 8) | ($0 >> 8) }
+    return (bswap(UInt16((v >> 16) & 0xFFFF)), bswap(UInt16(v & 0xFFFF)))
+  }
   // Big enough that we're woken well BEFORE BLE range (so the pending connect is
   // already armed when the user reaches the car), small enough to be meaningful.
   // iOS silently enforces a floor of ~100 m on region radius anyway.
@@ -230,10 +256,76 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
       guard now - lastBeaconWakeSec >= CarRegionMonitor.beaconDebounceSec else { return }
       lastBeaconWakeSec = now
       PassiveEntryCentral.shared.logExternal("car beacon: \(event) → re-arming BLE")
+      if let m = manager { startRanging(m) }
     default:
       return // someone else's region
     }
     PassiveEntryCentral.shared.wakeForRegionEntry()
+  }
+
+  // didExitRegion is now implemented, but ONLY to observe. The original comment
+  // still governs behaviour: exit must never disconnect — the official app just
+  // clears its in-region flag and keeps the link. Nothing here touches BLE.
+  func locationManager(_ m: CLLocationManager, didExitRegion region: CLRegion) {
+    switch region.identifier {
+    case CarRegionMonitor.regionId:
+      PassiveEntryCentral.shared.logExternal("car region: EXITED (observe only, link untouched)")
+    case CarRegionMonitor.beaconRegionId:
+      PassiveEntryCentral.shared.logExternal("car beacon: EXITED (observe only, link untouched)")
+      stopRanging(m)
+    default:
+      return
+    }
+  }
+
+  // MARK: - Ranging (identity + distance)
+
+  private func startRanging(_ m: CLLocationManager) {
+    guard CLLocationManager.isRangingAvailable() else {
+      PassiveEntryCentral.shared.logExternal("car beacon: ranging unavailable on this device")
+      return
+    }
+    rangingUntil = Date().timeIntervalSince1970 + CarRegionMonitor.rangeWindowSec
+    let c = CLBeaconIdentityConstraint(uuid: CarRegionMonitor.beaconUUID)
+    m.startRangingBeacons(satisfying: c)
+    PassiveEntryCentral.shared.logExternal("car beacon: ranging for \(Int(CarRegionMonitor.rangeWindowSec))s")
+  }
+
+  private func stopRanging(_ m: CLLocationManager) {
+    let c = CLBeaconIdentityConstraint(uuid: CarRegionMonitor.beaconUUID)
+    m.stopRangingBeacons(satisfying: c)
+    rangingUntil = 0
+  }
+
+  func locationManager(_ m: CLLocationManager,
+                       didRange beacons: [CLBeacon],
+                       satisfying constraint: CLBeaconIdentityConstraint) {
+    // Background ranging is time-boxed by iOS anyway; stop ourselves so we are
+    // not the reason the app stays awake.
+    if Date().timeIntervalSince1970 > rangingUntil {
+      stopRanging(m)
+      return
+    }
+    guard !beacons.isEmpty else { return }
+
+    let expected = CarRegionMonitor.expectedMajorMinor(fromVIN: PassiveEntryCentral.shared.currentVIN ?? "")
+    for b in beacons {
+      let major = UInt16(truncating: b.major)
+      let minor = UInt16(truncating: b.minor)
+      let mine: String
+      if let e = expected {
+        mine = (major == e.0 && minor == e.1) ? "MINE" : "other-tesla"
+      } else {
+        mine = "no-vin"
+      }
+      let exp = expected.map { "expect=\($0.0)/\($0.1)" } ?? "expect=?"
+      PassiveEntryCentral.shared.logExternal(
+        "car beacon: RANGED major=\(major) minor=\(minor) \(exp) → \(mine) "
+        + "rssi=\(b.rssi) prox=\(b.proximity.rawValue) acc=\(String(format: "%.1f", b.accuracy))m")
+    }
+    // One good read is enough to identify the car; stop early rather than burn
+    // background time re-reading the same constant values.
+    stopRanging(m)
   }
 
   func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {

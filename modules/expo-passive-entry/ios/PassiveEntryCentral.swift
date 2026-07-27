@@ -97,6 +97,15 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
 
   // GATT + handshake state
   private var vin = ""
+
+  // currentVIN — the persisted VIN, for collaborators that need it but must not
+  // learn where it is stored. CarRegionMonitor uses it to derive the car's
+  // expected iBeacon major/minor so a ranged beacon can be told apart from any
+  // other Tesla the UUID-only region also wakes us for. Reads UserDefaults
+  // rather than `vin` above, which is only populated once a session starts.
+  var currentVIN: String? {
+    UserDefaults.standard.string(forKey: PassiveEntryCentral.vinKey)
+  }
   private var txChar: CBCharacteristic?
   private var rxChar: CBCharacteristic?
   private var blockLength = 20
