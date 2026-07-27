@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  s.source_files = 'SharedIntakeModule.swift', '../../shared-outbox/Sources/ShareOutbox/*.swift'
+  s.source_files = '*.swift'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
