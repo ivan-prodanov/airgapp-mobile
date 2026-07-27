@@ -113,7 +113,17 @@ export async function migrateSecretsToAccessGroup(
 export function makeMigratingSecretStore(shared: SecretStore, legacy: SecretStore): SecretStore {
   return {
     async getItem(key) {
-      const current = await shared.getItem(key);
+      // A THROW from the shared store must not propagate. A misconfigured access
+      // group makes every Keychain call throw errSecMissingEntitlement, and on
+      // 2026-07-27 that took the whole app down — the throw reached
+      // loadOrCreateDeviceKeys and nothing worked. Reading is the one operation
+      // that always has a second place to look, so look there instead of failing.
+      let current: string | null = null;
+      try {
+        current = await shared.getItem(key);
+      } catch {
+        current = null;
+      }
       if (current !== null) return current;
 
       const old = await legacy.getItem(key);
@@ -130,11 +140,22 @@ export function makeMigratingSecretStore(shared: SecretStore, legacy: SecretStor
       }
       return old;
     },
-    setItem: (key, value) => shared.setItem(key, value),
+    async setItem(key, value) {
+      // A write has no second place to look, so a failure here is real — but
+      // losing the value is worse than storing it somewhere less useful. Fall back
+      // to the legacy location so the secret survives; the next successful read
+      // promotes it once the shared store works again.
+      try {
+        await shared.setItem(key, value);
+      } catch (err) {
+        await legacy.setItem(key, value);
+        throw err; // still surface it — this is a misconfiguration, not a mode
+      }
+    },
     async removeItem(key) {
       // Delete BOTH, or a "forget this device" would leave the legacy copy behind
       // to be silently promoted again on the next read.
-      await shared.removeItem(key);
+      await shared.removeItem(key).catch(() => {});
       await legacy.removeItem(key).catch(() => {});
     },
   };

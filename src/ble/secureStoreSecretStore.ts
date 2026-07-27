@@ -33,10 +33,20 @@ import { makeMigratingSecretStore } from './keychainMigration';
 import type { SecretStore } from './types';
 
 // Must match `keychain-access-groups` in BOTH ios/airgapp/airgapp.entitlements
-// and ios/ShareExtension/ShareExtension.entitlements. `$(AppIdentifierPrefix)` in
-// the entitlement expands to the team prefix at build time; the runtime API wants
-// the bare group name without it.
-export const SHARED_KEYCHAIN_ACCESS_GROUP = 'local.airgapp.mobile.shared';
+// and ios/ShareExtension/ShareExtension.entitlements, AFTER `$(AppIdentifierPrefix)`
+// expands — i.e. FULLY QUALIFIED, with the team prefix.
+//
+// expo-secure-store passes this straight through to kSecAttrAccessGroup
+// (SecureStoreModule.swift:188, no prefixing), and that attribute requires the
+// fully-qualified group. Passing the bare name is a group the binary has no
+// entitlement for, and every Keychain call then fails with errSecMissingEntitlement
+// (-34018) — surfaced as "A required entitlement is missing". Measured on-device
+// 2026-07-27; I had asserted the opposite in this comment without checking.
+//
+// The team prefix is fixed for this project (AGENTS.md: DEVELOPMENT_TEAM=859B8N529C,
+// and it warns against overriding it). Verify against the signed binary with:
+//   codesign -d --entitlements - --xml <app> | plutil -p -
+export const SHARED_KEYCHAIN_ACCESS_GROUP = '859B8N529C.local.airgapp.mobile.shared';
 
 // AfterFirstUnlock rather than the WhenUnlocked default. A share sheet runs with
 // the phone unlocked so WhenUnlocked would do — but the native passive-entry

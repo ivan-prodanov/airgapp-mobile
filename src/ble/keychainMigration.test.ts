@@ -195,6 +195,45 @@ describe('makeMigratingSecretStore — the race that would mint a new device key
     assert.equal(legacy.map.get(KEY), 'enrolled-scalar', 'legacy copy survives for the next attempt');
   });
 
+  it('survives a shared store that THROWS on every call', async () => {
+    // The 2026-07-27 regression: a wrong access group makes every Keychain call
+    // throw errSecMissingEntitlement. That throw reached loadOrCreateDeviceKeys
+    // and the whole app stopped working. A read has a second place to look — use
+    // it rather than propagating.
+    const legacy = makeStore({ [KEY]: 'enrolled-scalar' });
+    const throwing: SecretStore = {
+      getItem: async () => {
+        throw new Error('A required entitlement is missing');
+      },
+      setItem: async () => {
+        throw new Error('A required entitlement is missing');
+      },
+      removeItem: async () => {
+        throw new Error('A required entitlement is missing');
+      },
+    };
+    const store = makeMigratingSecretStore(throwing, legacy.store);
+
+    assert.equal(await store.getItem(KEY), 'enrolled-scalar', 'must not propagate the throw');
+    assert.equal(legacy.map.get(KEY), 'enrolled-scalar', 'and must not lose the value');
+    await assert.doesNotReject(() => store.removeItem('unrelated'), 'removeItem tolerates it too');
+  });
+
+  it('a failed shared write still persists the value to legacy before rethrowing', async () => {
+    const legacy = makeStore();
+    const throwing: SecretStore = {
+      getItem: async () => null,
+      setItem: async () => {
+        throw new Error('A required entitlement is missing');
+      },
+      removeItem: async () => {},
+    };
+    const store = makeMigratingSecretStore(throwing, legacy.store);
+
+    await assert.rejects(() => store.setItem(KEY, 'fresh'), /entitlement/);
+    assert.equal(legacy.map.get(KEY), 'fresh', 'the secret survives a misconfigured shared store');
+  });
+
   it('returns null only when BOTH are empty', async () => {
     const store = makeMigratingSecretStore(makeStore().store, makeStore().store);
     assert.equal(await store.getItem(KEY), null);
