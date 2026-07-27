@@ -19,6 +19,8 @@
 - **Phase 1 must be incapable of taking the AP down.** Not "configured not to" — the code path must not exist until Task 6.
 - **Go tests must pass with no BLE radio.** Every new type takes an interface that tests substitute, mirroring the existing `bleConn` fake pattern in `tesla_session_test.go`.
 - **Predicate, verbatim:** AP down ⟺ `lockState == LOCKED` **AND** `userPresence == NOT_PRESENT`. Every other combination, including every `UNKNOWN`, means AP up.
+- **THE AIRGAP OVERRIDES FAIL-OPEN.** Fail-open governs the *lock* axis only. On the *firewall* axis the rule inverts: **if the Pi cannot prove the nftables ruleset is in place, the AP does not come up.** An offline car is recoverable; a car that reached Tesla is not. Any code path that starts `hostapd` without first verifying the filter is a defect, however convenient.
+- **Bringing the AP up is the dangerous transition, not taking it down.** This feature turns a once-per-boot event into a several-times-daily one, so every AP-up path must be treated as a fresh chance to leak, never as a resumption of a known-good state.
 
 ## File Structure
 
@@ -31,7 +33,9 @@
 | `internal/services/lockwatch.go` (new) | The supervisor goroutine: keep a session subscribed, feed frames to `lockgate`, hold current state, call the enforcer. |
 | `internal/services/lockwatch_test.go` (new) | Fake session source + fake enforcer; preempt/reap/reconnect/garbage-frame paths. |
 | `internal/services/tesla_session.go` (modify) | Add `CurrentSession()`. |
-| `internal/services/hotspot.go` (modify) | Add `SetEnabled(bool)`. |
+| `internal/services/hotspot.go` (modify) | Add `SetEnabled(bool)` and the airgap gate that refuses to raise the AP over an unverified firewall. |
+| `internal/services/firewall.go` (modify) | Add `Verify()` — assert the forward chain is loaded and default-deny. |
+| `deploy/setup.sh` (modify) | Stop enabling `hostapd` at boot; netfilterd owns the AP so the gate is the only door. |
 | `internal/services/apcontrol.go` (new) | Debounce, max-down watchdog, manual override. The only thing that calls `SetEnabled`. |
 | `internal/executor/executor.go` (modify) | Record invocations so service tests can assert *which* command ran. |
 | `internal/services/services.go` (modify) | Construct and start `LockWatch`. |
@@ -1303,6 +1307,406 @@ cd /Users/ivan/Work/airgapp/rpi && git add internal/services/hotspot.go internal
 Kept out of Apply deliberately. This gets called automatically many times a
 day; an automatic path able to rewrite hostapd.conf is a way to lose the AP
 for good. This one can only change run state."
+```
+
+---
+
+## Task 6.5: The airgap gate — never raise the AP over an unverified firewall
+
+**Files:**
+- Modify: `internal/services/firewall.go`
+- Modify: `internal/services/hotspot.go`
+- Modify: `deploy/setup.sh`
+- Test: `internal/services/firewall_test.go`, `internal/services/hotspot_test.go`
+
+**Interfaces:**
+- Produces:
+  - `func (s *FirewallService) Verify() error`
+  - `func (s *HotspotService) SetFirewallGate(verify func() error, apply func() error)`
+  - `SetEnabled(true)` now returns an error and leaves the AP **down** if the gate cannot be satisfied.
+
+**Why this task exists — and what the real enforcement path is.**
+
+The security decision for the car's HTTPS is made by the **SNI proxy**, not by nftables. The chain is:
+
+1. nftables `prerouting`: `iifname "wlan0" ether saddr <car-mac> tcp dport 443 redirect to :<SNIProxyPort>` (`firewall.go:231`)
+2. `SNIProxyService.handle` reads the ClientHello, parses the SNI, and computes `allowed := known && sniAllowed(sni, suffixes)` (`sniproxy.go:195`)
+3. Not allowed → `return`, connection closed. Sinkholed.
+
+Three properties of that path are already fail-closed, verified by reading it:
+
+- The proxy binds `":<port>"` — **all interfaces**, not wlan0's address (`sniproxy.go:161`) — and `systemctl stop/start hostapd` does not touch netfilterd. The listener survives every AP cycle.
+- `allowedSuffixes` returns `known=false` for an unrecognised client IP, and `allowed` ANDs on it, so a **cold or stale cache denies**. A freshly restarted proxy blocks rather than passes.
+- If the proxy were dead while the redirect rule lived, :443 would hit a closed port — refused.
+
+**The one combination that leaks is the inverse: the redirect rule is gone while the proxy is healthy.** Then :443 never reaches the decision at all — it falls to the forward chain, and if the ruleset is empty there is no forward chain either. `deploy/sysctl.conf` sets `net.ipv4.ip_forward=1` unconditionally, so the packet is forwarded. It also loses the `masquerade`, so it egresses with a 192.168.4.x source — whether that reaches Tesla depends on whether the USB LTE modem NATs on its own, which most RNDIS/ECM modems do. **Treat it as reachable.**
+
+Meanwhile `hostapd` is enabled as an independent systemd unit (`deploy/setup.sh:350`), so it raises the AP whether or not any ruleset loaded, and nothing checks. Today that is a once-per-boot exposure; this feature makes it several times a day.
+
+**So `Verify` must assert the SNI redirect rule is present** — the forward policy alone would pass on a ruleset that kept `inet filter` but lost the `ip nat` table, which is precisely a bypass.
+
+Note this task deliberately **inverts** the plan's fail-open rule. Fail-open governs the lock axis. Here, an unverifiable firewall means the AP stays **down**. An offline car is recoverable; a car that reached Tesla is not.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `internal/services/firewall_test.go`:
+
+```go
+// The gate's job is to prove the car's :443 still lands in the SNI proxy.
+// A ruleset that kept `inet filter` but lost `ip nat` is a BYPASS, so the
+// forward policy alone is not sufficient evidence.
+func TestVerifyAcceptsInterceptedRuleset(t *testing.T) {
+	s := &FirewallService{cfg: config.Config{SNIProxyPort: 8444}}
+	nat := `table ip nat {
+	chain prerouting {
+		iifname "wlan0" ether saddr aa:bb:cc:dd:ee:ff tcp dport 443 redirect to :8444
+	}
+}`
+	fwd := `table inet filter {
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+	}
+}`
+	if err := s.verifyOutput(nat, fwd); err != nil {
+		t.Fatalf("a ruleset with the SNI redirect and a drop policy must verify: %v", err)
+	}
+}
+
+func TestVerifyRejectsMissingSNIRedirect(t *testing.T) {
+	s := &FirewallService{cfg: config.Config{SNIProxyPort: 8444}}
+	nat := `table ip nat {
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+	}
+}`
+	fwd := `table inet filter {
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+	}
+}`
+	if err := s.verifyOutput(nat, fwd); err == nil {
+		t.Fatal("no SNI redirect means :443 never reaches the decision — must be rejected")
+	}
+}
+
+func TestVerifyRejectsAcceptPolicy(t *testing.T) {
+	s := &FirewallService{cfg: config.Config{SNIProxyPort: 8444}}
+	nat := `iifname "wlan0" ether saddr aa:bb:cc:dd:ee:ff tcp dport 443 redirect to :8444`
+	fwd := `chain forward { type filter hook forward priority filter; policy accept; }`
+	if err := s.verifyOutput(nat, fwd); err == nil {
+		t.Fatal("an accept-policy forward chain must be rejected")
+	}
+}
+
+func TestVerifyRejectsEmptyRuleset(t *testing.T) {
+	s := &FirewallService{cfg: config.Config{SNIProxyPort: 8444}}
+	if err := s.verifyOutput("", ""); err == nil {
+		t.Fatal("an empty ruleset must be rejected — no redirect, no forward chain, ip_forward=1")
+	}
+}
+
+func TestVerifyReadsFromNft(t *testing.T) {
+	// DryRun Run() returns an empty Result, i.e. no listing at all — exactly
+	// the "ruleset is not loaded" case.
+	exec := executor.New(true)
+	s := NewFirewallService(nil, exec, config.Config{SNIProxyPort: 8444})
+	if err := s.Verify(); err == nil {
+		t.Fatal("Verify must fail when nft returns nothing")
+	}
+}
+```
+
+Append to `internal/services/hotspot_test.go`:
+
+```go
+func TestSetEnabledRefusesToStartWhenFirewallUnverified(t *testing.T) {
+	exec := executor.New(true)
+	s := NewHotspotService(nil, exec)
+	s.SetFirewallGate(
+		func() error { return fmt.Errorf("forward chain missing") },
+		func() error { return nil }, // apply "succeeds" but verify still fails
+	)
+
+	err := s.SetEnabled(true)
+	if err == nil {
+		t.Fatal("SetEnabled(true) must fail when the firewall cannot be verified")
+	}
+	for _, cmd := range exec.Recorded() {
+		if cmd == "systemctl start hostapd" {
+			t.Fatal("LEAK: hostapd was started over an unverified firewall")
+		}
+	}
+}
+
+func TestSetEnabledStartsWhenGatePasses(t *testing.T) {
+	exec := executor.New(true)
+	s := NewHotspotService(nil, exec)
+	s.SetFirewallGate(func() error { return nil }, func() error { return nil })
+
+	if err := s.SetEnabled(true); err != nil {
+		t.Fatalf("SetEnabled(true): %v", err)
+	}
+	found := false
+	for _, cmd := range exec.Recorded() {
+		if cmd == "systemctl start hostapd" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a verified firewall must allow the AP up")
+	}
+}
+
+// Taking the AP DOWN is always safe and must never be gated — otherwise a
+// firewall fault would leave the car online, the exact inverse of the point.
+func TestSetEnabledDownIsNeverGated(t *testing.T) {
+	exec := executor.New(true)
+	s := NewHotspotService(nil, exec)
+	s.SetFirewallGate(func() error { return fmt.Errorf("broken") }, func() error { return fmt.Errorf("broken") })
+
+	if err := s.SetEnabled(false); err != nil {
+		t.Fatalf("SetEnabled(false) must never be blocked by the gate: %v", err)
+	}
+	found := false
+	for _, cmd := range exec.Recorded() {
+		if cmd == "systemctl stop hostapd" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("stop must still have run")
+	}
+}
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+cd /Users/ivan/Work/airgapp/rpi && go test ./internal/services/ -run 'TestVerify|TestSetEnabledRefuses|TestSetEnabledStarts|TestSetEnabledDown' -v
+```
+
+Expected: FAIL to compile — `s.Verify undefined`, `s.verifyOutput undefined`, `s.SetFirewallGate undefined`.
+
+- [ ] **Step 3: Implement `Verify`**
+
+Add to `internal/services/firewall.go`:
+
+```go
+// Verify asserts the kernel's CURRENT ruleset still routes the car's HTTPS into
+// the SNI proxy, and still default-denies everything else.
+//
+// The security decision lives in SNIProxyService, not here — but it only ever
+// gets to make that decision because prerouting REDIRECTs :443 into it. Lose
+// that one rule and :443 bypasses the proxy entirely, which is why this checks
+// the redirect and not merely the forward policy: a ruleset that kept
+// `inet filter` but lost `ip nat` would pass a forward-only check while being
+// a total bypass.
+//
+// And the forward policy matters because sysctl sets net.ipv4.ip_forward=1
+// unconditionally. The deny is not a kernel property; it exists only while a
+// table with `policy drop` is loaded. A failed nft -f, a manual
+// `nft flush ruleset`, or a missing /etc/nftables.conf on a cold boot all leave
+// the car forwarding freely, and nothing else in this daemon would notice.
+func (s *FirewallService) Verify() error {
+	nat, err := s.exec.Run("nft", "list", "chain", "ip", "nat", "prerouting")
+	if err != nil {
+		return fmt.Errorf("read nat prerouting: %w", err)
+	}
+	fwd, err := s.exec.Run("nft", "list", "chain", "inet", "filter", "forward")
+	if err != nil {
+		return fmt.Errorf("read forward chain: %w", err)
+	}
+	return s.verifyOutput(nat.Stdout, fwd.Stdout)
+}
+
+// verifyOutput is the pure half, so the parsing is testable without nft.
+func (s *FirewallService) verifyOutput(nat, fwd string) error {
+	if strings.TrimSpace(fwd) == "" {
+		return fmt.Errorf("nftables forward chain is absent — with ip_forward=1 nothing is stopping the car")
+	}
+	if !strings.Contains(fwd, "policy drop") {
+		return fmt.Errorf("nftables forward chain is not default-deny")
+	}
+	// The SNI interception: without this, :443 never reaches the proxy that
+	// makes the actual allow/deny decision.
+	redirect := fmt.Sprintf("redirect to :%d", s.cfg.SNIProxyPort)
+	if !strings.Contains(nat, redirect) {
+		return fmt.Errorf("nftables prerouting has no %q — the car's :443 would bypass the SNI proxy", redirect)
+	}
+	return nil
+}
+```
+
+**Note on scope:** `Verify` proves the *plumbing*, not the allow-list. It cannot check the SNI proxy's decision, and it does not need to — that path is already fail-closed in three independent ways (all-interfaces bind, `known && allowed`, closed-port refusal), documented above.
+
+- [ ] **Step 4: Implement the gate in `SetEnabled`**
+
+Replace the `SetEnabled` written in Task 6 with the gated version, and add the gate fields to `HotspotService`:
+
+```go
+type HotspotService struct {
+	db   *sql.DB
+	exec *executor.Executor
+	mu   sync.Mutex
+
+	verifyFirewall func() error
+	applyFirewall  func() error
+}
+
+// SetFirewallGate installs the airgap gate. Wired in services.New from
+// FirewallService.Verify / .Apply. Kept as funcs rather than a service
+// reference so hotspot_test can prove the refusal path without a database.
+func (s *HotspotService) SetFirewallGate(verify func() error, apply func() error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.verifyFirewall = verify
+	s.applyFirewall = apply
+}
+
+// SetEnabled starts or stops hostapd without touching its config.
+//
+// Deliberately NOT part of Apply(): Apply rewrites /etc/hostapd/hostapd.conf
+// and restarts. This is called automatically by the lock watcher, potentially
+// many times a day, and an automatic path that can rewrite the AP's config is a
+// way to lose the AP permanently. This one can only change run state.
+//
+// Raising the AP is gated on the firewall being verifiably default-deny;
+// LOWERING it never is. That asymmetry is the whole point — a firewall fault
+// must not be able to leave the car online.
+func (s *HotspotService) SetEnabled(up bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if up && s.verifyFirewall != nil {
+		if err := s.verifyFirewall(); err != nil {
+			log.Printf("[HOTSPOT] firewall gate FAILED (%v) — reapplying before considering the AP", err)
+			if s.applyFirewall != nil {
+				if aerr := s.applyFirewall(); aerr != nil {
+					log.Printf("[HOTSPOT] firewall reapply failed: %v", aerr)
+				}
+			}
+			if err := s.verifyFirewall(); err != nil {
+				// REFUSE. An offline car is recoverable; a car that reached
+				// Tesla is not.
+				log.Printf("[HOTSPOT] REFUSING to raise the AP — firewall still unverified: %v", err)
+				return fmt.Errorf("refusing to start hostapd over an unverified firewall: %w", err)
+			}
+			log.Printf("[HOTSPOT] firewall gate satisfied after reapply")
+		}
+	}
+
+	action := "stop"
+	if up {
+		action = "start"
+	}
+	if _, err := s.exec.Run("systemctl", action, "hostapd"); err != nil {
+		return fmt.Errorf("%s hostapd: %w", action, err)
+	}
+	log.Printf("[HOTSPOT] %s hostapd", action)
+	return nil
+}
+```
+
+Add `"strings"` to `firewall.go`'s imports if absent, and `"fmt"` to `hotspot_test.go`'s.
+
+- [ ] **Step 5: Wire the gate**
+
+In `internal/services/services.go`, where `hotspot` is constructed (Task 8 introduces the local), add immediately after:
+
+```go
+	firewall := NewFirewallService(db, exec, cfg)
+	hotspot := NewHotspotService(db, exec)
+	hotspot.SetFirewallGate(firewall.Verify, firewall.Apply)
+```
+
+and use `firewall` in the struct literal in place of the inline `NewFirewallService(db, exec, cfg)`.
+
+- [ ] **Step 6: Make netfilterd the only thing that can raise the AP**
+
+In `deploy/setup.sh:350`, remove `hostapd` from the enable list and disable it explicitly:
+
+```bash
+systemctl enable nf-wlan0 nftables dnsmasq netfilterd >/dev/null
+# hostapd is NOT enabled: netfilterd owns the AP's lifecycle and raises it only
+# after the firewall verifies default-deny. Leaving hostapd enabled would let
+# the AP come up at boot independently of any ruleset — and with
+# net.ipv4.ip_forward=1 and no nft table loaded, that is an open car.
+systemctl disable hostapd >/dev/null 2>&1 || true
+```
+
+`netfilterd.service` already declares `After=hostapd.service`, which is now a no-op ordering hint for a disabled unit — harmless, and left alone so an operator who re-enables hostapd manually still gets the old ordering.
+
+**Consequence to be explicit about:** netfilterd must now raise the AP on startup. Task 7's `APController` starts with `want = true`, and Task 8 calls `APControl.Start()` in `ApplyAll()` *after* `Firewall.Apply()` — so the first `settle()` raises the AP through the gate. Verify this ordering holds in `ApplyAll` before finishing this task; if the AP does not come up on a clean boot, nothing else in this plan matters.
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+```bash
+cd /Users/ivan/Work/airgapp/rpi && go test ./internal/services/ -run 'TestVerify|TestSetEnabled' -v && go test ./... 2>&1 | tail -10
+```
+
+Expected: PASS all seven tests, no regressions.
+
+- [ ] **Step 8: On-Pi verification (do not skip — this is the whole point)**
+
+Deploy, then prove each claim against the real kernel. **The car should be present and associated for checks 3–5.**
+
+```bash
+# 1. The interception rule is what we think it is.
+sudo nft list chain ip nat prerouting | grep 'redirect to'
+sudo nft list chain inet filter forward | grep 'policy drop'
+
+# 2. Atomicity: a reload must never leave an observable gap.
+sudo systemctl restart netfilterd && sudo nft list chain ip nat prerouting | grep 'redirect to'
+
+# 3. THE LEAK TEST. Drop only the nat table — proxy healthy, redirect gone.
+#    This is the exact bypass shape, and it must NOT reach the internet.
+sudo nft delete table ip nat
+#    From the car's browser, load any non-allow-listed HTTPS site.
+#    Watch what happens on the wire:
+sudo tcpdump -ni eth1 'tcp port 443' -c 20
+#    If you see the car's traffic egressing, the modem is NATing for us and an
+#    empty ruleset IS reachable — record that, it settles the open question.
+sudo nft -f /etc/nftables.conf   # restore immediately
+
+# 4. The gate refuses. Flush the ruleset, then ask for the AP.
+sudo nft flush ruleset
+curl -sk -X POST https://localhost:8443/api/ble/lock-watch/override \
+  -H 'Content-Type: application/json' -d '{"mode":"force-on"}'
+systemctl is-active hostapd    # MUST print "inactive"
+journalctl -u netfilterd -n 5  # MUST show "REFUSING to raise the AP"
+sudo nft -f /etc/nftables.conf && systemctl is-active hostapd   # recovery
+
+# 5. The AP cycle does not break the LAN. nf-wlan0 is oneshot/RemainAfterExit,
+#    so it will NOT re-run — if stopping hostapd drops wlan0's address, dnsmasq
+#    cannot lease on the way back up and the car gets no IP.
+sudo systemctl stop hostapd && sleep 5 && sudo systemctl start hostapd
+ip addr show wlan0 | grep 192.168.4.1   # MUST still be there
+systemctl is-active dnsmasq             # MUST be active
+#    Then confirm the car re-associates AND gets a lease:
+journalctl -u dnsmasq -n 20 | grep DHCPACK
+```
+
+**Gates:**
+- Check 4 must leave hostapd **inactive** with the refusal logged. If hostapd starts, **stop — the gate does not work and Phase 2 must not ship.**
+- Check 5 must show wlan0 keeping its address and the car getting a `DHCPACK`. If it does not, `nf-wlan0.service` needs re-running as part of the AP-up path, and that belongs in `SetEnabled` before this task is done.
+- Check 3 is informational but **record the answer** — it determines whether an empty ruleset is a real-world leak or merely a broken car.
+
+- [ ] **Step 9: Commit**
+
+```bash
+cd /Users/ivan/Work/airgapp/rpi && git add internal/services deploy/setup.sh && git commit -m "feat(airgap): never raise the AP over an unverified firewall
+
+sysctl sets ip_forward=1 unconditionally, so the default-deny is not a kernel
+property — it exists only while a table with 'policy drop' is loaded. An empty
+ruleset forwards everything. hostapd was enabled as an independent unit, so it
+raised the AP whether or not any ruleset had loaded, and nothing checked.
+
+Raising the AP is now gated on verifying the forward chain is default-deny;
+lowering it never is. A firewall fault must not be able to leave the car online.
+
+hostapd is no longer enabled at boot: netfilterd owns the AP's lifecycle, so the
+gate is the single door. This also closes the pre-existing boot-time window,
+which this feature would otherwise have turned from once-per-boot into daily."
 ```
 
 ---
