@@ -95,7 +95,16 @@ export interface ChargeLimitSliderProps {
   limitPercent: number;
   min: number;
   max: number;
+  /** Live, on every move. For DISPLAY only — must not send a command. */
   onChange: (percent: number) => void;
+  /**
+   * On release. THIS is where the command goes.
+   *
+   * Their two callbacks are split exactly this way: onSliding is a state setter,
+   * and onSlidingComplete is the one whose body contains the VehicleCommand
+   * calls. So a drag across the track is ONE command, not one per percent.
+   */
+  onCommit: (percent: number) => void;
   /** Lets a parent freeze its ScrollView while the drag owns the touch. */
   onSlidingChange?: (sliding: boolean) => void;
 }
@@ -106,6 +115,7 @@ export function ChargeLimitSlider({
   min,
   max,
   onChange,
+  onCommit,
   onSlidingChange,
 }: ChargeLimitSliderProps) {
   const [changing, setChanging] = useState(false);
@@ -121,11 +131,13 @@ export function ChargeLimitSlider({
   // fresh in an effect rather than during render; they are only read from drag
   // handlers, which by definition run after mount.
   const onChangeRef = useRef(onChange);
+  const onCommitRef = useRef(onCommit);
   const onSlidingRef = useRef(onSlidingChange);
   useEffect(() => {
     onChangeRef.current = onChange;
+    onCommitRef.current = onCommit;
     onSlidingRef.current = onSlidingChange;
-  }, [onChange, onSlidingChange]);
+  }, [onChange, onCommit, onSlidingChange]);
 
   // Absolute pageX minus the track's measured window-left, NOT the
   // target-relative locationX: locationX is reported against whatever view is
@@ -215,14 +227,17 @@ export function ChargeLimitSlider({
         applyFromPageX(e.nativeEvent.pageX);
       },
       onPanResponderMove: (e) => applyFromPageX(e.nativeEvent.pageX),
+      // Their onSlidingComplete — the ONE place a command is sent.
       onPanResponderRelease: () => {
         setChanging(false);
         setDragFrac(null);
+        onCommitRef.current(lastValue.current);
         onSlidingRef.current?.(false);
       },
       onPanResponderTerminate: () => {
         setChanging(false);
         setDragFrac(null);
+        onCommitRef.current(lastValue.current);
         onSlidingRef.current?.(false);
       },
     }),

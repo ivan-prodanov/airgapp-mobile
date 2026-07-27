@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
@@ -123,6 +124,10 @@ export function ChargeCard({
   onStartStopCharging,
   onToggleChargePort,
 }: ChargeCardProps) {
+  // The label tracks the finger; the CAR is only told on release. Without this
+  // the label could not move during a drag, since the committed value does not
+  // change until the end.
+  const [liveLimit, setLiveLimit] = useState<number | null>(null);
 
   const remaining = remainingText(minutesToChargeLimit);
   const range =
@@ -164,7 +169,7 @@ export function ChargeCard({
       {/* Charge limit reads as its own line, like app/charging.tsx's
           "Charge limit: 80%", rather than a caption under the track. */}
       <View style={styles.limitRow}>
-        <Text style={styles.limitLabel}>Charge limit: {Math.round(chargeLimitPercent)}%</Text>
+        <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
       </View>
 
       {/* `statusText` sits directly under the header and ABOVE the slider — my
@@ -191,7 +196,11 @@ export function ChargeCard({
           limitPercent={chargeLimitPercent}
           min={LIMIT_MIN}
           max={LIMIT_MAX}
-          onChange={onSetChargeLimit}
+          onChange={setLiveLimit}
+          onCommit={(v) => {
+            setLiveLimit(null);
+            onSetChargeLimit(v);
+          }}
           onSlidingChange={onSlidingChange}
         />
       </View>

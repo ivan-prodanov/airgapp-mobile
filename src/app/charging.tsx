@@ -33,6 +33,9 @@ export default function ChargingScreen() {
   }, [actions]);
   // While dragging the slider, freeze the page ScrollView so the drag adjusts the value instead of scrolling.
   const [sliding, setSliding] = useState(false);
+  // Label follows the finger; the command goes on release only (their
+  // onSliding / onSlidingComplete split).
+  const [liveLimit, setLiveLimit] = useState<number | null>(null);
   // Green fill = the CURRENT battery level; the draggable thumb = the charge limit (they're independent, like
   // the Tesla app — the fill is where the battery is now, the handle is where charging will stop).
 
@@ -82,7 +85,7 @@ export default function ChargingScreen() {
           scrollEnabled={!sliding}
         >
           <View style={styles.card}>
-            <Text style={styles.limitLabel}>Charge limit: {chargeLimit}%</Text>
+            <Text style={styles.limitLabel}>Charge limit: {liveLimit ?? chargeLimit}%</Text>
 
             {/* Extracted to ChargeLimitSlider so the home charge panel uses the
                 SAME control. `surfaceColor` is the card behind it — the detent
@@ -92,7 +95,11 @@ export default function ChargingScreen() {
               limitPercent={chargeLimit}
               min={LIMIT_MIN}
               max={LIMIT_MAX}
-                  onChange={(v) => actions.setChargeLimit(v)}
+                  onChange={setLiveLimit}
+                  onCommit={(v) => {
+                    setLiveLimit(null);
+                    actions.setChargeLimit(v);
+                  }}
               onSlidingChange={setSliding}
             />
 
