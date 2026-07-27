@@ -70,15 +70,27 @@ function generateDeviceKeys(): DeviceKeys {
 // pattern the browser reference's session-metadata rehydration used for
 // derived material.
 export async function loadOrCreateDeviceKeys(store: SecretStore): Promise<DeviceKeys> {
-  const existingHex = await store.getItem(DEVICE_KEY_STORAGE_KEY);
-  if (existingHex) {
-    const privateScalar = hexToBytes(existingHex);
-    const publicKeyRaw = p256.getPublicKey(privateScalar, false);
-    return { privateScalar, publicKeyRaw };
-  }
+  const existing = await loadDeviceKeys(store);
+  if (existing) return existing;
   const keys = generateDeviceKeys();
   await store.setItem(DEVICE_KEY_STORAGE_KEY, bytesToHex(keys.privateScalar));
   return keys;
+}
+
+// loadDeviceKeys reads the persisted keypair and returns null when there is
+// none. It NEVER creates one.
+//
+// Use this anywhere the question is "is this device enrolled?" rather than "give
+// me keys to work with". loadOrCreateDeviceKeys mints on an empty store, so
+// calling it to inspect state changes the state: a read-only diagnostic built on
+// it reported a key immediately after a full wipe — because it had just made one
+// (2026-07-27).
+export async function loadDeviceKeys(store: SecretStore): Promise<DeviceKeys | null> {
+  const existingHex = await store.getItem(DEVICE_KEY_STORAGE_KEY);
+  if (!existingHex) return null;
+  const privateScalar = hexToBytes(existingHex);
+  const publicKeyRaw = p256.getPublicKey(privateScalar, false);
+  return { privateScalar, publicKeyRaw };
 }
 
 // deleteDeviceKeys wipes the persisted keypair. Callers doing key rotation

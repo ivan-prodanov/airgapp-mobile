@@ -14,6 +14,7 @@ import {
   closeAllCachedSessions,
   closeCachedSession,
   loadOrCreateDeviceKeys,
+  loadDeviceKeys,
   deleteDeviceKeys,
   publicKeyBase64,
   deviceKeyFingerprint,
@@ -283,13 +284,16 @@ export default function CarLinkScreen() {
     // enrolled key still exists on the device and JS is simply holding a
     // different one, which is recoverable without re-enrolling.
     try {
-      const keys = await loadOrCreateDeviceKeys(store);
-      const jsFp = deviceKeyFingerprint(keys);
+      // loadDeviceKeys, NOT loadOrCreateDeviceKeys — the latter MINTS a key on an
+      // empty store, so using it here made this "read-only" probe report a key
+      // immediately after a wipe, because it had just created one.
+      const keys = await loadDeviceKeys(store);
+      const jsFp = keys ? deviceKeyFingerprint(keys) : null;
       const nativeFp = passiveEntryDeviceFingerprint();
-      out.push(`  device key fingerprint — JS: ${jsFp}`);
+      out.push(`  device key fingerprint — JS: ${jsFp ?? '(no key stored — nothing was minted by this probe)'}`);
       out.push(`  device key fingerprint — native responder: ${nativeFp || '(none set)'}`);
       out.push(
-        nativeFp && jsFp !== nativeFp
+        jsFp && nativeFp && jsFp !== nativeFp
           ? '  *** JS AND NATIVE HOLD DIFFERENT KEYS — if walk-up unlock still works, native has the enrolled one ***'
           : '  JS and native agree (or native has none)',
       );

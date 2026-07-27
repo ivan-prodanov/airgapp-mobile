@@ -28,7 +28,7 @@ export type { TransportCandidate } from './transportSelector';
 export { buildCommand } from './commands';
 export type { CarCommand, BuiltCommand } from './commands';
 
-export { loadOrCreateDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFingerprint } from './keystore';
+export { loadOrCreateDeviceKeys, loadDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFingerprint } from './keystore';
 
 export {
   loadPiConfig,

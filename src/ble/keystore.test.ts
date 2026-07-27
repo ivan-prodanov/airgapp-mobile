@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { p256 } from '@noble/curves/p256';
 
-import { loadOrCreateDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFingerprint } from './keystore';
+import { loadOrCreateDeviceKeys, loadDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFingerprint } from './keystore';
 import { base64ToBytes } from './bytes';
 import { createMemorySecretStore } from './__testutils__/memorySecretStore';
 
@@ -78,4 +78,25 @@ test('deleteDeviceKeys then load generates a NEW, different key', async () => {
   const second = await loadOrCreateDeviceKeys(store);
   assert.notDeepEqual(second.privateScalar, first.privateScalar);
   assert.notDeepEqual(second.publicKeyRaw, first.publicKeyRaw);
+});
+
+test('loadDeviceKeys returns null on an empty store and NEVER creates a key', async () => {
+  // The diagnostic bug this exists to prevent: a "read-only" probe built on
+  // loadOrCreateDeviceKeys reported a key immediately after a full wipe, because
+  // calling it had minted one. Inspecting state must not change it.
+  const store = createMemorySecretStore();
+
+  assert.equal(await loadDeviceKeys(store), null);
+  assert.equal(await loadDeviceKeys(store), null, 'still empty — nothing was written');
+  assert.equal(await store.getItem('ble.deviceKey.v1'), null, 'no key material persisted');
+});
+
+test('loadDeviceKeys returns the SAME key loadOrCreateDeviceKeys persisted', async () => {
+  const store = createMemorySecretStore();
+  const created = await loadOrCreateDeviceKeys(store);
+
+  const read = await loadDeviceKeys(store);
+
+  assert.deepEqual(read?.privateScalar, created.privateScalar);
+  assert.deepEqual(read?.publicKeyRaw, created.publicKeyRaw);
 });
