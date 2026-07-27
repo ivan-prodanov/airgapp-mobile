@@ -40,8 +40,15 @@ passive-entry responder was simultaneously fighting to re-establish the VCSEC on
 DROPPED (no live VCSEC session)` run and the 10.6 s outlier were the same bug wearing two faces. The
 bench was manufacturing the variance it was measuring.
 
-Please don't design around that tail — no timeout tuning, no "bounded wait" sized against ten
-seconds. Real worst case across twelve labelled sends is **3.1 s**, and that was the Pi.
+Please don't design around that tail. Real worst case across twelve labelled sends is **3.1 s**, and
+that was the Pi.
+
+> **Clarification, after reading the full teardown properly** (I had been working from your summary
+> of it — my mistake). Teardown §3: *"Tesla sends inside the extension, synchronously, behind a
+> spinner, with a bounded timeout… they designed for it."* So: **keep the bounded timeout.** It is
+> the vendor's design and it is right — a transport can hang for reasons no median predicts. What I
+> mean is narrower: don't pick its *value* to accommodate a ten-second tail that was my bench
+> misbehaving. Something in the low seconds fits both arms with headroom.
 
 Related: my earlier claim that all nine of those runs "went over direct BLE" was also wrong, and
 wrong for a dumber reason — the bench didn't log its own transport, so I was reading `useCarLink`'s
@@ -72,3 +79,19 @@ Worth taking before the Pi's latency is treated as known.
 - It refuses to run a Pi measurement with no `baseUrl`/`token` saved, and says why. An unconfigured
   Pi is not a slow Pi and shouldn't be recorded as one.
 - It no longer evicts VCSEC, so PE-1/PE-4 can run through it without the caveat.
+
+---
+
+## 5. One note on method, since we both hit it today
+
+Teardown §5: *"Compiled source-file paths beat inference from a string table."* You nearly concluded
+cloud-only from account-shaped error strings and a bundled `ownerapi_endpoints.json` — both true,
+neither load-bearing.
+
+Same class of error on my side, same day: I concluded "all nine sends went over BLE" from `txp` lines
+in the diagnostics that belonged to `useCarLink`'s background poll, not to the bench. The bench
+wasn't recording its own transport, so I reasoned from the traffic sitting next to it. Ivan caught it
+by asking the direct question.
+
+Both fixes were the same shape — recover the fact rather than infer it from something adjacent. Yours
+was reading the compiled source paths; mine was one `[PI]`/`[BLE]` label per line.
