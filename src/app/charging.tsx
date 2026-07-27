@@ -9,10 +9,8 @@ import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { AMP_MAX, AMP_MIN, LIMIT_MAX, LIMIT_MIN } from '@/state/fleet';
 import { useVehicle } from '@/state/VehicleProvider';
 import { ChargeLimitSlider } from '@/components/ChargeLimitSlider';
+import { AmpStepper } from '@/components/AmpStepper';
 
-const DIM = 'rgba(255,255,255,0.22)';
-// Detent "click" shared by the charge-limit stoppers and the current stepper, so both feel the same.
-const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
 // Charging screen — RN build of the Tesla Charging page. Full opaque page (no car behind, matching the app):
 // charge-limit slider + current stepper + charge-port control, then quick links. Payment/stats/badges/history
@@ -40,16 +38,6 @@ export default function ChargingScreen() {
   // the Tesla app — the fill is where the battery is now, the handle is where charging will stop).
 
 
-  const decAmps = () => {
-    if (amps <= AMP_MIN) return;
-    detentTick();
-    actions.setChargingAmps(amps - 1);
-  };
-  const incAmps = () => {
-    if (amps >= AMP_MAX) return;
-    detentTick();
-    actions.setChargingAmps(amps + 1);
-  };
 
   // Charge port: closed → "Open"; open & idle → "Close"; open & charging → "Unlock" (releases the latch).
   // Mirrors the `charging` control action's port logic.
@@ -103,25 +91,13 @@ export default function ChargingScreen() {
               onSlidingChange={setSliding}
             />
 
-            <View style={styles.amps}>
-              <Pressable hitSlop={14} onPress={decAmps} disabled={amps <= AMP_MIN}>
-                <SymbolView
-                  name="chevron.left"
-                  tintColor={amps <= AMP_MIN ? DIM : 'white'}
-                  size={22}
-                  weight="medium"
-                />
-              </Pressable>
-              <Text style={styles.ampsText}>{amps} A</Text>
-              <Pressable hitSlop={14} onPress={incAmps} disabled={amps >= AMP_MAX}>
-                <SymbolView
-                  name="chevron.right"
-                  tintColor={amps >= AMP_MAX ? DIM : 'white'}
-                  size={22}
-                  weight="medium"
-                />
-              </Pressable>
-            </View>
+            <AmpStepper
+              amps={amps}
+              min={AMP_MIN}
+              max={AMP_MAX}
+              onChange={() => {}}
+              onCommit={actions.setChargingAmps}
+            />
 
             <View style={styles.divider} />
 

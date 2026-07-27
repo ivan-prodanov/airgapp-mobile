@@ -5,6 +5,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
 import { ChargeLimitSlider } from './ChargeLimitSlider';
+import { AmpStepper } from './AmpStepper';
 
 // ChargeCard — the home-screen charging panel.
 //
@@ -208,15 +209,19 @@ export function ChargeCard({
       {/* Amperage. Ivan: "some of the states should have a way to change the
           amperage." Shown only with a cable in — the car rejects it otherwise,
           and a stepper that cannot work is worse than no stepper. */}
+      {/* Amperage. Same wide bar as app/charging.tsx, via the SAME component —
+          hold-to-repeat, and the chevron disappears at the bound rather than
+          dimming. Sits directly under the slider, where our charging page puts
+          it. Shown only with a cable in: the car rejects it otherwise, and a
+          control that cannot work is worse than none. */}
       {cableAttached ? (
-        <View style={styles.ampRow}>
-          <Text style={styles.ampLabel}>Amps</Text>
-          <View style={styles.ampStepper}>
-            <StepButton symbol="minus" disabled={chargingAmps <= ampMin} onPress={() => onSetAmps(chargingAmps - 1)} />
-            <Text style={styles.ampValue}>{chargingAmps} A</Text>
-            <StepButton symbol="plus" disabled={chargingAmps >= ampMax} onPress={() => onSetAmps(chargingAmps + 1)} />
-          </View>
-        </View>
+        <AmpStepper
+          amps={chargingAmps}
+          min={ampMin}
+          max={ampMax}
+          onChange={() => {}}
+          onCommit={onSetAmps}
+        />
       ) : null}
 
       {/* controlsDivider { height: 1, width: '100%' } then
@@ -239,22 +244,6 @@ export function ChargeCard({
         />
       </View>
     </View>
-  );
-}
-
-function StepButton({ symbol, disabled, onPress }: { symbol: SFSymbol; disabled: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      hitSlop={10}
-      disabled={disabled}
-      onPress={() => {
-        controlHaptic();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.stepButton, { opacity: disabled ? 0.3 : pressed ? 0.5 : 1 }]}
-    >
-      <SymbolView name={symbol} tintColor={TEXT} size={14} />
-    </Pressable>
   );
 }
 
@@ -362,33 +351,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
-  },
-  ampRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  ampStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  ampValue: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: TEXT,
-    minWidth: 44,
-    textAlign: 'center',
-  },
-  stepButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   controlButton: {
     flex: 1,
