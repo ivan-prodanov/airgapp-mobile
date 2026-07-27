@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -8,13 +8,11 @@ import { useRouter } from 'expo-router';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { AMP_MAX, AMP_MIN, LIMIT_MAX, LIMIT_MIN } from '@/state/fleet';
 import { useVehicle } from '@/state/VehicleProvider';
-
-// Detent "stoppers" on the track — the thumb snaps + ticks (haptic) at each, like the Tesla app.
-const DETENTS = [50, 60, 70, 80, 90, 100];
-// Magnetic pull: within this many % of a stopper the value sticks to it.
-const SNAP = 2;
+import { ChargeLimitSlider } from '@/components/ChargeLimitSlider';
 
 const DIM = 'rgba(255,255,255,0.22)';
+// The card the slider sits on — its breaks are punched in this colour.
+const CARD_BG = '#1F1F22';
 // Detent "click" shared by the charge-limit stoppers and the current stepper, so both feel the same.
 const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
@@ -39,63 +37,7 @@ export default function ChargingScreen() {
   const [sliding, setSliding] = useState(false);
   // Green fill = the CURRENT battery level; the draggable thumb = the charge limit (they're independent, like
   // the Tesla app — the fill is where the battery is now, the handle is where charging will stop).
-  const batteryFrac = Math.max(0, Math.min(1, (state.batteryLevel ?? 0) / LIMIT_MAX));
-  const limitFrac = chargeLimit / LIMIT_MAX;
 
-  // Custom slider (no slider dep). Drive it from the touch's ABSOLUTE pageX minus the track's measured
-  // window-left — NOT the target-relative locationX. locationX is reported relative to whatever view sits under
-  // the finger, so once the thumb slid under the finger the value oscillated ("flipping left/right"). pageX is
-  // target-independent, and the thumb/fill are pointerEvents="none" so they never become the touch target.
-  const trackRef = useRef<View>(null);
-  const trackW = useRef(0);
-  const trackLeft = useRef(0);
-  const lastValue = useRef(state.chargeLimitPercent); // detects detent crossings between drag samples
-  const measureTrack = () => {
-    trackRef.current?.measureInWindow((x, _y, w) => {
-      if (w > 0) {
-        trackLeft.current = x;
-        trackW.current = w;
-      }
-    });
-  };
-  const applyLimitFromPageX = (pageX: number) => {
-    const w = trackW.current;
-    if (w <= 0) return;
-    const frac = Math.max(0, Math.min(1, (pageX - trackLeft.current) / w)); // 0..1 across the 0–100% track
-    // Track spans 0–100%, but the charge limit can't be set below 50%.
-    let value = Math.max(LIMIT_MIN, Math.min(LIMIT_MAX, Math.round(frac * LIMIT_MAX)));
-    // Magnetic detents: within SNAP% of a stopper, stick to it (you feel it pull to 50/60/70/80/90/100).
-    for (const d of DETENTS) {
-      if (Math.abs(value - d) <= SNAP) {
-        value = d;
-        break;
-      }
-    }
-    const prev = lastValue.current;
-    if (value === prev) return;
-    // Strong tick whenever the drag lands on / crosses a stopper.
-    if (DETENTS.some((d) => (prev < d && value >= d) || (prev > d && value <= d))) {
-      detentTick();
-    }
-    lastValue.current = value;
-    actionsRef.current.setChargeLimit(value);
-  };
-  const limitPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      // Never yield the touch back to the ScrollView once the slider owns it.
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (e) => {
-        measureTrack();
-        setSliding(true);
-        applyLimitFromPageX(e.nativeEvent.pageX);
-      },
-      onPanResponderMove: (e) => applyLimitFromPageX(e.nativeEvent.pageX),
-      onPanResponderRelease: () => setSliding(false),
-      onPanResponderTerminate: () => setSliding(false),
-    }),
-  ).current;
 
   const decAmps = () => {
     if (amps <= AMP_MIN) return;
@@ -144,18 +86,18 @@ export default function ChargingScreen() {
           <View style={styles.card}>
             <Text style={styles.limitLabel}>Charge limit: {chargeLimit}%</Text>
 
-            <View style={styles.sliderRow} {...limitPan.panHandlers}>
-              <View ref={trackRef} style={styles.track} onLayout={measureTrack}>
-                {/* Green fill = current battery level (not the limit). */}
-                <View pointerEvents="none" style={[styles.fill, { width: `${batteryFrac * 100}%` }]} />
-                {/* Detent stoppers at 50/60/70/80/90 (100 is the track's end). */}
-                {DETENTS.filter((d) => d < LIMIT_MAX).map((d) => (
-                  <View key={d} pointerEvents="none" style={[styles.tick, { left: `${d}%` }]} />
-                ))}
-                {/* White thumb = charge limit. */}
-                <View pointerEvents="none" style={[styles.thumb, { left: `${limitFrac * 100}%` }]} />
-              </View>
-            </View>
+            {/* Extracted to ChargeLimitSlider so the home charge panel uses the
+                SAME control. `surfaceColor` is the card behind it — the detent
+                breaks are punched in that colour. */}
+            <ChargeLimitSlider
+              batteryPercent={state.batteryLevel}
+              limitPercent={chargeLimit}
+              min={LIMIT_MIN}
+              max={LIMIT_MAX}
+              surfaceColor={CARD_BG}
+              onChange={(v) => actions.setChargeLimit(v)}
+              onSlidingChange={setSliding}
+            />
 
             <View style={styles.amps}>
               <Pressable hitSlop={14} onPress={decAmps} disabled={amps <= AMP_MIN}>
@@ -280,47 +222,11 @@ const styles = StyleSheet.create({
     color: 'white',
     marginBottom: 4,
   },
-  sliderRow: {
-    paddingVertical: 20,
-  },
-  track: {
-    width: '100%',
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  fill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    borderRadius: 3,
-    backgroundColor: '#34C759',
-  },
-  // Detent "stopper" — a thin vertical line drawn across the track (protrudes slightly so it reads as a "|"
+
+
   // mark, not a gap in the bar).
-  tick: {
-    position: 'absolute',
-    top: -3,
-    bottom: -3,
-    width: 2,
-    marginLeft: -1,
-    borderRadius: 1,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-  },
-  thumb: {
-    position: 'absolute',
-    top: -9.5,
-    marginLeft: -12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-  },
+
+
   amps: {
     flexDirection: 'row',
     alignItems: 'center',

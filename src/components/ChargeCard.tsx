@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
+import { ChargeLimitSlider } from './ChargeLimitSlider';
 
 // ChargeCard — the home-screen charging panel.
 //
@@ -120,52 +120,6 @@ export function ChargeCard({
   onStartStopCharging,
   onToggleChargePort,
 }: ChargeCardProps) {
-  // Local slider position so the thumb tracks the finger. It is NOT the source
-  // of truth — the car is — so it drops back to the car's value the moment the
-  // car reports a new limit.
-  //
-  // Re-synced with React's documented "adjust state when a prop changes"
-  // pattern (compare against the previous value DURING render) rather than an
-  // effect. An effect would commit a render with the stale thumb and then a
-  // second one to correct it, which on a slider is a visible snap-back.
-  const [dragPercent, setDragPercent] = useState<number | null>(null);
-  const [trackWidth, setTrackWidth] = useState(0);
-  const [prevLimit, setPrevLimit] = useState(chargeLimitPercent);
-  if (chargeLimitPercent !== prevLimit) {
-    setPrevLimit(chargeLimitPercent);
-    setDragPercent(null);
-  }
-  const shown = dragPercent ?? chargeLimitPercent;
-
-  // PanResponder, not react-native-gesture-handler: RNGH is INERT inside the
-  // native tab container this screen lives in — a known trap in this project,
-  // and the reason every other drag here is a PanResponder too.
-  //
-  // Rebuilt when the measured width changes, since the x -> percent mapping
-  // depends on it; useMemo rather than a ref so nothing reads `.current` during
-  // render.
-  const pan = useMemo(() => {
-    const fromX = (x: number): number => {
-      const w = trackWidth || 1;
-      return LIMIT_MIN + (Math.max(0, Math.min(w, x)) / w) * (LIMIT_MAX - LIMIT_MIN);
-    };
-    const commit = (pct: number) => {
-      const clamped = Math.max(LIMIT_MIN, Math.min(LIMIT_MAX, Math.round(pct)));
-      setDragPercent(clamped);
-      onSetChargeLimit(clamped);
-    };
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => {
-        controlHaptic();
-        setDragPercent(Math.round(fromX(e.nativeEvent.locationX)));
-      },
-      onPanResponderMove: (e) => setDragPercent(Math.round(fromX(e.nativeEvent.locationX))),
-      onPanResponderRelease: (e) => commit(fromX(e.nativeEvent.locationX)),
-      onPanResponderTerminate: () => setDragPercent(null),
-    });
-  }, [trackWidth, onSetChargeLimit]);
 
   const remaining = remainingText(minutesToChargeLimit);
   const range =
@@ -204,6 +158,12 @@ export function ChargeCard({
         </Text>
       </View>
 
+      {/* Charge limit reads as its own line, like app/charging.tsx's
+          "Charge limit: 80%", rather than a caption under the track. */}
+      <View style={styles.limitRow}>
+        <Text style={styles.limitLabel}>Charge limit: {Math.round(chargeLimitPercent)}%</Text>
+      </View>
+
       {/* `statusText` sits directly under the header and ABOVE the slider — my
           first cut had it after the slider, which is what Ivan flagged as "not
           on the right position". Omitted entirely when the car reports nothing,
@@ -220,23 +180,17 @@ export function ChargeCard({
           and a defaultChargeToMaxMarker. We have one SoC, so one fill — the
           nominal/usable split needs fields we do not read yet. */}
       <View style={styles.sliderContainer}>
-        <View style={styles.track} onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)} {...pan.panHandlers}>
-          <View style={styles.trackBase} />
-          <View
-            style={[
-              styles.trackFill,
-              {
-                width: `${Math.max(0, Math.min(100, (((batteryLevel ?? 0) - LIMIT_MIN) / (LIMIT_MAX - LIMIT_MIN)) * 100))}%`,
-                backgroundColor: charging ? CHARGING_GREEN : TEXT_LIGHT,
-              },
-            ]}
-          />
-          <View style={[styles.thumb, { left: `${((shown - LIMIT_MIN) / (LIMIT_MAX - LIMIT_MIN)) * 100}%` }]} />
-        </View>
-        <View style={styles.sliderLabels}>
-          <Text style={styles.sliderCaption}>Charge Limit</Text>
-          <Text style={styles.emphasizedChargeLimits}>{Math.round(shown)}%</Text>
-        </View>
+        {/* The SAME control as app/charging.tsx — normal/changing states, the
+            detent breaks that appear only while changing, and the growing thumb.
+            Ivan: use ours and polish it, not a second one. */}
+        <ChargeLimitSlider
+          batteryPercent={batteryLevel}
+          limitPercent={chargeLimitPercent}
+          min={LIMIT_MIN}
+          max={LIMIT_MAX}
+          surfaceColor={PANEL_BG}
+          onChange={onSetChargeLimit}
+        />
       </View>
 
       {/* Amperage. Ivan: "some of the states should have a way to change the
@@ -244,7 +198,7 @@ export function ChargeCard({
           and a stepper that cannot work is worse than no stepper. */}
       {cableAttached ? (
         <View style={styles.ampRow}>
-          <Text style={styles.sliderCaption}>Amps</Text>
+          <Text style={styles.ampLabel}>Amps</Text>
           <View style={styles.ampStepper}>
             <StepButton symbol="minus" disabled={chargingAmps <= ampMin} onPress={() => onSetAmps(chargingAmps - 1)} />
             <Text style={styles.ampValue}>{chargingAmps} A</Text>
@@ -356,54 +310,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     marginVertical: 2,
   },
-  track: {
-    height: 28,
-    justifyContent: 'center',
-  },
-  // Colors.chargeSliderUnfinishedTrack — the unfilled remainder.
-  trackBase: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#3D3D3D',
-  },
-  trackFill: {
-    position: 'absolute',
-    left: 0,
-    height: 6,
-    borderRadius: 3,
-  },
-  thumb: {
-    position: 'absolute',
-    width: 14,
-    height: 28,
-    marginLeft: -7,
-    borderRadius: 4,
-    backgroundColor: TEXT,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  sliderCaption: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.1,
-    color: TEXT_LIGHT,
-  },
-  // `emphasizedChargeLimits` — verbatim {fontSize: 16, lineHeight: 20}.
-  emphasizedChargeLimits: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 16,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: TEXT,
-  },
-  // `statusText` — under the header, above the slider.
+
+
+
+
   statusText: {
     fontFamily: TeslaFonts.medium,
     fontSize: 12,
@@ -423,6 +333,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-evenly',
     width: '100%',
+  },
+  limitRow: {
+    flexDirection: 'row',
+  },
+  limitLabel: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT,
+  },
+  ampLabel: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
+    color: TEXT_LIGHT,
   },
   ampRow: {
     flexDirection: 'row',

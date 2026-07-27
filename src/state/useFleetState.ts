@@ -70,10 +70,31 @@ export function useFleetState(): {
   // applyTelemetry; the guard needs the result) and is read only inside the
   // async poll, well after it's populated.
   const activeIsLiveRef = useRef(false);
+  // An optimistic play/pause, and how long it wins for. ONE FIELD, not the whole
+  // `media` key — the earlier attempt stamped `media` with the 30s intent grace
+  // and froze the entire card (title included) for half a minute.
+  //
+  // Needed because the read that follows a transport command can still report
+  // the OLD status: the car takes a moment to act, so a read landing inside that
+  // window flips the glyph back and the next one flips it again. Ivan: "pressing
+  // pause/play is finicky". 4s covers a ~3.75s rotation plus the command's own
+  // round trip; after that the car is authoritative, whatever it says.
+  const pendingPlayback = useRef<{ status: number; until: number } | null>(null);
   const applyTelemetry = useCallback(
     (patch: Partial<VehicleViewState>) => {
       if (!activeIsLiveRef.current) return;
-      applyActive((s) => ({ ...s, ...patch }));
+      const pending = pendingPlayback.current;
+      let next = patch;
+      if (pending && patch.media) {
+        if (Date.now() >= pending.until) {
+          pendingPlayback.current = null;
+        } else if (patch.media.playbackStatus !== pending.status) {
+          // Everything else in the patch (title, artist, elapsed) applies
+          // normally — only the contested field is held.
+          next = { ...patch, media: { ...patch.media, playbackStatus: pending.status } };
+        }
+      }
+      applyActive((s) => ({ ...s, ...next }));
     },
     [applyActive],
   );
@@ -184,6 +205,7 @@ export function useFleetState(): {
         const optimistic = playing ? 2 : 1;
         const restore = prev.playbackStatus;
         applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: optimistic } } : s));
+        pendingPlayback.current = { status: optimistic, until: Date.now() + 4000 };
         // ⚠️ NO affected keys, deliberately — and this is a FIX, not an omission.
         //
         // Passing ['media'] stamped the key with the 30s intent grace, and
@@ -199,9 +221,12 @@ export function useFleetState(): {
         // the optimistic glyph is corrected almost immediately — and if the car
         // REFUSED the command, being corrected is the right outcome, not
         // something to suppress for half a minute.
-        carLink.dispatch({ type: 'media', action }, () =>
-          applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: restore } } : s)),
-        );
+        carLink.dispatch({ type: 'media', action }, () => {
+          // The command failed: drop the hold immediately so the car's next read
+          // is believed rather than suppressed for the rest of the window.
+          pendingPlayback.current = null;
+          applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: restore } } : s));
+        });
         return;
       }
       carLink.dispatch({ type: 'media', action }, () => {});
