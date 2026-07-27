@@ -317,6 +317,11 @@ export interface UseCarLinkOptions {
   getActiveState: () => VehicleViewState;
 }
 
+// Commands a CONTINUOUS control emits — a drag or a held stepper fires a stream
+// of these, so they must not each earn a confirmation haptic. The control that
+// produced them is responsible for its own feel.
+const CONTINUOUS_CMD_TYPES = new Set(['setChargeLimit', 'setChargingAmps', 'setClimateTemp']);
+
 export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }: UseCarLinkOptions): CarLink {
   const enabled = isCarLinkEnabled();
 
@@ -952,7 +957,17 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           if (outcome.ok) {
             // Light confirmation — matches the app's impact/selection-only
             // haptic vocabulary (no notification feedback).
-            if (AppState.currentState !== 'background') Haptics.selectionAsync().catch(() => {});
+            //
+            // NOT for continuously-driven commands. A slider drag dispatches one
+            // setChargeLimit per 1%, so confirming each of them fired a little
+            // selection tick the whole way across the track — which is what Ivan
+            // felt as "haptics on every %", on top of the detent impact. The
+            // control already gave feedback at INPUT time (the detent tick, the
+            // stepper press); confirming every resulting command is a second
+            // haptic for one user action.
+            if (AppState.currentState !== 'background' && !CONTINUOUS_CMD_TYPES.has(cmd.type)) {
+              Haptics.selectionAsync().catch(() => {});
+            }
           } else if (outcome.kind === 'cancelled') {
             // C3: a NEWER command for this lane superseded us, so we stopped
             // retrying. The user caused this and the newer optimistic value
