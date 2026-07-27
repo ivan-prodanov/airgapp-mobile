@@ -48,6 +48,17 @@ export function useOutboxDrain(): void {
     try {
       const raw = await SharedIntake.readOutbox();
       let items = parseOutbox(raw);
+
+      // Log EVERY pass, including the empty one.
+      //
+      // This line exists because its absence cost an evening on 2026-07-27: the
+      // empty case returned silently, so a share that never reached the queue and
+      // a drain that never ran produced byte-identical logs — no lines at all —
+      // and neither could be ruled out without a deploy. `chars` is the raw file
+      // length, so a non-empty file that parses to zero items (the shape drifting
+      // between Swift and TS) is visible as 'chars>2, items:0' rather than
+      // looking like an empty queue.
+      logi('outbox', 'pass', { chars: raw.length, items: items.length, linked });
       if (items.length === 0) return;
 
       const plan = planDrain(items, Date.now());

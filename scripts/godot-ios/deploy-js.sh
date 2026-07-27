@@ -82,7 +82,28 @@ codesign -f -s "$ID" --preserve-metadata=entitlements,identifier,flags "$APP" >/
 echo "  re-signed with $ID"
 
 echo "→ [4/4] installing + launching on device"
-xcrun devicectl device install app --device "$DEVICE" "$APP" 2>&1 | grep -iE "App installed|error" | tail -1
+# Check the INSTALL's own exit status, not the pipeline's.
+#
+# This used to be `install … | grep …`, whose status is grep's, so a failed
+# install printed its error and the script still finished with "✓ done". On
+# 2026-07-27 that reported a successful deploy of a build that never reached the
+# phone — and "I deployed it, nothing happened" then looked like a code bug.
+# A deploy that did not install must not exit 0.
+INSTALL_LOG="$(xcrun devicectl device install app --device "$DEVICE" "$APP" 2>&1)" || {
+  echo "$INSTALL_LOG" | grep -iE "error" | tail -2
+  echo "ERROR: install FAILED — nothing new is on the phone." >&2
+  case "$INSTALL_LOG" in
+    *"unable to locate a device"*|*"tunnel"*)
+      echo "  The device is unreachable. Unlock the phone, and make sure it is on" >&2
+      echo "  the same network or plugged in — 'xcrun devicectl list devices' should" >&2
+      echo "  show it as 'available' rather than 'unavailable'." >&2 ;;
+    *"expired"*|*0xe8008011*|*"error 13"*)
+      echo "  The free 7-day provisioning profile expired — see AGENTS.md; rebuild" >&2
+      echo "  with -allowProvisioningUpdates to renew it." >&2 ;;
+  esac
+  exit 1
+}
+echo "$INSTALL_LOG" | grep -iE "App installed|error" | tail -1
 xcrun devicectl device process launch --terminate-existing --device "$DEVICE" "$BUNDLE_ID" 2>&1 \
   | grep -iE "Launched|Locked|error" | head -1
 
