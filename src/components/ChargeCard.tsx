@@ -55,8 +55,12 @@ export interface ChargeCardProps {
   minutesToChargeLimit: number | null;
   chargerPowerKw: number | null;
   chargeRateMph: number | null;
+  chargingAmps: number;
+  ampMin: number;
+  ampMax: number;
   useMiles: boolean;
   onSetChargeLimit: (percent: number) => void;
+  onSetAmps: (amps: number) => void;
   onStartStopCharging: (start: boolean) => void;
   onToggleChargePort: (open: boolean) => void;
 }
@@ -108,7 +112,11 @@ export function ChargeCard({
   chargerPowerKw,
   chargeRateMph,
   useMiles,
+  chargingAmps,
+  ampMin,
+  ampMax,
   onSetChargeLimit,
+  onSetAmps,
   onStartStopCharging,
   onToggleChargePort,
 }: ChargeCardProps) {
@@ -176,9 +184,7 @@ export function ChargeCard({
 
   return (
     <View style={styles.card}>
-      {/* Headline + the live numbers. Colour follows the state: their palette
-          uses batteryCharging (#00E286) while current flows, textColorWarning
-          for a stopped/no-power charge, and plain text otherwise. */}
+      {/* headerContainer { flexDirection: 'row' } + headerMain { flex: 1 } */}
       <View style={styles.header}>
         <Text
           style={[
@@ -198,66 +204,91 @@ export function ChargeCard({
         </Text>
       </View>
 
-      {/* Charge-limit slider. Their `sliderSnapPoints` land on whole percent;
-          the fill shows the CURRENT charge and the thumb the LIMIT, which is why
-          the two are drawn from different values rather than one. */}
-      <View style={styles.sliderBlock}>
-        <View
-          style={styles.track}
-          onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-          {...pan.panHandlers}
-        >
-          <View
-            style={[
-              styles.trackFill,
-              {
-                width: `${Math.max(0, Math.min(100, ((batteryLevel ?? 0) - LIMIT_MIN) / (LIMIT_MAX - LIMIT_MIN) * 100))}%`,
-                backgroundColor: charging ? CHARGING_GREEN : TEXT_LIGHT,
-              },
-            ]}
-          />
-          <View
-            style={[
-              styles.thumb,
-              { left: `${((shown - LIMIT_MIN) / (LIMIT_MAX - LIMIT_MIN)) * 100}%` },
-            ]}
-          />
-        </View>
-        <View style={styles.sliderLabels}>
-          <Text style={styles.sliderCaption}>Charge Limit</Text>
-          <Text style={styles.sliderValue}>{Math.round(shown)}%</Text>
-        </View>
-      </View>
-
-      {/* Their `scheduledChargingText` slot. We have no scheduled-charging read,
-          so this line carries the live facts instead — time remaining and rate —
-          and disappears entirely when the car reports none. No placeholder. */}
+      {/* `statusText` sits directly under the header and ABOVE the slider — my
+          first cut had it after the slider, which is what Ivan flagged as "not
+          on the right position". Omitted entirely when the car reports nothing,
+          so the layout does not keep a blank line. */}
       {remaining || rate || addedRate ? (
-        <Text style={styles.detail} numberOfLines={1}>
+        <Text style={styles.statusText} numberOfLines={1}>
           {[remaining, rate, addedRate].filter(Boolean).join('  ·  ')}
         </Text>
       ) : null}
 
-      {/* ControlButtons — their StartStopChargingButton + OpenCloseChargePortButton. */}
+      {/* sliderContainer + targetSlider { overflow:'visible', width:'100%' }.
+          Their slider takes usablePercentageCharged AND nominalPercentageCharged
+          as SEPARATE fills, `target` as the thumb, plus snapPercentageLocations
+          and a defaultChargeToMaxMarker. We have one SoC, so one fill — the
+          nominal/usable split needs fields we do not read yet. */}
+      <View style={styles.sliderContainer}>
+        <View style={styles.track} onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)} {...pan.panHandlers}>
+          <View style={styles.trackBase} />
+          <View
+            style={[
+              styles.trackFill,
+              {
+                width: `${Math.max(0, Math.min(100, (((batteryLevel ?? 0) - LIMIT_MIN) / (LIMIT_MAX - LIMIT_MIN)) * 100))}%`,
+                backgroundColor: charging ? CHARGING_GREEN : TEXT_LIGHT,
+              },
+            ]}
+          />
+          <View style={[styles.thumb, { left: `${((shown - LIMIT_MIN) / (LIMIT_MAX - LIMIT_MIN)) * 100}%` }]} />
+        </View>
+        <View style={styles.sliderLabels}>
+          <Text style={styles.sliderCaption}>Charge Limit</Text>
+          <Text style={styles.emphasizedChargeLimits}>{Math.round(shown)}%</Text>
+        </View>
+      </View>
+
+      {/* Amperage. Ivan: "some of the states should have a way to change the
+          amperage." Shown only with a cable in — the car rejects it otherwise,
+          and a stepper that cannot work is worse than no stepper. */}
+      {cableAttached ? (
+        <View style={styles.ampRow}>
+          <Text style={styles.sliderCaption}>Amps</Text>
+          <View style={styles.ampStepper}>
+            <StepButton symbol="minus" disabled={chargingAmps <= ampMin} onPress={() => onSetAmps(chargingAmps - 1)} />
+            <Text style={styles.ampValue}>{chargingAmps} A</Text>
+            <StepButton symbol="plus" disabled={chargingAmps >= ampMax} onPress={() => onSetAmps(chargingAmps + 1)} />
+          </View>
+        </View>
+      ) : null}
+
+      {/* controlsDivider { height: 1, width: '100%' } then
+          controlButtonContainer { flexDirection:'row', justifyContent:'space-evenly' }.
+          My first cut had a short vertical rule BETWEEN the buttons; theirs is a
+          full-width horizontal rule ABOVE them. */}
+      <View style={styles.controlsDivider} />
       <View style={styles.controls}>
         <ChargeButton
           symbol={charging ? 'stop.fill' : 'bolt.fill'}
           label={charging ? 'Stop' : 'Start'}
-          // The car only takes start/stop with a cable in. Disabled rather than
-          // hidden, so the row does not reflow when you plug in.
           disabled={!cableAttached}
           onPress={() => onStartStopCharging(!charging)}
         />
-        <View style={styles.controlDivider} />
         <ChargeButton
           symbol={chargePortOpen ? 'xmark' : 'chevron.up'}
           label={chargePortOpen ? 'Close Port' : 'Open Port'}
-          // Closing the port with the cable still latched is refused by the car.
           disabled={chargePortOpen && cableAttached}
           onPress={() => onToggleChargePort(!chargePortOpen)}
         />
       </View>
     </View>
+  );
+}
+
+function StepButton({ symbol, disabled, onPress }: { symbol: SFSymbol; disabled: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      hitSlop={10}
+      disabled={disabled}
+      onPress={() => {
+        controlHaptic();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.stepButton, { opacity: disabled ? 0.3 : pressed ? 0.5 : 1 }]}
+    >
+      <SymbolView name={symbol} tintColor={TEXT} size={14} />
+    </Pressable>
   );
 }
 
@@ -321,12 +352,22 @@ const styles = StyleSheet.create({
     color: TEXT_LIGHT,
     marginLeft: 12,
   },
-  sliderBlock: {
-    marginVertical: 4,
+  sliderContainer: {
+    alignSelf: 'stretch',
+    marginVertical: 2,
   },
   track: {
     height: 28,
     justifyContent: 'center',
+  },
+  // Colors.chargeSliderUnfinishedTrack — the unfilled remainder.
+  trackBase: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#3D3D3D',
   },
   trackFill: {
     position: 'absolute',
@@ -354,24 +395,61 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
   },
-  sliderValue: {
+  // `emphasizedChargeLimits` — verbatim {fontSize: 16, lineHeight: 20}.
+  emphasizedChargeLimits: {
     fontFamily: TeslaFonts.medium,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 16,
+    lineHeight: 20,
     letterSpacing: 0.1,
     color: TEXT,
   },
-  // CaptionLabel — 12/16/0.1 in textColorLight, same as the tyre subtitle.
-  detail: {
+  // `statusText` — under the header, above the slider.
+  statusText: {
     fontFamily: TeslaFonts.medium,
     fontSize: 12,
     lineHeight: 16,
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
   },
+  // controlsDivider { backgroundColor, height: 1, width: '100%' }
+  controlsDivider: {
+    height: 1,
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  // controlButtonContainer — space-evenly, not a divider between two halves.
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-evenly',
+    width: '100%',
+  },
+  ampRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ampStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  ampValue: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT,
+    minWidth: 44,
+    textAlign: 'center',
+  },
+  stepButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   controlButton: {
     flex: 1,
@@ -380,11 +458,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     height: 44,
-  },
-  controlDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   controlLabel: {
     fontFamily: TeslaFonts.medium,

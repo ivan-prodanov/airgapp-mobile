@@ -19,9 +19,22 @@ import { appendDiagnostic } from './diagnosticFile';
 const FLUSH_MS = 4000;
 const MAX_BUFFERED = 200;
 
-// Categories worth persisting. Deliberately narrow: the point is diagnosing the
-// link, not mirroring every event into a file we then have to read.
-const CATEGORIES = new Set(['poll', 'ble', 'txp', 'cmd', 'stream', 'lifecycle']);
+// Everything except debug-level noise is persisted.
+//
+// This was an ALLOW-list of categories, and on 2026-07-27 it silently swallowed
+// every 'outbox' line — seven call sites, none of which could ever reach the
+// file. Hours went into "the share queue does nothing" while reading a log that
+// structurally could not have shown it working, and the absence of lines was
+// read as evidence the code never ran.
+//
+// The list was not even earning its keep as a volume guard: 'poll', the ~1 Hz
+// category, was IN it. Batching plus MAX_BUFFERED is what actually bounds the
+// cost, and neither depends on the category.
+//
+// So a category is visible by default and one that proves too chatty goes in
+// NOISY. A diagnostic you have to remember to enable is one you will not have on
+// the day you need it.
+const NOISY = new Set<string>([]);
 
 function format(e: LogEntry): string {
   const data = e.data ? ` ${JSON.stringify(e.data)}` : '';
@@ -44,8 +57,8 @@ function flush(): void {
 export function startLogFileSink(): () => void {
   if (stop) return stop;
   const unsub = subscribe((e) => {
-    if (!CATEGORIES.has(e.cat) && e.level === 'debug') return;
-    if (!CATEGORIES.has(e.cat)) return;
+    if (e.level === 'debug') return;
+    if (NOISY.has(e.cat)) return;
     buffer.push(format(e));
     // Hard cap: a runaway loop must not grow the buffer without bound.
     if (buffer.length >= MAX_BUFFERED) {

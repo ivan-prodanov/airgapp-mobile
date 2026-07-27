@@ -19,6 +19,7 @@ import type { GestureResponderHandlers } from 'react-native';
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
 import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
+import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
@@ -369,6 +370,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               minutesToChargeLimit={state.minutesToChargeLimit}
               chargerPowerKw={state.chargerPowerKw}
               chargeRateMph={state.chargeRateMph}
+              chargingAmps={state.chargingAmps}
+              ampMin={AMP_MIN}
+              ampMax={AMP_MAX}
+              onSetAmps={(a) => actions.patch({ chargingAmps: a })}
               useMiles={false}
               onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
               // All three go through actions.patch, not a bespoke sender: the
