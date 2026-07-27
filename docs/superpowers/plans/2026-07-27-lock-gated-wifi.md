@@ -1650,48 +1650,53 @@ Expected: PASS all seven tests, no regressions.
 
 - [ ] **Step 7: On-Pi verification (do not skip — this is the whole point)**
 
-Deploy, then prove each claim against the real kernel. **The car should be present and associated for checks 3–5.**
+Split by what can actually run at this commit. **Nothing calls `SetEnabled` yet**, so any check that needs the gate to *fire* belongs to Task 8; the checks here prove the ruleset is the shape `Verify` expects, which is the failure mode that would otherwise surface at 2am as "the WiFi never comes back".
+
+**Runnable now (Phase 1):**
 
 ```bash
-# 1. The interception rule is what we think it is.
-sudo nft list chain ip nat prerouting | grep 'redirect to'
-sudo nft list chain inet filter forward | grep 'policy drop'
+# 0. Pin the renderer. Verify parses nft's OWN re-render, not our generated
+#    file — if this nft version spells the rule differently, Verify fails
+#    permanently and the feature bricks while every unit test stays green.
+sudo nft --version
+
+# 1. THE HIGH-VALUE CHECK: the exact strings Verify matches must be present.
+#    Substitute the car's MAC (lowercase) and the configured SNIProxyPort.
+sudo nft -nn list chain ip nat prerouting | grep -F "$(printf '%s' "<car-mac>" | tr 'A-Z' 'a-z')" | grep -F 'redirect to :8444'
+sudo nft -nn list chain inet filter forward | grep -F 'policy drop'
+#    Both MUST print a line. An empty result means Verify will refuse forever.
 
 # 2. Atomicity: a reload must never leave an observable gap.
-sudo systemctl restart netfilterd && sudo nft list chain ip nat prerouting | grep 'redirect to'
+sudo systemctl restart netfilterd && sudo nft -nn list chain ip nat prerouting | grep -F 'redirect to :8444'
 
-# 3. THE LEAK TEST. Drop only the nat table — proxy healthy, redirect gone.
-#    This is the exact bypass shape, and it must NOT reach the internet.
+# 3. THE LEAK TEST (informational, settles an open question). Drop only the nat
+#    table — SNI proxy healthy, redirect gone. This is the exact bypass shape.
 sudo nft delete table ip nat
-#    From the car's browser, load any non-allow-listed HTTPS site.
-#    Watch what happens on the wire:
+#    From the car's browser load any non-allow-listed HTTPS site, and watch:
 sudo tcpdump -ni eth1 'tcp port 443' -c 20
-#    If you see the car's traffic egressing, the modem is NATing for us and an
-#    empty ruleset IS reachable — record that, it settles the open question.
-sudo nft -f /etc/nftables.conf   # restore immediately
+#    Traffic egressing means the LTE modem NATs for us and an empty ruleset IS
+#    reachable. Record the answer either way.
+sudo nft -f /etc/nftables.conf   # restore IMMEDIATELY
 
-# 4. The gate refuses. Flush the ruleset, then ask for the AP.
-sudo nft flush ruleset
-curl -sk -X POST https://localhost:8443/api/ble/lock-watch/override \
-  -H 'Content-Type: application/json' -d '{"mode":"force-on"}'
-systemctl is-active hostapd    # MUST print "inactive"
-journalctl -u netfilterd -n 5  # MUST show "REFUSING to raise the AP"
-sudo nft -f /etc/nftables.conf && systemctl is-active hostapd   # recovery
-
-# 5. The AP cycle does not break the LAN. nf-wlan0 is oneshot/RemainAfterExit,
+# 4. The AP cycle must not break the LAN. nf-wlan0 is oneshot/RemainAfterExit
 #    so it will NOT re-run — if stopping hostapd drops wlan0's address, dnsmasq
 #    cannot lease on the way back up and the car gets no IP.
 sudo systemctl stop hostapd && sleep 5 && sudo systemctl start hostapd
 ip addr show wlan0 | grep 192.168.4.1   # MUST still be there
 systemctl is-active dnsmasq             # MUST be active
-#    Then confirm the car re-associates AND gets a lease:
-journalctl -u dnsmasq -n 20 | grep DHCPACK
+journalctl -u dnsmasq -n 20 | grep DHCPACK   # car must re-lease
 ```
 
 **Gates:**
-- Check 4 must leave hostapd **inactive** with the refusal logged. If hostapd starts, **stop — the gate does not work and Phase 2 must not ship.**
-- Check 5 must show wlan0 keeping its address and the car getting a `DHCPACK`. If it does not, `nf-wlan0.service` needs re-running as part of the AP-up path, and that belongs in `SetEnabled` before this task is done.
-- Check 3 is informational but **record the answer** — it determines whether an empty ruleset is a real-world leak or merely a broken car.
+- Check 1 must print both lines. If either is empty, **stop** — `Verify` cannot match this nft version's output, and Task 8 would ship a gate that refuses forever.
+- Check 4 must show wlan0 keeping its address and the car getting a `DHCPACK`. If not, `nf-wlan0.service` has to be re-run as part of the AP-up path, and that belongs in `SetEnabled` before Task 8.
+- Check 3 is informational, but **record the answer** — it decides whether an empty ruleset is a real leak or merely a broken car.
+
+**Deferred to Task 8 (needs a caller for the gate to fire):**
+
+- Gate refuses over a flushed ruleset: `sudo nft flush ruleset`, ask for the AP, `systemctl is-active hostapd` MUST print `inactive` and the journal MUST show `REFUSING to raise the AP`.
+- Gate refuses for the RIGHT REASON on the real bypass shape: `sudo nft delete table ip nat` (leaving `inet filter` intact), ask for the AP — must refuse, and the journal must name the **missing redirect**, not the forward chain.
+- **Positive control** — healthy ruleset, ask for the AP, `systemctl is-active hostapd` MUST print `active` with no `REFUSING` line. Without this, a `Verify` that can never match would pass every refusal test by refusing for the wrong reason.
 
 - [ ] **Step 8: Commit**
 
@@ -2088,6 +2093,14 @@ rather than trusting a state it never reached."
 1. **The enforcer must not block.** `LockWatchService` calls it with `applyMu` held, and `Ingest` blocks on that mutex — so a slow enforcer stalls the frame-pump goroutine, and the session fan-out drops frames once its 8-deep buffer fills (`internal/services/tesla_session.go`). The wiring below satisfies this because `APController.Want` only sets a field and kicks a buffered channel; the `systemctl` shell-out happens on the controller's own goroutine. **Do not "simplify" this by calling `hotspot.SetEnabled` directly from the enforcer** — that would put a multi-hundred-millisecond shell-out inside the pump's critical path.
 2. **`SetEnforcer` asserts the current verdict on install**, and `Stop()` can actuate (it fails open on shutdown, so a stopping process never leaves the radio down). Both are deliberate. Confirm the shutdown actuation cannot hang a reboot — `systemctl start hostapd` during a system stop should be quick, but verify on the Pi, and if it can block, bound it.
 3. **Wiring order is not load-bearing**, because `SetEnforcer` forces its assert regardless of what settled before it. Do not reintroduce an ordering dependency.
+
+**Carried forward from Task 6.5's review — three ungated paths that raise the AP, which only become live when this task disables `hostapd` at boot. All three must be closed HERE:**
+
+4. **`HotspotService.Apply()` runs `systemctl restart hostapd` with no gate, and it HAS production callers** — `ApplyAll` (every daemon start) and the settings handler. Today that is masked because `hostapd` is enabled at boot anyway; the moment Step 6 disables it, `ApplyAll` becomes *the* thing that first raises the AP, over an unverified firewall. Route `Apply`'s restart through the same gate, or have it stop-then-`SetEnabled(true)`.
+5. **`ApplyAll` only logs a `Firewall.Apply()` failure and then raises the AP anyway**, a few lines later. If the firewall failed to apply, the AP must not come up. Make that failure block the AP rather than print.
+6. **`netfilterd.service` declares `Wants=hostapd.service`**, so starting netfilterd pulls the AP up through systemd, bypassing every line of Go. With `Restart=always`, a crash loop re-pulls it. Remove that `Wants` when disabling the unit, or the boot hardening is cosmetic.
+
+**Also add a periodic re-verify.** `Verify` runs once at raise time; nothing re-checks while the AP is up, so a later `nft flush ruleset` is never noticed. A ticker that re-verifies and calls `SetEnabled(false)` on failure closes the TOCTOU and is the natural companion to the gate.
 
 - [ ] **Step 1: Add the controller to Services**
 
