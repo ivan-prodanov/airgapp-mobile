@@ -2068,6 +2068,12 @@ rather than trusting a state it never reached."
 - Consumes: `LockWatchService.SetEnforcer` (Task 3), `NewAPController` (Task 7), `HotspotService.SetEnabled` (Task 6).
 - Produces: `POST /api/ble/lock-watch/override` accepting `{"mode":"auto"|"force-on"|"force-off"}`.
 
+**Carried forward from Task 3's review — three properties this task must honour:**
+
+1. **The enforcer must not block.** `LockWatchService` calls it with `applyMu` held, and `Ingest` blocks on that mutex — so a slow enforcer stalls the frame-pump goroutine, and the session fan-out drops frames once its 8-deep buffer fills (`internal/services/tesla_session.go`). The wiring below satisfies this because `APController.Want` only sets a field and kicks a buffered channel; the `systemctl` shell-out happens on the controller's own goroutine. **Do not "simplify" this by calling `hotspot.SetEnabled` directly from the enforcer** — that would put a multi-hundred-millisecond shell-out inside the pump's critical path.
+2. **`SetEnforcer` asserts the current verdict on install**, and `Stop()` can actuate (it fails open on shutdown, so a stopping process never leaves the radio down). Both are deliberate. Confirm the shutdown actuation cannot hang a reboot — `systemctl start hostapd` during a system stop should be quick, but verify on the Pi, and if it can block, bound it.
+3. **Wiring order is not load-bearing**, because `SetEnforcer` forces its assert regardless of what settled before it. Do not reintroduce an ordering dependency.
+
 - [ ] **Step 1: Add the controller to Services**
 
 In `internal/services/services.go`, add to the struct:
