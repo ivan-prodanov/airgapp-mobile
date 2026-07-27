@@ -26,8 +26,13 @@ import * as Haptics from 'expo-haptics';
 
 // 100 is the track's end, so it needs no drawn break.
 const DETENTS = [50, 60, 70, 80, 90, 100];
-// Magnetic pull: within this many % of a detent the value sticks to it.
+// How close to a detent the magnet starts acting, in percent.
 const SNAP = 2;
+// How hard it pulls, as a multiplier on the distance from the detent. 1 = no
+// magnet, 0 = a hard snap that swallows everything inside SNAP (what we had).
+// 0.5 halves the remaining distance, so within ±2 the reachable values thin out
+// but do not vanish: raw 58.0-58.9 lands on 59, and 57 is untouched.
+const MAGNET_PULL = 0.5;
 
 // Measured off Ivan's two reference crops rather than guessed. Both crops are
 // the same scale — the track spans ~1020px for a ~340pt card, so ~3.0 px/pt:
@@ -40,7 +45,7 @@ const SNAP = 2;
 const THUMB_NORMAL = 16;
 const THUMB_CHANGING = 21;
 const TRACK_H = 5;
-const BREAK_W = 2;
+const BREAK_W = 3;
 
 // ── Colours ───────────────────────────────────────────────────────────────
 // Measured off the reference by Ivan, and they replace TWO wrong guesses of
@@ -84,6 +89,12 @@ export function ChargeLimitSlider({
   onSlidingChange,
 }: ChargeLimitSliderProps) {
   const [changing, setChanging] = useState(false);
+  // The thumb follows the FINGER continuously while dragging, even though the
+  // committed value is a whole percent. That is the "several movements between
+  // each 1%" Ivan describes on Tesla: their thumb is a Reanimated shared value
+  // in pixels, so it glides while the number steps. Ours used to jump a whole
+  // percent at a time, which reads as coarse however fine the value maths is.
+  const [dragFrac, setDragFrac] = useState<number | null>(null);
 
   // Handlers are built ONCE, so everything they touch goes through a ref —
   // otherwise the PanResponder captures the first render's callbacks. Kept
@@ -126,13 +137,27 @@ export function ChargeLimitSlider({
     if (w <= 0) return;
     const { min: lo, max: hi } = bounds.current;
     const frac = Math.max(0, Math.min(1, (pageX - trackLeft.current) / w));
-    let value = Math.max(lo, Math.min(hi, Math.round(frac * hi)));
+    // Continuous first, rounded LAST. The old code rounded to an integer and
+    // then hard-clamped anything within SNAP of a detent onto it, which made
+    // 58 and 59 unreachable — from 57 the next value you could get was 60.
+    //
+    // Tesla's magnet does not remove percentages, it warps travel toward the
+    // detent: near 60 the thumb accelerates, but 59 is still addressable. So
+    // this compresses the raw value toward the detent instead of snapping it,
+    // and only then rounds.
+    const raw = Math.max(lo, Math.min(hi, frac * hi));
+    let warped = raw;
     for (const d of DETENTS) {
-      if (Math.abs(value - d) <= SNAP) {
-        value = d;
+      const delta = raw - d;
+      if (Math.abs(delta) <= SNAP) {
+        warped = d + delta * MAGNET_PULL;
         break;
       }
     }
+    const value = Math.max(lo, Math.min(hi, Math.round(warped)));
+    // Warped, not raw — so the thumb visibly accelerates into a detent, which is
+    // what makes the magnet FELT rather than merely computed.
+    setDragFrac(Math.max(lo, Math.min(hi, warped)) / hi);
     const prev = lastValue.current;
     if (value === prev) return;
     if (DETENTS.some((d) => (prev < d && value >= d) || (prev > d && value <= d))) detentTick();
@@ -157,10 +182,12 @@ export function ChargeLimitSlider({
       onPanResponderMove: (e) => applyFromPageX(e.nativeEvent.pageX),
       onPanResponderRelease: () => {
         setChanging(false);
+        setDragFrac(null);
         onSlidingRef.current?.(false);
       },
       onPanResponderTerminate: () => {
         setChanging(false);
+        setDragFrac(null);
         onSlidingRef.current?.(false);
       },
     }),
@@ -186,7 +213,7 @@ export function ChargeLimitSlider({
   const breakOpacity = anim;
 
   const batteryFrac = Math.max(0, Math.min(1, (batteryPercent ?? 0) / max));
-  const limitFrac = Math.max(0, Math.min(1, limitPercent / max));
+  const limitFrac = dragFrac ?? Math.max(0, Math.min(1, limitPercent / max));
 
   return (
     <View style={styles.row} {...pan.panHandlers}>
@@ -245,8 +272,10 @@ const styles = StyleSheet.create({
   // ~9pt bar — matching the zoomed crop, where the breakers clearly overhang.
   break: {
     position: 'absolute',
-    top: -2,
-    bottom: -2,
+    // Taller and wider than the first attempt (was 2pt wide, -2 proud): 5pt
+    // track -> 13pt bar, per Ivan against the real thing.
+    top: -4,
+    bottom: -4,
     width: BREAK_W,
     marginLeft: -BREAK_W / 2,
     borderRadius: 1,
