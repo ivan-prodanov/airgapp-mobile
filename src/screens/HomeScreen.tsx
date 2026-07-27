@@ -215,6 +215,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert). Read from the
   // shared store because the chips live on the DEMO page, not here.
   const fakeCharge = useChargePreset();
+  // The charge slider must own the touch: without this, dragging it scrolls the
+  // page instead of moving the thumb. app/charging.tsx already did exactly this;
+  // Home did not, which is the scrolling Ivan hit.
+  const [chargeSliding, setChargeSliding] = useState(false);
 
   // ── Charge panel ──────────────────────────────────────────────────────────
   // Recovered contract (tesla-charge-row-FINDINGS.md §6): the official app holds
@@ -247,7 +251,15 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // title is the stronger signal that something is loaded, and the alternative
   // is a car playing music with no bar, which is the bug being fixed here.
   const media = state.media;
-  const mediaShowing = !!media && (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
+  // Gated on a LIVE car, not on the cache. Battery and tyres age gracefully —
+  // "last known" is a true statement about them. "Now playing" is a claim about
+  // RIGHT NOW, so rendering it from a cold cache asserts music is playing when
+  // the car may be asleep and silent. The data is still cached (so the card
+  // populates instantly once the car answers); only the SHOWING is gated.
+  const mediaShowing =
+    carLink.connection === 'online' &&
+    !!media &&
+    (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
 
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
@@ -281,6 +293,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
       <Animated.ScrollView
         style={styles.scroll}
+        // Frozen while the charge slider owns the touch, so a drag moves the
+        // thumb instead of scrolling the page out from under it. app/charging.tsx
+        // has done this since it was written; Home had not.
+        scrollEnabled={!chargeSliding}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
@@ -374,6 +390,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               ampMin={AMP_MIN}
               ampMax={AMP_MAX}
               onSetAmps={(a) => actions.patch({ chargingAmps: a })}
+              onSlidingChange={setChargeSliding}
               useMiles={false}
               onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
               // All three go through actions.patch, not a bespoke sender: the

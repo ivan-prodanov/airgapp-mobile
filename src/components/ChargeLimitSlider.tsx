@@ -29,9 +29,18 @@ const DETENTS = [50, 60, 70, 80, 90, 100];
 // Magnetic pull: within this many % of a detent the value sticks to it.
 const SNAP = 2;
 
-const THUMB_NORMAL = 24;
-const THUMB_CHANGING = 30;
+// Measured off Ivan's two reference crops rather than guessed. Both crops are
+// the same scale — the track spans ~1020px for a ~340pt card, so ~3.0 px/pt:
+//
+//   normal thumb   ~48px  -> 16pt      changing thumb ~62px -> 21pt
+//   track height   ~14px  ->  5pt      break width    ~7px  ->  2pt
+//
+// The old 24/30 was roughly 1.5x too big, which is what made it read as "much
+// bigger than Tesla" and why growing it looked wrong rather than subtle.
+const THUMB_NORMAL = 16;
+const THUMB_CHANGING = 21;
 const TRACK_H = 5;
+const BREAK_W = 2;
 
 const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
@@ -218,10 +227,12 @@ const styles = StyleSheet.create({
   // read as a clean cut rather than a smudge.
   break: {
     position: 'absolute',
+    // Slightly proud of the track top and bottom (5pt track -> 7pt break), so
+    // the cut reads as deliberate rather than as a smudge in the bar.
     top: -1,
     bottom: -1,
-    width: 3,
-    marginLeft: -1.5,
+    width: BREAK_W,
+    marginLeft: -BREAK_W / 2,
   },
   thumb: {
     position: 'absolute',

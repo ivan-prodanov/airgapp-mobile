@@ -61,6 +61,8 @@ export interface ChargeCardProps {
   useMiles: boolean;
   onSetChargeLimit: (percent: number) => void;
   onSetAmps: (amps: number) => void;
+  /** Lets Home freeze its ScrollView while the slider drag owns the touch. */
+  onSlidingChange?: (sliding: boolean) => void;
   onStartStopCharging: (start: boolean) => void;
   onToggleChargePort: (open: boolean) => void;
 }
@@ -117,6 +119,7 @@ export function ChargeCard({
   ampMax,
   onSetChargeLimit,
   onSetAmps,
+  onSlidingChange,
   onStartStopCharging,
   onToggleChargePort,
 }: ChargeCardProps) {
@@ -190,6 +193,7 @@ export function ChargeCard({
           max={LIMIT_MAX}
           surfaceColor={PANEL_BG}
           onChange={onSetChargeLimit}
+          onSlidingChange={onSlidingChange}
         />
       </View>
 
