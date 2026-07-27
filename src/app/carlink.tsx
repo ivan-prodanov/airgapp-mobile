@@ -33,11 +33,9 @@ import {
 } from '@/ble';
 import {
   secureStoreSecretStore as store,
-  sharedSecretStore,
-  legacySecretStore,
   wipeStoredSecrets,
+  SHARED_SECRET_KEYS,
 } from '@/ble/secureStoreSecretStore';
-import { SHARED_SECRET_KEYS } from '@/ble/keychainMigration';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
 // DRIVE assertion is the unlock passive response with level = DRIVE(2).
 import {
@@ -243,84 +241,46 @@ export default function CarLinkScreen() {
     append('closed cached Pi session(s) + cleared last-session id');
   };
 
-  // WHERE ARE MY SECRETS — added 2026-07-27 after a Keychain access-group change
-  // lost the VIN/Pi link on device. Reports, per secret, whether each physical
-  // location can see it, WITHOUT writing, moving or deleting anything. This is a
-  // read-only diagnostic: the whole problem is not knowing which store holds what.
+  // WHERE ARE MY SECRETS — read-only. Reports what the ONE store holds, plus how
+  // the JS device key compares to the native responder's copy of it.
+  //
+  // Read-only means read-only: it uses loadDeviceKeys, never
+  // loadOrCreateDeviceKeys, because the latter MINTS a key on an empty store —
+  // which once made this probe report a key immediately after a full wipe.
   const handleSecretProbe = async () => {
-    const out: string[] = ['secret location probe (read-only, nothing is written)'];
-    const peek = async (label: string, st: typeof store, key: string) => {
-      try {
-        const v = await st.getItem(key);
-        out.push(`  ${key} @ ${label}: ${v === null ? 'ABSENT' : `present (${v.length} chars)`}`);
-      } catch (err) {
-        out.push(`  ${key} @ ${label}: THREW — ${errMsg(err)}`);
-      }
-    };
-    const readRaw = async (st: typeof store, key: string): Promise<string | null> => {
-      try {
-        return await st.getItem(key);
-      } catch {
-        return null;
-      }
-    };
+    const out: string[] = ['secret probe (read-only, nothing is written)'];
     for (const key of SHARED_SECRET_KEYS) {
-      await peek('grouped', sharedSecretStore, key);
-      await peek('ungrouped', legacySecretStore, key);
-      // "Present in both" is not the same as "the same value in both". A device
-      // key that differs between locations is the difference between the car
-      // knowing us and "key is not on the car whitelist" — so say it explicitly
-      // rather than leaving it to be inferred from two lengths.
-      const g = await readRaw(sharedSecretStore, key);
-      const l = await readRaw(legacySecretStore, key);
-      if (g !== null && l !== null) {
-        out.push(`  ${key}: grouped and ungrouped are ${g === l ? 'THE SAME' : '*** DIFFERENT ***'}`);
+      try {
+        const v = await store.getItem(key);
+        out.push(`  ${key}: ${v === null ? 'ABSENT' : `present (${v.length} chars)`}`);
+      } catch (err) {
+        out.push(`  ${key}: THREW — ${errMsg(err)}`);
       }
     }
 
-    // Which key does the CAR know? The native passive-entry responder keeps its
-    // OWN copy (KeychainKey.swift), handed to it once by JS. If walk-up unlock
-    // still works, THAT copy is the enrolled one — so a mismatch here says the
-    // enrolled key still exists on the device and JS is simply holding a
-    // different one, which is recoverable without re-enrolling.
+    // The native responder keeps its own copy of the device key so it can answer
+    // the car while Hermes is suspended. It is a CACHE of the JS key — useCarLink
+    // re-pushes it on every launch — so a mismatch means the cache is stale, not
+    // that there are two independent keys.
     try {
-      // loadDeviceKeys, NOT loadOrCreateDeviceKeys — the latter MINTS a key on an
-      // empty store, so using it here made this "read-only" probe report a key
-      // immediately after a wipe, because it had just created one.
       const keys = await loadDeviceKeys(store);
       const jsFp = keys ? deviceKeyFingerprint(keys) : null;
       const nativeFp = passiveEntryDeviceFingerprint();
-      out.push(`  device key fingerprint — JS: ${jsFp ?? '(no key stored — nothing was minted by this probe)'}`);
-      out.push(`  device key fingerprint — native responder: ${nativeFp || '(none set)'}`);
-      out.push(
-        jsFp && nativeFp && jsFp !== nativeFp
-          ? '  *** JS AND NATIVE HOLD DIFFERENT KEYS — if walk-up unlock still works, native has the enrolled one ***'
-          : '  JS and native agree (or native has none)',
-      );
+      out.push(`  device key — JS: ${jsFp ?? '(none stored; nothing was minted by this probe)'}`);
+      out.push(`  device key — native responder cache: ${nativeFp || '(none)'}`);
+      if (jsFp && nativeFp) {
+        out.push(jsFp === nativeFp ? '  JS and native agree' : '  *** native cache is STALE — relaunch to re-push ***');
+      }
     } catch (err) {
       out.push(`  fingerprint compare failed: ${errMsg(err)}`);
     }
 
-    // THE INVARIANT, asserted rather than assumed: exactly one JS copy of each
-    // secret (the grouped one), plus the native responder's own deliberate copy
-    // of the device key. Anything else is debris and should be purged.
-    let stale = 0;
-    for (const key of SHARED_SECRET_KEYS) {
-      const l = await readRaw(legacySecretStore, key);
-      if (l !== null) stale += 1;
-    }
-    out.push(
-      stale === 0
-        ? 'INVARIANT OK — one JS copy of each secret (grouped), no stale ungrouped copies'
-        : `INVARIANT VIOLATED — ${stale} stale ungrouped copy/copies remain. Tap "Purge OLD ungrouped copies".`,
-    );
-
     out.forEach(append);
-    await appendDiagnostic('secret location probe', out);
+    await appendDiagnostic('secret probe', out);
   };
 
-  // WIPE EVERY KEY ON THE DEVICE — both JS Keychain locations and the native
-  // responder's own copy. Destructive: the device is unenrolled afterwards and
+  // WIPE EVERY KEY ON THE DEVICE — the one Keychain store, plus the native
+  // responder's cache. Destructive: the device is unenrolled afterwards and
   // needs the NFC card again.
   //
   // The native copy is cleared through setDeviceKey(''), which does a
