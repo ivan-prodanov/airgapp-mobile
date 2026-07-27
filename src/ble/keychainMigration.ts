@@ -187,7 +187,18 @@ export function makeReadOnlyFallbackStore(shared: SecretStore, legacy: SecretSto
   };
   return {
     async getItem(key) {
-      return (await tryGet(shared, key)) ?? (await tryGet(legacy, key));
+      // LEGACY FIRST — deliberately, and this is not arbitrary.
+      //
+      // 2026-07-27: the car rejected us with "key is not on the car whitelist"
+      // while both locations held a device key. The ENROLLED key is the one that
+      // was always in the ungrouped location; anything in the grouped location
+      // arrived during the failed migration and may be a freshly minted key that
+      // the car has never seen. Preferring the grouped copy meant presenting a
+      // key the car does not know, over a link that was working perfectly.
+      //
+      // Reading legacy first restores exactly the pre-migration behaviour, which
+      // is the whole point of a rollback.
+      return (await tryGet(legacy, key)) ?? (await tryGet(shared, key));
     },
     setItem: (key, value) => legacy.setItem(key, value),
     async removeItem(key) {

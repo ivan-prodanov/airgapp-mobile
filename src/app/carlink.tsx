@@ -251,9 +251,25 @@ export default function CarLinkScreen() {
         out.push(`  ${key} @ ${label}: THREW — ${errMsg(err)}`);
       }
     };
+    const readRaw = async (st: typeof store, key: string): Promise<string | null> => {
+      try {
+        return await st.getItem(key);
+      } catch {
+        return null;
+      }
+    };
     for (const key of SHARED_SECRET_KEYS) {
       await peek('grouped', sharedSecretStore, key);
       await peek('ungrouped', legacySecretStore, key);
+      // "Present in both" is not the same as "the same value in both". A device
+      // key that differs between locations is the difference between the car
+      // knowing us and "key is not on the car whitelist" — so say it explicitly
+      // rather than leaving it to be inferred from two lengths.
+      const g = await readRaw(sharedSecretStore, key);
+      const l = await readRaw(legacySecretStore, key);
+      if (g !== null && l !== null) {
+        out.push(`  ${key}: grouped and ungrouped are ${g === l ? 'THE SAME' : '*** DIFFERENT ***'}`);
+      }
     }
     out.forEach(append);
     await appendDiagnostic('secret location probe', out);
