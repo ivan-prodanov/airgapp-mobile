@@ -29,7 +29,6 @@
 // goes in the shared store, with its key added to SHARED_SECRET_KEYS.
 
 import * as SecureStore from 'expo-secure-store';
-import { makeMigratingSecretStore, makeReadOnlyFallbackStore } from './keychainMigration';
 import type { SecretStore } from './types';
 
 // Must match `keychain-access-groups` in BOTH ios/airgapp/airgapp.entitlements
@@ -73,31 +72,40 @@ export const legacySecretStore: SecretStore = {
   removeItem: (k) => SecureStore.deleteItemAsync(k),
 };
 
-// PRODUCTION — what every caller gets. Self-healing: a read that finds the grouped
-// location empty falls back to the legacy one and promotes the value.
+// PRODUCTION — the plain, ungrouped Keychain. Exactly what shipped before the
+// access-group work, and deliberately back to one location.
 //
-// This is not belt-and-braces on top of the eager migration; it is the thing that
-// makes the migration SAFE. `loadOrCreateDeviceKeys` CREATES a key when it reads
-// null, and useCarLink calls it on mount — so a read that beat the eager migration
-// would mint a new device key and silently re-enrol the phone against a car that
-// no longer recognises it. Ordering effects against every reader is not a
-// guarantee. Removing the race is.
-// ROLLED BACK 2026-07-27 while the grouped store is diagnosed. Commands stopped
-// working on device after the group landed and the cause is not yet identified,
-// so this reads from BOTH locations and moves nothing — whichever place holds the
-// key, we find it — and writes to the ungrouped one, as before this work started.
+// 2026-07-27: an attempt to move these secrets into a shared access group so the
+// Share Extension could read them lost the Pi config and, via useCarLink's
+// setPassiveEntryDeviceKey push, ended with a non-enrolled key in every location.
+// The grouped path is UNPROVEN on this setup and must not be used again until
+// someone demonstrates write → FULL APP RELAUNCH → read, from both processes. An
+// in-process read-back does not prove an item survives a restart, and that is the
+// exact assumption that caused the loss.
 //
-// Restore makeMigratingSecretStore (below, kept and tested) once the failure is
-// understood. Do NOT revert to a plain ungrouped store: the promotion may already
-// have moved the key, and a store that cannot see the grouped location would read
-// null and let loadOrCreateDeviceKeys mint a replacement.
-export const secureStoreSecretStore: SecretStore = makeReadOnlyFallbackStore(
-  sharedSecretStore,
-  legacySecretStore,
-);
+// One store, one location, no fallback, nothing that moves or deletes. Anything
+// clever here has to earn its place on device first.
+export const secureStoreSecretStore: SecretStore = legacySecretStore;
 
-// The intended production store, once the grouped path is proven on device.
-export const migratingSecretStore: SecretStore = makeMigratingSecretStore(
-  sharedSecretStore,
-  legacySecretStore,
-);
+// Leftovers from the failed migration live in the grouped location and are now
+// unreachable through the production store. They are stale by construction —
+// nothing writes them — so they are a trap for the next reader, not a backup.
+// purgeGroupedLeftovers removes them. Deliberately NOT automatic: silent deletion
+// of secrets is what started this, so it is an explicit, user-triggered action.
+export async function purgeGroupedLeftovers(keys: readonly string[]): Promise<string[]> {
+  const done: string[] = [];
+  for (const key of keys) {
+    try {
+      const present = (await sharedSecretStore.getItem(key)) !== null;
+      if (!present) {
+        done.push(`${key}: nothing in the grouped location`);
+        continue;
+      }
+      await sharedSecretStore.removeItem(key);
+      done.push(`${key}: grouped copy removed`);
+    } catch (err) {
+      done.push(`${key}: purge failed — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return done;
+}

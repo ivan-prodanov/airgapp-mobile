@@ -30,7 +30,12 @@ import {
   type CarTransport,
   type TransportCandidate,
 } from '@/ble';
-import { secureStoreSecretStore as store, sharedSecretStore, legacySecretStore } from '@/ble/secureStoreSecretStore';
+import {
+  secureStoreSecretStore as store,
+  sharedSecretStore,
+  legacySecretStore,
+  purgeGroupedLeftovers,
+} from '@/ble/secureStoreSecretStore';
 import { SHARED_SECRET_KEYS } from '@/ble/keychainMigration';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
 // DRIVE assertion is the unlock passive response with level = DRIVE(2).
@@ -294,6 +299,16 @@ export default function CarLinkScreen() {
 
     out.forEach(append);
     await appendDiagnostic('secret location probe', out);
+  };
+
+  // Remove the stale grouped copies left by the failed access-group migration.
+  // Explicit and user-triggered on purpose — silent deletion of secrets is what
+  // caused the loss in the first place. Run it only AFTER re-enrolment, once the
+  // ungrouped location holds the key the car actually knows.
+  const handlePurgeGrouped = async () => {
+    const lines = await purgeGroupedLeftovers(SHARED_SECRET_KEYS);
+    ['purge grouped leftovers:', ...lines.map((l) => `  ${l}`)].forEach(append);
+    await appendDiagnostic('purge grouped leftovers', lines);
   };
 
   const handleSelfTest = async () => {
@@ -1499,6 +1514,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
               <ActionButton label="WHERE ARE MY SECRETS (read-only)" onPress={handleSecretProbe} theme={theme} />
+              <ActionButton label="Purge grouped leftovers (after re-enrol)" onPress={handlePurgeGrouped} theme={theme} />
               <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />
             </View>
 
