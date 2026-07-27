@@ -20,8 +20,8 @@ import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvi
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
 import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
-import { TeslaFonts } from '@/constants/fonts';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
+import { MediaCard } from '@/components/MediaCard';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
@@ -217,16 +217,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // title is the stronger signal that something is loaded, and the alternative
   // is a car playing music with no bar, which is the bug being fixed here.
   const media = state.media;
-  const mediaIsPlaying = media?.playbackStatus === 1;
   const mediaShowing = !!media && (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
-  // The title line falls back to the station, then the source label — a radio
-  // stream has no `title` but does have `station`, and a Bluetooth phone has
-  // neither but does name itself. Showing a bar with no text at all is the one
-  // outcome worth avoiding.
-  const mediaTitle = media?.title ?? media?.station ?? media?.sourceName ?? null;
-  // Never repeat the title as the artist — a station whose title fell back to
-  // `station` must not print it twice.
-  const mediaArtist = media?.artist && media.artist !== mediaTitle ? media.artist : null;
 
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
@@ -329,64 +320,11 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             })}
           </Pressable>
 
-          {/* Driven by the car now, not by the `mediaPlaying` debug toggle it
-              used to be gated on — which is why this bar never appeared for a
-              car that was actually playing. `mediaShowing` treats "the car told
-              us about a track" as the signal; a Stopped source hides the bar,
-              matching the official app. */}
-          {state.awake && mediaShowing ? (
-            <View style={styles.mediaBar}>
-              {/* Title over artist, recovered verbatim from the official app's
-                  own home-screen media card (module 8716 region, automationIDs
-                  `vehicle_home_screen_media_song_title` / `…_song_artist`):
-                  both TextCategory.BodyLabel, both numberOfLines={1}, and the
-                  artist carries TextAppearance.Light — which resolves to
-                  theme.textColorLight (#8A8B8B), NOT a smaller size. The artist
-                  line renders only when the field `isSomething`, so a radio
-                  station with no artist collapses to one line rather than
-                  leaving a gap. */}
-              {mediaTitle ? (
-                <View style={styles.mediaDetails}>
-                  <Text style={styles.mediaTitle} numberOfLines={1}>
-                    {mediaTitle}
-                  </Text>
-                  {mediaArtist ? (
-                    <Text style={styles.mediaArtist} numberOfLines={1}>
-                      {mediaArtist}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-              <View style={styles.mediaControls}>
-              <View style={styles.mediaGroup}>
-                <MediaButton symbol="backward.end.fill" size={22} onPress={() => fleet.sendMedia('prev')} />
-                {/* The glyph is the ACTION, not the state: showing "pause" while
-                    playing is what every transport control does. */}
-                <MediaButton
-                  symbol={mediaIsPlaying ? 'pause.fill' : 'play.fill'}
-                  size={26}
-                  onPress={() => fleet.sendMedia('toggle')}
-                />
-                <MediaButton symbol="forward.end.fill" size={22} onPress={() => fleet.sendMedia('next')} />
-              </View>
-              <View style={styles.mediaDivider} />
-              <View style={styles.mediaGroup}>
-                <MediaButton
-                  symbol="chevron.left"
-                  size={20}
-                  tint="rgba(255,255,255,0.5)"
-                  onPress={() => fleet.sendMedia('volumeDown')}
-                />
-                <SymbolView name="speaker.wave.2.fill" tintColor="white" size={22} />
-                <MediaButton
-                  symbol="chevron.right"
-                  size={20}
-                  tint="rgba(255,255,255,0.5)"
-                  onPress={() => fleet.sendMedia('volumeUp')}
-                />
-              </View>
-              </View>
-            </View>
+          {/* Card layout recovered from the official app's StyleSheet — see
+              MediaCard.tsx. Driven by the car, not by the `mediaPlaying` debug
+              toggle this used to be gated on. */}
+          {state.awake && mediaShowing && media ? (
+            <MediaCard media={media} onAction={fleet.sendMedia} />
           ) : null}
 
           <NavRow symbol="car.fill" title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
@@ -650,50 +588,6 @@ const styles = StyleSheet.create({
   quickIconBusy: {
     opacity: 0.5,
   },
-  mediaBar: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginBottom: 8,
-  },
-  // Text block above the transport row, matching the official card's stacking
-  // (their `topContainer` sits above the controls, not beside them).
-  mediaDetails: {
-    paddingHorizontal: 18,
-    marginBottom: 12,
-  },
-  // TextCategory.BodyLabel, verbatim: UniversalSansText-Medium 14/20/0.1.
-  mediaTitle: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: '#F3F3F3',
-  },
-  // Same category, TextAppearance.Light -> theme.textColorLight. Same SIZE as
-  // the title; only the colour changes. Shrinking it would be an invention.
-  mediaArtist: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
-    color: '#8A8B8B',
-  },
-  mediaControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  mediaGroup: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  mediaDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: 28,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -742,32 +636,3 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
   },
 });
-
-// MediaButton — a transport control. Pressable with the same light impact the
-// rest of the home-screen controls use, and a pressed-state dim so a tap on a
-// car that is slow to answer still feels acknowledged. The car owns the truth,
-// so nothing here is optimistic: the glyph flips when the next read says so.
-function MediaButton({
-  symbol,
-  size,
-  tint = 'white',
-  onPress,
-}: {
-  symbol: SFSymbol;
-  size: number;
-  tint?: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      hitSlop={12}
-      onPress={() => {
-        controlHaptic();
-        onPress();
-      }}
-      style={({ pressed }) => ({ opacity: pressed ? 0.45 : 1 })}
-    >
-      <SymbolView name={symbol} tintColor={tint} size={size} />
-    </Pressable>
-  );
-}
