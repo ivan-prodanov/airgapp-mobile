@@ -5,6 +5,7 @@ import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { recommendedColdPressure } from '@/ble/tirePressureText';
+import { TeslaFonts } from '@/constants/fonts';
 
 import { CARD_FADE_MS, cardFadeEasing } from '@/godot/cardTransition';
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
@@ -281,9 +282,19 @@ const styles = StyleSheet.create({
   titleStack: {
     alignItems: 'center',
   },
+  // The "Recommended Cold Pressure" line. Official app renders it
+  // `<Text category={TextCategory.CaptionLabel} style={[tpmsRcpText, {color:
+  // theme.textColorLight}]}>` — so Typography.CaptionLabel verbatim
+  // ({type:'Medium', fontSize:12, lineHeight:16, letterSpacing:0.1}) in
+  // #8A8B8B, centred. We had 13pt in whatever the system font is, at a
+  // brighter grey; both read a size too large next to the reference.
   subtitle: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    fontFamily: TeslaFonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
+    color: '#8A8B8B',
+    textAlign: 'center',
     marginTop: 1,
   },
   tireButton: {
