@@ -122,11 +122,15 @@ export default function CarLinkScreen() {
   // SEND will use. See the handlers further down for why this is a manual bench.
   const [navPointA, setNavPointA] = useState('42.6977,23.3219');
   const [navPointB, setNavPointB] = useState('42.7105,23.3219');
-  // Point C is the GEOCODING DISCRIMINATOR: open water in the north Aegean, with no
-  // road, address or POI anywhere near it. If the car pins this exact spot, it
-  // parsed our string as two numbers. If it lands on a named place (an island, a
-  // port) or refuses, it ran the string through its own search instead — which
-  // would mean arbitrary dropped pins are not safe to send as "lat,lon".
+  // Point C is the REJECTION FIXTURE. Originally added as a geocoding
+  // discriminator and mislabelled by me as open water; Ivan corrected it on-site —
+  // it is a FIELD beside a real road, on land, just not an addressable place.
+  //
+  // What makes it useful is empirical, not geographic: on 2026-07-27 this exact
+  // coordinate came back "no results found" from the car. That makes it the one
+  // input we know produces a REFUSAL, which is what the actionStatus reason path
+  // needs to be tested against — twelve accepted sends only prove we can decode
+  // the car agreeing with us.
   const [navPointC, setNavPointC] = useState('39.936693,25.306087');
   // D and E re-run the same discriminator after C came back "no results found" —
   // a phrase that belongs to a SEARCH, not to a numeric parse.

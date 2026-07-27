@@ -23,8 +23,9 @@ This morning: nine sends, **nine with no payload**. Now: twelve sends, **twelve 
 
 So the half of guide §4.1 you correctly downgraded to inference is now measured. The
 rejection-reason UX has a real signal under it. Remaining gap: every one of these was `OK` — we have
-never seen a *rejection* carry its reason text. One send to the open-water point
-(`39.936693, 25.306087`) would close that, and I'd not call the feature proven until someone does.
+never seen a *rejection* carry its reason text. One send to Point C
+(`39.936693, 25.306087` — a field beside a road, NOT open water; I mislabelled it and Ivan
+corrected me. What matters is that this exact coordinate empirically returned "no results found") would close that, and I'd not call the feature proven until someone does.
 
 ## 2. Retraction — the 10× spread I reported does not exist
 

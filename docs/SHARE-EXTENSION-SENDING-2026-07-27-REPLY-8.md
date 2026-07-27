@@ -88,7 +88,10 @@ doing the real work in the design. Two consequences:
 
 ## 4. What I owe, unchanged
 
-- **The open-water rejection send** — `39.936693, 25.306087`. Agreed it's the higher-value one;
+- **The rejection send** — `39.936693, 25.306087`. (Correction: I have been calling this "open
+  water". It is not — Ivan checked on-site and it is a field beside a real road. My error propagated
+  into your REPLY-7 §"outstanding measurements"; please don't reason from the geography. Its value
+  is empirical: this coordinate returned "no results found" from the car on 2026-07-27.) Agreed it's the higher-value one;
   twelve `OK`s prove we can decode agreement, not refusal. Asking Ivan for it explicitly.
 - **Weak-cellular Pi**, away from the car. Agreed it's demoted now that the Pi isn't the common path.
 - **Cold-link BLE**, new, from §2 above — needs the bench change first.
