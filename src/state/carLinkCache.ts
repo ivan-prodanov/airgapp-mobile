@@ -1,4 +1,4 @@
-import type { CarLocation } from '@/types/vehicleTypes';
+import type { CarLocation, TirePressures } from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
 
 // The linked car's last-known telemetry, cached across app launches.
@@ -46,6 +46,14 @@ export interface CarLinkCache {
   // official app does too — show the last known state, dimmed, rather than
   // nothing.
   carLocation: CarLocation | null;
+  // TPMS. Cached for the same reason as everything else here: a cold start
+  // should show what we last knew, dimmed, not "—".
+  //
+  // This was missed on the first cut and Ivan caught it immediately — the app
+  // showed em dashes until the car was woken. Exactly the carLocation gap from
+  // the day before, repeated on the very next field I added. The rule is simply
+  // that anything rendered from telemetry belongs in this cache.
+  tirePressures: TirePressures | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -79,6 +87,31 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     chargingAmps: num(cached?.chargingAmps),
     // Validated, not trusted: an older cache has no carLocation, and a corrupt
     // one must not put the map pin at 0,0.
+    // Validated the same way as carLocation: an older cache has no tirePressures,
+    // and a corrupt one must not render a confident 0.0 bar on a tyre.
+    tirePressures:
+      cached?.tirePressures && typeof cached.tirePressures === 'object'
+        ? {
+            fl: num(cached.tirePressures.fl),
+            fr: num(cached.tirePressures.fr),
+            rl: num(cached.tirePressures.rl),
+            rr: num(cached.tirePressures.rr),
+            rcpFront: num(cached.tirePressures.rcpFront),
+            rcpRear: num(cached.tirePressures.rcpRear),
+            hardWarning: {
+              fl: cached.tirePressures.hardWarning?.fl === true,
+              fr: cached.tirePressures.hardWarning?.fr === true,
+              rl: cached.tirePressures.hardWarning?.rl === true,
+              rr: cached.tirePressures.hardWarning?.rr === true,
+            },
+            softWarning: {
+              fl: cached.tirePressures.softWarning?.fl === true,
+              fr: cached.tirePressures.softWarning?.fr === true,
+              rl: cached.tirePressures.softWarning?.rl === true,
+              rr: cached.tirePressures.softWarning?.rr === true,
+            },
+          }
+        : null,
     carLocation:
       cached?.carLocation &&
       Number.isFinite(cached.carLocation.lat) &&

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Animated, PixelRatio, StyleSheet, Text, View } from 'react-native';
 
 import { anchorToPoint, markerAnchorPx } from './markerLayout';
+import { TeslaFonts } from '../constants/fonts';
 import { useGodotBridge } from './bridgeContext';
 import { useContentFade } from './useContentFade';
 import type { MarkerName, VehicleMarkers } from '../types/markerTypes';
@@ -29,10 +30,12 @@ const WHEELS: { key: keyof TirePressures & ('fl' | 'fr' | 'rl' | 'rr'); marker: 
   { key: 'rr', marker: 'wheel_2_2', side: 'right' },
 ];
 
-// How far outboard of the wheel anchor the label sits, in points. The official
-// app puts these out at the screen margins rather than on the tyre itself, which
-// keeps them off the car and readable against the dark background.
-const OUTBOARD = 76;
+// The official app pins these to the SCREEN MARGINS, not to an offset from the
+// wheel — left labels start at the left edge, right labels end at the right edge,
+// regardless of how wide the car renders. Only the VERTICAL position tracks the
+// wheel anchors. Ivan's side-by-side made that obvious: ours sat ~78pt in from
+// the edge where Tesla's sit at ~14.
+const EDGE_MARGIN = 16;
 
 export function TirePressureOverlay({ state }: Props) {
   const bridge = useGodotBridge();
@@ -74,9 +77,7 @@ export function TirePressureOverlay({ state }: Props) {
             key={key}
             style={[
               styles.label,
-              side === 'left'
-                ? { right: undefined, left: Math.max(12, point.left - OUTBOARD) }
-                : { left: undefined, right: 12 },
+              side === 'left' ? { left: EDGE_MARGIN } : { right: EDGE_MARGIN },
               { top: point.top - LABEL_H / 2 },
             ]}
           >
@@ -90,7 +91,7 @@ export function TirePressureOverlay({ state }: Props) {
   );
 }
 
-const LABEL_H = 24;
+const LABEL_H = 20; // = lineHeight, so `top` centres the text on the wheel
 
 const styles = StyleSheet.create({
   label: {
@@ -98,8 +99,18 @@ const styles = StyleSheet.create({
     height: LABEL_H,
     justifyContent: 'center',
   },
+  // The SAME resolved spec the closure markers use (MarkerOverlay.label), which
+  // R12 §2 recovered from the shared Button default: Universal Sans MEDIUM at 18.
+  // Not eyeballed off a screenshot — reusing the style that was already matched
+  // against the real app, so both sets of on-car labels stay consistent.
+  //
+  // fontWeight is deliberately absent: Medium is its own single-face family, so
+  // weight cannot select a cut and setting it falls back to regular.
   text: {
-    fontSize: 17,
+    fontFamily: TeslaFonts.medium,
+    fontSize: 18,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     color: 'white',
   },
   // A warned tyre is the whole reason to look at this screen, so it is coloured

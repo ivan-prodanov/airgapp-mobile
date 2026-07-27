@@ -545,6 +545,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // Guarded on finite coordinates, not just presence: a cache written
             // under an older schema has no carLocation at all, and a malformed
             // one would put the map pin at 0,0 in the Gulf of Guinea.
+            if (cached.tirePressures) patch.tirePressures = cached.tirePressures;
             if (
               cached.carLocation &&
               Number.isFinite(cached.carLocation.lat) &&
@@ -1177,6 +1178,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       chargeLimitPercent: patch.chargeLimitPercent ?? base.chargeLimitPercent,
       chargingAmps: patch.chargingAmps ?? base.chargingAmps,
       carLocation: patch.carLocation ?? base.carLocation,
+      tirePressures: patch.tirePressures ?? base.tirePressures,
     };
     cacheRef.current = next;
     saveCacheRef.current?.(next);
@@ -1211,6 +1213,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         charging: null,
         awake: null,
         carLocation: null,
+        tirePressures: null,
         interiorTempC: null,
         exteriorTempC: null,
         targetTempC: null,

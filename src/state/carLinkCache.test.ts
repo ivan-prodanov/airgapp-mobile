@@ -61,3 +61,40 @@ test('a CORRUPT cached location is dropped, not rendered at 0,0', async () => {
   const back = await loadCarLinkCache(storage, 'VIN1');
   assert.equal(back?.carLocation, null);
 });
+
+test('tirePressures survive a restart — the overlay showed "—" until the car woke', () => {
+  // Ivan caught this immediately: the tyre numbers were the ONLY thing on screen
+  // that came back empty after a relaunch. Same gap as carLocation the day
+  // before, repeated on the very next field added. Anything rendered from
+  // telemetry belongs in this cache.
+  const storage = memoryStorage();
+  const save = makeCarLinkCacheSaver(storage, 'VIN1');
+  save({
+    lastVehicleDataAt: 1_700_000_000_000,
+    batteryLevel: 71, rangeMiles: 210, charging: false, awake: true,
+    interiorTempC: 21, exteriorTempC: 14, targetTempC: 21,
+    chargeLimitPercent: 80, chargingAmps: 16, carLocation: null,
+    tirePressures: {
+      fl: 2.8, fr: 2.9, rl: 2.9, rr: 2.9,
+      rcpFront: 2.9, rcpRear: 2.9,
+      hardWarning: { fl: false, fr: false, rl: false, rr: false },
+      softWarning: { fl: true, fr: false, rl: false, rr: false },
+    },
+  });
+  return new Promise((r) => setTimeout(r, 600)).then(async () => {
+    const back = await loadCarLinkCache(storage, 'VIN1');
+    assert.equal(back?.tirePressures?.fl, 2.8);
+    assert.equal(back?.tirePressures?.rcpFront, 2.9);
+    assert.equal(back?.tirePressures?.softWarning.fl, true, 'a warning must survive too — it is the reason to look');
+  });
+});
+
+test('a cache from before TPMS loads cleanly, with null tirePressures', async () => {
+  const storage = memoryStorage();
+  await storage.setItem(
+    carLinkCacheKey('VIN1'),
+    JSON.stringify({ lastVehicleDataAt: 1_700_000_000_000, batteryLevel: 50 }),
+  );
+  const back = await loadCarLinkCache(storage, 'VIN1');
+  assert.equal(back?.tirePressures, null, 'absent, not a fabricated set of zeros');
+});
