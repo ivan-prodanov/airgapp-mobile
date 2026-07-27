@@ -12,7 +12,7 @@
 // exposing them doesn't bypass any policy.
 
 export { createCarGateway } from './gateway';
-export type { CarGateway, CommandOutcome, CreateCarGatewayArgs } from './gateway';
+export type { CarGateway, CommandOutcome, CreateCarGatewayArgs, InfotainmentStateKey } from './gateway';
 export type { CarActionStatus } from './carActionStatus';
 // Session lifecycle — callers must free the Pi's single BLE session on
 // teardown (screen unmount / app background) so it isn't orphaned (the Pi

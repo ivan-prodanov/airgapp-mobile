@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { focusFromCameraMode, readPlanFor, planForCameraMode, CADENCE_MS } from './viewFocusReads';
+import { focusFromCameraMode, readPlanFor, planForCameraMode, CADENCE_MS , nextRotatedState} from './viewFocusReads';
 
 test('focusFromCameraMode mirrors app/index.tsx exactly', () => {
   // index.tsx: cameraMode === 'CLIMATE' ? 'climate' : 'TOP_DOWN' ? 'controls' : 'home'
@@ -89,4 +89,54 @@ test('the tyre flag does NOT leak onto other screens', () => {
   // plan must not depend on that staying true.
   assert.deepEqual(planForCameraMode('CLIMATE', { tirePressureVisible: true }).states, ['climate']);
   assert.deepEqual(planForCameraMode('PARKED', { tirePressureVisible: true }).states, ['drive']);
+});
+
+// ── Rotation ────────────────────────────────────────────────────────────────
+//
+// Recovered from Tesla iOS v4.56: they POLL, they do not push. getPollingInterval
+// returns VEHICLE_DATA_POLLING_INTERVAL_ONLINE = FIVE_SECONDS (5000) while the
+// car is online, and the payload VehicleDataSlicesSet includes MEDIA_STATE and
+// MEDIA_DETAIL_STATE. We cannot send their 23-slice call — the 452-byte cap is
+// one submessage per request — so we rotate to reach the same per-slice cadence.
+
+test('rotation: one state per tick, cycling', () => {
+  const states = ['drive', 'media', 'mediaDetail'];
+  assert.deepEqual(nextRotatedState(states, 0), ['drive']);
+  assert.deepEqual(nextRotatedState(states, 1), ['media']);
+  assert.deepEqual(nextRotatedState(states, 2), ['mediaDetail']);
+  assert.deepEqual(nextRotatedState(states, 3), ['drive'], 'wraps');
+});
+
+test('rotation: a single-state plan is passed through untouched', () => {
+  // The overwhelmingly common case — Home with no media, Controls, Climate.
+  // Rotating one state must not change today's behaviour at all.
+  assert.deepEqual(nextRotatedState(['drive'], 0), ['drive']);
+  assert.deepEqual(nextRotatedState(['drive'], 7), ['drive']);
+  assert.deepEqual(nextRotatedState([], 3), []);
+});
+
+test('rotation: three states at the controls tier land on Tesla`s 5s per slice', () => {
+  // The number that justifies the design: 3 * 1650 = 4950ms, against their
+  // recovered 5000. If someone retunes CADENCE_MS.controls this should be
+  // re-checked, which is why it is asserted rather than left in a comment.
+  const plan = planForCameraMode('PARKED', { mediaVisible: true });
+  assert.equal(plan.states.length, 3);
+  const perSlice = plan.states.length * plan.intervalMs;
+  assert.ok(
+    Math.abs(perSlice - 5000) <= 250,
+    `each slice should refresh at ~5s (Tesla's VEHICLE_DATA_POLLING_INTERVAL_ONLINE); got ${perSlice}ms`,
+  );
+});
+
+test('media is only polled when the card is actually on screen', () => {
+  // Same principle as the tyre overlay: a panel nobody opened is worth no round
+  // trips. Without the card, Home stays exactly as it was.
+  const without = planForCameraMode('PARKED', { mediaVisible: false });
+  assert.deepEqual(without.states, ['drive']);
+});
+
+test('the media rotation does not leak onto Controls or Climate', () => {
+  // Those screens do not render the card, so they must not pay for it.
+  assert.deepEqual(planForCameraMode('TOP_DOWN', { mediaVisible: true }).states, ['drive']);
+  assert.deepEqual(planForCameraMode('CLIMATE', { mediaVisible: true }).states, ['climate']);
 });

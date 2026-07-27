@@ -39,6 +39,7 @@ import {
   loadOrCreateDeviceKeys,
   isCarLinkEnabled,
   type CarCommand,
+  type InfotainmentStateKey,
   type CarGateway,
   type CarTransport,
   type CommandOutcome,
@@ -64,7 +65,7 @@ import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
-import { planForCameraMode } from '@/ble/viewFocusReads';
+import { nextRotatedState, planForCameraMode } from '@/ble/viewFocusReads';
 import { backgroundReadsSuspended } from '@/ble/backgroundReads';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import {
@@ -1521,6 +1522,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     // choice and the interval's provenance.
     let focusTimer: ReturnType<typeof setTimeout> | null = null;
     let focusInFlight = false;
+    // Rotation cursor for the focused read. Plain counter, not modulo'd here —
+    // nextRotatedState owns the wrap, so a plan whose length changes mid-run
+    // (media card appearing) just re-phases rather than skipping a state.
+    let focusRotation = 0;
     const focusTick = async () => {
       if (!FOCUSED_READ_ENABLED) return;
       // A debug probe is measuring the link — see backgroundReads.ts. Two
@@ -1536,16 +1541,23 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         const gw = getGateway();
         if (!gw || stopped || paused) return;
         const plan = planForCameraMode(active.cameraMode, {
-        tirePressureVisible: active.tirePressureVisible,
-      });
+          tirePressureVisible: active.tirePressureVisible,
+          // The card decides its own refresh: no card on screen, no round trip.
+          mediaVisible: !!active.media,
+        });
+        // ONE state per tick, rotating. See nextRotatedState — this is how we
+        // reach Tesla's recovered 5s-per-slice cadence without paying their
+        // 23-slices-per-call, which the 452-byte cap makes impossible for us.
+        const states = nextRotatedState(plan.states, focusRotation) as InfotainmentStateKey[];
+        focusRotation += 1;
         const t0 = Date.now();
-        const snap = await gw.awakeSync({ states: plan.states, priority: 'background' });
+        const snap = await gw.awakeSync({ states, priority: 'background' });
         if (stopped || paused) return;
         // Logged so the cadence and the screen-keying are VERIFIABLE from
         // pull-logs.sh. Without this the change is nearly invisible on a parked
         // car — speed is 0 and gear is P, so nothing on screen moves — and
         // "did it work?" would come down to trusting the code.
-        logi('poll', 'focused', { states: plan.states.join(','), mode: active.cameraMode, ms: Date.now() - t0 });
+        logi('poll', 'focused', { states: states.join(','), mode: active.cameraMode, ms: Date.now() - t0 });
         const focusPatch = filterPatchUnderIntent(
           infotainmentToPatch(snap),
           intentRef.current,

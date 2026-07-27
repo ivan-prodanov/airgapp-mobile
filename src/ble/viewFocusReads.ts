@@ -100,12 +100,41 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
   }
 }
 
+// nextRotatedState — which ONE state to read on this tick.
+//
+// Recovered mechanism (Tesla iOS v4.56): they do not push or subscribe, they
+// POLL. `getPollingInterval` returns
+//   VEHICLE_DATA_POLLING_INTERVAL_ONLINE  = TimeInMs.FIVE_SECONDS     = 5000
+//   VEHICLE_DATA_POLLING_INTERVAL_OFFLINE = TimeInMs.ONE_SECOND * 1.2 = 1200
+// (offline is FASTER on purpose — it is watching for the car to come up), and
+// the payload is `VehicleDataSlicesSet`, a 23-slice set that includes both
+// MEDIA_STATE and MEDIA_DETAIL_STATE. So: every slice they show refreshes every
+// five seconds, media included.
+//
+// We cannot copy the SET — the car's 452-byte inbound cap allows one submessage
+// per request, so their one cloud call is 23 round trips for us. We can copy the
+// CADENCE, by rotating: one state per tick, so N states each land every
+// N * intervalMs. At three states and 1650ms that is 4950ms — Tesla's 5000
+// almost exactly, at the same per-tick link cost as reading one state forever.
+export function nextRotatedState(states: readonly string[], tick: number): string[] {
+  if (states.length <= 1) return [...states];
+  return [states[tick % states.length]];
+}
+
 // planForCameraMode — the one call site's convenience wrapper.
 export function planForCameraMode(
   cameraMode: string | null | undefined,
-  opts?: { tirePressureVisible?: boolean },
+  opts?: { tirePressureVisible?: boolean; mediaVisible?: boolean },
 ): FocusReadPlan {
   const focus = focusFromCameraMode(cameraMode);
+  // Home with the media card up rotates drive/media/mediaDetail. Media is TWO
+  // reads because the fields are split across two submessages, so it costs two
+  // of the three slots — which is what makes the rotation land on ~5s rather
+  // than ~3.3s. Gated on the card being VISIBLE, exactly like the tyre overlay:
+  // a card nobody is looking at is not worth a round trip.
+  if (focus === 'home' && opts?.mediaVisible) {
+    return { states: ['drive', 'media', 'mediaDetail'], intervalMs: CADENCE_MS.controls };
+  }
   // TPMS is fetched ONLY while the tyre overlay is open. This is the same
   // screen-keyed principle one level finer: the app's own screens decide what is
   // worth a round trip, and a panel nobody has opened is worth none. Closing the
