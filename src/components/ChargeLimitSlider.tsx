@@ -42,8 +42,13 @@ const MAGNET_PULL = 0.5;
 //
 // The old 24/30 was roughly 1.5x too big, which is what made it read as "much
 // bigger than Tesla" and why growing it looked wrong rather than subtle.
-const THUMB_NORMAL = 16;
-const THUMB_CHANGING = 21;
+// Re-measured off the 1:1 crops (both 1260px, near-identical card widths, so
+// these compare directly): their thumb is ~56px to our ~60px.
+const THUMB_NORMAL = 15;
+const THUMB_CHANGING = 20;
+// Theirs is not pure white — it reads as a light grey against the card, which is
+// the most visible remaining difference at 1:1.
+const THUMB_COLOR = '#E8E8E8';
 const TRACK_H = 5;
 const BREAK_W = 3;
 
@@ -274,12 +279,11 @@ const styles = StyleSheet.create({
   // ~9pt bar — matching the zoomed crop, where the breakers clearly overhang.
   break: {
     position: 'absolute',
-    // 5pt track -> 11pt bar. Scaled off the thumb, which is the only feature
-    // common to both crops at a known size: theirs is ~26px of breaker to ~50px
-    // of thumb, i.e. ~11pt against the 21pt changing thumb. 13pt (top/bottom -4)
-    // overshot, which is the "ours are taller now".
-    top: -3,
-    bottom: -3,
+    // Sized by breaker-to-thumb RATIO, which survives a scale difference between
+    // crops: theirs is 26/56 = 0.46, ours was 30/60 = 0.50. Against a 20pt thumb
+    // that is ~9pt of bar, i.e. 2pt proud of the 5pt track each side.
+    top: -2,
+    bottom: -2,
     width: BREAK_W,
     marginLeft: -BREAK_W / 2,
     borderRadius: 1,
@@ -288,7 +292,7 @@ const styles = StyleSheet.create({
   thumb: {
     position: 'absolute',
     top: '50%',
-    backgroundColor: 'white',
+    backgroundColor: THUMB_COLOR,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.35,

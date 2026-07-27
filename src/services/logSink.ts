@@ -74,6 +74,21 @@ async function flush(): Promise<void> {
     );
     // Absolute backstop so the file still cannot grow without bound.
     await db.runAsync('DELETE FROM log WHERE seq <= (SELECT MAX(seq) FROM log) - ?', [MAX_ROWS_HARD]);
+
+    // Fold the WAL back into the main file after every flush.
+    //
+    // pull-logs.sh copies carlink-log.db and carlink-log.db-wal as two separate
+    // devicectl operations against a LIVE writer, so the pair does not
+    // correspond and SQLite recovers a scrambled mixture — on 2026-07-28 a pull
+    // came back with seq 0 holding the newest row and seq 6391 a row from ten
+    // hours earlier, i.e. rows from different eras interleaved. Analysis was
+    // done on that before anyone noticed, because a corrupt merge still reads
+    // as a plausible ascending timeline once sorted by timestamp.
+    //
+    // PASSIVE never blocks writers and is cheap at this volume; it just keeps
+    // the sidecar small enough that a racing copy has little left to disagree
+    // about. The pulled file is then essentially self-contained.
+    await db.execAsync('PRAGMA wal_checkpoint(PASSIVE)');
   } catch {
     // Re-queue on failure so a transient error doesn't lose the batch — but cap
     // it, so a persistently-broken DB can't grow the in-memory queue unbounded.
