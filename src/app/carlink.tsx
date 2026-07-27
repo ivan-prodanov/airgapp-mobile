@@ -297,6 +297,20 @@ export default function CarLinkScreen() {
       out.push(`  fingerprint compare failed: ${errMsg(err)}`);
     }
 
+    // THE INVARIANT, asserted rather than assumed: exactly one JS copy of each
+    // secret (the grouped one), plus the native responder's own deliberate copy
+    // of the device key. Anything else is debris and should be purged.
+    let stale = 0;
+    for (const key of SHARED_SECRET_KEYS) {
+      const l = await readRaw(legacySecretStore, key);
+      if (l !== null) stale += 1;
+    }
+    out.push(
+      stale === 0
+        ? 'INVARIANT OK — one JS copy of each secret (grouped), no stale ungrouped copies'
+        : `INVARIANT VIOLATED — ${stale} stale ungrouped copy/copies remain. Tap "Purge OLD ungrouped copies".`,
+    );
+
     out.forEach(append);
     await appendDiagnostic('secret location probe', out);
   };
