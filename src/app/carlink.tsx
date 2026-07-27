@@ -34,7 +34,7 @@ import {
   secureStoreSecretStore as store,
   sharedSecretStore,
   legacySecretStore,
-  purgeGroupedLeftovers,
+  purgeUngroupedLeftovers,
 } from '@/ble/secureStoreSecretStore';
 import { SHARED_SECRET_KEYS } from '@/ble/keychainMigration';
 // RESPONSE-11 drive: openDirectSession handshakes on a transport; the standing
@@ -301,12 +301,11 @@ export default function CarLinkScreen() {
     await appendDiagnostic('secret location probe', out);
   };
 
-  // Remove the stale grouped copies left by the failed access-group migration.
+  // Remove the OLD ungrouped copies once the grouped store is confirmed working.
   // Explicit and user-triggered on purpose — silent deletion of secrets is what
-  // caused the loss in the first place. Run it only AFTER re-enrolment, once the
-  // ungrouped location holds the key the car actually knows.
+  // caused the loss in the first place.
   const handlePurgeGrouped = async () => {
-    const lines = await purgeGroupedLeftovers(SHARED_SECRET_KEYS);
+    const lines = await purgeUngroupedLeftovers(SHARED_SECRET_KEYS);
     ['purge grouped leftovers:', ...lines.map((l) => `  ${l}`)].forEach(append);
     await appendDiagnostic('purge grouped leftovers', lines);
   };
@@ -1514,7 +1513,7 @@ export default function CarLinkScreen() {
               <ActionButton label="Close session" onPress={handleCloseSession} theme={theme} />
               <ActionButton label="Forget device key" onPress={handleForgetKey} theme={theme} />
               <ActionButton label="WHERE ARE MY SECRETS (read-only)" onPress={handleSecretProbe} theme={theme} />
-              <ActionButton label="Purge grouped leftovers (after re-enrol)" onPress={handlePurgeGrouped} theme={theme} />
+              <ActionButton label="Purge OLD ungrouped copies (after re-enrol works)" onPress={handlePurgeGrouped} theme={theme} />
               <ActionButton label="Storage self-test" onPress={handleSelfTest} theme={theme} />
             </View>
 

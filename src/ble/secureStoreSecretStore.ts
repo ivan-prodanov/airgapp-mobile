@@ -58,51 +58,58 @@ const OPTS: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
 };
 
-// The grouped location. Readable by the app AND the Share Extension.
+// The shared group. THE single location — the app and the Share Extension read
+// and write the same Keychain items, so there is exactly one answer to "what is
+// the device key".
+//
+// Writes are VERIFIED. If a write does not read back, this throws instead of
+// returning quietly, because the alternative is loadOrCreateDeviceKeys seeing an
+// empty store on the next launch and minting a fresh key — silently re-enrolling
+// the phone against a car that will reject it. That is the failure that cost an
+// enrolment on 2026-07-27; it must be loud, not silent.
+//
+// Note what this does NOT claim: an immediate read-back proves the write landed,
+// not that it survives a process restart. The restart proof is the enrolment
+// itself — enrol, force-quit, reopen, and the key is either still there or it is
+// not. There is nothing left to lose by finding out that way.
 export const sharedSecretStore: SecretStore = {
   getItem: (k) => SecureStore.getItemAsync(k, OPTS),
-  setItem: (k, v) => SecureStore.setItemAsync(k, v, OPTS),
+  async setItem(k, v) {
+    await SecureStore.setItemAsync(k, v, OPTS);
+    if ((await SecureStore.getItemAsync(k, OPTS)) !== v) {
+      throw new Error(
+        `Keychain write to the shared access group did not read back (${k}). ` +
+          'The group is not usable on this build — do not re-enrol until this is fixed.',
+      );
+    }
+  },
   removeItem: (k) => SecureStore.deleteItemAsync(k, OPTS),
 };
 
-// The pre-migration location: no access group, app-private.
+// The pre-split ungrouped location. Nothing reads or writes it any more; it
+// exists so purgeGroupedLeftovers' counterpart can clear the old copies once the
+// grouped path is confirmed working.
 export const legacySecretStore: SecretStore = {
   getItem: (k) => SecureStore.getItemAsync(k),
   setItem: (k, v) => SecureStore.setItemAsync(k, v),
   removeItem: (k) => SecureStore.deleteItemAsync(k),
 };
 
-// PRODUCTION — the plain, ungrouped Keychain. Exactly what shipped before the
-// access-group work, and deliberately back to one location.
-//
-// 2026-07-27: an attempt to move these secrets into a shared access group so the
-// Share Extension could read them lost the Pi config and, via useCarLink's
-// setPassiveEntryDeviceKey push, ended with a non-enrolled key in every location.
-// The grouped path is UNPROVEN on this setup and must not be used again until
-// someone demonstrates write → FULL APP RELAUNCH → read, from both processes. An
-// in-process read-back does not prove an item survives a restart, and that is the
-// exact assumption that caused the loss.
-//
-// One store, one location, no fallback, nothing that moves or deletes. Anything
-// clever here has to earn its place on device first.
-export const secureStoreSecretStore: SecretStore = legacySecretStore;
+export const secureStoreSecretStore: SecretStore = sharedSecretStore;
 
-// Leftovers from the failed migration live in the grouped location and are now
-// unreachable through the production store. They are stale by construction —
-// nothing writes them — so they are a trap for the next reader, not a backup.
-// purgeGroupedLeftovers removes them. Deliberately NOT automatic: silent deletion
-// of secrets is what started this, so it is an explicit, user-triggered action.
-export async function purgeGroupedLeftovers(keys: readonly string[]): Promise<string[]> {
+// Clears the OLD ungrouped copies. Explicit, user-triggered: run it once the
+// grouped store is confirmed working end to end.
+export async function purgeUngroupedLeftovers(keys: readonly string[]): Promise<string[]> {
   const done: string[] = [];
   for (const key of keys) {
     try {
-      const present = (await sharedSecretStore.getItem(key)) !== null;
+      const present = (await legacySecretStore.getItem(key)) !== null;
       if (!present) {
-        done.push(`${key}: nothing in the grouped location`);
+        done.push(`${key}: nothing in the ungrouped location`);
         continue;
       }
-      await sharedSecretStore.removeItem(key);
-      done.push(`${key}: grouped copy removed`);
+      await legacySecretStore.removeItem(key);
+      done.push(`${key}: ungrouped copy removed`);
     } catch (err) {
       done.push(`${key}: purge failed — ${err instanceof Error ? err.message : String(err)}`);
     }
