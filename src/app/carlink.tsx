@@ -271,6 +271,27 @@ export default function CarLinkScreen() {
         out.push(`  ${key}: grouped and ungrouped are ${g === l ? 'THE SAME' : '*** DIFFERENT ***'}`);
       }
     }
+
+    // Which key does the CAR know? The native passive-entry responder keeps its
+    // OWN copy (KeychainKey.swift), handed to it once by JS. If walk-up unlock
+    // still works, THAT copy is the enrolled one — so a mismatch here says the
+    // enrolled key still exists on the device and JS is simply holding a
+    // different one, which is recoverable without re-enrolling.
+    try {
+      const keys = await loadOrCreateDeviceKeys(store);
+      const jsFp = deviceKeyFingerprint(keys);
+      const nativeFp = passiveEntryDeviceFingerprint();
+      out.push(`  device key fingerprint — JS: ${jsFp}`);
+      out.push(`  device key fingerprint — native responder: ${nativeFp || '(none set)'}`);
+      out.push(
+        nativeFp && jsFp !== nativeFp
+          ? '  *** JS AND NATIVE HOLD DIFFERENT KEYS — if walk-up unlock still works, native has the enrolled one ***'
+          : '  JS and native agree (or native has none)',
+      );
+    } catch (err) {
+      out.push(`  fingerprint compare failed: ${errMsg(err)}`);
+    }
+
     out.forEach(append);
     await appendDiagnostic('secret location probe', out);
   };
