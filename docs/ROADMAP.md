@@ -57,6 +57,30 @@ Leaving it as the source icon is also a valid answer — it is what Tesla ships.
 
 ---
 
+## Done 2026-07-28
+
+### Share extension sends natively — DONE, confirmed 10/10
+Sharing reaches the car with the app closed, across Google Maps, Apple Maps and Waze. The extension
+runs the app's own TypeScript protocol in JavaScriptCore rather than a second Swift implementation.
+Four things bit, all of which presented as something else — see the
+`share-extension-sends-natively` memory. The two worth repeating here:
+
+**JavaScriptCore has no `setTimeout`.** No clock, no run loop. The engine arms one around every
+exchange, so every send died instantly. Swift installs it, on the engine's own serial queue.
+
+**Absence of a log line is not evidence.** `logFileSink` had an allow-list that silently dropped
+every `outbox` line — seven call sites that could never reach the file — and that silence was read
+as proof the code never ran. Twice tonight a check passed for a reason unrelated to what it claimed:
+the log filter, and a build check whose stub transport failed so fast the timer path never ran. Make
+the check fail for the right reason first.
+
+**Still open here:** the BLE arm does not exist, so `arms = [pi]`. That is the ONLY reason the outbox
+survives — Ivan wants it gone ("if it didn't work, I'd retry, not open the app"), and it goes when
+the BLE arm lands. `unverified` still queues, so a send that landed without a readable verdict can
+arrive twice.
+
+---
+
 ## Done 2026-07-27 (was P0)
 
 - **The BLE wedge** — fixed and measured. Correlator now decides on `request_uuid`, not the
@@ -121,25 +145,15 @@ Mitigated for the eight **probes** (they hold the app's polling while they run).
 the debug screen's Lock / Unlock / Wake buttons.** Proper fix is one shared gateway — a real
 refactor of `carlink.tsx`, deliberately not started at the end of a long day.
 
-### Share extension sends natively — DONE, confirmed 10/10
-Sharing reaches the car with the app closed, across Google Maps, Apple Maps and Waze. The extension
-runs the app's own TypeScript protocol in JavaScriptCore rather than a second Swift implementation.
-Four things bit, all of which presented as something else — see the
-`share-extension-sends-natively` memory. The two worth repeating here:
+### The outbox outlives its purpose, and `unverified` can duplicate
+The share extension sends for itself now, so the outbox is no longer the delivery path — but it
+cannot be deleted yet: `arms = [pi]` because the BLE arm does not exist, so an out-of-range share
+with no reachable Pi has nowhere else to fall. Ivan wants it gone ("if it didn't work, I'd retry,
+not open the app"), and it goes when the BLE arm lands.
 
-**JavaScriptCore has no `setTimeout`.** No clock, no run loop. The engine arms one around every
-exchange, so every send died instantly. Swift installs it, on the engine's own serial queue.
-
-**Absence of a log line is not evidence.** `logFileSink` had an allow-list that silently dropped
-every `outbox` line — seven call sites that could never reach the file — and that silence was read
-as proof the code never ran. Twice tonight a check passed for a reason unrelated to what it claimed:
-the log filter, and a build check whose stub transport failed so fast the timer path never ran. Make
-the check fail for the right reason first.
-
-**Still open here:** the BLE arm does not exist, so `arms = [pi]`. That is the ONLY reason the outbox
-survives — Ivan wants it gone ("if it didn't work, I'd retry, not open the app"), and it goes when
-the BLE arm lands. `unverified` still queues, so a send that landed without a readable verdict can
-arrive twice.
+Separately, an `unverified` verdict still queues, so a send that DID land without a readable verdict
+can arrive twice. Chosen over reporting success for something that may never have arrived — but it
+is the same behaviour that read as "I shared A and B showed up" on 2026-07-27.
 
 ### The Share Extension's Swift is not under version control
 `/ios` is gitignored wholesale (it holds the hand-built Godot project that `expo prebuild` must
