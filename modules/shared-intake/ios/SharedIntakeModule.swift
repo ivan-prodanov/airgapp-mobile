@@ -27,6 +27,13 @@ public class SharedIntakeModule: Module {
       ShareOutboxStore.writeRaw(json)
     }
 
+    // The app publishes whether it holds a live BLE link to the car; the Share
+    // Extension reads it to choose a transport. See CarPresence for why a missing
+    // or stale value must mean "in range" rather than "out of range".
+    AsyncFunction("writeCarPresence") { (linkUp: Bool) -> Void in
+      CarPresence.write(linkUp: linkUp)
+    }
+
     // What the Share Extension recorded about its own runs — the only window into
     // a process with no console. Read-only; the extension writes it.
     AsyncFunction("readShareTrace") { () -> String in
