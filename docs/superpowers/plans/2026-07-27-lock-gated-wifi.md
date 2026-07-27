@@ -1746,6 +1746,14 @@ observation period."
 
 Three jobs, all of them about not trusting the verdict too much: **debounce** so a burst of pushes cannot thrash the radio; **watchdog** so the AP can never stay down past a ceiling even if the verdict is confidently wrong; **override** so there is a way out without SSH.
 
+**Carried from Phase 1's final review — set `APMaxDown` from evidence, not from the 12h placeholder.**
+
+Phase 1 established that a silent BLE link is only detected after `lockwatch`'s `maxSilence` (30 min) plus `bleSessionTTL` (5 min). So **`maxSilence + bleSessionTTL` ≈ 35 min is how long a car stays stranded offline** after a silent link death with the AP already down — that is the real fail-open latency, not an instant.
+
+Two consequences:
+- **The watchdog is the backstop for that window too**, not just for a confidently-wrong verdict. A 12h ceiling is far too loose if it is also covering a 35-minute stranding. Pick `APMaxDown` knowing it is the last line of defence for both.
+- **`maxSilence` is now pulled in two directions**: measurement fidelity pulls it *up* (a bound shorter than the car's real idle-push interval manufactures reconnect churn that corrupts the reading), safety latency pulls it *down*. Set it from Phase 1's measured push interval, and record the resulting stranding window as an input to `APMaxDown`.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `internal/services/apcontrol_test.go`:
