@@ -319,9 +319,14 @@ final class CarRegionMonitor: NSObject, CLLocationManagerDelegate {
         mine = "no-vin"
       }
       let exp = expected.map { "expect=\($0.0)/\($0.1)" } ?? "expect=?"
+      // accuracy < 0 or proximity .unknown means iOS saw the beacon but could
+      // not estimate it — reporting that as a distance dresses a non-measurement
+      // up as data, which is exactly how a log misleads whoever reads it later.
+      let dist = (b.accuracy < 0 || b.proximity == .unknown)
+        ? "dist=UNUSABLE(no estimate)"
+        : "acc=\(String(format: "%.1f", b.accuracy))m prox=\(b.proximity.rawValue)"
       PassiveEntryCentral.shared.logExternal(
-        "car beacon: RANGED major=\(major) minor=\(minor) \(exp) → \(mine) "
-        + "rssi=\(b.rssi) prox=\(b.proximity.rawValue) acc=\(String(format: "%.1f", b.accuracy))m")
+        "car beacon: RANGED major=\(major) minor=\(minor) \(exp) → \(mine) rssi=\(b.rssi) \(dist)")
     }
     // One good read is enough to identify the car; stop early rather than burn
     // background time re-reading the same constant values.

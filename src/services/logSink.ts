@@ -23,6 +23,11 @@ import { setSink, type LogEntry } from './logbus';
 const DB_NAME = 'carlink-log.db';
 // Rows past this are trimmed on the next flush — a session's worth, not forever.
 const MAX_ROWS = 20_000;
+// Categories that emit per-tick and would otherwise evict everything else.
+const NOISY_CATS = ['txp', 'poll', 'read', 'console'] as const;
+// Backstop across ALL categories. Sparse ones (region, push, cmd, ble) survive
+// far longer than MAX_ROWS because only NOISY_CATS are trimmed at that mark.
+const MAX_ROWS_HARD = 200_000;
 const FLUSH_MS = 1000;
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -56,7 +61,19 @@ async function flush(): Promise<void> {
       }
     });
     // Trim to a bounded tail so a long session doesn't grow the file forever.
-    await db.runAsync('DELETE FROM log WHERE seq <= (SELECT MAX(seq) FROM log) - ?', [MAX_ROWS]);
+    //
+    // Trim the CHATTY categories first, and keep the rare ones far longer.
+    // txp/poll/read/console are per-tick spam — ~6.4k rows in seven hours — so a
+    // flat cap evicts the sparse diagnostic categories (17 'region' rows in two
+    // hours) long before anyone reads them. That defeats the point of a log you
+    // consult days later: on 2026-07-27 the beacon question needed multi-day
+    // region data and the buffer could not have held it.
+    await db.runAsync(
+      `DELETE FROM log WHERE seq <= (SELECT MAX(seq) FROM log) - ? AND cat IN (${NOISY_CATS.map(() => '?').join(',')})`,
+      [MAX_ROWS, ...NOISY_CATS],
+    );
+    // Absolute backstop so the file still cannot grow without bound.
+    await db.runAsync('DELETE FROM log WHERE seq <= (SELECT MAX(seq) FROM log) - ?', [MAX_ROWS_HARD]);
   } catch {
     // Re-queue on failure so a transient error doesn't lose the batch — but cap
     // it, so a persistently-broken DB can't grow the in-memory queue unbounded.
