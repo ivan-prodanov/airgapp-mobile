@@ -256,9 +256,19 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // RIGHT NOW, so rendering it from a cold cache asserts music is playing when
   // the car may be asleep and silent. The data is still cached (so the card
   // populates instantly once the car answers); only the SHOWING is gated.
+  // Tesla's OWN gate, verified rather than guessed: their MediaControl row hangs
+  // off `getSelectedMediaControlEnabled`, which is a straight read of
+  // `isMediaRemoteControlEnabled` — i.e. MediaState.remote_control_enabled, the
+  // car's own "you may drive my media" flag. Not a connection check.
+  //
+  // We require BOTH, because their gate and Ivan's concern answer different
+  // questions: theirs is "can we control it", ours is "is this current". They
+  // persist media through REHYDRATE_VEHICLE_DATA and do not blacklist it, so on
+  // their side a cold start CAN show a cached card. We deliberately do not —
+  // "now playing" is a claim about right now.
   const mediaShowing =
     carLink.connection === 'online' &&
-    !!media &&
+    media?.remoteControlEnabled === true &&
     (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
 
   const onRefresh = () => {

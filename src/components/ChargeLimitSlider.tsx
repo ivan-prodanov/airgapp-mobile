@@ -42,6 +42,22 @@ const THUMB_CHANGING = 21;
 const TRACK_H = 5;
 const BREAK_W = 2;
 
+// ── Colours, verbatim from Tesla's palette ────────────────────────────────
+// Ours were invented and that is why the breaks vanished: on our old
+// rgba(255,255,255,0.18) track there was too little separation for a punched
+// gap to read. Theirs has THREE zones, which is why the palette carries two
+// distinct track colours rather than one:
+//
+//   Colors.batteryGreen / batteryCharging  #00E286   charged so far
+//   Colors.chargeSliderUnfinishedTrack     #3D3D3D   charged-so-far -> limit
+//   Colors.chargeSliderMaxTrack            #292929   limit -> 100%
+//
+// Ours was Apple's #34C759 over one flat grey. #00E286 is noticeably more mint,
+// and the two greys are what make the limit legible without reading the number.
+const GREEN = '#00E286';
+const TRACK_UNFINISHED = '#3D3D3D';
+const TRACK_MAX = '#292929';
+
 const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
 export interface ChargeLimitSliderProps {
@@ -175,6 +191,12 @@ export function ChargeLimitSlider({
   return (
     <View style={styles.row} {...pan.panHandlers}>
       <View ref={trackRef} style={styles.track} onLayout={measureTrack}>
+        {/* Zone 2: charged-so-far -> limit. Drawn first, under everything. */}
+        <View
+          pointerEvents="none"
+          style={[styles.zone, { left: 0, width: `${limitFrac * 100}%`, backgroundColor: TRACK_UNFINISHED }]}
+        />
+        {/* Zone 1: charged so far. */}
         <View pointerEvents="none" style={[styles.fill, { width: `${batteryFrac * 100}%` }]} />
         {/* Breaks, drawn in the SURFACE colour so the bar reads as interrupted
             rather than marked. Hidden entirely in normal state. */}
@@ -212,8 +234,16 @@ const styles = StyleSheet.create({
     width: '100%',
     height: TRACK_H,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    // Zone 3 (limit -> 100%) is the track's own background; the other two are
+    // drawn over it.
+    backgroundColor: TRACK_MAX,
     justifyContent: 'center',
+  },
+  zone: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    borderRadius: 3,
   },
   fill: {
     position: 'absolute',
@@ -221,7 +251,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     borderRadius: 3,
-    backgroundColor: '#34C759',
+    backgroundColor: GREEN,
   },
   // A gap punched through the bar. Slightly taller than the track so the ends
   // read as a clean cut rather than a smudge.
