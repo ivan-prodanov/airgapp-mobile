@@ -121,6 +121,30 @@ Mitigated for the eight **probes** (they hold the app's polling while they run).
 the debug screen's Lock / Unlock / Wake buttons.** Proper fix is one shared gateway — a real
 refactor of `carlink.tsx`, deliberately not started at the end of a long day.
 
+### The second share of a session queues nothing — OPEN
+The first share after an app launch goes all the way to the car; the next one leaves the outbox
+empty. One half is explained and fixed: `ShareOutboxStore.writeRaw` coordinated with
+`.forReplacing`, which lets `NSFileCoordinator` relocate the item, so an atomic write left the
+bytes in a temp location and the original was already gone — the file *disappeared* from the App
+Group rather than being emptied, and `readRaw` cannot tell a missing file from an empty queue
+(both are `"[]"`).
+
+Unexplained: why the extension queues nothing on a later share. The build of 2026-07-27 23:2x adds
+the trace to answer it — `resolved=nil` (the silent early return after the spinner) and `append`'s
+discarded `Bool` are the two candidates, and both are now recorded.
+
+**Diagnostic lesson, the expensive one:** the `outbox` log category was dropped by an allow-list in
+`logFileSink`, so seven call sites could never reach the file — and the resulting silence was read
+as evidence the code never ran. The sink now persists every category by default. Absence of a log
+line is only evidence once you have confirmed the line could have been written.
+
+### The Share Extension's Swift is not under version control
+`/ios` is gitignored wholesale (it holds the hand-built Godot project that `expo prebuild` must
+never clobber), so `ios/ShareExtension/*.swift` — real, hand-written logic including the resolver
+and the outbox write — exists on disk only. A clean checkout does not build a working share.
+Pre-existing, and left alone deliberately: un-ignoring part of `/ios` is a call for Ivan, not a
+side effect of a bug fix.
+
 ### The `writePending` deferral is freshest-first
 If several challenges pile up inside the seal→write hazard, only the newest is answered. Correct
 in principle — the car re-challenges with a new nonce and older ones are dead — but unverified
