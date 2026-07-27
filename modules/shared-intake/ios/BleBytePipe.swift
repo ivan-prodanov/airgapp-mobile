@@ -47,6 +47,9 @@ public final class BleBytePipe: NSObject {
   private var targetName = ""
   private var blockLength = 20
 
+  // The last state CoreBluetooth reported. Kept because a FRESH manager's first
+  // callback is not trustworthy — see centralManagerDidUpdateState.
+  private var lastState: CBManagerState = .unknown
   private var connectCompletion: ((Result<Int, Error>) -> Void)?
   private var connectDeadline: DispatchWorkItem?
   private let queue = DispatchQueue(label: "local.airgapp.ext.ble")
@@ -82,7 +85,13 @@ public final class BleBytePipe: NSObject {
       let deadline = DispatchWorkItem { [weak self] in
         guard let self = self else { return }
         self.central?.stopScan()
-        self.settle(.failure(PipeError.notFound(self.targetName)))
+        // Report what actually stopped us. If the radio never came up, saying
+        // "couldn't find the car" would send someone hunting for the car.
+        switch self.lastState {
+        case .poweredOff: self.settle(.failure(PipeError.poweredOff))
+        case .unauthorized: self.settle(.failure(PipeError.unauthorized))
+        default: self.settle(.failure(PipeError.notFound(self.targetName)))
+        }
       }
       self.connectDeadline = deadline
       self.queue.asyncAfter(deadline: .now() + .milliseconds(max(0, timeoutMs)), execute: deadline)
@@ -124,15 +133,27 @@ public final class BleBytePipe: NSObject {
 
 extension BleBytePipe: CBCentralManagerDelegate {
   public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+    lastState = central.state
     switch central.state {
     case .poweredOn:
       central.scanForPeripherals(withServices: nil, options: nil)
     case .unauthorized:
+      // Genuinely terminal: a permission decision does not change while a share
+      // sheet is open.
       settle(.failure(PipeError.unauthorized))
-    case .poweredOff:
-      settle(.failure(PipeError.poweredOff))
     default:
-      break // .resetting/.unknown resolve into another callback, or the deadline fires
+      // .poweredOff is DELIBERATELY not terminal here.
+      //
+      // A freshly created CBCentralManager in a just-launched extension reports a
+      // transient state before bluetoothd finishes bringing it up, and settling
+      // on the first callback turned a working radio into "Bluetooth is off":
+      // measured 2026-07-27, 2 of 6 cold sends failed that way with shares 30s
+      // either side succeeding on the same radio.
+      //
+      // So wait. A radio that really is off simply never reaches .poweredOn, and
+      // the connect deadline reports it using lastState — the same message, only
+      // now it is true.
+      break
     }
   }
 
