@@ -16,7 +16,7 @@
 - **Fail open, always.** Every unknown, error, decode failure, panic path and startup state must leave the AP **up**. A wrong state may cost traffic and battery; it must never strand the car offline.
 - **The Pi holds no Tesla keys and must not acquire any.** It parses only plaintext unsolicited pushes. It never signs, never decrypts, never polls `GET_STATUS`.
 - **Frame opacity for the command path is unchanged.** `Exchange` keeps forwarding opaque bytes. `lockwatch` only inspects frames the pump already classifies as *unsolicited*, i.e. frames no `Exchange` caller wanted.
-- **Phase 1 must be incapable of taking the AP down.** Not "configured not to" — the code path must not exist until Task 6.
+- **Phase 1 must be incapable of taking the AP down.** Not "configured not to" — no caller of `SetEnabled` exists until **Task 8** wires the enforcer. Tasks 6 and 6.5 create the mechanism and its gate, but nothing invokes them, and `hostapd` stays enabled at boot for the whole of Phase 1 so the car's WiFi behaves exactly as it does today.
 - **Go tests must pass with no BLE radio.** Every new type takes an interface that tests substitute, mirroring the existing `bleConn` fake pattern in `tesla_session_test.go`.
 - **Predicate, verbatim:** AP down ⟺ `lockState == LOCKED` **AND** `userPresence == NOT_PRESENT`. Every other combination, including every `UNKNOWN`, means AP up.
 - **THE AIRGAP OVERRIDES FAIL-OPEN.** Fail-open governs the *lock* axis only. On the *firewall* axis the rule inverts: **if the Pi cannot prove the nftables ruleset is in place, the AP does not come up.** An offline car is recoverable; a car that reached Tesla is not. Any code path that starts `hostapd` without first verifying the filter is a defect, however convenient.
@@ -1611,7 +1611,7 @@ Add `"strings"` to `firewall.go`'s imports if absent, and `"fmt"` to `hotspot_te
 
 - [ ] **Step 5: Wire the gate**
 
-In `internal/services/services.go`, where `hotspot` is constructed (Task 8 introduces the local), add immediately after:
+In `internal/services/services.go`, hoist the firewall and hotspot constructions out of the struct literal so the gate can be attached, then reference the locals in the literal:
 
 ```go
 	firewall := NewFirewallService(db, exec, cfg)
@@ -1619,26 +1619,11 @@ In `internal/services/services.go`, where `hotspot` is constructed (Task 8 intro
 	hotspot.SetFirewallGate(firewall.Verify, firewall.Apply)
 ```
 
-and use `firewall` in the struct literal in place of the inline `NewFirewallService(db, exec, cfg)`.
+Replace the inline `NewFirewallService(db, exec, cfg)` and `NewHotspotService(db, exec)` in the struct literal with `firewall` and `hotspot`.
 
-- [ ] **Step 6: Make netfilterd the only thing that can raise the AP**
+**Boot-time hardening is deliberately NOT in this task.** Disabling `hostapd` at boot so netfilterd owns the AP belongs in **Task 8**, because nothing raises the AP until Task 8 wires `APController`. Doing it here would leave the car with no WiFi for the entire 2–3 night Phase 1 observation window.
 
-In `deploy/setup.sh:350`, remove `hostapd` from the enable list and disable it explicitly:
-
-```bash
-systemctl enable nf-wlan0 nftables dnsmasq netfilterd >/dev/null
-# hostapd is NOT enabled: netfilterd owns the AP's lifecycle and raises it only
-# after the firewall verifies default-deny. Leaving hostapd enabled would let
-# the AP come up at boot independently of any ruleset — and with
-# net.ipv4.ip_forward=1 and no nft table loaded, that is an open car.
-systemctl disable hostapd >/dev/null 2>&1 || true
-```
-
-`netfilterd.service` already declares `After=hostapd.service`, which is now a no-op ordering hint for a disabled unit — harmless, and left alone so an operator who re-enables hostapd manually still gets the old ordering.
-
-**Consequence to be explicit about:** netfilterd must now raise the AP on startup. Task 7's `APController` starts with `want = true`, and Task 8 calls `APControl.Start()` in `ApplyAll()` *after* `Firewall.Apply()` — so the first `settle()` raises the AP through the gate. Verify this ordering holds in `ApplyAll` before finishing this task; if the AP does not come up on a clean boot, nothing else in this plan matters.
-
-- [ ] **Step 7: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests to verify they pass**
 
 ```bash
 cd /Users/ivan/Work/airgapp/rpi && go test ./internal/services/ -run 'TestVerify|TestSetEnabled' -v && go test ./... 2>&1 | tail -10
@@ -1646,7 +1631,7 @@ cd /Users/ivan/Work/airgapp/rpi && go test ./internal/services/ -run 'TestVerify
 
 Expected: PASS all seven tests, no regressions.
 
-- [ ] **Step 8: On-Pi verification (do not skip — this is the whole point)**
+- [ ] **Step 7: On-Pi verification (do not skip — this is the whole point)**
 
 Deploy, then prove each claim against the real kernel. **The car should be present and associated for checks 3–5.**
 
@@ -1691,10 +1676,10 @@ journalctl -u dnsmasq -n 20 | grep DHCPACK
 - Check 5 must show wlan0 keeping its address and the car getting a `DHCPACK`. If it does not, `nf-wlan0.service` needs re-running as part of the AP-up path, and that belongs in `SetEnabled` before this task is done.
 - Check 3 is informational but **record the answer** — it determines whether an empty ruleset is a real-world leak or merely a broken car.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-cd /Users/ivan/Work/airgapp/rpi && git add internal/services deploy/setup.sh && git commit -m "feat(airgap): never raise the AP over an unverified firewall
+cd /Users/ivan/Work/airgapp/rpi && git add internal/services && git commit -m "feat(airgap): never raise the AP over an unverified firewall
 
 sysctl sets ip_forward=1 unconditionally, so the default-deny is not a kernel
 property — it exists only while a table with 'policy drop' is loaded. An empty
@@ -2204,7 +2189,32 @@ Read the component's existing method block first and match its refresh call — 
 
 **Note the auth seam:** `/api/ble/*` is bearer-authed while the dashboard is session-authed, so this `fetch` will 401 as written. Mount the override route **outside** the bearer group — next to the session-authed `/api/*` routes in `router.go` — or give the dashboard its own session-authed alias that calls the same handler. Pick one and make it work before moving on; a control that silently 401s is worse than no control, because this is the escape hatch.
 
-- [ ] **Step 6: Build and run the full suite**
+- [ ] **Step 6: Make netfilterd the only thing that can raise the AP**
+
+This lands **here**, not in Task 6.5, because only now does anything raise the AP. Doing it earlier would have left the car with no WiFi for the whole Phase 1 observation window.
+
+In `deploy/setup.sh:350`, remove `hostapd` from the enable list and disable it explicitly:
+
+```bash
+systemctl enable nf-wlan0 nftables dnsmasq netfilterd >/dev/null
+# hostapd is NOT enabled: netfilterd owns the AP's lifecycle and raises it only
+# after the firewall verifies the SNI redirect is live. Leaving hostapd enabled
+# would let the AP come up at boot independently of any ruleset — and with
+# net.ipv4.ip_forward=1 and no nft table loaded, that is an open car.
+systemctl disable hostapd >/dev/null 2>&1 || true
+```
+
+`netfilterd.service` already declares `After=hostapd.service`, now a no-op ordering hint for a disabled unit — harmless, and left alone so an operator who re-enables hostapd manually still gets the old ordering.
+
+**Verify the startup path actually raises the AP.** `APController` starts with `want = true`, and `ApplyAll` must call `Firewall.Apply()` *before* `APControl.Start()` so the first `settle()` passes the gate. Confirm that ordering in `ApplyAll`, then prove it on the Pi:
+
+```bash
+sudo systemctl restart netfilterd && sleep 10 && systemctl is-active hostapd
+```
+
+Expected: `active`. If the AP does not come up on a clean restart, **stop and fix it before committing** — every other property in this plan is downstream of the car having WiFi at all.
+
+- [ ] **Step 7: Build and run the full suite**
 
 ```bash
 cd /Users/ivan/Work/airgapp/rpi && go build ./... && go test ./... -race 2>&1 | tail -20
@@ -2212,10 +2222,10 @@ cd /Users/ivan/Work/airgapp/rpi && go build ./... && go test ./... -race 2>&1 | 
 
 Expected: build succeeds, all packages pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-cd /Users/ivan/Work/airgapp/rpi && git add internal/ web && git commit -m "feat(lockwatch): connect the verdict to the radio
+cd /Users/ivan/Work/airgapp/rpi && git add internal/ web deploy/setup.sh && git commit -m "feat(lockwatch): connect the verdict to the radio
 
 The AP now goes down when the car is locked and empty and comes back up on any
 other signal — including the approach frames, which arrive seconds before the
