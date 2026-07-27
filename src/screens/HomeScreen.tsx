@@ -231,15 +231,24 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // `useState` only reads its argument once, so the port transition needs the
   // effect below — theirs has the same pair for the same reason.
   const [showCharge, setShowCharge] = useState(state.chargePortOpen);
-  const prevPortOpen = useRef(state.chargePortOpen);
+  // Their gate, verbatim: the flag handed to the row-list builder is
+  //
+  //     chargePortOpen || showCharge
+  //
+  // (`r20 = slot26; if (r20) skip; r20 = slot29;` — an OR, computed live and
+  // passed as the builder's 5th argument, whose result is what
+  // `.includes(RowTypes.Charging)` tests).
+  //
+  // So while the port is OPEN the panel is always up and the battery tap cannot
+  // hide it; the tap only decides things once you are unplugged. That is exactly
+  // how Ivan described it. My first cut seeded useState from the port and synced
+  // on transitions, which let you hide it while plugged in.
+  const chargePanelVisible = state.chargePortOpen || showCharge;
+  // And their effect: unplugging clears the manual toggle, so the panel does not
+  // linger from a seed. Without it, `showCharge` stays true from the initial
+  // useState and the OR keeps the panel up forever after one plug-in.
   useEffect(() => {
-    const open = state.chargePortOpen;
-    if (open !== prevPortOpen.current) {
-      prevPortOpen.current = open;
-      // Auto-show on plug-in, auto-hide on unplug. A manual toggle in between is
-      // preserved because this only fires on a TRANSITION, not on every render.
-      setShowCharge(open);
-    }
+    if (!state.chargePortOpen) setShowCharge(false);
   }, [state.chargePortOpen]);
 
   // ── Media bar ─────────────────────────────────────────────────────────────
@@ -384,7 +393,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           {/* ⚠️ TEMPORARY `|| fakeCharge` — and it is the FIX for "nothing
               happens": the panel is gated on state.awake, so with the car asleep
               no preset could ever render it. A forced preset bypasses both gates. */}
-          {(state.awake && showCharge) || fakeCharge ? (
+          {(state.awake && chargePanelVisible) || fakeCharge ? (
             <ChargeCard
               batteryLevel={state.batteryLevel}
               rangeMiles={state.rangeMiles}
