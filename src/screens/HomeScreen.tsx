@@ -20,6 +20,7 @@ import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvi
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
 import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
+import { TeslaFonts } from '@/constants/fonts';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
@@ -218,6 +219,14 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   const media = state.media;
   const mediaIsPlaying = media?.playbackStatus === 1;
   const mediaShowing = !!media && (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
+  // The title line falls back to the station, then the source label — a radio
+  // stream has no `title` but does have `station`, and a Bluetooth phone has
+  // neither but does name itself. Showing a bar with no text at all is the one
+  // outcome worth avoiding.
+  const mediaTitle = media?.title ?? media?.station ?? media?.sourceName ?? null;
+  // Never repeat the title as the artist — a station whose title fell back to
+  // `station` must not print it twice.
+  const mediaArtist = media?.artist && media.artist !== mediaTitle ? media.artist : null;
 
   const onRefresh = () => {
     // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
@@ -327,6 +336,28 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               matching the official app. */}
           {state.awake && mediaShowing ? (
             <View style={styles.mediaBar}>
+              {/* Title over artist, recovered verbatim from the official app's
+                  own home-screen media card (module 8716 region, automationIDs
+                  `vehicle_home_screen_media_song_title` / `…_song_artist`):
+                  both TextCategory.BodyLabel, both numberOfLines={1}, and the
+                  artist carries TextAppearance.Light — which resolves to
+                  theme.textColorLight (#8A8B8B), NOT a smaller size. The artist
+                  line renders only when the field `isSomething`, so a radio
+                  station with no artist collapses to one line rather than
+                  leaving a gap. */}
+              {mediaTitle ? (
+                <View style={styles.mediaDetails}>
+                  <Text style={styles.mediaTitle} numberOfLines={1}>
+                    {mediaTitle}
+                  </Text>
+                  {mediaArtist ? (
+                    <Text style={styles.mediaArtist} numberOfLines={1}>
+                      {mediaArtist}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+              <View style={styles.mediaControls}>
               <View style={styles.mediaGroup}>
                 <MediaButton symbol="backward.end.fill" size={22} onPress={() => fleet.sendMedia('prev')} />
                 {/* The glyph is the ACTION, not the state: showing "pause" while
@@ -353,6 +384,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
                   tint="rgba(255,255,255,0.5)"
                   onPress={() => fleet.sendMedia('volumeUp')}
                 />
+              </View>
               </View>
             </View>
           ) : null}
@@ -619,12 +651,37 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   mediaBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 14,
     paddingVertical: 14,
     marginBottom: 8,
+  },
+  // Text block above the transport row, matching the official card's stacking
+  // (their `topContainer` sits above the controls, not beside them).
+  mediaDetails: {
+    paddingHorizontal: 18,
+    marginBottom: 12,
+  },
+  // TextCategory.BodyLabel, verbatim: UniversalSansText-Medium 14/20/0.1.
+  mediaTitle: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: '#F3F3F3',
+  },
+  // Same category, TextAppearance.Light -> theme.textColorLight. Same SIZE as
+  // the title; only the colour changes. Shrinking it would be an invention.
+  mediaArtist: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: '#8A8B8B',
+  },
+  mediaControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   mediaGroup: {
     flex: 1,

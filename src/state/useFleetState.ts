@@ -166,9 +166,34 @@ export function useFleetState(): {
   const sendMedia = useCallback(
     (action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown') => {
       if (!activeIsLive) return;
+      // `toggle` is the ONE media action with a local counterpart, so it is the
+      // one that gets the optimistic mirror + rollback every other toggle in
+      // this app uses. next/prev/volume have nothing to mirror — the car's
+      // answer is the only truth — so they stay bare one-shots.
+      //
+      // Why this is needed at all: the official app derives the glyph straight
+      // from MediaPlaybackStatus with NO optimistic update, and gets away with
+      // it because their status arrives on a continuous Hermes stream. Ours
+      // arrives on the 60s sync, so copying them verbatim leaves the button
+      // showing the wrong glyph for up to a minute. Same derivation, but we
+      // have to close the gap ourselves.
+      const prev = current.state.media;
+      const playing = prev?.playbackStatus === 1;
+      const paused = prev?.playbackStatus === 2;
+      if (action === 'toggle' && prev && (playing || paused)) {
+        const optimistic = playing ? 2 : 1;
+        const restore = prev.playbackStatus;
+        applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: optimistic } } : s));
+        carLink.dispatch(
+          { type: 'media', action },
+          () => applyActive((s) => (s.media ? { ...s, media: { ...s.media, playbackStatus: restore } } : s)),
+          ['media'],
+        );
+        return;
+      }
       carLink.dispatch({ type: 'media', action }, () => {});
     },
-    [activeIsLive, carLink],
+    [activeIsLive, carLink, applyActive, current.state],
   );
 
   const fleetApi = useMemo<Fleet>(
