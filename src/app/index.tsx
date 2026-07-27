@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { recommendedColdPressure } from '@/ble/tirePressureText';
 import { TeslaFonts } from '@/constants/fonts';
+import { TIRE_PRESSURE_BAR_URI } from '@/constants/tirePressureIcon';
 
 import { CARD_FADE_MS, cardFadeEasing } from '@/godot/cardTransition';
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
@@ -222,10 +223,18 @@ export default function Index() {
                       actions.setTirePressureVisible(!state.tirePressureVisible);
                     }}
                   >
-                    <SymbolView
-                      name="tirepressure"
-                      tintColor={state.tirePressureVisible ? 'white' : 'rgba(255,255,255,0.6)'}
-                      size={26}
+                    {/* Tesla's own glyph, not the nearest SF Symbol. Theirs is a
+                        treaded wheel over a "bar" badge — the badge is the UNIT,
+                        which is why `tirepressure` alone never looked right. Size
+                        30 and the two tint colours are theirs verbatim
+                        (theme.buttonActivePrimaryText / buttonInactivePrimaryText). */}
+                    <Image
+                      source={{ uri: TIRE_PRESSURE_BAR_URI }}
+                      style={[
+                        styles.tireIcon,
+                        { tintColor: state.tirePressureVisible ? '#F1F1F1' : '#969696' },
+                      ]}
+                      resizeMode="contain"
                     />
                   </Pressable>
                 ) : null}
@@ -304,6 +313,13 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // 30, from `NamedIcon width/height` at the official app's own call site. The
+  // 44x44 box around it is ours — their header lays the button out through a
+  // `rightControls` slot we don't have, so only the glyph size transfers.
+  tireIcon: {
+    width: 30,
+    height: 30,
   },
   backButton: {
     position: 'absolute',

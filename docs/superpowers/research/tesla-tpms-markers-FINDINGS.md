@@ -164,3 +164,34 @@ font at `rgba(255,255,255,0.6)`; fixed in the same pass.
 `src/godot/TirePressureOverlay.tsx` and `src/app/index.tsx` (`styles.subtitle`) now carry §1–§4
 verbatim. Not applied: the last-seen age line (§2), which needs
 `TirePressureState.tpms_last_seen_pressure_time_*` plumbed through telemetry first.
+
+---
+
+## 7. The toggle button (module 8716 @4039993)
+
+```jsx
+<TouchableOpacity style={styles.tpmsButton} onPress={() => setShowTpms(!showTpms)}
+                  {...automationID('psi-button')}>
+  <NamedIcon name={unit === BAR ? IconName.tirepressure_bar : IconName.tirepressure_psi}
+             width={30} height={30}
+             color={showTpms ? theme.buttonActivePrimaryText : theme.buttonInactivePrimaryText} />
+</TouchableOpacity>
+```
+
+Dark theme: `buttonActivePrimaryText = '#F1F1F1'`, `buttonInactivePrimaryText = '#969696'`.
+
+**The icon is unit-aware** — there are two of them, and the badge below the wheel spells out the
+current unit. That is why no single SF Symbol was ever going to match: `tirepressure` is a tyre
+cross-section with a gauge, and Tesla's is a treaded wheel over a "bar"/"psi" plate.
+
+`IconName.tirepressure_bar` resolves through the icon registry (module 2676, deps index 677) to
+**module 3465**: an `SvgComponent` with `viewBox="0 0 24 24"` and two `currentColor` paths —
+
+1. the letterforms of "bar" (outlines, not text);
+2. `fill-rule="evenodd"` — the treaded wheel *and* the rounded badge, the even-odd rule punching
+   the plate's interior so it reads as an outline.
+
+Extracted verbatim into `src/constants/tirePressureIcon.ts`, rasterised from those exact paths at
+96px white-on-transparent so RN's `tintColor` can use it as an alpha mask — the same treatment
+`src/godot/steeringWheelIcon.ts` already uses. The psi variant (module **3467**) is not shipped:
+we render bar unconditionally until `getGuiSettings` lands.
