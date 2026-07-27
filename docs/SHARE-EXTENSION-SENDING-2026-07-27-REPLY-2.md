@@ -3,6 +3,14 @@
 **Date:** 2026-07-27
 **Re:** `SHARE-EXTENSION-SENDING-2026-07-27-REPLY.md`
 
+> ## ⚠️ Status — read this before acting on anything below
+>
+> Written before the Tesla extension teardown. **§5 is WITHDRAWN**; §4's *diagnosis* stands but its
+> *prescription* is now open. Everything else (§1, §2, §3, §6, §7) is unaffected and still live.
+>
+> Read in this order: **this file → `-REPLY-3.md` → `SHARE-EXTENSION-TESLA-TEARDOWN-2026-07-27.md`.**
+> REPLY-3 says what changed and why.
+
 Corrections accepted, guide updated (§4.1 and §6.3 rewritten in place, with your correction
 attributed). Four things back.
 
@@ -129,6 +137,14 @@ Option (1) is the right shape, taken further:
 > **Lock only around actual writes, with a short lease. Holding a link and holding the lock are
 > different things.**
 
+> 🔶 **Amended after the teardown.** The critique above is a platform argument and stands as
+> written — `bluetooth-central` + the car's push cadence really does keep a useless app's heartbeat
+> fresh, so option (2) fails. What is no longer settled is the *prescription*. Tesla ships **no
+> visible cross-process lock at all** in their extension; their `InFlightRequests` + completion
+> handler + bounded timeout reads as *"tolerate the collision, retry"*. So the live options are now
+> **write-scoped lock + lease** (below) or **no lock, retry on failure** (parity). Both beat the
+> heartbeat. Don't build either until §8's disassembly question is settled.
+
 - App takes the lock when a command starts, releases when it completes — not for the life of the
   link. Typical hold: the ~400 ms PE-4 measured, not minutes.
 - The lock carries a **lease** (say 5 s). A suspended or crashed holder's lease expires and the
@@ -138,7 +154,23 @@ Option (1) is the right shape, taken further:
 
 ---
 
-## 5. The part neither of us has faced: **stealing doesn't work, and that undercuts the BLE arm**
+## 5. ~~The part neither of us has faced: stealing doesn't work, and that undercuts the BLE arm~~
+
+> ## 🚫 WITHDRAWN — do not act on this section
+>
+> The **physics** in this section is correct and worth reading: a passive-entry answer written into
+> the car's mid-frame reassembler corrupts *both* frames, so no lock discipline makes a concurrent
+> handle-pull safe.
+>
+> The **conclusion** — ship the Pi arm first and make the BLE arm earn its place with fallback
+> statistics — is withdrawn. It was a risk calculation made without checking whether the vendor had
+> already taken the same risk. They had: Tesla's extension ships a BLE command path, a network path,
+> and a `CommandCenter` arbitrating between them. Ivan's call stands — build both arms, the way they
+> do. The interleave hazard is no longer a reason to skip the arm; it is the thing to measure.
+>
+> Kept below unedited so the reasoning is auditable. See `-REPLY-3.md` §2.
+
+*(Original text follows.)*
 
 Follow the priority rule to its end. Unlock must never wait. So the passive-entry responder must be
 able to write *through* a lock the extension holds. Fine — the extension's frame dies, it retries,
@@ -172,6 +204,10 @@ observed.
 Ivan asked for "Pi or BLE or both ideally", so this is a recommendation to **sequence**, not to
 cancel. He gets to overrule it. But I would rather he overrule it holding the fallback statistics
 than without them.
+
+> **He overruled it, and he was right to.** The teardown showed the vendor already ships both arms.
+> The durable outbox survives this section unchanged — it is needed under every branch, and today's
+> single-slot store loses writes regardless.
 
 ---
 
