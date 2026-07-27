@@ -6,161 +6,82 @@ reasoned rather than measured.
 
 ---
 
-## P0 — tomorrow
+## P0 — next
 
-### The BLE wedge — every exchange times out while the car is still talking
-See **[BLE-WEDGE-2026-07-26.md](BLE-WEDGE-2026-07-26.md)** for the full write-up.
+### Optimistic updates outlive reality (the frunk double-tap)
+**Reported on-car 2026-07-27.** On Controls: tap frunk, tap frunk again while the car is still
+physically opening. The car ends up OPEN. The app shows CLOSED — and stays closed for **30 seconds**.
 
-Highest priority because it breaks real use: sending a location to the car hangs and needs an app
-restart, and it is unproven whether a walk-up unlock survives it.
+The mechanism is not mysterious, which is why this is a design fix rather than an investigation:
 
-Order of work, and the order matters:
-1. **Instrument first** (§5 of the doc). The single question: during a wedge, are inbound frames
-   well-formed but for an OLD uuid (correlation), or not well-formed at all (framing)?
-2. Only then fix (§6). Leading candidate is a reassembly-buffer desync that cannot self-clear
-   because the push traffic that causes it also suppresses the 1000ms stale-gap flush.
-3. **Re-examine `BACKGROUND_READ_TIMEOUT_MS = 1200`** — it may make this worse, since giving up
-   sooner guarantees the car's reply lands after we stopped waiting.
+1. Tap 1 → optimistic `frunkOpen = true`, and `frunkOpen` is stamped with a grace expiry of
+   `now + GRACE_MS` (`intentGrace.ts:23`, **30_000**).
+2. Tap 2 → optimistic `frunkOpen = false`, grace **re-stamped** for a fresh 30s. Note the second
+   optimistic value is derived from the FIRST OPTIMISTIC VALUE, not from anything the car said.
+3. The car finishes opening and reports frunk OPEN.
+4. `filterPatchUnderIntent` strips it, because `frunkOpen` is still inside its grace window.
+5. So the truth is suppressed for the full 30s while the screen shows the opposite.
 
-Repro (cheap, no handle pull): run **PE-4** with the car **unlocked and a door open**. Passes when
-locked, fails when unlocked.
+The grace window's premise — *"the user's intent is right and the car's sensor lags"* — is sound for
+one tap and false for a second tap issued while the first is still in flight. Frunk makes it worse
+because actuate is a TOGGLE: both taps send the same `openFrunk`, so the app's model and the car's
+can diverge by a whole state.
 
-### Push the branch
-**439 commits ahead of `main`, unpushed.** Today alone: the VDS protocol work, the PII crypto, six
-probes, four correctness fixes to the unlock path. All on one machine.
+Directions, none of them settled:
+- **End the grace on CONFIRMATION, not on a timer.** Once a read agrees with the optimistic value,
+  drop the stamp; a later disagreement is then real news, not lag.
+- **Reject or coalesce a second tap while the first command is in flight** rather than optimistically
+  toggling again. `coalesce.ts` already has per-field lanes — check whether this is a config gap
+  rather than new machinery.
+- **30s is very long** for a closure that actuates in ~5s. It was chosen for lock, whose sensor
+  genuinely lags. A per-field grace is probably right.
+
+Do NOT just shorten GRACE_MS and call it fixed — that trades a 30s wrong state for a shorter wrong
+state and leaves the double-tap divergence intact.
+
+### Media: decide where cover art comes from
+The card, the transport controls, the recovered layout and Tesla's own source icons all shipped
+2026-07-27. The artwork SLOT is built (`MediaCard.artworkUri`) and nothing fills it, because **the
+car cannot supply it** — neither `MediaState` nor `MediaDetailState` carries an image field, URL or
+blob (whole proto checked), which is exactly why the official app renders a per-source glyph there.
+
+Two options, both needing a decision rather than more research:
+- **iTunes Search API** — free, no key, works for any source, cacheable by album. But it is an
+  outbound request describing what the user is listening to, and it needs signal the car often
+  won't have.
+- **The phone's own now-playing** — zero network, exact art, better metadata than the car gives.
+  Only when the phone IS the source, and reading another app's now-playing needs either the
+  Music-app-only public API or a private framework.
+
+Leaving it as the source icon is also a valid answer — it is what Tesla ships.
+
+---
+
+## Done 2026-07-27 (was P0)
+
+- **The BLE wedge** — fixed and measured. Correlator now decides on `request_uuid`, not the
+  once-per-session routing address. PE-1 0 lost challenges (was 15/15), PE-4 4171ms → ~419ms worst
+  under load, PE-5 lock session survives a domain-3 eviction. The location-send hang has stopped
+  reproducing; Ivan confirmed.
+- **Push the branch** — stale entry. The branch is on `origin/feat/ble-carlink` and pushed
+  regularly; only the working day's commits are ever ahead.
+- **Vehicle-data subscription + PII** — DELETED (`332e727`), not deferred. RESPONSE-20 closed it by
+  construction: `CarDataEncryptionManager::encryptPiiKey` requires exactly RSA-4096
+  (`cmp ebp, 0x200`), whose SPKI PEM is ~900B on the wire against the car's own ~452B cap. The two
+  constraints are mutually exclusive over BLE. Live location was never lost — it is a cleartext
+  `getVehicleData` READ (VDS-M9, run twice) — and live speed likewise. Only the SUBSCRIPTION is gone.
+- **TPMS** — pressures at the wheels, placard in the header, Tesla's own `tirepressure_bar` glyph,
+  all constants recovered rather than eyeballed. See `tesla-tpms-markers-FINDINGS.md`.
+- **Media** — read path, card, transport, source icons, and the BLE refresh cadence.
 
 ---
 
 ## In flight
 
-### Vehicle-data subscription + PII (the live-data path)
-The car **does** stream over BLE — proven by rate sweep (asked 5000ms → got 4979/5010; asked
-2000ms → got 1982/1983; zero domain-3 frames in the baseline). 23/23 pushes decrypt.
-
-`DriveState` is **gated** on this HW4 car: field 5 arrives present-and-empty with the content in an
-encrypted field-11 envelope (`field_number = 5`). RESPONSE-19 expected cleartext and flagged the
-choice as MCU2→HW4 divergent. It diverged. **So live speed needs the PII key, not just location.**
-
-**BLOCKED — the car will not accept a request big enough to carry the key.** Measured by the
-VDS-M7 size ladder (2026-07-26), one variable, bogus pem-shaped payloads so only SIZE varied:
-
-```
-sealed  80B   REPLIED  (cold open, 4591ms)
-sealed 148B   REPLIED   270ms
-sealed 276B   REPLIED   360ms      ≈ 382B on the wire
-sealed 372B   SILENT   25006ms     ≈ 478B on the wire
-sealed 420B   SILENT   25005ms
-sealed 471B   SILENT   25002ms
-```
-
-The cap sits between ~382B and ~478B on the wire — i.e. **452 bytes**, the same
-`MAX_RX_BUFFER_SIZE` Android applies to its INBOUND routables. RESPONSE-19 Q4 asked whether that
-cap was bilateral and could not answer it statically. It is.
-
-An RSA-2048 PKCS#1 PEM is 434 chars, which makes the sealed body 451B and the frame ~557B. **It
-cannot fit.** The car drops it silently — no rejection, just 25s of nothing, exactly as
-QtCarServer's "Dropping payload of size" / "exceeds maximumSize=" implies.
-
-This very likely explains Tesla's own architecture: RESPONSE-19 noted the official app registers
-its subscriber key through the **standalone cloud path** and only then subscribes over BLE. The
-embedded field is real and BLE-legal, but unusable at RSA-2048 because it does not fit.
-
-**Both fitting encodings tried (VDS-M8). The path is CLOSED over BLE, and here is why plainly.**
-
-```
-RSA-1024 PKCS#1 PEM        sealed 276B   REPLIED (0a 00)   7 pushes, wrapped key ABSENT
-RSA-2048 PEM, stripped     sealed 380B   SILENT            over the cap
-```
-
-The two constraints are **mutually exclusive**:
-
-- a key large enough for the car to accept (2048) produces a request that does not FIT;
-- a key that fits (1024) is parsed and answered — and the car mints NO PII key for it.
-
-Raw DER is not an escape: `subscriber_public_key` is a protobuf STRING, i.e. UTF-8 on the wire, so
-bytes above 0x7F are re-encoded and DER arrives corrupted AND longer. It is an invalid encoding of
-this field, not a compact one.
-
-So an air-gapped client cannot register a subscriber key over BLE. This is consistent with, and
-probably explains, RESPONSE-19's observation that the official app registers its key through the
-**standalone cloud path** and only then subscribes over BLE — a route we will not take.
-
-**Consequence, stated rather than hedged:** live LOCATION is out of reach, and on this HW4 car so
-is live SPEED, because `DriveState` is PII-gated here. The subscription itself works fine — 7
-pushes arrived on the 1024 rung — we simply cannot open the envelopes.
-
-**RESPONSE-20 CLOSED IT. Impossible by construction — do not reopen.**
-
-`CarDataEncryptionManager::encryptPiiKey` (QtCarServer @0x978770) wraps the PII key to our public
-key and then checks the ciphertext length:
-
-```
-0x978972  cmp   ebp, 0x200      ; 512 = RSA-4096 wrap size
-0x978978  je    mint            ; the ONLY success path in the function
-          else → "cipher length was <N> instead of <512>", no key minted
-```
-
-The car requires **exactly RSA-4096**. There is no `cmp 0x100` (2048) or `0x80` (1024) branch. A
-4096 SPKI PEM is ~800 chars ⇒ **~900 B on the wire**, against the car's own ~452 B cap. The size
-requirement and the cap are set by the same vendor to be mutually exclusive over BLE. Cloud
-registration is not a preference, it is the only route large enough — which is the air-gap line.
-
-Our 1024 run failed for TWO independent reasons: wrong size (128B wrap ≠ 512) **and** wrong format
-— RESPONSE-19 said PKCS#1, the car actually parses SPKI (`PEM_read_bio_RSA_PUBKEY`). Both
-corrections make the negative more certain, not less.
-
-Q5 (persistence) came back YES — the car keeps a subscriber DB, so it WOULD be one-time
-provisioning — but it does not help, because no air-gapped route can carry the key even once.
-
-~~**Live LOCATION is gone. Full stop, no workaround.**~~ **WRONG — see below.**
-
-**VDS-M9 (2026-07-27, run twice, identical): live location is NOT gone.** A `getVehicleData` READ
-of LocationState returns it populated:
-
-```
-{"lat":39.92477798461914,"lon":25.332660675048828,"heading":268}
-```
-
-That is the SECOND state where read and subscribe are gated differently on this car (DriveState was
-the first). RESPONSE-20 assumed one gate for both paths and concluded we had lost live location;
-we never had. The map pin and the passive-entry geofence have been using it all along.
-
-**What IS lost is the SUBSCRIPTION**, which is a much smaller thing than it sounded.
-
-⚠ **One claim in RESPONSE-20 is WRONG for our car, and it is the one that matters.** It says the
-poll and the subscription "both lose live speed, since both flow through the same PII gating".
-Measured otherwise: the SUBSCRIPTION returns DriveState empty with a field-11 envelope, but the
-screen-keyed POLL (a `getVehicleData` read) returns it cleartext — Ivan watched the km/h and the
-blue Driving line update while driving, at 1-3s, and `poll: focused {"states":"drive"}` succeeds
-every ~1.8s. **Read and subscribe are gated differently on this car.** So we keep live speed; only
-location is lost. Worth a confirmation run, but a human watching a speedometer in a moving car is
-strong evidence.
-
-**VDS-M9 also answers the keep-or-delete question: DELETE.** Subscribing with ChargeState(5),
-ClimateState(6) and ClosuresState(11) and no PII key produced, twice:
-
-```
-8 pushes, 0 decrypted
-ChargeState / ClimateState / ClosuresState  →  no data
-```
-
-Eight frames over 14s is ~1.75s apart, i.e. the VCSEC push cadence — so those were almost certainly
-ordinary status pushes, not subscription pushes, and the subscription delivered NOTHING. (Stated
-with the hedge it deserves: the probe reports "0 decrypted", not "0 domain-3 frames", so this is
-strong rather than airtight. It reproduced identically twice.)
-
-Combined with the PII gate being closed for good, the subscription can deliver only LocationState
-and DriveState, both of which are gated, and both of which we can already READ. **It has no path to
-value.** `piiKey.ts`, `node-forge`, and the VDS-M1/M3/M5/M6/M7/M8/M9 probes are dead weight and
-should be deleted rather than carried.
-
-Until then the screen-keyed poll below is the live-data story, and it is a good one.
-
-Prior context: the car DOES stream over BLE — proven by rate sweep (asked 5000ms → got 4979/5010;
-asked 2000ms → got 1982/1983; zero domain-3 frames in the baseline), 23/23 pushes decrypt, and
-`DriveState` is gated on this HW4 car (field 5 present-and-empty, content in a field-11 envelope).
-The crypto is unit-tested end to end against an independently-built envelope, so nothing here
-points at our implementation.
+### Vehicle-data subscription + PII — DELETED, do not reopen
+Moved to Done above. The full evidence trail (VDS-M1 through M9, the size ladder, RESPONSE-20's
+`cmp ebp, 0x200`) is in git history at `332e727` and in RESPONSE-19/20. Summarised there so this
+section stops being the longest thing in the file.
 
 ### Screen-keyed focused read (live speed via polling)
 Enabled. Gated on three measured fixes: deaf window (PE-1, 15 lost → 0, answered at 2ms),
@@ -181,10 +102,12 @@ carried correctly there is none. Note PE-1 phase B ran 104 background reads with
 against 5-with-4-failing in the run before — the link was healthy throughout, so this is a pass on
 a good link rather than a pass that got lucky.
 
+- Cadences, updated 2026-07-27 by reading `startBleVehicleUpdates`' DISPATCH SITES (not its
+  constant pool): security 1250 / scheduling 2500 / location 5000 PROVEN, **controls 1650 upgraded
+  INFERRED → PROVEN**, climate 5000 still inferred, and **media 1250 PROVEN** — media is fetched
+  over BLE, grouped with closures/charge/climate. Home→drive remains OUR choice.
 - **Still untested: the actual outcome.** Nobody has driven the car and watched the speed line
   update on its own. Everything so far is link-level measurement.
-- Cadences: security 1250 / scheduling 2500 / location 5000 are PROVEN; controls 1650 and climate
-  5000 are INFERRED. Home→drive is OUR choice, not recovered.
 
 ---
 
@@ -207,10 +130,14 @@ against a real burst.
 
 ## Backlog
 
-- `getGuiSettings` (Tier 2) — authoritative km/h vs mph instead of inferring. Self-contained.
-- REQUEST-19 Q3 leftovers: does an active subscription hold the car AWAKE? Do subscriptions
-  survive a BLE reconnect? Do they accumulate? **Do not ship a standing subscription until the
-  keep-awake question is answered** — battery.
+- `getGuiSettings` (Tier 2, request number 1) — the last place the app GUESSES a unit, and it now
+  unblocks three shipped-but-hardcoded things, not one:
+    * km/h vs mph on the status line (currently inferred);
+    * `gui_tirepressure_units` → the bar/psi tyre-label formatting AND the second tyre icon
+      (`tirepressure_psi`, module 3467) which is deliberately not shipped because we render bar
+      unconditionally;
+    * the media card's own unit-free formatting stays honest.
+  Self-contained: one state read, one existing request number.
 - ~30 BLE-buildable commands and 19 unread state submessages (RESPONSE-15 P2).
 - Multi-stop nav: dropped. f21 is the only message honouring PREPEND/APPEND and cannot be trusted
   with coordinates; route state is unreadable while locked.
@@ -227,3 +154,10 @@ median that buried a 4171ms outlier; a load that omitted the priority it was mea
 The rule that came out of it: **never gate the evidence dump on the classification being tested,
 and never verdict on a statistic that can average away the failure case.** A probe that cannot
 show it did the thing it was testing must report VOID, not a result.
+
+**2026-07-27 adds a second rule, earned three times in one day: read the USE, not the DECLARATION.**
+- The tyre label's font size was borrowed from a call site that resolved differently (18 vs 14).
+- The media cadence sits next to 1650 in the constant pool and is 1250 at its dispatch site.
+- The media refresh mechanism was first taken from the CLOUD poll because that constant was found
+  first; the BLE task is a different generator entirely.
+In all three the adjacent, easy-to-find value was wrong and the one at the point of use was right.
