@@ -1,8 +1,18 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
+import {
+  MEDIA_APPLE_MUSIC_URI,
+  MEDIA_BLUETOOTH_URI,
+  MEDIA_RADIO_URI,
+  MEDIA_SIRIUSXM_URI,
+  MEDIA_SPOTIFY_URI,
+  MEDIA_TIDAL_URI,
+  MEDIA_TUNEIN_URI,
+} from '@/constants/mediaSourceIcons';
 import type { MediaNowPlaying } from '@/types/vehicleTypes';
 
 // MediaCard — the home-screen "now playing" card.
@@ -51,34 +61,55 @@ const ARTIST_COLOR = '#8A8B8B';
 
 export interface MediaCardProps {
   media: MediaNowPlaying;
+  // Cover art for the current track, when we have it. The CAR cannot supply
+  // this — neither MediaState nor MediaDetailState carries an image field, URL
+  // or blob, which is precisely why the official app renders a per-source glyph
+  // instead. So this is always sourced outside the car, and `null` (no artwork
+  // yet, or none found) must stay a first-class state rather than an error: it
+  // falls back to the source glyph in the same slot.
+  artworkUri?: string | null;
   onAction: (action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown') => void;
 }
 
-// CarServer.MediaSourceType -> a glyph. Tesla ships a per-source NamedIcon set;
-// we have not extracted those assets, so this is the nearest SF Symbol per
-// source rather than their artwork. The MAPPING is real (the enum is from
-// vehicle.proto); only the glyphs are ours.
-function sourceSymbol(sourceType: number | undefined): SFSymbol {
+// CarServer.MediaSourceType -> Tesla's OWN source icon.
+//
+// Both halves are recovered, not guessed: the enum is from vehicle.proto, and
+// the artwork is extracted from their icon registry (see mediaSourceIcons.ts).
+// Their own mapper switches on the same MediaSourceType enum, so this is the
+// same key they use.
+//
+// `null` for sources we have no icon for — the caller falls back rather than
+// showing a wrong brand, which on a card whose whole job is "what is playing"
+// would be worse than showing nothing.
+function sourceIconUri(sourceType: number | undefined): string | null {
   switch (sourceType) {
+    case 12: // Spotify
+      return MEDIA_SPOTIFY_URI;
+    case 8: // Bluetooth
+      return MEDIA_BLUETOOTH_URI;
     case 1: // AM
     case 2: // FM
     case 10: // DAB
     case 13: // USRadio
     case 14: // EURadio
-      return 'antenna.radiowaves.left.and.right';
+    case 24: // OnlineRadio
+    case 25: // OnlineRadio2
+      return MEDIA_RADIO_URI;
     case 3: // XM
-      return 'dot.radiowaves.left.and.right';
-    case 8: // Bluetooth
-      return 'wave.3.right';
-    case 6: // LocalFiles
+    case 19: // SiriusXM
+      return MEDIA_SIRIUSXM_URI;
+    case 17: // TuneIn
+      return MEDIA_TUNEIN_URI;
+    case 20: // Tidal
+      return MEDIA_TIDAL_URI;
     case 7: // iPod
-      return 'folder.fill';
+      return MEDIA_APPLE_MUSIC_URI;
     default:
-      return 'music.note';
+      return null;
   }
 }
 
-export function MediaCard({ media, onAction }: MediaCardProps) {
+export function MediaCard({ media, artworkUri = null, onAction }: MediaCardProps) {
   // Title falls back to station, then source label: a radio stream has no
   // `title` but has a `station`, and a Bluetooth phone has neither but names
   // itself. A card with no text at all is the one outcome worth avoiding.
@@ -87,10 +118,27 @@ export function MediaCard({ media, onAction }: MediaCardProps) {
   // must not repeat it underneath.
   const artist = media.artist && media.artist !== title ? media.artist : null;
   const playing = media.playbackStatus === 1;
+  const sourceUri = sourceIconUri(media.sourceType);
 
   return (
     <View style={styles.card}>
       <View style={styles.topPanel}>
+        {/* Artwork on the LEFT, in place of the official app's right-hand source
+            icon. A square the full height of the panel, so it reads as the
+            record rather than as another button. When there is no artwork the
+            same slot holds the source glyph — the tile never collapses, or the
+            title would shift sideways every time a track changed. */}
+        <View style={styles.artwork}>
+          {artworkUri ? (
+            <Image source={{ uri: artworkUri }} style={styles.artworkImage} contentFit="cover" transition={180} />
+          ) : sourceUri ? (
+            // Tinted, not rendered in brand colour — their NamedIcon takes a
+            // `color` and the artwork carries none, so monochrome IS the design.
+            <Image source={{ uri: sourceUri }} style={styles.sourceGlyph} tintColor={ARTIST_COLOR} />
+          ) : (
+            <SymbolView name="music.note" tintColor={ARTIST_COLOR} size={24} />
+          )}
+        </View>
         <View style={styles.details}>
           {title ? (
             <Text style={styles.title} numberOfLines={1}>
@@ -104,9 +152,6 @@ export function MediaCard({ media, onAction }: MediaCardProps) {
               {artist}
             </Text>
           ) : null}
-        </View>
-        <View style={styles.sourceIcon}>
-          <SymbolView name={sourceSymbol(media.sourceType)} tintColor={ARTIST_COLOR} size={22} />
         </View>
       </View>
 
@@ -188,14 +233,29 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'column',
     justifyContent: 'center',
-    paddingLeft: 18,
+    // 14 rather than their 18: the artwork tile already supplies the optical
+    // left margin, so 18 on top of it reads as a gap.
+    paddingLeft: 14,
     paddingRight: 18,
   },
-  sourceIcon: {
-    width: 50,
-    flexDirection: 'column',
-    justifyContent: 'center',
+  // Square, panel-height, flush with the panel's leading edge — its outer corner
+  // inherits the panel's radius so the art doesn't overhang it.
+  artwork: {
+    width: PANEL_H,
+    height: PANEL_H,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderTopLeftRadius: PANEL_RADIUS,
+    overflow: 'hidden',
+    backgroundColor: '#2A2B2C',
+  },
+  artworkImage: {
+    width: '100%',
+    height: '100%',
+  },
+  sourceGlyph: {
+    width: 26,
+    height: 26,
   },
   title: {
     fontFamily: TeslaFonts.medium,
