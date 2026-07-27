@@ -12,6 +12,7 @@ import {
   createSelectingTransport,
   PiClient,
   closeAllCachedSessions,
+  closeCachedSession,
   loadOrCreateDeviceKeys,
   deleteDeviceKeys,
   publicKeyBase64,
@@ -397,7 +398,13 @@ export default function CarLinkScreen() {
       // legitimately take 8-15s" — if that is what we measure, an in-sheet send is
       // a spinner nobody will wait for, and the answer is a warm link on the Pi
       // rather than a rescan per share.
-      await closeAllCachedSessions();
+      //
+      // DOMAIN 3 ONLY. Taking every domain would evict the VCSEC session the
+      // passive-entry responder lives on — measured 2026-07-27, this bench produced
+      // a run of `auth DROPPED (no live VCSEC session)` for a whole test session by
+      // clearing both. The bench needs a cold infotainment handshake; it has no
+      // business touching walk-up unlock.
+      closeCachedSession(DOMAIN_INFOTAINMENT);
       const t0 = Date.now();
       const gw = await makeGateway();
       const res = await gw.runRawAction(benchMessage(c, order), `bench-${benchMsg}-${benchOrder}`);
@@ -462,7 +469,8 @@ export default function CarLinkScreen() {
   const handleBenchWake = async () => {
     benchPaceWarning();
     try {
-      await closeAllCachedSessions();
+      // Domain 3 only — see the note in handleBenchSend. Never evict VCSEC here.
+      closeCachedSession(DOMAIN_INFOTAINMENT);
       const gw = await makeGateway();
       const t0 = Date.now();
       const out = await gw.wake();
@@ -495,7 +503,9 @@ export default function CarLinkScreen() {
       // forces a fresh handshake through the selector. Costs one handshake per
       // read; on a hand-driven bench that is free, and it also removes the stale
       // -session class of fault that corrupted the automated runs.
-      await closeAllCachedSessions();
+      //
+      // Domain 3 only — see the note in handleBenchSend. Never evict VCSEC here.
+      closeCachedSession(DOMAIN_INFOTAINMENT);
       const readT0 = Date.now();
       const gw = await makeGateway();
 

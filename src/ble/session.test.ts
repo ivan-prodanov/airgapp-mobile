@@ -10,6 +10,7 @@ import {
   withCachedSession,
   evictSession,
   closeAllCachedSessions,
+  closeCachedSession,
   peekPiSessionId,
   honkAction,
   vcsecGetStatusAction,
@@ -225,6 +226,40 @@ test('withCachedSession reuses a cached session for the same domain', async () =
   // Only ONE handshake / Pi openSession across two calls.
   assert.equal(car.openCount, 1);
   assert.deepEqual(seen, [false, true]);
+  closeAllCachedSessions();
+});
+
+test('closeCachedSession evicts ONE domain and leaves the other cached', async () => {
+  // The whole point of the narrow evict: the VCSEC session is where the
+  // passive-entry responder lives, so a caller that wants a fresh infotainment
+  // handshake must not take walk-up unlock down with it. Measured 2026-07-27 —
+  // the nav bench cleared both and produced a run of
+  // `auth DROPPED (no live VCSEC session)` for an entire test session.
+  __resetSessionCaches();
+  const car = new FakeCar();
+  const deviceKeys = makeDeviceKeys();
+  const vcsec = { transport: car, vin: VIN, deviceKeys, domain: DOMAIN_VEHICLE_SECURITY as Domain };
+  const info = { transport: car, vin: VIN, deviceKeys, domain: DOMAIN_INFOTAINMENT as Domain };
+
+  await withCachedSession(vcsec, async () => {});
+  await withCachedSession(info, async () => {});
+
+  closeCachedSession(DOMAIN_INFOTAINMENT);
+
+  // Infotainment must re-handshake...
+  const infoCached: boolean[] = [];
+  await withCachedSession(info, async (_s, cached) => {
+    infoCached.push(cached);
+  });
+  assert.deepEqual(infoCached, [false], 'evicted domain should NOT be cached');
+
+  // ...while VCSEC is untouched and still warm.
+  const vcsecCached: boolean[] = [];
+  await withCachedSession(vcsec, async (_s, cached) => {
+    vcsecCached.push(cached);
+  });
+  assert.deepEqual(vcsecCached, [true], 'VCSEC must survive an infotainment evict');
+
   closeAllCachedSessions();
 });
 

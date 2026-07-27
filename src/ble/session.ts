@@ -993,7 +993,21 @@ function _evict(domain: number): void {
   entry.session.close().catch(() => {});
 }
 
-// closeAllCachedSessions drops every domain's cached in-memory session.
+// closeCachedSession drops ONE domain's cached session, leaving the others alone.
+//
+// Prefer this over closeAllCachedSessions everywhere. Taking every domain when
+// you only needed one is the same mistake evictScopeFor exists to prevent, one
+// level up: the VCSEC (domain 2) session is where the passive-entry responder
+// lives, so a caller that only wanted a fresh infotainment session can knock out
+// walk-up unlock as a side effect. Measured on 2026-07-27 — the nav bench called
+// closeAllCachedSessions before each action and produced a run of
+// `auth DROPPED (no live VCSEC session)` for the whole test.
+export function closeCachedSession(domain: number): void {
+  _evict(domain);
+}
+
+// closeAllCachedSessions drops every domain's cached in-memory session. Blunt by
+// design — for teardown and vehicle switches, not for "I need one domain fresh".
 export function closeAllCachedSessions(): void {
   for (const domain of [..._domainCache.keys()]) _evict(domain);
 }
