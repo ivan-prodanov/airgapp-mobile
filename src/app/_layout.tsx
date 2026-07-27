@@ -10,9 +10,29 @@ import 'react-native-url-polyfill/auto';
 import { initLogSink } from '@/services/logSink';
 import { installConsoleBridge } from '@/services/consoleBridge';
 import { logi } from '@/services/logbus';
+import { onPassiveEntryLog } from '../../modules/expo-passive-entry';
 installConsoleBridge();
 initLogSink();
 logi('app', 'boot');
+
+// Route the native passive-entry log into the same SQLite sink pull-logs.sh
+// reads. CarRegionMonitor already logs every region + beacon wake via
+// logExternal, but nothing subscribed to the 'log' event, so those lines reached
+// the device console only and died with it.
+//
+// That mattered: CarRegionMonitor's own comment names the one question its
+// static analysis could not answer — whether the car emits an iBeacon at all,
+// and whether the emission is sleep-gated. It is the load-bearing unknown for
+// any region-exit design, and 2026-07-27 established what happens when you build
+// on an unverified assumption about what the car transmits (see
+// docs/superpowers/research/vcsec-push-requires-an-authenticated-key-FINDINGS.md
+// — the Pi spent a whole phase listening for pushes the car never sends a
+// keyless listener). So: log it, drive normally for a week, then look.
+//
+// `car beacon: ENTERED` appearing ⇒ the car beacons and region-exit is viable.
+// Never appearing ⇒ it does not, and that design dies for the price of this
+// subscription rather than another phase.
+onPassiveEntryLog((line) => logi('region', line));
 
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
