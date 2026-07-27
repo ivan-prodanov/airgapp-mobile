@@ -23,6 +23,8 @@ import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard } from '@/components/ChargeCard';
+// ⚠️ TEMPORARY — remove with the strip (one revert).
+import { ChargeCardDebugStrip, type ChargePreset } from '@/components/ChargeCardDebugStrip';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
@@ -209,6 +211,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
   // ONE refresh for all three entry points — the pull, the status tap and the
   // battery-% tap — so they cannot drift apart.
+  // ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert).
+  const [fakeCharge, setFakeCharge] = useState<ChargePreset | null>(null);
+
   // ── Charge panel ──────────────────────────────────────────────────────────
   // Recovered contract (tesla-charge-row-FINDINGS.md §6): the official app holds
   //   const [showCharge, toggleCharge] = useState(chargePortOpen)
@@ -348,7 +353,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               toggle this used to be gated on. */}
           {/* Their row ORDER below favourites is ChargingAlerts -> Charging ->
               MediaControl, so the charge panel sits above the media card. */}
-          {state.awake && showCharge ? (
+          {/* ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert). */}
+          <ChargeCardDebugStrip activeLabel={fakeCharge?.label ?? null} onPick={setFakeCharge} />
+
+          {state.awake && (showCharge || fakeCharge) ? (
             <ChargeCard
               batteryLevel={state.batteryLevel}
               rangeMiles={state.rangeMiles}
@@ -370,6 +378,11 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               // no second code path to keep in step.
               onStartStopCharging={(start) => actions.patch({ charging: start })}
               onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
+              // ⚠️ TEMPORARY — spread LAST so the preset wins on the DISPLAYED
+              // values only. The three callbacks above are untouched, so the
+              // panel's own buttons stay fully live (Ivan's call) and really do
+              // start/stop charging and open/close the port.
+              {...(fakeCharge ? fakeCharge.patch : null)}
             />
           ) : null}
 
