@@ -26,13 +26,10 @@ import * as Haptics from 'expo-haptics';
 
 // 100 is the track's end, so it needs no drawn break.
 const DETENTS = [50, 60, 70, 80, 90, 100];
-// How close to a detent the magnet starts acting, in percent.
-const SNAP = 2;
-// How hard it pulls, as a multiplier on the distance from the detent. 1 = no
-// magnet, 0 = a hard snap that swallows everything inside SNAP (what we had).
-// 0.5 halves the remaining distance, so within ±2 the reachable values thin out
-// but do not vanish: raw 58.0-58.9 lands on 59, and 57 is untouched.
-const MAGNET_PULL = 0.5;
+// `0.01 * slidingAreaWidth` in their worklet. The track spans 0-100, so 1% of
+// its width is one percentage point — and the comparison is STRICT (`<`), which
+// is exactly what leaves 59 reachable next to the 60 detent.
+const SNAP_WINDOW_PCT = 1;
 
 // Measured off Ivan's two reference crops rather than guessed. Both crops are
 // the same scale — the track spans ~1020px for a ~340pt card, so ~3.0 px/pt:
@@ -73,7 +70,23 @@ const TRACK = '#2c2e32';
 // #2c2e32 track, mine were clearly lighter and read as bright ticks again.
 const BREAK_COLOR = '#4A4C50';
 
-const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
+// Their haptic, recovered verbatim from the slider module:
+//
+//   const throttleMs = Platform.OS === 'ios' ? 10 : 200;
+//   const throttleHaptic = throttle(() => lightHaptic(), throttleMs,
+//                                   { leading: true, trailing: false });
+//
+// LIGHT, not the Rigid we used everywhere else — that is the level Ivan asked
+// me to match. Throttled leading-edge at 10ms so a fast drag across several
+// detents cannot machine-gun.
+const HAPTIC_THROTTLE_MS = 10;
+let lastHapticAt = 0;
+const detentTick = () => {
+  const now = Date.now();
+  if (now - lastHapticAt < HAPTIC_THROTTLE_MS) return;
+  lastHapticAt = now;
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+};
 
 export interface ChargeLimitSliderProps {
   /** The car's current charge, drawn as the green fill. Independent of the limit. */
@@ -144,30 +157,42 @@ export function ChargeLimitSlider({
     if (w <= 0) return;
     const { min: lo, max: hi } = bounds.current;
     const frac = Math.max(0, Math.min(1, (pageX - trackLeft.current) / w));
-    // Continuous first, rounded LAST. The old code rounded to an integer and
-    // then hard-clamped anything within SNAP of a detent onto it, which made
-    // 58 and 59 unreachable — from 57 the next value you could get was 60.
+    // Their onUpdate worklet, verbatim (MagnifiedPercentSliderTsx5):
     //
-    // Tesla's magnet does not remove percentages, it warps travel toward the
-    // detent: near 60 the thumb accelerates, but 59 is still addressable. So
-    // this compresses the raw value toward the detent instead of snapping it,
-    // and only then rounds.
+    //   const snapToIdx = markerLocations
+    //     .map(({percentRatio}) => Math.abs(value - percentRatio*w) < 0.01*w)
+    //     .indexOf(true);
+    //   if (snapToIdx >= 0) {
+    //     value = markerLocations[snapToIdx].percentRatio * w;
+    //     translateX.value !== value && runOnJS(throttleHaptic)();
+    //   }
+    //   onSliding(Math.round(value / w * max));
+    //
+    // So it IS a hard snap — but the window is 1% OF THE TRACK WIDTH, which on a
+    // 0-100 track is one percentage point, and the comparison is STRICT. That is
+    // why 59 survives: |59 - 60| = 1 is not < 1. My warp reached the same
+    // outcome by a different route; this is their actual rule.
+    //
+    // And the haptic fires ONLY here — on a snap that actually MOVES the value —
+    // never on an ordinary step. That is the "only at the breakers".
     const raw = Math.max(lo, Math.min(hi, frac * hi));
-    let warped = raw;
+    let snapped = raw;
+    let didSnap = false;
     for (const d of DETENTS) {
-      const delta = raw - d;
-      if (Math.abs(delta) <= SNAP) {
-        warped = d + delta * MAGNET_PULL;
+      if (Math.abs(raw - d) < SNAP_WINDOW_PCT) {
+        snapped = d;
+        didSnap = true;
         break;
       }
     }
-    const value = Math.max(lo, Math.min(hi, Math.round(warped)));
-    // Warped, not raw — so the thumb visibly accelerates into a detent, which is
-    // what makes the magnet FELT rather than merely computed.
-    setDragFrac(Math.max(lo, Math.min(hi, warped)) / hi);
+    const value = Math.max(lo, Math.min(hi, Math.round(snapped)));
+    setDragFrac(Math.max(lo, Math.min(hi, snapped)) / hi);
     const prev = lastValue.current;
     if (value === prev) return;
-    if (DETENTS.some((d) => (prev < d && value >= d) || (prev > d && value <= d))) detentTick();
+    // `translateX.value !== value && throttleHaptic()` — the tick is gated on the
+    // snap having actually moved things, which is what stops it re-firing while
+    // the finger jitters inside a detent's window.
+    if (didSnap) detentTick();
     lastValue.current = value;
     // Moved off where the touch landed ⇒ CHANGING.
     if (value !== grantValue.current) setChanging(true);
@@ -183,6 +208,9 @@ export function ChargeLimitSlider({
       onPanResponderGrant: (e) => {
         measureTrack();
         grantValue.current = lastValue.current;
+        // Their onStart worklet fires one too: `ctx.offsetX = translateX.value;
+        // runOnJS(throttleHaptic)();` — so touching the track ticks.
+        detentTick();
         onSlidingRef.current?.(true);
         applyFromPageX(e.nativeEvent.pageX);
       },
