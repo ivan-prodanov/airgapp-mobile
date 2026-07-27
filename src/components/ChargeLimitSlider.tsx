@@ -64,7 +64,9 @@ const TRACK = '#2c2e32';
 //
 // ⚠️ This one value is ESTIMATED off the zoomed crop, not measured from a
 // constant — it reads as a mid grey against the #2c2e32 track. Say if it is off.
-const BREAK_COLOR = '#6E7075';
+// Darkened after comparing side by side: theirs sit only a little above the
+// #2c2e32 track, mine were clearly lighter and read as bright ticks again.
+const BREAK_COLOR = '#4A4C50';
 
 const detentTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
 
@@ -272,10 +274,12 @@ const styles = StyleSheet.create({
   // ~9pt bar — matching the zoomed crop, where the breakers clearly overhang.
   break: {
     position: 'absolute',
-    // Taller and wider than the first attempt (was 2pt wide, -2 proud): 5pt
-    // track -> 13pt bar, per Ivan against the real thing.
-    top: -4,
-    bottom: -4,
+    // 5pt track -> 11pt bar. Scaled off the thumb, which is the only feature
+    // common to both crops at a known size: theirs is ~26px of breaker to ~50px
+    // of thumb, i.e. ~11pt against the 21pt changing thumb. 13pt (top/bottom -4)
+    // overshot, which is the "ours are taller now".
+    top: -3,
+    bottom: -3,
     width: BREAK_W,
     marginLeft: -BREAK_W / 2,
     borderRadius: 1,

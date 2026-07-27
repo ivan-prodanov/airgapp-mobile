@@ -45,11 +45,13 @@ import { TESLA_FONT_MAP } from '@/constants/fonts';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
 import { useOutboxDrain } from '@/hooks/useOutboxDrain';
 import { useCarPresencePublish } from '@/hooks/useCarPresencePublish';
+import { useShareTraceMirror } from '@/hooks/useShareTraceMirror';
 
 // Renders nothing; exists only so useOutboxDrain runs inside <VehicleProvider>.
 function OutboxDrain(): null {
   useOutboxDrain();
   useCarPresencePublish();
+  useShareTraceMirror();
   return null;
 }
 import { VehicleProvider } from '@/state/VehicleProvider';
