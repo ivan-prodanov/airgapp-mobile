@@ -354,6 +354,21 @@ export default function CarLinkScreen() {
   });
   const benchCoord = () => parseCoord(benchPoints()[benchTarget]);
 
+  // Which transport this press will actually use. 'auto' reports as AUTO — the
+  // selector's own `transport selected:` line says which candidate won.
+  const benchTransportLabel = () =>
+    transport === 'pi' ? 'PI' : transport === 'ble' ? 'BLE' : 'AUTO';
+
+  // A Pi run with no Pi config is not a slow Pi run — it is no run at all. Say so
+  // rather than letting wrapPiClient fail somewhere less obvious.
+  const benchPiConfigured = async (): Promise<boolean> => {
+    if (transport !== 'pi') return true;
+    const cfg = await loadPiConfig(store);
+    if (cfg?.baseUrl && cfg?.token) return true;
+    append('ERROR bench: transport is Pi but no baseUrl/token saved — tap "Save config" first');
+    return false;
+  };
+
   const benchMessage = (c: ProbeCoord, order: number): ActionPayload => {
     if (benchMsg === 'f53') return navigateGpsAction({ lat: c.lat, lon: c.lon, order });
     if (benchMsg === 'f106') return navigateGpsWithLabelAction({ lat: c.lat, lon: c.lon, label: 'bench', order });
@@ -375,13 +390,18 @@ export default function CarLinkScreen() {
   };
 
   const handleBenchSend = async () => {
+    if (!(await benchPiConfigured())) return;
     const c = benchCoord();
     if (!c) {
       append(`ERROR bench: point ${benchTarget} is not "lat,lon"`);
       return;
     }
     const order = NAV_ORDER[benchOrder];
-    const line = `SEND ${benchMsg} order=${benchOrder}(${order}) → ${benchTarget} ${fmtCoord(c)}`;
+    // Record the transport ON THE LINE. Without this the bench's own traffic is
+    // indistinguishable from the background poll's in the diagnostics file — which
+    // is exactly how a run of timings got misread as BLE on 2026-07-27 when the
+    // `txp` lines being grepped belonged to useCarLink's poll, not to a bench send.
+    const line = `SEND [${benchTransportLabel()}] ${benchMsg} order=${benchOrder}(${order}) → ${benchTarget} ${fmtCoord(c)}`;
     benchPaceWarning();
     append(line);
     const out: string[] = [line];
@@ -493,6 +513,7 @@ export default function CarLinkScreen() {
   // version read DriveState first and threw away everything on a fault — which is
   // precisely the case the sleep test is about.
   const handleBenchRead = async () => {
+    if (!(await benchPiConfigured())) return;
     benchPaceWarning();
     const out: string[] = [];
     try {
@@ -539,6 +560,7 @@ export default function CarLinkScreen() {
         readError,
       };
       out.push(
+        `READ [${benchTransportLabel()}]`,
         formatRouteRead(next),
         formatRouteDelta(lastBenchReadRef.current, next),
         `COLD total ${((Date.now() - readT0) / 1000).toFixed(1)}s (VCSEC + DriveState, from zero cached sessions)`,
