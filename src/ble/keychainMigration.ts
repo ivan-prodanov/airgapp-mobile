@@ -27,10 +27,20 @@
 
 import type { SecretStore } from './types';
 
-// The two secrets the Share Extension needs. The device key proves who we are to
-// the car; the Pi config carries the bearer token for the network arm. Anything
-// added here later must also be added to the extension's read path.
-export const SHARED_SECRET_KEYS = ['ble.deviceKey.v1', 'ble.piConfig.v1'] as const;
+// Everything the Share Extension needs to send a destination on its own:
+//
+//   ble.deviceKey.v1  — proves who we are to the car
+//   ble.carConfig.v1  — WHICH car (the VIN). Without it the extension cannot
+//                       derive the BLE scan name or open a Pi session at all.
+//   ble.piConfig.v1   — the bearer token for the network arm
+//
+// carConfig was missed when the VIN was split out of PiConfig on 2026-07-27:
+// this list still described the pre-split world, so the probe and the purge both
+// ignored the car's identity — and an extension built against this list would
+// have had a key and a token but no idea which vehicle to talk to.
+//
+// Anything added here must also be added to the extension's read path.
+export const SHARED_SECRET_KEYS = ['ble.deviceKey.v1', 'ble.carConfig.v1', 'ble.piConfig.v1'] as const;
 
 export type MigrationOutcome =
   // Nothing was in the old location — fresh install, or a previous run finished.
