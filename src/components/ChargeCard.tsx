@@ -219,18 +219,13 @@ export function ChargeCard({
           and a stepper that cannot work is worse than no stepper. */}
       {/* Amperage. Same wide bar as app/charging.tsx, via the SAME component —
           hold-to-repeat, and the chevron disappears at the bound rather than
-          dimming. Sits directly under the slider, where our charging page puts
-          it. Shown only with a cable in: the car rejects it otherwise, and a
-          control that cannot work is worse than none. */}
-      {cableAttached ? (
-        <AmpStepper
-          amps={chargingAmps}
-          min={ampMin}
-          max={ampMax}
-          onChange={() => {}}
-          onCommit={onSetAmps}
-        />
-      ) : null}
+          dimming.
+          
+          NOT gated on a cable. Ivan: on a parked, unplugged car Tesla still
+          shows it, and that is right — the charge current is a SETTING for the
+          next session, not an action on the current one. My "the car rejects it
+          otherwise" was reasoning about a command, not about the control. */}
+      <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
 
       {/* controlsDivider { height: 1, width: '100%' } then
           controlButtonContainer { flexDirection:'row', justifyContent:'space-evenly' }.

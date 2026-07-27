@@ -705,3 +705,48 @@ test('media: remoteControlEnabled absent stays UNDEFINED, never false', () => {
   const patch = infotainmentToPatch(snap);
   assert.equal(patch.media?.remoteControlEnabled, undefined);
 });
+
+// ── cableAttached ───────────────────────────────────────────────────────────
+//
+// Regression: this field existed in VehicleViewState from the beginning and was
+// NEVER written by telemetry — only by the explore-screen demo toggle. So on a
+// real car it was permanently false, and every control gated on it was
+// invisible: the amperage bar and the Start/Stop button both vanished, while the
+// charge-port button's hide condition could never fire. Ivan found it by noticing
+// Tesla shows amperage on a parked, unplugged car and we did not.
+test('cableAttached: a connected cable type means a cable is attached', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: { chargeState: { connChargeCable: { IEC: {} } } },
+  });
+  assert.equal(snap.charge?.cableAttached, true);
+});
+
+test('cableAttached: SNA means "not applicable", i.e. NO cable', () => {
+  // The cable-type oneof is always present; SNA is how the car says "none".
+  // Treating presence alone as "attached" would make it permanently true, which
+  // is the same class of bug in the opposite direction.
+  const snap = parseCarServerResponse({
+    vehicleData: { chargeState: { connChargeCable: { SNA: {} }, chargingState: { Disconnected: {} } } },
+  });
+  assert.equal(snap.charge?.cableAttached, false);
+});
+
+test('cableAttached: falls back to charging_state when no cable type is reported', () => {
+  const charging = parseCarServerResponse({
+    vehicleData: { chargeState: { chargingState: { Charging: {} } } },
+  });
+  assert.equal(charging.charge?.cableAttached, true, 'the car cannot charge without a cable');
+
+  const disconnected = parseCarServerResponse({
+    vehicleData: { chargeState: { chargingState: { Disconnected: {} } } },
+  });
+  assert.equal(disconnected.charge?.cableAttached, false);
+});
+
+test('cableAttached reaches the patch, which is the half that was missing', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: { chargeState: { chargingState: { Complete: {} } } },
+  });
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.cableAttached, true);
+});

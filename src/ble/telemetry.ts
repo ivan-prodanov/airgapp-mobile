@@ -45,6 +45,7 @@ export interface VcsecStatus {
 
 export interface InfotainmentSnapshot {
   charge?: {
+    cableAttached?: boolean;
     // Charge-panel detail. All null when the car does not report them, which is
     // normal when unplugged — the panel hides those lines rather than showing 0.
     minutesToChargeLimit?: number | null;
@@ -297,6 +298,19 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       // at display time (Round 5 §2a). Rounding to km here would compound error.
       rangeMiles: batteryRange ?? null,
       chargingState: oneofName(cs.chargingState),
+      // Is a cable in the port? This was NEVER populated — `cableAttached` only
+      // ever came from the demo toggle, so on a real car it was permanently
+      // false and every control gated on it was invisible. Two signals, and
+      // either is enough:
+      //   conn_charge_cable — the cable TYPE oneof, present only when connected
+      //                       (its SNA member means "not applicable");
+      //   charging_state    — anything other than Disconnected implies a cable.
+      cableAttached: (() => {
+        const cable = oneofName(cs.connChargeCable);
+        if (cable && cable.toLowerCase() !== 'sna') return true;
+        const st = (oneofName(cs.chargingState) ?? '').toLowerCase();
+        return st !== '' && st !== 'disconnected' && st !== 'unknown';
+      })(),
       chargeLimitSoc: num(cs.chargeLimitSoc),
     };
   }
@@ -605,6 +619,7 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
       // Complete / Stopped / Starting / NoPower, which `charging` collapses.
       patch.chargingState = snap.charge.chargingState;
     }
+    if (snap.charge.cableAttached !== undefined) patch.cableAttached = snap.charge.cableAttached;
     if (snap.charge.chargeLimitSoc !== undefined) patch.chargeLimitPercent = snap.charge.chargeLimitSoc;
     if (snap.charge.minutesToChargeLimit != null) patch.minutesToChargeLimit = snap.charge.minutesToChargeLimit;
     if (snap.charge.chargerPowerKw != null) patch.chargerPowerKw = snap.charge.chargerPowerKw;
