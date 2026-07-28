@@ -227,6 +227,8 @@ export interface VehicleViewState {
   chargerPowerKw: number | null;
   // kWh added during the last charging session — the charge panel's second line.
   energyAddedKwh: number | null;
+  /** DC / Supercharger. Hides the amp stepper — see telemetry's fastCharging. */
+  fastCharging: boolean;
   chargeRateMph: number | null;
   chargingAmps: number;
 }
@@ -312,6 +314,7 @@ export const initialVehicleState: VehicleViewState = {
   minutesToChargeLimit: null,
   chargerPowerKw: null,
   energyAddedKwh: null,
+  fastCharging: false,
   chargeRateMph: null,
   chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
 };

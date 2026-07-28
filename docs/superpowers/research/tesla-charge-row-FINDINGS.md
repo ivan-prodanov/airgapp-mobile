@@ -290,3 +290,67 @@ Three passes on the same panel:
 Pass 2 felt like a recovery and was still wrong. **A style value is meaningless without the tree it
 attaches to** — recover the JSX nesting alongside the StyleSheet, or the numbers will be right and
 the layout still wrong.
+
+
+---
+
+## 11. Per-state behaviour: which controls appear when (2026-07-28)
+
+Ivan, on the non-idle states: *"the amperage is available in all states is that expected? the visible
+buttons is that expected to be the only visible buttons?"* No to both.
+
+### 11.1 The amperage gate — @4157698
+
+```js
+showAmps = vehicleApiVersion >= MIN_SET_CHARGE_AMPS_CAR_API_VERSION
+        && !vehicleIsSemi
+        && fastcharging !== true
+        && !showPowershareDischargingContent
+```
+
+**The stepper is HIDDEN on DC.** On a Supercharger the current is not the phone's to set. The other
+three terms never vary for us (no Semi, no powershare, car well past the API floor), so
+`fastCharging` is the whole gate in our build. `ChargeState.fast_charger_present` was in the proto
+and simply never read — the same class of miss as `cableAttached` in §7.
+
+Their wrapper View (`bottomCardMargin`) is built unconditionally and only its CHILD is conditional,
+so the 25pt gap above the divider survives a DC session. Ours now matches.
+
+### 11.2 The button matrix — ControlButtons @4155758
+
+Slots, resolved from the assignment that FOLLOWS each definition:
+
+```
+slot21 = UnlockChargePortButton      @4154627
+slot22 = StartStopChargingButton     @4154764
+slot23 = ReportIssueButton           @4154981
+slot24 = StopRestartPowershareButton @4155147
+slot25 = OpenCloseChargePortButton   @4155670
+```
+
+Children are `[left, divider-if-both, right]`:
+
+| state | left | right |
+|---|---|---|
+| unplugged | — | **Open/Close Charge Port** (25) |
+| unplugged + nearbySite | Report Issue (23) | Open/Close Charge Port (25) |
+| **plugged in** | **Start/Stop Charging** (22), iff `chargePortCanStartOrStopCharging === true` | **Unlock Charge Port** (21) |
+| supercharging + nearbySite | Report Issue (23) | canStartOrStop ? Start/Stop (22) : Unlock (21) |
+| powershare active/stopped | — | — unless stopReason is RETRY: StopRestartPowershare (24) + Unlock (21) |
+
+**We had no Unlock Charge Port button at all**, and instead HID the port control whenever a cable was
+seated — so a plugged-in car showed Start/Stop alone where theirs shows two.
+
+`UnlockChargePortButton`'s command is `RKE_ACTION_OPEN_CHARGE_PORT` — the SAME action as opening the
+port. With a cable seated it releases the latch rather than opening a door, so only the label
+changes (`vehicle_controls_charge_port_unlock`). This is the frunk lesson again: one command, two
+meanings by context. Reading the label without reading the action would have had us inventing a
+second command that does not exist.
+
+Not applicable to us and deliberately omitted: ReportIssue (cloud), StopRestartPowershare (V2H).
+
+### 11.3 The kWh line across states
+
+`charge_energy_added` resets when a session begins, accumulates through it, and retains the last
+session's total once disconnected — so it genuinely differs per state. Every value being 0 was a hole
+in our demo presets, which never set the field, not a fault in the panel.

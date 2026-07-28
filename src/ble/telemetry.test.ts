@@ -750,3 +750,27 @@ test('cableAttached reaches the patch, which is the half that was missing', () =
   const patch = infotainmentToPatch(snap);
   assert.equal(patch.cableAttached, true);
 });
+
+// ── fastCharging ────────────────────────────────────────────────────────────
+//
+// Same shape of bug as cableAttached above: the field is in the proto and we
+// simply never read it, so the amp stepper stayed on screen while Supercharging.
+// Recovered gate @4157698 — showAmps requires `fastcharging !== true`.
+test('fastCharging: fastChargerPresent means DC, which hides the amp stepper', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: { chargeState: { fastChargerPresent: true } },
+  });
+  assert.equal(snap.charge?.fastCharging, true);
+});
+
+test('fastCharging: AC and absent both read false, never undefined', () => {
+  // The panel treats it as a plain boolean, so an unreported field must not
+  // become undefined and slip through a `!fastCharging` gate as truthy-adjacent.
+  const ac = parseCarServerResponse({
+    vehicleData: { chargeState: { fastChargerPresent: false } },
+  });
+  assert.equal(ac.charge?.fastCharging, false);
+
+  const quiet = parseCarServerResponse({ vehicleData: { chargeState: {} } });
+  assert.equal(quiet.charge?.fastCharging, false);
+});

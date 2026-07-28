@@ -20,6 +20,14 @@ CAT="${2:-}"
 rm -f "$OUT" "$OUT-wal" "$OUT-shm"
 
 echo "→ pulling Documents/SQLite/carlink-log.db …"
+# INTEGRITY: the db and its -wal are two separate copies taken against a LIVE
+# writer, so they can disagree. A mismatched pair does not fail loudly — SQLite
+# recovers a scrambled mixture that still reads as a plausible timeline once
+# sorted by timestamp. On 2026-07-28 a pull returned seq 0 holding the newest
+# row and seq 6391 a row from ten hours earlier, and analysis was done on it
+# before anyone checked. The app now WAL-checkpoints after every flush so the
+# main file is near-self-contained, and the check at the end of this script
+# verifies seq really does rise with time before you trust the output.
 # WAL mode: the -wal sidecar holds un-checkpointed rows, so grab it too.
 for f in carlink-log.db carlink-log.db-wal; do
   xcrun devicectl device copy from \
@@ -51,3 +59,22 @@ sqlite3 -noheader -separator '|' "$OUT" \
     d = (prev==0) ? 0 : $1 - prev; prev=$1
     printf "%+7d  %-5s %-9s %s %s\n", d, $2, $3, $4, $5
   }'
+
+# ── integrity check ────────────────────────────────────────────────────────
+# seq is a monotonic INTEGER PRIMARY KEY, so ordering by seq and by time must
+# agree. If they don't, the db/-wal pair was inconsistent and EVERY row is
+# suspect — re-pull rather than reading the output above.
+BAD=$(sqlite3 "$OUT" "
+  WITH a AS (SELECT seq, t, ROW_NUMBER() OVER (ORDER BY seq) rs,
+                            ROW_NUMBER() OVER (ORDER BY t, seq) rt FROM log)
+  SELECT COUNT(*) FROM a WHERE rs != rt;" 2>/dev/null || echo "?")
+if [ "$BAD" != "0" ]; then
+  echo
+  echo "⚠️  INTEGRITY CHECK FAILED — $BAD rows out of seq/time order."
+  echo "    The db and -wal copies did not correspond. DO NOT TRUST THE ROWS ABOVE."
+  echo "    Re-run this script; if it keeps failing, the app is writing faster"
+  echo "    than the checkpoint keeps up and the copy needs the app backgrounded."
+else
+  echo
+  echo "✓ integrity: seq and time agree — rows are consistent."
+fi

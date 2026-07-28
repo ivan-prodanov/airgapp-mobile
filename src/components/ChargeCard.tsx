@@ -108,6 +108,14 @@ export interface ChargeCardProps {
   chargerPowerKw: number | null;
   chargeRateMph: number | null;
   energyAddedKwh: number | null;
+  /**
+   * DC / Supercharger. HIDES the amp stepper — recovered gate (@4157698):
+   *   apiVersion >= MIN_SET_CHARGE_AMPS_CAR_API_VERSION && !vehicleIsSemi
+   *     && fastcharging !== true && !showPowershareDischargingContent
+   * The other three terms do not vary for us (no Semi, no powershare, and the
+   * car is well past the API floor), so `fastCharging` is the whole gate here.
+   */
+  fastCharging: boolean;
   chargingAmps: number;
   ampMin: number;
   ampMax: number;
@@ -134,6 +142,7 @@ export function ChargeCard({
   chargePortOpen,
   cableAttached,
   energyAddedKwh,
+  fastCharging,
   chargingAmps,
   ampMin,
   ampMax,
@@ -217,17 +226,22 @@ export function ChargeCard({
           shows it, and that is right — the charge current is a SETTING for the
           next session, not an action on the current one. My "the car rejects it
           otherwise" was reasoning about a command, not about the control. */}
-      {/* bottomCardMargin (25) wraps ampsContainer (marginTop 15, inset 20). */}
+      {/* bottomCardMargin (25) wraps ampsContainer (marginTop 15, inset 20).
+          The WRAPPER stays even when the stepper is hidden — theirs builds it
+          unconditionally and only its child is conditional, so the 25pt gap
+          above the divider survives a DC session. */}
       <View style={styles.ampWrap}>
-        <View style={styles.ampsContainer}>
-          <AmpStepper
-            amps={chargingAmps}
-            min={ampMin}
-            max={ampMax}
-            onChange={() => {}}
-            onCommit={onSetAmps}
-          />
-        </View>
+        {fastCharging ? null : (
+          <View style={styles.ampsContainer}>
+            <AmpStepper
+              amps={chargingAmps}
+              min={ampMin}
+              max={ampMax}
+              onChange={() => {}}
+              onCommit={onSetAmps}
+            />
+          </View>
+        )}
       </View>
 
       {/* controlsDivider is a real sibling View in theirs. It was safe to fold
@@ -247,10 +261,27 @@ export function ChargeCard({
           />
         ) : null}
         {/* buttonDivider — only between two buttons, never dangling beside one. */}
-        {cableAttached && !(chargePortOpen && cableAttached) ? <View style={styles.buttonDivider} /> : null}
-        {/* Same rule: with the cable latched the port cannot close, so the
-            control goes rather than sitting there greyed. */}
-        {chargePortOpen && cableAttached ? null : (
+        {cableAttached ? <View style={styles.buttonDivider} /> : null}
+        {/* THE RIGHT-HAND BUTTON IS ALWAYS PRESENT — it just changes identity.
+            Recovered from ControlButtons: the plugged-in branch renders
+            _closure1_slot21 = UnlockChargePortButton, and only the UNPLUGGED
+            branch renders slot25 = OpenCloseChargePortButton.
+
+            We had no Unlock button at all, and instead HID the port control
+            whenever the cable was in — so a plugged-in car showed Start/Stop
+            alone, where theirs shows two.
+
+            Its command is the same one: RKE_ACTION_OPEN_CHARGE_PORT. With a
+            cable seated that releases the latch rather than opening a door,
+            which is why the label differs and the action does not. Exactly the
+            frunk lesson again — one command, two meanings by context. */}
+        {cableAttached ? (
+          <ChargeButton
+            label="Unlock Charge Port"
+            disabled={!!pending?.has('chargePortOpen')}
+            onPress={() => onToggleChargePort(true)}
+          />
+        ) : (
           <ChargeButton
             label={chargePortOpen ? 'Close Charge Port' : 'Open Charge Port'}
             disabled={!!pending?.has('chargePortOpen')}

@@ -42,10 +42,19 @@ export type ChargePreset = {
   patch: Partial<ChargeCardProps>;
 };
 
+// Ivan: "all have 0kwh added during last charging session - is that expected?"
+// No — it was a hole in these presets, not in the panel. None of them set
+// energyAddedKwh, so every chip fell through to the real car's cached value.
+// charge_energy_added resets when a session begins and accumulates through it,
+// retaining the last session's total once disconnected, so it genuinely differs
+// per state and the presets now say so.
 export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Plugged',
     patch: {
+      // last session, cable just re-seated
+      energyAddedKwh: 41,
+      fastCharging: false,
       chargePortOpen: true,
       cableAttached: true,
       charging: false,
@@ -58,6 +67,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Starting',
     patch: {
+      // session resets to 0 as it begins
+      energyAddedKwh: 0,
+      fastCharging: false,
       chargePortOpen: true,
       cableAttached: true,
       charging: false,
@@ -70,6 +82,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Charging AC',
     patch: {
+      // accumulating mid-session
+      energyAddedKwh: 12,
+      fastCharging: false,
       chargePortOpen: true,
       cableAttached: true,
       charging: true,
@@ -84,6 +99,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Supercharge',
     patch: {
+      // DC — also the only preset that hides the amps
+      energyAddedKwh: 34,
+      fastCharging: true,
       chargePortOpen: true,
       cableAttached: true,
       charging: true,
@@ -98,6 +116,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Complete',
     patch: {
+      // the full session, the figure in their screenshot
+      energyAddedKwh: 58,
+      fastCharging: false,
       chargePortOpen: true,
       cableAttached: true,
       charging: false,
@@ -111,6 +132,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Stopped',
     patch: {
+      // partial, stopped early
+      energyAddedKwh: 9,
+      fastCharging: false,
       chargePortOpen: true,
       cableAttached: true,
       charging: false,
@@ -123,6 +147,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'No Power',
     patch: {
+      // plugged but nothing delivered
+      energyAddedKwh: 0,
+      fastCharging: false,
       chargePortOpen: true,
       cableAttached: true,
       charging: false,
@@ -135,6 +162,9 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Unplugged',
     patch: {
+      // retained from the last completed session
+      energyAddedKwh: 58,
+      fastCharging: false,
       chargePortOpen: false,
       cableAttached: false,
       charging: false,

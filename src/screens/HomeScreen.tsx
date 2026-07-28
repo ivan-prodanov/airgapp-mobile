@@ -427,6 +427,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               chargerPowerKw={state.chargerPowerKw}
               chargeRateMph={state.chargeRateMph}
               energyAddedKwh={state.energyAddedKwh}
+              fastCharging={state.fastCharging}
               chargingAmps={state.chargingAmps}
               ampMin={AMP_MIN}
               ampMax={AMP_MAX}

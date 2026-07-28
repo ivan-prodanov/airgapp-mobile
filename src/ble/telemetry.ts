@@ -52,6 +52,16 @@ export interface InfotainmentSnapshot {
     chargerPowerKw?: number | null;
     energyAddedKwh?: number | null;
     chargeRateMph?: number | null;
+    /**
+     * DC / Supercharger, from ChargeState.fast_charger_present.
+     *
+     * Gates the amperage control: their `showAmps` is
+     *   apiVersion >= MIN_SET_CHARGE_AMPS_CAR_API_VERSION
+     *     && !vehicleIsSemi && fastcharging !== true
+     *     && !showPowershareDischargingContent
+     * so the stepper is HIDDEN on DC, where the current is not ours to set.
+     */
+    fastCharging?: boolean;
     soc: number | undefined;
     rangeMiles: number | null;
     chargingState: string | undefined;
@@ -314,6 +324,9 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
         const st = (oneofName(cs.chargingState) ?? '').toLowerCase();
         return st !== '' && st !== 'disconnected' && st !== 'unknown';
       })(),
+      // DC/Supercharger. The field is in the proto and we simply never read it,
+      // which is why our amp stepper stayed visible while Supercharging.
+      fastCharging: cs.fastChargerPresent === true,
       chargeLimitSoc: num(cs.chargeLimitSoc),
     };
   }
@@ -627,6 +640,7 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.minutesToChargeLimit != null) patch.minutesToChargeLimit = snap.charge.minutesToChargeLimit;
     if (snap.charge.chargerPowerKw != null) patch.chargerPowerKw = snap.charge.chargerPowerKw;
     if (snap.charge.energyAddedKwh != null) patch.energyAddedKwh = snap.charge.energyAddedKwh;
+    if (snap.charge.fastCharging != null) patch.fastCharging = snap.charge.fastCharging;
     if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
   }
 
