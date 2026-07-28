@@ -1434,7 +1434,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     const filtered = filterPatchUnderIntent(patch, intentRef.current, now, getActiveStateRef.current());
     if (Object.keys(filtered).length === 0) return;
     applyTelemetryRef.current(filtered);
-    logi('push', 'vcsec', { locked: patch.locked, closures: status.closures });
+    logi('push', 'vcsec', {
+      locked: patch.locked,
+      closures: status.closures,
+      trunkRaw: patch.trunkOpen,
+      trunkApplied: filtered.trunkOpen,
+      trunkCur: getActiveStateRef.current()?.trunkOpen,
+      trunkIntentMs: (intentRef.current.get('trunkOpen') ?? 0) - now,
+    });
   }, []);
   handleVcsecPushRef.current = handleVcsecPush;
 
@@ -1527,12 +1534,23 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // mapper produced (trunkRaw/frunkRaw), and what survived the intent filter
         // (…Applied). Triangulates a wrong closure to: bad sensor value vs mapping
         // bug vs a stale optimistic intent masking the real read.
+        // ⚠️ DIAGNOSTIC (2026-07-28) — trunkCur / trunkIntentMs.
+        //
+        // Every closeTrunk is immediately followed by a read that APPLIES
+        // trunkOpen:true, undoing the optimistic close. For that to pass
+        // filterPatchUnderIntent it must have looked like a CONFIRMATION, i.e.
+        // the `current` it compared against still said open. These two fields
+        // say whether that is what happened, instead of me inferring it: the
+        // value the filter compared against, and how much intent window was
+        // left. Remove once answered.
         logi('read', 'vcsec', {
           awake: patch.awake,
           locked: patch.locked,
           closures: st.closures,
           trunkRaw: patch.trunkOpen,
           trunkApplied: filtered.trunkOpen,
+          trunkCur: getActiveStateRef.current()?.trunkOpen,
+          trunkIntentMs: (intentRef.current.get('trunkOpen') ?? 0) - Date.now(),
           frunkRaw: patch.frunkOpen,
         });
         if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
