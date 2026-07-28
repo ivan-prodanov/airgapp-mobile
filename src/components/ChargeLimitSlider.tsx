@@ -107,6 +107,20 @@ export interface ChargeLimitSliderProps {
   onCommit: (percent: number) => void;
   /** Lets a parent freeze its ScrollView while the drag owns the touch. */
   onSlidingChange?: (sliding: boolean) => void;
+  /**
+   * Fixed outer height, with the track CENTRED in it.
+   *
+   * The home panel's `sliderContainer` is `height: 3*Gutter` = 30. Our default
+   * box is 20 + 5 + 20 = 45, so dropped into a 30pt slot the track landed 20
+   * from the top and the box overflowed 15 past the bottom — which is exactly
+   * the "too much air above the slider, too little below it" Ivan measured.
+   * Setting the box makes the padding (30-5)/2 instead, so the track sits in
+   * the middle AND the whole 30pt stays touchable.
+   *
+   * Left undefined on the standalone charging screen, which has room for the
+   * larger 45pt target.
+   */
+  boxHeight?: number;
 }
 
 export function ChargeLimitSlider({
@@ -117,6 +131,7 @@ export function ChargeLimitSlider({
   onChange,
   onCommit,
   onSlidingChange,
+  boxHeight,
 }: ChargeLimitSliderProps) {
   const [changing, setChanging] = useState(false);
   // The thumb follows the FINGER continuously while dragging, even though the
@@ -259,14 +274,26 @@ export function ChargeLimitSlider({
     }).start();
   }, [changing, anim]);
 
-  const thumbSize = anim.interpolate({ inputRange: [0, 1], outputRange: [THUMB_NORMAL, THUMB_CHANGING] });
+  const thumbSize = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [THUMB_NORMAL, THUMB_CHANGING],
+  });
   const breakOpacity = anim;
 
   const batteryFrac = Math.max(0, Math.min(1, (batteryPercent ?? 0) / max));
   const limitFrac = dragFrac ?? Math.max(0, Math.min(1, limitPercent / max));
 
   return (
-    <View style={styles.row} {...pan.panHandlers}>
+    <View
+      style={[
+        styles.row,
+        boxHeight != null && {
+          height: boxHeight,
+          paddingVertical: (boxHeight - TRACK_H) / 2,
+        },
+      ]}
+      {...pan.panHandlers}
+    >
       <View ref={trackRef} style={styles.track} onLayout={measureTrack}>
         <View pointerEvents="none" style={[styles.fill, { width: `${batteryFrac * 100}%` }]} />
         {/* Breaks, drawn in the SURFACE colour so the bar reads as interrupted

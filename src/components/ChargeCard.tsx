@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { TeslaFonts } from "@/constants/fonts";
-import { controlHaptic } from "@/state/controlHaptic";
-import { ChargeLimitSlider } from "./ChargeLimitSlider";
-import { AmpStepper } from "./AmpStepper";
+import { TeslaFonts } from '@/constants/fonts';
+import { controlHaptic } from '@/state/controlHaptic';
+import { ChargeLimitSlider } from './ChargeLimitSlider';
+import { AmpStepper } from './AmpStepper';
 
 // ChargeCard — the home-screen charging panel.
 //
@@ -79,12 +79,12 @@ const PANEL_RADIUS = 0.5 * GUTTER;
 const CARD_INSET = 10;
 // HomeScreen's `menu` paddingHorizontal, which the card has to undo.
 const MENU_PADDING = 16;
-const PANEL_BG = "#222324";
-const TEXT = "#F3F3F3";
-const TEXT_LIGHT = "#8A8B8B";
+const PANEL_BG = '#222324';
+const TEXT = '#F3F3F3';
+const TEXT_LIGHT = '#8A8B8B';
 // The page behind the card. The divider is drawn in it so the row reads as
 // separated rather than ruled — the same trick as MediaCard's 1pt gaps.
-const PAGE_BG = "#000000";
+const PAGE_BG = '#000000';
 
 // Their slider is `sliderMax` + `sliderSnapPoints`. The car supplies the real
 // bounds (charge_limit_soc_min/max/std); these are the fallbacks for a car that
@@ -159,9 +159,7 @@ export function ChargeCard({
           Type comes from app/charging.tsx's own limitLabel (19/700), so the two
           screens read the same. */}
       <View style={styles.textBlock}>
-        <Text style={styles.limitLabel}>
-          Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%
-        </Text>
+        <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
 
         {/* Recovered: `vehicle_charge_screen_range_added` =
           "{{range}} added during last charging session", filled by
@@ -193,6 +191,7 @@ export function ChargeCard({
             detent breaks that appear only while changing, and the growing thumb.
             Ivan: use ours and polish it, not a second one. */}
           <ChargeLimitSlider
+            boxHeight={3 * GUTTER}
             batteryPercent={batteryLevel}
             limitPercent={chargeLimitPercent}
             min={LIMIT_MIN}
@@ -242,21 +241,19 @@ export function ChargeCard({
             its own command is in flight, which is their actual use of disabled. */}
         {cableAttached ? (
           <ChargeButton
-            label={charging ? "Stop Charging" : "Start Charging"}
-            disabled={!!pending?.has("charging")}
+            label={charging ? 'Stop Charging' : 'Start Charging'}
+            disabled={!!pending?.has('charging')}
             onPress={() => onStartStopCharging(!charging)}
           />
         ) : null}
         {/* buttonDivider — only between two buttons, never dangling beside one. */}
-        {cableAttached && !(chargePortOpen && cableAttached) ? (
-          <View style={styles.buttonDivider} />
-        ) : null}
+        {cableAttached && !(chargePortOpen && cableAttached) ? <View style={styles.buttonDivider} /> : null}
         {/* Same rule: with the cable latched the port cannot close, so the
             control goes rather than sitting there greyed. */}
         {chargePortOpen && cableAttached ? null : (
           <ChargeButton
-            label={chargePortOpen ? "Close Charge Port" : "Open Charge Port"}
-            disabled={!!pending?.has("chargePortOpen")}
+            label={chargePortOpen ? 'Close Charge Port' : 'Open Charge Port'}
+            disabled={!!pending?.has('chargePortOpen')}
             onPress={() => onToggleChargePort(!chargePortOpen)}
           />
         )}
@@ -277,10 +274,7 @@ function ChargeButton({
   // Text only — theirs carries no icon, and it renders DIM rather than white.
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.controlButton,
-        { opacity: disabled ? 0.35 : pressed ? 0.5 : 1 },
-      ]}
+      style={({ pressed }) => [styles.controlButton, { opacity: disabled ? 0.35 : pressed ? 0.5 : 1 }]}
       disabled={disabled}
       onPress={() => {
         controlHaptic();
@@ -350,14 +344,14 @@ const styles = StyleSheet.create({
   // buttons. I had no such thing.
   buttonDivider: {
     width: 1,
-    alignSelf: "stretch",
+    alignSelf: 'stretch',
     backgroundColor: PAGE_BG,
   },
   controls: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-evenly",
-    width: "100%",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    width: '100%',
   },
   // bottomCardMargin wraps the amps; ampsContainer is the amps' own inset.
   ampWrap: {
@@ -378,9 +372,9 @@ const styles = StyleSheet.create({
   // button {flex:1, opacity:0.9} + chargeButton {minHeight:46, paddingVertical:13}.
   controlButton: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     minHeight: 46,
     paddingVertical: 13,
     opacity: 0.9,
@@ -393,7 +387,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     letterSpacing: 0.1,
-    textAlign: "center",
+    textAlign: 'center',
     color: TEXT_LIGHT,
   },
 });
