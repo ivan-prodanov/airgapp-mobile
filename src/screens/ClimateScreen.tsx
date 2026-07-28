@@ -462,6 +462,11 @@ function Segmented({
 // screenshots (the COP heading) is the COLOUR, not the weight — the whole ladder
 // is one face, and only Body/Caption use Regular, which we do not ship.
 const FONT = TeslaFonts.medium;
+// The ladder is NOT one face. The 40/46 display tier carries fontWeight '400'
+// (the 64/77 one carries '500'), and Body/Caption carry type 'Regular'. Ivan:
+// "the temp text is certainly not as bold on the tesla app" — right, and the
+// cause was that we only ever bundled Medium.
+const FONT_REGULAR = TeslaFonts.regular;
 const BORDER = 'rgba(255,255,255,0.1)';
 const ACTIVE_BLUE = '#3368FF';
 const TEXT_DIM = '#8A8B8B';
@@ -469,7 +474,13 @@ const TEXT_BRIGHT = '#F3F3F3';
 // Measured off the awake screenshots at 2.29 px/pt (921px / 402pt). Stated as
 // MEASURED, not recovered — the row component's own StyleSheet is behind
 // useThemedStyle and I could not pin it without another long dig.
-const RADIUS = 12;
+// RECOVERED, not measured. Their button size tiers (@1341521/1341555/1341589)
+// all carry borderWidth 2 — six times our hairline (0.33pt), which is the
+// "border much wider" Ivan saw. Radii on the ladder are 16 (minHeight 48) and
+// 10 (minHeight 40); 10 is the one that reads as "more rectangular" against the
+// 12 we had, and it is a real tier rather than a number I picked.
+const RADIUS = 10;
+const BORDER_WIDTH = 2;
 const ICON_SIZE = 20;
 // Their most common activeOpacity (two call sites). The pressed card in Ivan's
 // 4th screenshot dims noticeably but stays readable, which fits; I could not tie
@@ -563,8 +574,9 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   temp: {
-    // Ladder entry 40/46, not the free-chosen 47/300 we had.
-    fontFamily: FONT,
+    // Ladder entry 40/46 — and its own tier explicitly carries fontWeight '400',
+    // so it is the REGULAR face, not Medium like everything around it.
+    fontFamily: FONT_REGULAR,
     fontSize: 40,
     lineHeight: 46,
     minWidth: 128,
@@ -592,7 +604,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 16,
     borderRadius: RADIUS,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
   },
   rowActive: {
@@ -613,7 +625,7 @@ const styles = StyleSheet.create({
   },
   group: {
     borderRadius: RADIUS,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
     overflow: 'hidden',
   },

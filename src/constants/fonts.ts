@@ -20,6 +20,15 @@ export const TeslaFonts = {
   // TextCategory.BodyLabel -> getFontStyle({type:'Medium', prefix:'UniversalSansText-'}).
   // The status line (14px).
   medium: 'UniversalSansText-Medium',
+  // WEIGHT 400. The Typography ladder is not one face: the 40/46 display tier
+  // carries `fontWeight: '400'` explicitly (against the 64/77 tier's '500'), and
+  // the Body/Caption tiers carry `type: 'Regular'`. We shipped only Medium and
+  // Bold, so every one of those rendered a step too heavy — which is exactly
+  // what Ivan saw on the climate setpoint ("certainly not as bold").
+  //
+  // The file was already in the repo, extracted with the others, and simply
+  // never bundled.
+  regular: 'UniversalSansText-Regular',
   // The battery % (16px).
   //
   // Tesla's literal for it IS `fontWeight: 'bold'` (R5 §1a), but R5 §1b argued
@@ -40,5 +49,6 @@ export const TeslaFonts = {
 // resolve, so it must equal the PostScript name above.
 export const TESLA_FONT_MAP = {
   [TeslaFonts.medium]: require('@/assets/fonts/UniversalSans-Text-Medium-540.ttf'),
+  [TeslaFonts.regular]: require('@/assets/fonts/UniversalSans-Text-Regular-430.ttf'),
   [TeslaFonts.bold]: require('@/assets/fonts/UniversalSans-Text-Bold-680.ttf'),
 };
