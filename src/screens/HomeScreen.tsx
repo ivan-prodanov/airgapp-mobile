@@ -25,8 +25,6 @@ import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard } from '@/components/ChargeCard';
 import { isChargePanelVisible, shouldClearShowCharge } from '@/state/chargePanel';
-// ⚠️ TEMPORARY — remove with the strip (one revert).
-import { useChargePreset } from '@/components/ChargeCardDebugStrip';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
 import { BusyIcon } from '@/components/BusyIcon';
@@ -213,9 +211,6 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
   // ONE refresh for all three entry points — the pull, the status tap and the
   // battery-% tap — so they cannot drift apart.
-  // ⚠️ TEMPORARY — remove with ChargeCardDebugStrip (one revert). Read from the
-  // shared store because the chips live on the DEMO page, not here.
-  const fakeCharge = useChargePreset();
   // The charge slider must own the touch: without this, dragging it scrolls the
   // page instead of moving the thumb. app/charging.tsx already did exactly this;
   // Home did not, which is the scrolling Ivan hit.
@@ -421,12 +416,11 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               and a kWh figure under "Last seen 7 days ago".
 
               Gating on awake made the battery tap silently do nothing on a
-              sleeping car, and it also meant the fake presets could not render
-              the panel — I read that as a preset bug at the time and papered
-              over it with `|| fakeCharge` instead of questioning the gate.
-              ⚠️ The `|| fakeCharge` is still TEMPORARY, but it is no longer
-              load-bearing. */}
-          {chargePanelVisible || fakeCharge ? (
+              sleeping car. It also meant the temporary fake-state presets could
+              not render the panel; I read that as a preset bug at the time and
+              papered over it with an extra `|| fakeCharge` term instead of
+              questioning the gate. The presets are gone now, the gate is not. */}
+          {chargePanelVisible ? (
             <ChargeCard
               batteryLevel={state.batteryLevel}
               rangeMiles={state.rangeMiles}
@@ -459,11 +453,6 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               // no second code path to keep in step.
               onStartStopCharging={(start) => actions.patch({ charging: start })}
               onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
-              // ⚠️ TEMPORARY — spread LAST so the preset wins on the DISPLAYED
-              // values only. The three callbacks above are untouched, so the
-              // panel's own buttons stay fully live (Ivan's call) and really do
-              // start/stop charging and open/close the port.
-              {...(fakeCharge ? fakeCharge.patch : null)}
             />
           ) : null}
 
