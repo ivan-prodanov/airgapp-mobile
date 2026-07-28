@@ -131,13 +131,16 @@ function Chevron({
 }
 
 const styles = StyleSheet.create({
+  // Measured off the reference (~3.06 px/pt on that crop): the bar is ~136px
+  // tall and its corner is ~24px, i.e. 44pt and 8pt. Ours was 56 and 12, which
+  // is most of the "takes less space".
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 20,
-    height: 56,
+    height: 44,
   },
   slot: {
     width: CHEVRON_SLOT,
@@ -147,7 +150,7 @@ const styles = StyleSheet.create({
   value: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
     color: 'white',
   },

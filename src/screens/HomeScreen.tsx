@@ -678,7 +678,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingTop: 14,
+    // Asymmetric on purpose. Measured off Ivan's side-by-side: from the bottom
+    // of the favourites glyphs to whatever comes next, theirs is ~27pt and ours
+    // was ~14 — the row's own symmetric padding. It applies to BOTH cases he
+    // described (the charge panel, and the menu rows when the panel is hidden)
+    // because it belongs to the row rather than to either neighbour.
+    paddingBottom: 27,
   },
   quickIcon: {
     width: 48,

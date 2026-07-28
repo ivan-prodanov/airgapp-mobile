@@ -163,11 +163,11 @@ export function ChargeCard({
           otherwise" was reasoning about a command, not about the control. */}
       <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
 
-      {/* controlsDivider { height: 1, width: '100%' } then
-          controlButtonContainer { flexDirection:'row', justifyContent:'space-evenly' }.
-          My first cut had a short vertical rule BETWEEN the buttons; theirs is a
-          full-width horizontal rule ABOVE them. */}
-      <View style={styles.controlsDivider} />
+      {/* The divider is the button row's TOP BORDER, not a sibling. As a
+          sibling the card's `gap` put 10pt above AND below a 1pt line, which is
+          20pt of air theirs does not have — most of "Open Charge Port takes more
+          space". Their controlsDivider is still {height:1, width:'100%'};
+          expressing it as a border just stops the flex gap from padding it. */}
       <View style={styles.controls}>
         {/* HIDDEN, not disabled, when there is no cable — start/stop is not a
             thing you can do to an unplugged car, and their ControlButtons omits
@@ -227,9 +227,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 18,
     paddingTop: 18,
-    // The button row supplies its own bottom space via its 44pt height, so the
-    // card's own bottom padding is smaller than its top.
-    paddingBottom: 4,
+    // Zero: the button row's own 44pt height is the bottom space, exactly as in
+    // theirs where the rule sits 44pt above the card's bottom edge.
+    paddingBottom: 0,
     // Explicit rhythm instead of space-between. space-between on a fixed box is
     // what produced the dead air between the limit label and the slider.
     gap: 10,
@@ -250,18 +250,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
   },
-  // controlsDivider { backgroundColor, height: 1, width: '100%' }
-  controlsDivider: {
-    height: 1,
-    width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  // controlButtonContainer — space-evenly, not a divider between two halves.
+  // controlButtonContainer — space-evenly, with controlsDivider as its top
+  // border. Negative horizontal margin so the rule spans the card edge to edge
+  // like theirs, rather than stopping at the card's 18pt text padding.
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-evenly',
-    width: '100%',
+    marginHorizontal: -18,
+    paddingHorizontal: 18,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   limitRow: {
     flexDirection: 'row',
