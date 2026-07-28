@@ -368,7 +368,7 @@ function Row({
       ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={ICON_SIZE} />
+      <SymbolView name={symbol} tintColor={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -397,7 +397,7 @@ function GroupRow({
       ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={ICON_SIZE} />
+      <SymbolView name={symbol} tintColor={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -467,10 +467,28 @@ const FONT = TeslaFonts.medium;
 // "the temp text is certainly not as bold on the tesla app" — right, and the
 // cause was that we only ever bundled Medium.
 const FONT_REGULAR = TeslaFonts.regular;
-const BORDER = 'rgba(255,255,255,0.1)';
+// THE TOGGLE TOKENS, finally sourced (@1338100-1338110). The idle row is their
+// *Disabled* toggle set and the engaged row is the *Enabled* one — which is why
+// hunting "the inactive border" kept coming back transparent:
+//
+//   buttonEnabledToggleBackground  = Colors.buttonBlue = #3368FF   (ENGAGED)
+//   buttonEnabledToggleBorder      = Colors.buttonBlue = #3368FF
+//   buttonEnabledToggleText        = #F1F1F1
+//   buttonDisabledToggleBackground = Colors.transparent            (IDLE)
+//   buttonDisabledToggleBorder     = #2C2C2C
+//   buttonDisabledToggleText       = #969696
+//
+// The border is a SOLID DARK GREY, not translucent white. Mine happened to
+// compute to roughly the same shade over this backdrop, which is worse than
+// being obviously wrong: it would have drifted the moment the surface behind it
+// changed. #2C2C2C is also buttonActiveSecondary — the selected segment pill —
+// so one value covers both.
+const BORDER = '#2C2C2C';
 const ACTIVE_BLUE = '#3368FF';
-const TEXT_DIM = '#8A8B8B';
+const TEXT_DIM = '#969696';
 const TEXT_BRIGHT = '#F3F3F3';
+// buttonEnabledToggleText — not pure white.
+const TEXT_ON_ACTIVE = '#F1F1F1';
 // Measured off the awake screenshots at 2.29 px/pt (921px / 402pt). Stated as
 // MEASURED, not recovered — the row component's own StyleSheet is behind
 // useThemedStyle and I could not pin it without another long dig.
@@ -670,8 +688,7 @@ const styles = StyleSheet.create({
     color: TEXT_DIM,
   },
   rowTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: TEXT_ON_ACTIVE,
   },
   group: {
     borderRadius: RADIUS,
@@ -732,7 +749,8 @@ const styles = StyleSheet.create({
     borderRadius: 9,
   },
   segmentSelected: {
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    // buttonActiveSecondary = #2C2C2C, the same token as the idle row border.
+    backgroundColor: '#2C2C2C',
   },
   segmentText: {
     // BodyLabel 14/20/0.1. Selection is expressed by COLOUR and the pill, not by

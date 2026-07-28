@@ -192,10 +192,23 @@ their options array is built unconditionally (`new Array(3)`, @5224664).
 
 ## 8. Open questions — do these before more styling
 
-1. **Where does the card border come from?** `TOGGLE`'s inactive tokens resolve to
-   `buttonInactiveSecondary = Colors.transparent` and `buttonInactiveTertiaryBorder =
-   Colors.transparent`, yet the rows plainly have one. Read `generateButtonThemedStyles` @1340735 for
-   `status=NONE` specifically, rather than swapping in `btnBorderLineColorGray` on a hunch.
+1. ~~**Where does the card border come from?**~~ **RESOLVED @1338100-1338110.** The confusion was a
+   naming one: the idle row is their *Disabled* toggle set and the engaged row the *Enabled* one, so
+   every search for "the inactive border" kept landing on transparent.
+
+   ```
+   buttonEnabledToggleBackground  = Colors.buttonBlue = #3368FF   (ENGAGED)
+   buttonEnabledToggleBorder      = Colors.buttonBlue = #3368FF
+   buttonEnabledToggleText        = #F1F1F1
+   buttonDisabledToggleBackground = Colors.transparent            (IDLE)
+   buttonDisabledToggleBorder     = #2C2C2C
+   buttonDisabledToggleText       = #969696
+   ```
+
+   The border is a **solid dark grey**, not translucent white. `rgba(255,255,255,0.1)` happened to
+   compute to roughly the same shade over this backdrop — worse than being obviously wrong, because
+   it would have drifted the moment the surface behind it changed. `#2C2C2C` is also
+   `buttonActiveSecondary`, the selected segment pill, so one value covers both.
 2. **`ButtonSize.LARGE`'s own radius.** Tiers found were minHeight 48→16 and 40→10; LARGE is
    minHeight 50 and its entry was not located. Currently using 16.
 3. **The segmented control's component.** It is `_closure1_slot12.default` (dep index 11) at
