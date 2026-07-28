@@ -552,11 +552,16 @@ const styles = StyleSheet.create({
   climateTempsStale: {
     opacity: 0.5,
   },
+  // The power/vent row is WIDER than the card column. Measured on the pair:
+  // their power glyph centres ~48pt from the screen edge while their cards start
+  // at ~29pt — so the row breaks OUT of the content inset rather than nesting
+  // inside it. Ours sat at 28 + 8 = 36pt and read visibly pinched inward.
   tempRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    marginHorizontal: -(CONTENT_INSET - 16),
+    paddingHorizontal: 0,
     paddingTop: 8,
     paddingBottom: 24,
     marginBottom: 4,
@@ -583,9 +588,18 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   temp: {
-    // Ladder entry 40/46 — and its own tier explicitly carries fontWeight '400',
-    // so it is the REGULAR face, not Medium like everything around it.
-    fontFamily: FONT_REGULAR,
+    // Ladder entry 40/46. Its tier reads {type:'Medium', fontWeight:'400'} and I
+    // took the '400' to mean the Regular face. It does not: `type` sets the
+    // fontFamily to UniversalSansText-Medium, and the foundry puts Medium in its
+    // own single-face family, so iOS CANNOT reach another cut through fontWeight
+    // and will not synthesize one. Their setpoint renders MEDIUM.
+    //
+    // constants/fonts.ts documents this exact trap for the battery %, and I
+    // quoted that note in the commit that then did the opposite. Ivan saw it
+    // both ways: too bold on Medium, then "MUCH bolder than ours" on Regular.
+    // Medium is the answer; the earlier over-boldness was the SIZE (47) and the
+    // missing letterSpacing, both since fixed.
+    fontFamily: FONT,
     fontSize: 40,
     lineHeight: 46,
     minWidth: 128,
@@ -614,6 +628,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 16,
     borderRadius: RADIUS,
+    borderCurve: 'continuous',
     borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
   },
@@ -635,6 +650,7 @@ const styles = StyleSheet.create({
   },
   group: {
     borderRadius: RADIUS,
+    borderCurve: 'continuous',
     borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
     overflow: 'hidden',

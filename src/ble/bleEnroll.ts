@@ -25,7 +25,7 @@
 //     WhitelistOperation (16, oneof subMessage) = VCSEC.WhitelistOperation {
 //       addKeyToWhitelistAndAddPermissions (5) = VCSEC.PermissionChange {
 //         key (1) = VCSEC.PublicKey { PublicKeyRaw (1) = <65-byte SEC1 point> }
-//         keyRole (4) = Keys.Role.ROLE_DRIVER (3)
+//         keyRole (4) = Keys.Role.ROLE_OWNER (2)   [was ROLE_DRIVER (3); see below]
 //       }
 //       metadataForKey (6) = VCSEC.KeyMetadata {
 //         keyFormFactor (1) = VCSEC.KeyFormFactor.KEY_FORM_FACTOR_IOS_DEVICE (6)
@@ -61,7 +61,13 @@ export function buildAddKeyMessage(publicKeyRaw: Uint8Array): Uint8Array {
     WhitelistOperation: {
       addKeyToWhitelistAndAddPermissions: {
         key: { PublicKeyRaw: publicKeyRaw },
-        keyRole: pb.Keys.Role.ROLE_DRIVER,
+        // ROLE_OWNER (2), not ROLE_DRIVER (3): Parental Controls is a supervisory command the car gates
+        // at owner level. A driver key can set its own speed limit / valet / PIN-to-Drive, but the car
+        // refuses ParentalControls* with fault 7 (INSUFFICIENT_PRIVILEGES) — verified on-car from the
+        // command log. There is NO grantable "parental" permission bit (it's role-based), so owner is the
+        // lever. Requires re-enrolling (the old driver key must be removed first — the car keys on the
+        // public key, so re-adding the same key won't downgrade/upgrade an existing entry).
+        keyRole: pb.Keys.Role.ROLE_OWNER,
       },
       metadataForKey: {
         // IOS_DEVICE (not CLOUD_KEY): a phone paired directly over BLE IS an

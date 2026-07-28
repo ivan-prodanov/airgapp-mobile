@@ -16,7 +16,7 @@ function fakePublicKeyRaw(): Uint8Array {
   return bytes;
 }
 
-test('buildAddKeyMessage round-trips PublicKeyRaw, ROLE_DRIVER, IOS_DEVICE, PRESENT_KEY through decode', () => {
+test('buildAddKeyMessage round-trips PublicKeyRaw, ROLE_OWNER, IOS_DEVICE, PRESENT_KEY through decode', () => {
   const pub = fakePublicKeyRaw();
   const encoded = buildAddKeyMessage(pub);
 
@@ -42,8 +42,8 @@ test('buildAddKeyMessage round-trips PublicKeyRaw, ROLE_DRIVER, IOS_DEVICE, PRES
     pub,
     'PublicKey.PublicKeyRaw must byte-equal the input pubkey',
   );
-  assert.equal(change.keyRole, pb.Keys.Role.ROLE_DRIVER);
-  assert.equal(change.keyRole, 3);
+  assert.equal(change.keyRole, pb.Keys.Role.ROLE_OWNER);
+  assert.equal(change.keyRole, 2);
 
   const metadata = op.metadataForKey;
   assert.ok(metadata, 'WhitelistOperation.metadataForKey must be set');
