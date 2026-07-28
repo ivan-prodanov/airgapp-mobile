@@ -38,9 +38,25 @@ yarn-error.*
 
 example
 
-# generated native folders
-/ios
+# Native folders.
+#
+# /android IS generated — expo prebuild regenerates it from app config.
+#
+# /ios IS NOT, and treating it as generated was a lie inherited from the Expo
+# template. `expo prebuild` would CLOBBER it: the Xcode project carries the
+# embedded Godot engine, the share extension target and its entitlements, and
+# hand-written Swift that exists nowhere else. It was ignored anyway, so for
+# months the only copy of ShareViewController.swift and SharedLocationResolver.swift
+# lived on one Mac. Ignore what is genuinely regenerated instead.
+#
+# The proper fix is a generated project (XcodeGen/Tuist) from a committed spec —
+# see docs/ROADMAP.md. This is the pragmatic version of that.
 /android
+/ios/Pods
+/ios/build
+/ios/DerivedData
+/ios/.xcode.env.local
+**/xcuserdata/
 
 # Godot artifacts — produced by export pipeline from /Users/ivan/Work/rpi-filter/tesla-godot/
 assets/godot/*.pck

@@ -1,0 +1,202 @@
+import UIKit
+import UniformTypeIdentifiers
+import MapKit
+
+// Share extension: resolve the shared place, queue it into the App Group as `{raw, ts, location?}`, nudge the app
+// awake and dismiss. Sharing into airgapp IS the decision — the app sends the place to the car the moment it drains
+// the intent — so there is nothing here to preview, reorder or choose. The spinner is not decoration: resolving a
+// Google short link is a network round-trip that can take seconds, and the sheet would otherwise look frozen.
+class ShareViewController: UIViewController {
+  private let suite = "group.local.airgapp.mobile"
+  private let mapItemType = "com.apple.mapkit.map-item"
+  private let spinner = UIActivityIndicatorView(style: .large)
+  private let statusLabel = UILabel()
+  private let detailLabel = UILabel()
+  private var resolved: ResolvedLocation?
+  private var rawShare: String = ""
+  private var completed = false
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    ShareOutboxStore.trace("extension launched")
+    installLoadingUI()
+    if let sheet = sheetPresentationController {
+      sheet.detents = [.large()]           // fixed size — the sheet is not user-resizable
+      sheet.prefersGrabberVisible = false  // no grabber affordance
+    }
+    loadAndResolve()
+  }
+
+  private func installLoadingUI() {
+    view.backgroundColor = .systemBackground
+    statusLabel.text = "Sharing to car"
+    statusLabel.font = .systemFont(ofSize: 17, weight: .medium)
+    statusLabel.textColor = .label
+    statusLabel.textAlignment = .center
+    detailLabel.font = .systemFont(ofSize: 14)
+    detailLabel.textColor = .secondaryLabel
+    detailLabel.textAlignment = .center
+    detailLabel.numberOfLines = 2
+    detailLabel.isHidden = true
+    let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, detailLabel])
+    stack.axis = .vertical
+    stack.spacing = 14
+    stack.alignment = .center
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+    ])
+    spinner.startAnimating()
+  }
+
+  // On iOS 26 the map-item attachment arrives as an NSKeyedArchiver blob (Data), not a live MKMapItem — so
+  // `data as? MKMapItem` fails. Unarchive it; non-secure because the graph nests MKPlacemark/CLPlacemark.
+  private static func decodeMapItem(_ data: Any?) -> MKMapItem? {
+    if let mi = data as? MKMapItem { return mi }
+    guard let d = data as? Data, let un = try? NSKeyedUnarchiver(forReadingFrom: d) else { return nil }
+    un.requiresSecureCoding = false
+    return un.decodeObject(forKey: NSKeyedArchiveRootObjectKey) as? MKMapItem
+  }
+
+  private func loadAndResolve() {
+    guard let providers = (extensionContext?.inputItems as? [NSExtensionItem])?.flatMap({ $0.attachments ?? [] }),
+          !providers.isEmpty else { return finish(nil) }
+
+    if let p = providers.first(where: { $0.hasItemConformingToTypeIdentifier(mapItemType) }) {
+      p.loadItem(forTypeIdentifier: mapItemType, options: nil) { [weak self] data, _ in
+        guard let self = self else { return }
+        if let mapItem = Self.decodeMapItem(data) {
+          let c = mapItem.placemark.coordinate
+          self.rawShare = "https://maps.apple.com/?ll=\(c.latitude),\(c.longitude)&q=\((mapItem.name ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+          SharedLocationResolver.resolve(mapItem: mapItem) { self.finish($0) }
+        } else { self.finish(nil) }
+      }
+    } else if let p = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) }) {
+      p.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] data, _ in
+        self?.resolveRaw((data as? URL)?.absoluteString ?? (data as? String))
+      }
+    } else if let p = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) }) {
+      p.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { [weak self] data, _ in
+        self?.resolveRaw(data as? String)
+      }
+    } else { finish(nil) }
+  }
+
+  private func resolveRaw(_ raw: String?) {
+    guard let raw = raw, !raw.isEmpty else { return finish(nil) }
+    rawShare = raw
+    SharedLocationResolver.resolve(raw: raw) { [weak self] in self?.finish($0) }
+  }
+
+  // The end of the road for every path above: queue the intent, nudge the app, dismiss. Guarded so a resolver that
+  // fires twice cannot overwrite an already-written intent with a null one.
+  private func finish(_ loc: ResolvedLocation?) {
+    DispatchQueue.main.async {
+      guard !self.completed else { return }
+      self.resolved = loc
+      guard let r = loc else {
+        ShareOutboxStore.trace("resolved=nil — nothing to send")
+        return self.showTerminal("Error", "Couldn't read that location")
+      }
+      self.sendToCar(r)
+    }
+  }
+
+  // Send from THE EXTENSION, behind the spinner, with a bounded deadline.
+  //
+  // Four terminal states, matching what the vendor's own extension does: Sending
+  // → Sent / Error / Timed out. A slow send is a spinner, not a failure — Tesla
+  // budgets for that and so do we, because opening a cold BLE session is
+  // legitimately seconds of work.
+  //
+  // The outbox is now only the LAST resort: it exists so that a send with no
+  // working transport is not simply thrown away. It is not the delivery path.
+  private func sendToCar(_ r: ResolvedLocation) {
+    guard let keyHex = SharedSecrets.deviceKeyHex(), let car = SharedSecrets.carConfig() else {
+      ShareOutboxStore.trace("send: no device key or VIN in the shared keychain")
+      return showTerminal("Error", "Open airgapp once to finish setup")
+    }
+
+    let presence = CarPresence.read()
+    // Stale or absent presence reads as IN RANGE — see CarPresence. Being wrong
+    // that way costs a Pi attempt; being wrong the other way takes the BLE radio
+    // while standing next to the car.
+    let pi = SharedSecrets.piConfig().map { cfg in
+      TransportArbiter.Arm(name: "pi") {
+        (AirgappEngine(transport: PiTransport(config: cfg)), "host")
+      }
+    }
+    // BLE reaches the car with no network at all — a garage or underground car
+    // park, where the Pi is unreachable and this is the only way through.
+    let ble = TransportArbiter.Arm(name: "ble") {
+      let pipe = BleBytePipe()
+      // The engine drives the JS-side transport; this EngineTransport is never
+      // called on the BLE arm, so it is a stub rather than a real path.
+      return (AirgappEngine(transport: UnusedTransport(), blePipe: pipe), "ble")
+    }
+    let arms = TransportArbiter.order(inRange: presence.treatAsInRange, pi: pi, ble: ble)
+    ShareOutboxStore.trace("send: presence linkUp=\(presence.linkUp) stale=\(presence.stale) bleFirst=\(TransportArbiter.forceBleFirst) → arms=[\(arms.map { $0.name }.joined(separator: ","))]")
+
+    let label = r.name ?? r.address
+    let arbiter = TransportArbiter(arms: arms)
+
+    // Bounded: the share sheet must not hang forever if a transport stalls.
+    var settled = false
+    let deadline = DispatchWorkItem { [weak self] in
+      guard !settled else { return }
+      settled = true
+      ShareOutboxStore.trace("send: TIMED OUT after \(Int(Self.sendDeadline))s")
+      self?.showTerminal("Timed out", "Try sharing again")
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.sendDeadline, execute: deadline)
+
+    arbiter.send(vin: car.vin, lat: r.latitude, lon: r.longitude, label: label, privateScalarHex: keyHex) { result, attempts in
+      DispatchQueue.main.async {
+        guard !settled else { return }
+        settled = true
+        deadline.cancel()
+        let tried = attempts.map { $0.arm }.joined(separator: ",")
+        switch result {
+        case .success(let sent) where sent.verdict == "accepted":
+          ShareOutboxStore.trace("send: ACCEPTED via [\(tried)]")
+          self.showTerminal("Sent", label.map { "Shared \($0)" } ?? "Shared with your car")
+        case .success(let sent) where sent.verdict == "refused":
+          // The car answered on the destination's merits. Queueing would just
+          // re-ask a question that has been answered.
+          ShareOutboxStore.trace("send: REFUSED — \(sent.reason ?? "no reason")")
+          self.showTerminal("Error", sent.reason ?? "Your car wouldn't accept that place")
+        case .success(let sent):
+          // Every arm ran and none produced a verdict we could read. Reporting
+          // failure is the honest answer: the send MAY have landed, and silently
+          // re-sending it later is what made a place arrive after the user had
+          // already moved on.
+          ShareOutboxStore.trace("send: \(sent.verdict) via [\(tried)]")
+          self.showTerminal("Error", "Couldn't confirm — try again")
+        case .failure(let error):
+          ShareOutboxStore.trace("send: FAILED via [\(tried)] — \(error.localizedDescription)")
+          self.showTerminal("Error", "Couldn't reach your car — try again")
+        }
+      }
+    }
+  }
+
+  private static let sendDeadline: TimeInterval = 25
+
+  // Show the outcome briefly, then dismiss. The user gets a verdict rather than a
+  // sheet that vanishes and leaves them guessing whether it worked.
+  private func showTerminal(_ title: String, _ detail: String) {
+    spinner.stopAnimating()
+    statusLabel.text = title
+    detailLabel.text = detail
+    detailLabel.isHidden = false
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in self?.finishRequest() }
+  }
+
+  private func finishRequest() {
+    guard !completed else { return }
+    completed = true
+    extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+  }
+}
