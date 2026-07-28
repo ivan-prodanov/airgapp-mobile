@@ -223,7 +223,7 @@ export function ClimateScreen({ state, actions }: Props) {
 
           <View style={styles.tempControl}>
             <Pressable hitSlop={16} onPress={() => adjustTemp(-0.5)}>
-              <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
+              <SymbolView name="chevron.left" tintColor={TEXT_DIM} size={CHEVRON_SIZE} weight="medium" />
             </Pressable>
             {/* BRIGHT when climate is on, DIM when off — visible across Ivan's
                 first two screenshots, which differ only by the AC state: the
@@ -233,7 +233,7 @@ export function ClimateScreen({ state, actions }: Props) {
               {formatTemp(state.targetTempC)}
             </Text>
             <Pressable hitSlop={16} onPress={() => adjustTemp(0.5)}>
-              <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
+              <SymbolView name="chevron.right" tintColor={TEXT_DIM} size={CHEVRON_SIZE} weight="medium" />
             </Pressable>
           </View>
 
@@ -342,7 +342,7 @@ function Quick({
           when the state is off and WHITE when on. No blue anywhere in this row —
           blue is reserved for an engaged card (Defrost), which is the one place
           it appears in all four screenshots. */}
-      <SymbolView name={symbol} tintColor={active ? TEXT_BRIGHT : TEXT_DIM} size={29} />
+      <SymbolView name={symbol} tintColor={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
       <Text style={[styles.quickLabel, active && styles.quickLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -479,9 +479,18 @@ const TEXT_BRIGHT = '#F3F3F3';
 // "border much wider" Ivan saw. Radii on the ladder are 16 (minHeight 48) and
 // 10 (minHeight 40); 10 is the one that reads as "more rectangular" against the
 // 12 we had, and it is a real tier rather than a number I picked.
-const RADIUS = 10;
+const RADIUS = 16;
 const BORDER_WIDTH = 2;
 const ICON_SIZE = 20;
+// Content inset. MEASURED off Ivan's side-by-side at 2.29 px/pt (921px / 402pt):
+// their cards span x 66..855, ours spanned 37..884 — 29pt of margin against our
+// 16. That single number is most of "entire structure of the panel, margins":
+// our cards ran nearly edge to edge while theirs sit in a much narrower column.
+const CONTENT_INSET = 28;
+// Chevrons and the power/vent glyphs, measured the same way: theirs are ~17pt
+// and ~23pt against our 24 and 29. Both were noticeably oversized.
+const CHEVRON_SIZE = 18;
+const QUICK_ICON_SIZE = 24;
 // Their most common activeOpacity (two call sites). The pressed card in Ivan's
 // 4th screenshot dims noticeably but stays readable, which fits; I could not tie
 // it to THIS component, so it is the best-supported value rather than a proven one.
@@ -500,7 +509,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 16,
+    paddingHorizontal: CONTENT_INSET,
     paddingTop: 10,
     gap: 12,
     // findings §1e, verbatim. The sheet is FULLY OPAQUE `theme.backgroundColor`
@@ -581,7 +590,8 @@ const styles = StyleSheet.create({
     lineHeight: 46,
     minWidth: 128,
     textAlign: 'center',
-    letterSpacing: 0.5,
+    // The 40/46 tier's letterSpacing is 0. The 0.5 was ours.
+    letterSpacing: 0,
   },
   tempOn: {
     color: TEXT_BRIGHT,
