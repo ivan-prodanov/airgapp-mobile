@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
 import { showNum } from '../state/readProbe';
+import { showsOverheatActivationTemp } from '../ble/climateDisplay';
 import { useCarLinkStatus } from '../state/VehicleProvider';
 import { vehicleStatusText } from '../ble/vehicleStatusText';
 import { StatusBarFade } from '../components/StatusBarFade';
@@ -292,20 +293,25 @@ export function ClimateScreen({ state, actions }: Props) {
           />
         </Section>
 
-        <Section label="Approximate activation temperature" muted>
-          <Segmented
-            options={[
-              { key: '30', label: '30°C' },
-              { key: '35', label: '35°C' },
-              { key: '40', label: '40°C' },
-            ]}
-            value={state.cabinOverheatTemp}
-            onChange={(k) => {
-              tap();
-              actions.setCabinOverheatTemp(k as CabinOverheatTemp);
-            }}
-          />
-        </Section>
+        {/* ONLY while COP is On — see showsOverheatActivationTemp for their
+            condition. An activation temperature is meaningless when nothing
+            activates, and Fan Only ("No A/C") has no setpoint to reach. */}
+        {showsOverheatActivationTemp(state.cabinOverheatMode) ? (
+          <Section label="Approximate activation temperature" muted>
+            <Segmented
+              options={[
+                { key: '30', label: '30°C' },
+                { key: '35', label: '35°C' },
+                { key: '40', label: '40°C' },
+              ]}
+              value={state.cabinOverheatTemp}
+              onChange={(k) => {
+                tap();
+                actions.setCabinOverheatTemp(k as CabinOverheatTemp);
+              }}
+            />
+          </Section>
+        ) : null}
       </Animated.View>
     </View>
   );
