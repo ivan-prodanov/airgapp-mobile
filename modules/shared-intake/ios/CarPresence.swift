@@ -30,7 +30,7 @@ public enum CarPresence {
 
   private static var url: URL? {
     FileManager.default
-      .containerURL(forSecurityApplicationGroupIdentifier: ShareOutboxStore.appGroup)?
+      .containerURL(forSecurityApplicationGroupIdentifier: ShareTrace.appGroup)?
       .appendingPathComponent(fileName)
   }
 

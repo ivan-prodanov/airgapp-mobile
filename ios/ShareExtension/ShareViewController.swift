@@ -19,7 +19,7 @@ class ShareViewController: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    ShareOutboxStore.trace("extension launched")
+    ShareTrace.trace("extension launched")
     installLoadingUI()
     if let sheet = sheetPresentationController {
       sheet.detents = [.large()]           // fixed size — the sheet is not user-resizable
@@ -112,7 +112,7 @@ class ShareViewController: UIViewController {
         self.detailLabel.isHidden = false
       }
       guard let r = loc else {
-        ShareOutboxStore.trace("resolved=nil — nothing to send")
+        ShareTrace.trace("resolved=nil — nothing to send")
         return self.showTerminal("Error", "Couldn't read that location")
       }
       self.sendToCar(r)
@@ -130,7 +130,7 @@ class ShareViewController: UIViewController {
   // working transport is not simply thrown away. It is not the delivery path.
   private func sendToCar(_ r: ResolvedLocation) {
     guard let keyHex = SharedSecrets.deviceKeyHex(), let car = SharedSecrets.carConfig() else {
-      ShareOutboxStore.trace("send: no device key or VIN in the shared keychain")
+      ShareTrace.trace("send: no device key or VIN in the shared keychain")
       return showTerminal("Error", "Open airgapp once to finish setup")
     }
 
@@ -156,7 +156,7 @@ class ShareViewController: UIViewController {
       return (AirgappEngine(transport: UnusedTransport(), blePipe: pipe), "ble")
     }
     let arms = TransportArbiter.order(inRange: presence.treatAsInRange, pi: pi, ble: ble)
-    ShareOutboxStore.trace("send: presence linkUp=\(presence.linkUp) stale=\(presence.stale) bleFirst=\(TransportArbiter.forceBleFirst) → arms=[\(arms.map { $0.name }.joined(separator: ","))]")
+    ShareTrace.trace("send: presence linkUp=\(presence.linkUp) stale=\(presence.stale) bleFirst=\(TransportArbiter.forceBleFirst) → arms=[\(arms.map { $0.name }.joined(separator: ","))]")
 
     let label = r.name ?? r.address
     let arbiter = TransportArbiter(arms: arms)
@@ -170,7 +170,7 @@ class ShareViewController: UIViewController {
       // Name the arm that was still running: "timed out" on its own cannot tell
       // a car that is not there from a Pi that is not answering.
       let stalled = self?.stageLabel.text ?? ""
-      ShareOutboxStore.trace("send: TIMED OUT after \(Int(Self.sendDeadline))s during \(stalled)")
+      ShareTrace.trace("send: TIMED OUT after \(Int(Self.sendDeadline))s during \(stalled)")
       self?.showTerminal("Timed out", "Try sharing again")
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.sendDeadline, execute: deadline)
@@ -189,22 +189,22 @@ class ShareViewController: UIViewController {
         let tried = attempts.map { $0.arm }.joined(separator: ",")
         switch result {
         case .success(let sent) where sent.verdict == "accepted":
-          ShareOutboxStore.trace("send: ACCEPTED via [\(tried)]")
+          ShareTrace.trace("send: ACCEPTED via [\(tried)]")
           self.showTerminal("Sent", label.map { "Shared \($0)" } ?? "Shared with your car")
         case .success(let sent) where sent.verdict == "refused":
           // The car answered on the destination's merits. Queueing would just
           // re-ask a question that has been answered.
-          ShareOutboxStore.trace("send: REFUSED — \(sent.reason ?? "no reason")")
+          ShareTrace.trace("send: REFUSED — \(sent.reason ?? "no reason")")
           self.showTerminal("Error", sent.reason ?? "Your car wouldn't accept that place")
         case .success(let sent):
           // Every arm ran and none produced a verdict we could read. Reporting
           // failure is the honest answer: the send MAY have landed, and silently
           // re-sending it later is what made a place arrive after the user had
           // already moved on.
-          ShareOutboxStore.trace("send: \(sent.verdict) via [\(tried)]")
+          ShareTrace.trace("send: \(sent.verdict) via [\(tried)]")
           self.showTerminal("Error", "Couldn't confirm — try again")
         case .failure(let error):
-          ShareOutboxStore.trace("send: FAILED via [\(tried)] — \(error.localizedDescription)")
+          ShareTrace.trace("send: FAILED via [\(tried)] — \(error.localizedDescription)")
           self.showTerminal("Error", "Couldn't reach your car — try again")
         }
       }

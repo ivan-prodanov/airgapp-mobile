@@ -24,7 +24,7 @@ public class SharedIntakeModule: Module {
     // What the Share Extension recorded about its own runs — the only window into
     // a process with no console. Read-only; the extension writes it.
     AsyncFunction("readShareTrace") { () -> String in
-      ShareOutboxStore.readTrace()
+      ShareTrace.readTrace()
     }
 
     // Legacy single-slot intent. Kept only to drain anything queued by a build

@@ -114,17 +114,17 @@ public final class TransportArbiter {
 
       let budget = min(arm.capMs, remainingMs())
       if budget < Self.minimumUsefulMs {
-        ShareOutboxStore.trace("arbiter: \(arm.name) SKIPPED — only \(remainingMs())ms left of \(totalBudgetMs)ms")
+        ShareTrace.trace("arbiter: \(arm.name) SKIPPED — only \(remainingMs())ms left of \(totalBudgetMs)ms")
         return next()
       }
       onArm?(arm.name)
 
       guard let built = arm.make() else {
-        ShareOutboxStore.trace("arbiter: \(arm.name) unavailable (not configured) → next")
+        ShareTrace.trace("arbiter: \(arm.name) unavailable (not configured) → next")
         return next()
       }
 
-      ShareOutboxStore.trace("arbiter: \(arm.name) starting with \(budget)ms (\(remainingMs())ms left)")
+      ShareTrace.trace("arbiter: \(arm.name) starting with \(budget)ms (\(remainingMs())ms left)")
       built.engine.sendNavigation(
         vin: vin, lat: lat, lon: lon, label: label,
         privateScalarHex: privateScalarHex, transport: built.transport,
@@ -133,13 +133,13 @@ public final class TransportArbiter {
         attempts.append(Attempt(arm: arm.name, result: result))
         switch result {
         case .success(let sent) where sent.verdict == "accepted" || sent.verdict == "refused":
-          ShareOutboxStore.trace("arbiter: \(arm.name) → \(sent.verdict)")
+          ShareTrace.trace("arbiter: \(arm.name) → \(sent.verdict)")
           completion(result, attempts)
         case .success(let sent):
-          ShareOutboxStore.trace("arbiter: \(arm.name) → \(sent.verdict) (\(sent.reason ?? "-")) → next")
+          ShareTrace.trace("arbiter: \(arm.name) → \(sent.verdict) (\(sent.reason ?? "-")) → next")
           next()
         case .failure(let error):
-          ShareOutboxStore.trace("arbiter: \(arm.name) FAILED — \(error.localizedDescription) → next")
+          ShareTrace.trace("arbiter: \(arm.name) FAILED — \(error.localizedDescription) → next")
           next()
         }
       }

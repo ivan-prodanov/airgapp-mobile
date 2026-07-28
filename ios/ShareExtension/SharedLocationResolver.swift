@@ -128,7 +128,7 @@ enum SharedLocationResolver {
       if let loc = catcher.location, !SharedLocationExtract.isShortLink(loc) {
         return completion(loc, nil)
       }
-      ShareOutboxStore.trace("fetch: no usable 302 (loc=\(catcher.location ?? "none")) → following instead")
+      ShareTrace.trace("fetch: no usable 302 (loc=\(catcher.location ?? "none")) → following instead")
       followAndScrape(url, attempts: attempts, completion)
     }.resume()
   }
@@ -146,7 +146,7 @@ enum SharedLocationResolver {
         return followAndScrape(url, attempts: attempts - 1, completion)
       }
       if let f = finalUrl, SharedLocationExtract.isShortLink(f) {
-        ShareOutboxStore.trace("fetch: gave up on \(url) — still on the short host after \(attempts) tries")
+        ShareTrace.trace("fetch: gave up on \(url) — still on the short host after \(attempts) tries")
       }
       completion(finalUrl, body)
     }.resume()

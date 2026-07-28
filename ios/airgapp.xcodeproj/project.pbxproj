@@ -17,11 +17,11 @@
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		42722832017EA59FBBC6B768 /* SharedLocationExtract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AA7D7273B49CEED094F793A /* SharedLocationExtract.swift */; };
 		4C2A0282B8CCBA9C5325430E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AD22879D3B1D1820D0518BB4 /* Foundation.framework */; };
-		5EC7790EF82E31D9C2847CBD /* ShareOutboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DF11266E0AE174244C8A1D7 /* ShareOutboxStore.swift */; };
 		7EE8383A8D2E5A8E08721259 /* ShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B6A8D1F821325F848493E55E /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9C89563B25804A399D06CD66 /* expo.icon in Resources */ = {isa = PBXBuildFile; fileRef = B30A62D93C5842948679E6B5 /* expo.icon */; };
 		AECDB06515F958D996606EBD /* BleBytePipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88EAA393CB4EA45A84D3A136 /* BleBytePipe.swift */; };
 		B4BC732C242F2293E7A491B0 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C74C4586811A59C143C4346 /* ShareViewController.swift */; };
+		BA02AECB1EB206B7A016DD23 /* ShareTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25FEC47F8A469FD73F739890 /* ShareTrace.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		BC5909347903BDB2FE5D8245 /* JavaScriptCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CDBA6C20990A080F8D77C69A /* JavaScriptCore.framework */; };
 		D50E4AFA35FFE4B942C486DE /* SharedLocationResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4C7CCFB370A8E9F9474045 /* SharedLocationResolver.swift */; };
@@ -58,11 +58,11 @@
 /* Begin PBXFileReference section */
 		064A12661C8AE9A84CF1A5C7 /* TransportArbiter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TransportArbiter.swift; path = "../../modules/shared-intake/ios/TransportArbiter.swift"; sourceTree = "<group>"; };
 		08DCFA254B8E4B38D99F812F /* SharedSecrets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SharedSecrets.swift; path = "../../modules/shared-intake/ios/SharedSecrets.swift"; sourceTree = "<group>"; };
-		0DF11266E0AE174244C8A1D7 /* ShareOutboxStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShareOutboxStore.swift; path = "../../modules/shared-intake/ios/ShareOutboxStore.swift"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* airgapp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = airgapp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = airgapp/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = airgapp/Info.plist; sourceTree = "<group>"; };
 		1B4C7CCFB370A8E9F9474045 /* SharedLocationResolver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedLocationResolver.swift; sourceTree = "<group>"; };
+		25FEC47F8A469FD73F739890 /* ShareTrace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShareTrace.swift; path = "../../modules/shared-intake/ios/ShareTrace.swift"; sourceTree = "<group>"; };
 		27D9B7B73F32D0FD6E2ECA17 /* CarPresence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CarPresence.swift; path = "../../modules/shared-intake/ios/CarPresence.swift"; sourceTree = "<group>"; };
 		2C74C4586811A59C143C4346 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		358F5C4C93AF91EE4D922082 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = airgapp/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -214,7 +214,6 @@
 				2C74C4586811A59C143C4346 /* ShareViewController.swift */,
 				1B4C7CCFB370A8E9F9474045 /* SharedLocationResolver.swift */,
 				7AA7D7273B49CEED094F793A /* SharedLocationExtract.swift */,
-				0DF11266E0AE174244C8A1D7 /* ShareOutboxStore.swift */,
 				9F546F583501C4C79580799A /* AirgappEngine.swift */,
 				A5B858B8F4FC83658E1A6097 /* AirgappEngine.js */,
 				08DCFA254B8E4B38D99F812F /* SharedSecrets.swift */,
@@ -222,6 +221,7 @@
 				27D9B7B73F32D0FD6E2ECA17 /* CarPresence.swift */,
 				064A12661C8AE9A84CF1A5C7 /* TransportArbiter.swift */,
 				88EAA393CB4EA45A84D3A136 /* BleBytePipe.swift */,
+				25FEC47F8A469FD73F739890 /* ShareTrace.swift */,
 			);
 			name = ShareExtension;
 			path = ShareExtension;
@@ -493,13 +493,13 @@
 				B4BC732C242F2293E7A491B0 /* ShareViewController.swift in Sources */,
 				D50E4AFA35FFE4B942C486DE /* SharedLocationResolver.swift in Sources */,
 				42722832017EA59FBBC6B768 /* SharedLocationExtract.swift in Sources */,
-				5EC7790EF82E31D9C2847CBD /* ShareOutboxStore.swift in Sources */,
 				D9942C502258403A37DBED1D /* AirgappEngine.swift in Sources */,
 				3AED45D72A5B9CF3820F056D /* SharedSecrets.swift in Sources */,
 				1B5DA8869ED56A231A39FC4B /* PiTransport.swift in Sources */,
 				FE61F0A445154EC966252148 /* CarPresence.swift in Sources */,
 				3039855E7CBA0ED3F2C81543 /* TransportArbiter.swift in Sources */,
 				AECDB06515F958D996606EBD /* BleBytePipe.swift in Sources */,
+				BA02AECB1EB206B7A016DD23 /* ShareTrace.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

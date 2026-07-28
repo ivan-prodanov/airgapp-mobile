@@ -49,7 +49,7 @@ public enum SharedSecrets {
       // unenrolled device and it is a build configuration problem, not a
       // user-facing one.
       if status == errSecMissingEntitlement {
-        ShareOutboxStore.trace("secrets: MISSING ENTITLEMENT for \(accessGroup) — the extension cannot read the keychain group")
+        ShareTrace.trace("secrets: MISSING ENTITLEMENT for \(accessGroup) — the extension cannot read the keychain group")
         return nil
       }
     }

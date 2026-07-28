@@ -90,7 +90,7 @@ public final class AirgappEngine {
     // Surfaced through the trace, not swallowed: an exception while evaluating a
     // 2.4 MB bundle is otherwise completely invisible from here.
     context.exceptionHandler = { _, exception in
-      ShareOutboxStore.trace("engine: JS exception — \(exception?.toString() ?? "unknown")")
+      ShareTrace.trace("engine: JS exception — \(exception?.toString() ?? "unknown")")
     }
 
     guard
@@ -128,7 +128,7 @@ public final class AirgappEngine {
       guard SecRandomCopyBytes(kSecRandomDefault, length, &bytes) == errSecSuccess else {
         // Refuse rather than fall back to anything weaker. A share that fails is
         // recoverable; a command signed with predictable randomness is not.
-        ShareOutboxStore.trace("engine: SecRandomCopyBytes FAILED — refusing to supply randomness")
+        ShareTrace.trace("engine: SecRandomCopyBytes FAILED — refusing to supply randomness")
         return JSValue(undefinedIn: array.context)
       }
       for i in 0..<length { array.setValue(bytes[i], at: i) }
@@ -242,7 +242,7 @@ public final class AirgappEngine {
           // A transport that calls back twice must not settle twice — JS ignores
           // it, but the bug stays hidden. Catch it here where it is visible.
           if settled {
-            ShareOutboxStore.trace("engine: transport settled twice — ignoring the second")
+            ShareTrace.trace("engine: transport settled twice — ignoring the second")
             return
           }
           settled = true
