@@ -390,10 +390,24 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               toggle this used to be gated on. */}
           {/* Their row ORDER below favourites is ChargingAlerts -> Charging ->
               MediaControl, so the charge panel sits above the media card. */}
-          {/* ⚠️ TEMPORARY `|| fakeCharge` — and it is the FIX for "nothing
-              happens": the panel is gated on state.awake, so with the car asleep
-              no preset could ever render it. A forced preset bypasses both gates. */}
-          {(state.awake && chargePanelVisible) || fakeCharge ? (
+          {/* NO `state.awake` GATE. Ivan: the panel opens on a sleeping car in
+              theirs. Correct — recovered §6, their condition is only
+
+                  const [showCharge, toggleCharge] = useState(chargePortOpen)
+
+              a plain useState driven by the battery tap, plus chargePortOpen.
+              Nothing anywhere in that chain consults an awake/online flag,
+              because the panel renders from the SAME persisted ChargeState the
+              rest of the screen uses — which is why theirs shows a charge limit
+              and a kWh figure under "Last seen 7 days ago".
+
+              Gating on awake made the battery tap silently do nothing on a
+              sleeping car, and it also meant the fake presets could not render
+              the panel — I read that as a preset bug at the time and papered
+              over it with `|| fakeCharge` instead of questioning the gate.
+              ⚠️ The `|| fakeCharge` is still TEMPORARY, but it is no longer
+              load-bearing. */}
+          {chargePanelVisible || fakeCharge ? (
             <ChargeCard
               batteryLevel={state.batteryLevel}
               rangeMiles={state.rangeMiles}

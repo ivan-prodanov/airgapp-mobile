@@ -47,7 +47,10 @@ const THUMB_CHANGING = 20;
 // the most visible remaining difference at 1:1.
 const THUMB_COLOR = '#E8E8E8';
 const TRACK_H = 5;
-const BREAK_W = 3;
+// marker.width = 0.2 * Gutter, marker.height = Gutter, baseTrack left cap = 0.2 * Gutter.
+const BREAK_W = 2;
+const BREAK_H = 10;
+const CAP_RADIUS = 2;
 
 // ── Colours ───────────────────────────────────────────────────────────────
 // Measured off the reference by Ivan, and they replace TWO wrong guesses of
@@ -328,10 +331,22 @@ const styles = StyleSheet.create({
   row: {
     paddingVertical: 20,
   },
+  // Recovered `baseTrack` (@4006468): the fill is rounded on the LEFT ONLY —
+  //   {borderBottomLeftRadius: 0.2*Gutter, borderTopLeftRadius: 0.2*Gutter,
+  //    height:'100%', left:0, position:'absolute'}
+  // with no right radii at all, so its right end is a clean square cut. Ivan
+  // spotted it: "the right end of the slider should not be rounded". Ours had a
+  // symmetric borderRadius 3 on both the track and the fill.
+  //
+  // The track takes the same treatment so the two left ends agree; its right end
+  // is square for the same reason. (Theirs clips instead — `maxTrack` is
+  // {borderWidth:0, overflow:'hidden'} — but we cannot use overflow:hidden here
+  // because our thumb is a child of the track and would be cut in half.)
   track: {
     width: '100%',
     height: TRACK_H,
-    borderRadius: 3,
+    borderTopLeftRadius: CAP_RADIUS,
+    borderBottomLeftRadius: CAP_RADIUS,
     backgroundColor: TRACK,
     justifyContent: 'center',
   },
@@ -340,23 +355,25 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 3,
+    borderTopLeftRadius: CAP_RADIUS,
+    borderBottomLeftRadius: CAP_RADIUS,
     backgroundColor: GREEN,
   },
   // A gap punched through the bar. Slightly taller than the track so the ends
   // read as a clean cut rather than a smudge.
   // A thin light bar standing proud of the track top and bottom — 5pt track,
   // ~9pt bar — matching the zoomed crop, where the breakers clearly overhang.
+  // Recovered `marker` (@4006619): {height: Gutter, position:'absolute',
+  // width: 0.2*Gutter} — and NO borderRadius. Ivan: "the vertical brakers too
+  // arent rounded". Ours had borderRadius 1 and a ratio-derived 3pt width; the
+  // real numbers are 10 tall and 2 wide, so it also centres on the 5pt track at
+  // top -(10-5)/2 rather than the -2/-2 pair I had estimated from a crop.
   break: {
     position: 'absolute',
-    // Sized by breaker-to-thumb RATIO, which survives a scale difference between
-    // crops: theirs is 26/56 = 0.46, ours was 30/60 = 0.50. Against a 20pt thumb
-    // that is ~9pt of bar, i.e. 2pt proud of the 5pt track each side.
-    top: -2,
-    bottom: -2,
+    top: -(BREAK_H - TRACK_H) / 2,
+    height: BREAK_H,
     width: BREAK_W,
     marginLeft: -BREAK_W / 2,
-    borderRadius: 1,
     backgroundColor: BREAK_COLOR,
   },
   thumb: {
