@@ -508,4 +508,9 @@ Where the age actually lives: the HOME header, `vehicle_status_screen_last_seen_
 "Last seen {{age}}". One place, not two.
 
 So our top-bar pill — refresh glyph plus a relative time — is ours, not theirs. That is a product
-decision to make deliberately rather than a parity gap to close.
+decision, not a parity gap.
+
+**Ivan's call: keep it and make it work.** It now wakes and re-reads the car via `carLink.refresh()`
+— the same path as pull-to-refresh and the status tap — and swaps the glyph for the header's
+`BusyIcon` while `wakeInFlight`. Disabled on an unlinked/demo car, where `refresh()` is a no-op.
+Deliberate divergence, recorded here so a later parity pass does not "fix" it back out.

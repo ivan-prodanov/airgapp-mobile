@@ -16,8 +16,10 @@ import {
   type LocationSheetHandle,
   type LocationTab,
 } from '@/components/LocationSheet';
-import { useVehicle } from '@/state/VehicleProvider';
+import { useVehicle, useCarLinkStatus } from '@/state/VehicleProvider';
 import { relativeAge } from '@/ble/vehicleStatusText';
+import { BusyIcon } from '@/components/BusyIcon';
+import { controlHaptic } from '@/state/controlHaptic';
 import {
   distanceMeters,
   offsetCoordinate,
@@ -142,6 +144,7 @@ export default function LocationView() {
   // has been read (telemetry applies only to the active-is-live vehicle). So: real coords when we
   // have them, otherwise the per-car mock offset (demo cars, or the live car before its first read).
   const [vehState] = useVehicle();
+  const carLink = useCarLinkStatus();
   const liveCoord: LatLng | null = useMemo(() => {
     const loc = vehState.carLocation;
     if (loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)) {
@@ -657,19 +660,44 @@ export default function LocationView() {
             <SymbolView name="chevron.left" tintColor="white" size={20} weight="semibold" />
           </Pressable>
 
-          {/* Hidden entirely when we have never had a fix. A pill reading
-              "just now" or an em dash beside an empty map would be worse than
-              no pill — the same hide-don't-fake rule the charge panel follows. */}
+          {/* OURS, NOT THEIRS — deliberately. VehicleLocationScreen
+              @5059373-5062126 has no refresh control and no timestamp; every
+              string it uses is a marker label, an empty state or an error, and
+              the whole vehicle_location_screen_* family has no last-updated key.
+              Their age lives once, in the home header's "Last seen {{age}}".
+              Ivan's call to keep it and make it work rather than match them.
+
+              So it must actually DO something: the glyph used to be decorative
+              beside a hardcoded "2 months ago". It now wakes and re-reads the
+              car — carLink.refresh(), the same path as pull-to-refresh and the
+              status tap — and shows the header's BusyIcon while in flight, so
+              the spinner means "fetching" rather than being a second idle icon.
+
+              Hidden entirely when we have never had a fix: a pill reading "just
+              now" beside an empty map would be worse than no pill. */}
           {lastUpdatedLabel ? (
-            <View style={styles.agoPill}>
-              <SymbolView
-                name="arrow.clockwise"
-                tintColor="rgba(255,255,255,0.85)"
-                size={15}
-                weight="semibold"
-              />
+            <Pressable
+              style={styles.agoPill}
+              onPress={() => {
+                controlHaptic();
+                carLink.refresh();
+              }}
+              // A demo/unlinked car has nothing to re-read; refresh() is a no-op
+              // there, so the control goes rather than sitting there inert.
+              disabled={!carLink.linked || carLink.wakeInFlight}
+            >
+              {carLink.wakeInFlight ? (
+                <BusyIcon size={15} />
+              ) : (
+                <SymbolView
+                  name="arrow.clockwise"
+                  tintColor="rgba(255,255,255,0.85)"
+                  size={15}
+                  weight="semibold"
+                />
+              )}
               <Text style={styles.agoText}>{lastUpdatedLabel}</Text>
-            </View>
+            </Pressable>
           ) : (
             <View style={styles.agoSpacer} />
           )}
