@@ -118,6 +118,7 @@ export interface ChargeCardProps {
   fastCharging: boolean;
   chargerActualCurrentA: number | null;
   chargerVoltageV: number | null;
+  chargerPilotCurrentA: number | null;
   chargingAmps: number;
   ampMin: number;
   ampMax: number;
@@ -149,6 +150,7 @@ export function ChargeCard({
   fastCharging,
   chargerActualCurrentA,
   chargerVoltageV,
+  chargerPilotCurrentA,
   chargingAmps,
   ampMin,
   ampMax,
@@ -216,6 +218,7 @@ export function ChargeCard({
               energyAddedKwh,
               chargerActualCurrentA,
               chargerVoltageV,
+              chargerPilotCurrentA,
             }).map((line, i) => (
               <Text key={line} style={[styles.statusItem, i > 0 && styles.statusGap]}>
                 {line}

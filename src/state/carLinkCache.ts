@@ -68,6 +68,7 @@ export interface CarLinkCache {
   fastCharging: boolean | null;
   chargerActualCurrentA: number | null;
   chargerVoltageV: number | null;
+  chargerPilotCurrentA: number | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -142,6 +143,7 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     fastCharging: typeof cached?.fastCharging === 'boolean' ? cached.fastCharging : null,
     chargerActualCurrentA: num(cached?.chargerActualCurrentA),
     chargerVoltageV: num(cached?.chargerVoltageV),
+    chargerPilotCurrentA: num(cached?.chargerPilotCurrentA),
     media:
       cached?.media && typeof cached.media === 'object'
         ? {

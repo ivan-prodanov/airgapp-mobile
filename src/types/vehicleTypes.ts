@@ -231,6 +231,7 @@ export interface VehicleViewState {
   fastCharging: boolean;
   chargerActualCurrentA: number | null;
   chargerVoltageV: number | null;
+  chargerPilotCurrentA: number | null;
   chargeRateMph: number | null;
   chargingAmps: number;
 }
@@ -319,6 +320,7 @@ export const initialVehicleState: VehicleViewState = {
   fastCharging: false,
   chargerActualCurrentA: null,
   chargerVoltageV: null,
+  chargerPilotCurrentA: null,
   chargeRateMph: null,
   chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
 };

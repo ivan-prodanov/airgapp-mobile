@@ -65,6 +65,8 @@ export interface InfotainmentSnapshot {
     /** Live delivery, for the charging status row: "16A · 230V". */
     chargerActualCurrentA?: number | null;
     chargerVoltageV?: number | null;
+    /** getNominalChargeCurrent = charger_pilot_current — the "/32" in "16/32A". */
+    chargerPilotCurrentA?: number | null;
     soc: number | undefined;
     rangeMiles: number | null;
     chargingState: string | undefined;
@@ -332,6 +334,7 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       fastCharging: cs.fastChargerPresent === true,
       chargerActualCurrentA: num(cs.chargerActualCurrent) ?? null,
       chargerVoltageV: num(cs.chargerVoltage) ?? null,
+      chargerPilotCurrentA: num(cs.chargerPilotCurrent) ?? null,
       chargeLimitSoc: num(cs.chargeLimitSoc),
     };
   }
@@ -649,6 +652,8 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.chargerActualCurrentA != null)
       patch.chargerActualCurrentA = snap.charge.chargerActualCurrentA;
     if (snap.charge.chargerVoltageV != null) patch.chargerVoltageV = snap.charge.chargerVoltageV;
+    if (snap.charge.chargerPilotCurrentA != null)
+      patch.chargerPilotCurrentA = snap.charge.chargerPilotCurrentA;
     if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
   }
 

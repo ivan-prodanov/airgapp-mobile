@@ -34,6 +34,15 @@
  */
 export const STATE_SEPARATOR = '  \u00b7  ';
 
+/**
+ * The same string joins the current and voltage inside
+ * getVehicleChargingCurrentAndVoltageText (@1232034) — `''.concat(dotSeparator,
+ * '  ')` with `this` = '  '. I had used single spaces there on the assumption
+ * that a value-join would be tighter than a sentence-join. It is not; it is the
+ * identical separator.
+ */
+export const VALUE_SEPARATOR = STATE_SEPARATOR;
+
 /** getVehicleChargingStateText @1225331 — four branches on ChargingState. */
 export function chargingStateText(chargingState: string | null): string | null {
   switch ((chargingState ?? '').toLowerCase()) {
@@ -58,6 +67,8 @@ export interface ChargingTextInput {
   energyAddedKwh: number | null;
   chargerActualCurrentA: number | null;
   chargerVoltageV: number | null;
+  /** charger_pilot_current — the "/32" half of "16/32A". */
+  chargerPilotCurrentA: number | null;
 }
 
 /**
@@ -71,22 +82,39 @@ export interface ChargingTextInput {
 export function chargingTextStrings(v: ChargingTextInput): string[] {
   const out: string[] = [];
 
-  if (v.chargerPowerKw != null) {
-    // Sub-10 kW rates read as "7.4 kW"; above that the decimal is noise.
-    const kw = v.chargerPowerKw < 10 ? Math.round(v.chargerPowerKw * 10) / 10 : Math.round(v.chargerPowerKw);
-    out.push(`${kw} kW`);
-  }
+  // getVehicleChargingkWText @1231816 is exactly
+  //     Math.round(Math.max(0, chargerPower)) + ' ' + ChargeUnit.KILOWATTS
+  // — an INTEGER, always. My "keep a decimal below 10 where it carries
+  // information" was a reasonable-sounding rule I made up; theirs shows "7 kW"
+  // for a 7.4 kW supply.
+  if (v.chargerPowerKw != null) out.push(`${Math.round(Math.max(0, v.chargerPowerKw))} kW`);
 
   // The SAME number the idle line spells out, here as a bare delta.
   if (v.energyAddedKwh != null) out.push(`+${Math.round(v.energyAddedKwh)} kWh`);
 
-  // getVehicleChargingCurrentAndVoltageText: `<n>A` and `<n>V` joined by
-  // SpecialCharacters.dotSeparator, and skipped entirely on DC.
-  if (!v.fastCharging) {
-    const parts: string[] = [];
-    if (v.chargerActualCurrentA != null) parts.push(`${Math.round(v.chargerActualCurrentA)}A`);
+  // getVehicleChargingCurrentAndVoltageText @1231969, skipped entirely on DC:
+  //
+  //   actual  = Math.round(Math.max(0, charger_actual_current))
+  //   nominal = charger_pilot_current
+  //   current = (actual != null && nominal != null) ? `${actual}/${nominal}A`
+  //                                                 : `${actual ?? 0}A`
+  //   voltage = charger_voltage != null ? `${voltage}V` : null
+  //   -> [current, voltage].join(VALUE_SEPARATOR)   (voltage dropped if null)
+  //
+  // ONE deviation, deliberate: theirs always emits a current part, falling back
+  // to "0A". For them a null means the car reported nothing; for us it can also
+  // mean we have not read it yet, and printing "0A" for "unknown" is a
+  // fabricated reading. So when we have neither current nor voltage we omit the
+  // item entirely — but the moment we have either, we mirror them exactly,
+  // including the 0 fallback.
+  if (!v.fastCharging && (v.chargerActualCurrentA != null || v.chargerVoltageV != null)) {
+    const actual = v.chargerActualCurrentA != null ? Math.round(Math.max(0, v.chargerActualCurrentA)) : null;
+    const nominal = v.chargerPilotCurrentA;
+    const current =
+      actual != null && nominal != null ? `${actual}/${Math.round(nominal)}A` : `${actual ?? 0}A`;
+    const parts = [current];
     if (v.chargerVoltageV != null) parts.push(`${Math.round(v.chargerVoltageV)}V`);
-    if (parts.length) out.push(parts.join(' \u00b7 '));
+    out.push(parts.join(VALUE_SEPARATOR));
   }
 
   return out;

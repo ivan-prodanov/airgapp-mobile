@@ -84,6 +84,7 @@ export const CHARGE_PRESETS: ChargePreset[] = [
     patch: {
       chargerActualCurrentA: 16,
       chargerVoltageV: 230,
+      chargerPilotCurrentA: 32,
       // accumulating mid-session
       energyAddedKwh: 12,
       fastCharging: false,
@@ -103,6 +104,7 @@ export const CHARGE_PRESETS: ChargePreset[] = [
     patch: {
       chargerActualCurrentA: 320,
       chargerVoltageV: 400,
+      chargerPilotCurrentA: 500,
       // DC — also the only preset that hides the amps
       energyAddedKwh: 34,
       fastCharging: true,
