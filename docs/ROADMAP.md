@@ -8,36 +8,30 @@ reasoned rather than measured.
 
 ## P0 — next
 
-### Optimistic updates outlive reality (the frunk double-tap)
-**Reported on-car 2026-07-27.** On Controls: tap frunk, tap frunk again while the car is still
-physically opening. The car ends up OPEN. The app shows CLOSED — and stays closed for **30 seconds**.
+### ~~Optimistic updates outlive reality (the frunk double-tap)~~ — FIXED 2026-07-28
 
-The mechanism is not mysterious, which is why this is a design fix rather than an investigation:
+Fixed at the source: `buildVehicleActions` now DROPS a toggle whose command is still in flight, so a
+second tap can never derive an optimistic value from the first tap's unconfirmed guess. Controls and
+Home both show the busy affordance and disable while their own command runs — the official app's
+rule, `disabled = useCommandTypeBusyStatus(...).busy`. 5 tests in `useVehicleState.test.ts`.
 
-1. Tap 1 → optimistic `frunkOpen = true`, and `frunkOpen` is stamped with a grace expiry of
-   `now + GRACE_MS` (`intentGrace.ts:23`, **30_000**).
-2. Tap 2 → optimistic `frunkOpen = false`, grace **re-stamped** for a fresh 30s. Note the second
-   optimistic value is derived from the FIRST OPTIMISTIC VALUE, not from anything the car said.
-3. The car finishes opening and reports frunk OPEN.
-4. `filterPatchUnderIntent` strips it, because `frunkOpen` is still inside its grace window.
-5. So the truth is suppressed for the full 30s while the screen shows the opposite.
+**Two things this write-up had wrong, worth keeping:**
 
-The grace window's premise — *"the user's intent is right and the car's sensor lags"* — is sound for
-one tap and false for a second tap issued while the first is still in flight. Frunk makes it worse
-because actuate is a TOGGLE: both taps send the same `openFrunk`, so the app's model and the car's
-can diverge by a whole state.
+1. It proposed "end the grace on CONFIRMATION, not on a timer" as the fix. **That already shipped on
+   2026-07-18** — nine days BEFORE the report — and cannot help here by construction:
+   confirm-and-release releases when a read AGREES, and the whole defect is that our optimistic value
+   is one the car never agreed to, so the correcting read is a CONTRADICTION and gets stripped.
+2. It suggested `coalesce.ts` might be a config gap. It is not — the coalescer coalesces COMMANDS,
+   and the optimistic UI flip happens outside it entirely.
 
-Directions, none of them settled:
-- **End the grace on CONFIRMATION, not on a timer.** Once a read agrees with the optimistic value,
-  drop the stamp; a later disagreement is then real news, not lag.
-- **Reject or coalesce a second tap while the first command is in flight** rather than optimistically
-  toggling again. `coalesce.ts` already has per-field lanes — check whether this is a config gap
-  rather than new machinery.
-- **30s is very long** for a closure that actuates in ~5s. It was chosen for lock, whose sensor
-  genuinely lags. A per-field grace is probably right.
+The actual root cause, read rather than reasoned: `toggleState` derives from `state[key]`, which
+after an unlanded tap is a guess. Frunk actuate is a TOGGLE (both taps send the same `openFrunk`), so
+the car may ignore the second while the lid is mid-travel — and then the grace defends our wrong
+value. Lock is immune because lock/unlock are ABSOLUTE: two taps ask for two different states and the
+car honours both.
 
-Do NOT just shorten GRACE_MS and call it fixed — that trades a 30s wrong state for a shorter wrong
-state and leaves the double-tap divergence intact.
+Only `toggle` is guarded. `patch`/setpoints carry an absolute value the user picked, so a second one
+is a legitimate new intent, and `coalesce.ts` already collapses those bursts.
 
 ### Media: decide where cover art comes from
 The card, the transport controls, the recovered layout and Tesla's own source icons all shipped

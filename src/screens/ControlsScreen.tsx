@@ -4,8 +4,10 @@ import { SymbolView } from 'expo-symbols';
 
 import { MarkerOverlay } from '../godot/MarkerOverlay';
 import { TirePressureOverlay } from '../godot/TirePressureOverlay';
-import { CONTROL_ACTIONS, type ControlActionId } from '../state/controlActions';
+import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS, type ControlActionId } from '../state/controlActions';
 import { controlHaptic } from '../state/controlHaptic';
+import { useCarLinkStatus } from '../state/VehicleProvider';
+import { BusyIcon } from '../components/BusyIcon';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -60,19 +62,34 @@ function Action({
   actions: VehicleActions;
 }) {
   const action = CONTROL_ACTIONS[id];
+  // Part of the double-tap fix, not a flourish. buildVehicleActions now DROPS a
+  // toggle whose command is still in flight; without a busy affordance that tap
+  // is silently ignored, which trades "wrong for 30s" for "button appears dead
+  // for 2s". Home already had this (BusyIcon + the recovered
+  // iconButtonBusyOpacity fade); this screen — the one the bug was reported on —
+  // had neither, and did not consult `pending` at all.
+  const carLink = useCarLinkStatus();
+  const pending = CONTROL_AFFECTED_KEYS[id].some((key) => carLink.pending.has(key));
   return (
     <Pressable
-      style={styles.action}
+      style={[styles.action, pending ? styles.actionBusy : null]}
+      // Disabled while its own command runs — the official app's rule,
+      // `disabled = useCommandTypeBusyStatus(...).busy`.
+      disabled={pending}
       onPress={() => {
         controlHaptic();
         action.run(state, actions);
       }}
     >
-      <SymbolView
-        name={action.symbol(state)}
-        tintColor={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.85)'}
-        size={26}
-      />
+      {pending ? (
+        <BusyIcon size={26} />
+      ) : (
+        <SymbolView
+          name={action.symbol(state)}
+          tintColor={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.85)'}
+          size={26}
+        />
+      )}
       <Text style={styles.label}>{action.label}</Text>
     </Pressable>
   );
@@ -86,6 +103,11 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingHorizontal: 8,
     marginBottom: BOTTOM_BAR_LIFT,
+  },
+  // findings §5: a busy control button fades to iconButtonBusyOpacity. Same
+  // value Home's quickIconBusy uses, so the two screens read identically.
+  actionBusy: {
+    opacity: 0.5,
   },
   action: {
     alignItems: 'center',

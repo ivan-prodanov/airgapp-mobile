@@ -171,7 +171,20 @@ export function useFleetState(): {
     [carLink, applyActive, current.state],
   );
 
-  const actions = useMemo(() => buildVehicleActions(applyActiveUser), [applyActiveUser]);
+  // The toggle guard: a control whose command is still in flight ignores further
+  // taps, so a second tap can never derive an optimistic value from the first
+  // one's unconfirmed guess. See buildVehicleActions for why this is the fix for
+  // the frunk double-tap rather than anything in the grace window.
+  //
+  // Depended on directly rather than read through a ref. `carLink.pending` keeps
+  // its identity when the set is unchanged (useCarLink:489), and `actions` is
+  // already rebuilt on every state change via applyActiveUser — so this adds no
+  // churn, and a ref here would only be a render-phase read the linter is right
+  // to flag.
+  const actions = useMemo(
+    () => buildVehicleActions(applyActiveUser, (key) => carLink.pending.has(key)),
+    [applyActiveUser, carLink.pending],
+  );
 
   // One-shot commands bypass the state diff (nothing optimistic to mirror), but
   // still go through carLink.dispatch so they share the queue, the grace window
