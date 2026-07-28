@@ -74,7 +74,11 @@ export function MarkerOverlay({ state, actions }: Props) {
           marker="frunk"
           label={state.frunkOpen ? 'Close' : 'Open'}
           dark={isLightExteriorColor(vehicleConfigs[state.carModel]?.vehicle_config.exterior_color)}
-          onPress={() => actions.toggle('frunkOpen')}
+          // actuateFrunk, NOT toggle. reconcile.ts has no frunk diff rule any
+          // more, so a bare state toggle here flips the label and sends the car
+          // NOTHING — which is exactly what it did after that rule was removed
+          // and this call site was missed.
+          onPress={() => actions.actuateFrunk()}
         />
       ) : null}
       {anchors.trunk ? (

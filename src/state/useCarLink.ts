@@ -59,7 +59,7 @@ import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
 import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from '@/ble/vcsecPush';
-import { filterPatchUnderIntent, GRACE_MS } from '@/ble/intentGrace';
+import { filterPatchUnderIntent, releaseIntent, GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
@@ -877,6 +877,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     for (const key of keys) intentRef.current.set(key, expiry);
   }, []);
 
+  // The counterpart, and the thing that makes GRACE_MS a backstop rather than
+  // the actual policy. See releaseIntent for the measurement that drove it.
+  const dropIntent = useCallback((keys?: readonly VehicleStateKey[]) => {
+    releaseIntent(intentRef.current, keys);
+  }, []);
+
   const runDispatch = useCallback(
     (
       cmd: CarCommand,
@@ -960,6 +966,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       } catch {
         bgId = null;
       }
+      let superseded = false;
       return (async () => {
         try {
           const outcome = await gw.runCommand(cmd, signal ? { signal } : undefined);
@@ -984,6 +991,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // already stands — no toast, no notification, no rollback, no
             // warn. (The coalescer neutralised the rollback; onFailure would
             // also fire a "failed" banner for something that didn't fail.)
+            //
+            // And crucially: do NOT release the intent. The superseding command
+            // stamped these same keys at SUBMIT time, before we got here, so
+            // releasing would strip protection that now belongs to it.
+            superseded = true;
           } else {
             onFailure(outcome);
             console.warn('[useCarLink] command failed', cmd.type, outcome);
@@ -999,6 +1011,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           // a backgrounded command used to have its transport torn out from
           // under it and never settle).
           clearPending();
+          // The car has answered, so it is authoritative again: drop the
+          // optimistic protection instead of letting it run the full GRACE_MS.
+          // This is what bounds the wrong-state window to the command's own
+          // round-trip — the ~1s Ivan measured in the real app, against our 30s.
+          if (!superseded) dropIntent(affectedKeys);
           settleInFlight();
           if (bgId != null) {
             try {
@@ -1010,7 +1027,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         }
       })();
     },
-    [getGateway, settleInFlight, stampIntent],
+    [getGateway, settleInFlight, stampIntent, dropIntent],
   );
 
   // ── C2: rapid-input coalescing ──────────────────────────────────────────

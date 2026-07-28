@@ -22,6 +22,33 @@ import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 // read for the same field is suppressed. Matches telemetry.ts's closure grace.
 export const GRACE_MS = 30_000;
 
+// releaseIntent drops the given keys' protection outright.
+//
+// Called when a command SETTLES — every terminal path, ok or failed. The
+// optimistic value exists to cover the command's own latency; once the car has
+// answered, the car is authoritative and a contradicting read is news, not lag.
+//
+// This is what bounds the wrong-state window to the command round-trip instead
+// of GRACE_MS. Ivan measured the difference against the real app: press Open
+// Trunk, tap again midway, and the car freezes half-open. Theirs shows the
+// optimistic "closed" and corrects to OPEN about a second later; ours held the
+// wrong value for the full thirty. Same flip — the difference was entirely that
+// nothing released the key on settle. Their equivalent is dropping the
+// optimistic entry on VEHICLE_COMMAND_SUCCESS, correlated by commandId.
+//
+// GRACE_MS survives as the BACKSTOP for a command that never settles at all.
+//
+// NOT called when a command is superseded by a newer one for the same field: the
+// newer command stamped these keys at submit, BEFORE this one settled, so
+// releasing here would clear protection that now belongs to someone else.
+export function releaseIntent(
+  intent: Map<VehicleStateKey, number>,
+  keys: readonly VehicleStateKey[] | undefined,
+): void {
+  if (!keys) return;
+  for (const key of keys) intent.delete(key);
+}
+
 // filterPatchUnderIntent returns a copy of `patch` with keys handled per their
 // optimistic-intent state, and — as a side effect — prunes the `intent` map.
 //

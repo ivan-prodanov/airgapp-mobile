@@ -9,7 +9,7 @@ import { initialVehicleState } from '../types/vehicleTypes';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { filterPatchUnderIntent, GRACE_MS } from './intentGrace';
+import { filterPatchUnderIntent, releaseIntent, GRACE_MS } from './intentGrace';
 import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 
 test('GRACE_MS is 30s', () => {
@@ -138,4 +138,49 @@ test('media under grace freezes the WHOLE card, which is why we do not stamp it'
   // This is the DAMAGE, asserted so nobody re-adds the stamp thinking it is
   // harmless: a track change is invisible for the whole window.
   assert.equal('media' in filtered, false);
+});
+
+// ── releaseIntent ───────────────────────────────────────────────────────────
+//
+// Ivan's trunk test, Tesla vs ours:
+//
+//   press Open Trunk, tap again midway
+//     theirs: app shows closed -> car freezes midway -> ~1s later app shows OPEN
+//     ours:   app shows closed -> car freezes midway -> ~30s later app shows OPEN
+//
+// Same optimistic flip; the difference is entirely how long the wrong value is
+// DEFENDED. Theirs drops the optimistic entry on VEHICLE_COMMAND_SUCCESS
+// (correlated by commandId), so the very next data render shows the truth. Ours
+// held the key for the full GRACE_MS because nothing released it on settle.
+//
+// So the optimistic value exists to cover the COMMAND'S OWN LATENCY, and no
+// longer. Once the car has answered, the car is authoritative. GRACE_MS stays
+// only as the backstop for a command that never settles at all.
+test('releaseIntent drops exactly the keys it is given', () => {
+  const intent = new Map<VehicleStateKey, number>([
+    ['trunkOpen', 9_000],
+    ['locked', 9_000],
+  ]);
+  releaseIntent(intent, ['trunkOpen']);
+  assert.equal(intent.has('trunkOpen'), false);
+  assert.equal(intent.has('locked'), true, 'an unrelated key keeps its protection');
+});
+
+test('after release, a contradicting read applies immediately', () => {
+  // The whole point. Before: the read is stripped until the window elapses.
+  const intent = new Map<VehicleStateKey, number>([['trunkOpen', 9_000]]);
+  const current = { trunkOpen: false }; // optimistic "closed" from the 2nd tap
+
+  const suppressed = filterPatchUnderIntent({ trunkOpen: true }, intent, 1_000, current);
+  assert.deepEqual(suppressed, {}, 'still defended while the command is in flight');
+
+  releaseIntent(intent, ['trunkOpen']); // command settled
+  const applied = filterPatchUnderIntent({ trunkOpen: true }, intent, 1_100, current);
+  assert.deepEqual(applied, { trunkOpen: true }, 'car wins the moment its command answered');
+});
+
+test('releasing an absent key is a no-op, not a throw', () => {
+  const intent = new Map<VehicleStateKey, number>();
+  releaseIntent(intent, ['trunkOpen', 'locked']);
+  assert.equal(intent.size, 0);
 });
