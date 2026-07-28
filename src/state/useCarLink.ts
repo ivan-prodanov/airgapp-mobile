@@ -594,6 +594,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
               Number.isFinite(cached.carLocation.lon)
             ) {
               patch.carLocation = cached.carLocation;
+              // Carried in the SAME branch as the position: a hydrated pin with
+              // no age would render "just now" for a fix that could be weeks old.
+              patch.carLocationAt = cached.carLocationAt;
             }
             // Rehydrate via the UNGATED path: at cold start the active-is-live
             // gate is still false, so applyTelemetry would drop this and the
@@ -1251,6 +1254,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       chargeLimitPercent: patch.chargeLimitPercent ?? base.chargeLimitPercent,
       chargingAmps: patch.chargingAmps ?? base.chargingAmps,
       carLocation: patch.carLocation ?? base.carLocation,
+      carLocationAt: patch.carLocationAt ?? base.carLocationAt,
       tirePressures: patch.tirePressures ?? base.tirePressures,
       media: patch.media ?? base.media,
       chargingState: patch.chargingState ?? base.chargingState,
@@ -1296,6 +1300,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         charging: null,
         awake: null,
         carLocation: null,
+        carLocationAt: null,
         tirePressures: null,
         media: null,
         chargingState: null,

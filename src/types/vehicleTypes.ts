@@ -189,6 +189,8 @@ export interface VehicleViewState {
   // (demo cars, or the live car before its first location read). NOT renderer state — ignored by
   // hasVehicleVisualStateChanged.
   carLocation: CarLocation | null;
+  /** When the car was seen at `carLocation` — gps_as_of, else our read time. */
+  carLocationAt: number | null;
   // TPMS in BAR, straight from the car (it reports bar and supplies its own
   // recommended cold pressure, so nothing is converted or hardcoded per model).
   // `null` until a tire read lands; a single wheel is null when its sensor has
@@ -304,6 +306,7 @@ export const initialVehicleState: VehicleViewState = {
   interiorTempC: null,
   exteriorTempC: null,
   carLocation: null,
+  carLocationAt: null,
   tirePressures: null,
   media: null,
   targetTempC: 19.5,

@@ -45,34 +45,12 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-// Mock "last updated" timestamp: a fixed ~2 months in the past, so the pill reads like the real app's
-// "2 months ago". Real BLE will supply an actual fix time.
-const MOCK_AGE_MS = 62 * 24 * 60 * 60 * 1000;
-export function getMockLastUpdated(now: number = Date.now()): number {
-  return now - MOCK_AGE_MS;
-}
-
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-const MONTH = 30 * DAY;
-const YEAR = 365 * DAY;
-
-function plural(value: number, unit: string): string {
-  const n = Math.floor(value);
-  return `${n} ${unit}${n === 1 ? '' : 's'} ago`;
-}
-
-// Coarse "x ago" string for the last-updated pill (just now / minutes / hours / days / months / years).
-export function formatTimeAgo(fromMs: number, now: number = Date.now()): string {
-  const delta = Math.max(0, now - fromMs);
-  if (delta < MINUTE) return 'just now';
-  if (delta < HOUR) return plural(delta / MINUTE, 'minute');
-  if (delta < DAY) return plural(delta / HOUR, 'hour');
-  if (delta < MONTH) return plural(delta / DAY, 'day');
-  if (delta < YEAR) return plural(delta / MONTH, 'month');
-  return plural(delta / YEAR, 'year');
-}
+// The mock "last updated" timestamp and its hand-rolled `formatTimeAgo` lived
+// here. Both are gone: the pill now reads the real `carLocationAt` and formats
+// it with `relativeAge` from ble/vehicleStatusText.ts — the RECOVERED port of
+// moment's fromNow that the home header already uses. Two formatters with
+// different thresholds (floor vs round, 30-day months vs the Gregorian mean)
+// could describe the same instant differently on two screens.
 
 // --- Recent navigation destinations (mock) -------------------------------------------------------
 // Grouped by day, mirroring the real app's "Today" / "Yesterday" sectioning.

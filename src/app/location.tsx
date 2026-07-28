@@ -17,10 +17,9 @@ import {
   type LocationTab,
 } from '@/components/LocationSheet';
 import { useVehicle } from '@/state/VehicleProvider';
+import { relativeAge } from '@/ble/vehicleStatusText';
 import {
   distanceMeters,
-  formatTimeAgo,
-  getMockLastUpdated,
   offsetCoordinate,
   type LatLng,
 } from '@/state/mockLocation';
@@ -351,7 +350,31 @@ export default function LocationView() {
   // match keep their "N?" badge. In the Balkans most stations report no live figure today, so this is
   // best-effort enrichment. See [[ev-charger-data-providers]].
 
-  const lastUpdatedLabel = useMemo(() => formatTimeAgo(getMockLastUpdated()), []);
+  // The pill's age. Was `formatTimeAgo(getMockLastUpdated())` — a fixed ~62 days
+  // in the past so it would READ like the real app ("2 months ago") without
+  // being connected to anything.
+  //
+  // Now the real thing: `carLocationAt`, stamped in the same branch that
+  // produces `carLocation` and cached beside it, so a cold start shows the true
+  // age instead of a blank or a lie.
+  //
+  // Formatter is `relativeAge` — the RECOVERED one (a port of moment's fromNow
+  // with the official app's thresholds), the same function behind the home
+  // header's "Last seen 2 hours ago". mockLocation had a second, hand-rolled
+  // formatter with different thresholds and floor() instead of round(), so the
+  // two screens could disagree about the same instant. One formatter now.
+  // The tick holds the TIME, not a counter. Home uses a counter and reads
+  // Date.now() during render, which is an impure render — fine in practice but a
+  // lint error, and one I should not add a second instance of. Keeping the clock
+  // in state makes the render a pure function of its inputs.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    // Ticks the label between reads, as Home does for its status line.
+    const id = setInterval(() => setNowMs(Date.now()), 5_000);
+    return () => clearInterval(id);
+  }, []);
+  const lastUpdatedLabel =
+    vehState.carLocationAt != null ? relativeAge(nowMs - vehState.carLocationAt, true) : null;
 
   const fetchLocation = async () => {
     try {
@@ -634,10 +657,22 @@ export default function LocationView() {
             <SymbolView name="chevron.left" tintColor="white" size={20} weight="semibold" />
           </Pressable>
 
-          <View style={styles.agoPill}>
-            <SymbolView name="arrow.clockwise" tintColor="rgba(255,255,255,0.85)" size={15} weight="semibold" />
-            <Text style={styles.agoText}>{lastUpdatedLabel}</Text>
-          </View>
+          {/* Hidden entirely when we have never had a fix. A pill reading
+              "just now" or an em dash beside an empty map would be worse than
+              no pill — the same hide-don't-fake rule the charge panel follows. */}
+          {lastUpdatedLabel ? (
+            <View style={styles.agoPill}>
+              <SymbolView
+                name="arrow.clockwise"
+                tintColor="rgba(255,255,255,0.85)"
+                size={15}
+                weight="semibold"
+              />
+              <Text style={styles.agoText}>{lastUpdatedLabel}</Text>
+            </View>
+          ) : (
+            <View style={styles.agoSpacer} />
+          )}
 
           <View style={styles.rightStack}>
             <RoundButton icon="arrow.turn.up.right" onPress={onNavigate} />
@@ -809,6 +844,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
+  },
+  // Keeps the back button and the right stack where they are when the pill is
+  // absent; without it they would slide together on a car we have never located.
+  agoSpacer: {
+    flex: 1,
   },
   rightStack: {
     gap: 10,

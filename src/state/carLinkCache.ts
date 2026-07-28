@@ -46,6 +46,9 @@ export interface CarLinkCache {
   // official app does too — show the last known state, dimmed, rather than
   // nothing.
   carLocation: CarLocation | null;
+  // Paired with carLocation and cached with it — a position with no age would
+  // render as "just now" on every cold start, which is the opposite of true.
+  carLocationAt: number | null;
   // TPMS. Cached for the same reason as everything else here: a cold start
   // should show what we last knew, dimmed, not "—".
   //
@@ -175,6 +178,11 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
             heading: num(cached.carLocation.heading),
           }
         : null,
+    // Validated the same way, and deliberately NOT defaulted to Date.now(): an
+    // older cache written before this field existed has a position but no age,
+    // and stamping it "now" on load would claim we had just seen the car there.
+    // null reads as unknown, which is the truth.
+    carLocationAt: num(cached?.carLocationAt),
   };
 }
 

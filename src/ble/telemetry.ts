@@ -99,7 +99,19 @@ export interface InfotainmentSnapshot {
     milesToArrival: number | null;
     coordinates: { lat: number; lon: number } | null;
   };
-  location?: { lat: number | undefined; lon: number | undefined; heading: number | undefined };
+  location?: {
+    lat: number | undefined;
+    lon: number | undefined;
+    heading: number | undefined;
+    /**
+     * LocationState.gps_as_of — the CAR's own fix time, Unix SECONDS.
+     *
+     * This is what "we last saw the car here" should mean. Falling back to our
+     * read time would date the pin to whenever the phone happened to poll,
+     * which on a sleeping car can be long after the car actually stopped there.
+     */
+    gpsAsOfSec: number | undefined;
+  };
   // TPMS. Values are BAR — the proto says so twice ("tpms pressure values in
   // bar", "rcp values in bar") and the car agrees with its own placard, so
   // nothing is converted on the way through.
@@ -491,6 +503,7 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       lat: num(loc.latitude),
       lon: num(loc.longitude),
       heading: num(loc.heading),
+      gpsAsOfSec: num(loc.gpsAsOf),
     };
   }
 
@@ -627,7 +640,10 @@ const DRIVING_GEARS = new Set(['D', 'R', 'N']);
 // Each slice's fields are only emitted if that slice was present in the snapshot (i.e. the source
 // sub-message was present in the decoded response) — a missing slice contributes nothing, giving
 // callers a genuinely partial patch to merge.
-export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<VehicleViewState> {
+export function infotainmentToPatch(
+  snap: InfotainmentSnapshot,
+  now: number = Date.now(),
+): Partial<VehicleViewState> {
   const patch: Partial<VehicleViewState> = {};
 
   if (snap.charge) {
@@ -736,6 +752,16 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
       lon: snap.location.lon,
       heading: snap.location.heading ?? null,
     };
+    // WHEN we saw it there. Stamped in the same branch as the position itself so
+    // the two cannot drift apart: there is no path that writes one without the
+    // other, and no later code has to remember to.
+    //
+    // Prefer the car's own gps_as_of over our read time — on a sleeping car we
+    // may not poll for hours after it parked, and dating the pin to the poll
+    // would claim we saw it somewhere we did not. `now` is injected so the
+    // mapper stays pure and testable.
+    const asOf = snap.location.gpsAsOfSec;
+    patch.carLocationAt = asOf != null && Number.isFinite(asOf) && asOf > 0 ? asOf * 1000 : now;
   }
 
   if (snap.closures) {

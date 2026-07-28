@@ -774,3 +774,44 @@ test('fastCharging: AC and absent both read false, never undefined', () => {
   const quiet = parseCarServerResponse({ vehicleData: { chargeState: {} } });
   assert.equal(quiet.charge?.fastCharging, false);
 });
+
+// ── carLocationAt ───────────────────────────────────────────────────────────
+//
+// The location page's "2 months ago" pill was a hardcoded mock. Making it real
+// needs a timestamp beside the position, stamped in the SAME branch so nothing
+// can write one without the other.
+test('carLocationAt prefers the car own gps_as_of over our read time', () => {
+  // gps_as_of is when the CAR fixed its position. On a sleeping car we may not
+  // poll for hours after it parked, so dating the pin to our read would claim we
+  // saw it somewhere we did not.
+  const snap = parseCarServerResponse({
+    vehicleData: { locationState: { latitude: 42.7, longitude: 23.3, gpsAsOf: 1_700_000_000 } },
+  });
+  const patch = infotainmentToPatch(snap, 1_800_000_000_000);
+  assert.equal(patch.carLocationAt, 1_700_000_000_000);
+});
+
+test('carLocationAt falls back to the read time when the car omits gps_as_of', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: { locationState: { latitude: 42.7, longitude: 23.3 } },
+  });
+  const patch = infotainmentToPatch(snap, 1_800_000_000_000);
+  assert.equal(patch.carLocationAt, 1_800_000_000_000);
+});
+
+test('no position means no timestamp — never a bare age', () => {
+  // A partial read leaves carLocation untouched; the stamp must not survive on
+  // its own, or the pill would age a pin that was never updated.
+  const snap = parseCarServerResponse({ vehicleData: { locationState: { latitude: 42.7 } } });
+  const patch = infotainmentToPatch(snap, 1_800_000_000_000);
+  assert.equal(patch.carLocation, undefined);
+  assert.equal(patch.carLocationAt, undefined);
+});
+
+test('a zero or absurd gps_as_of is ignored, not trusted into 1970', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: { locationState: { latitude: 42.7, longitude: 23.3, gpsAsOf: 0 } },
+  });
+  const patch = infotainmentToPatch(snap, 1_800_000_000_000);
+  assert.equal(patch.carLocationAt, 1_800_000_000_000);
+});
