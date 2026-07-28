@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import {
   speedLimitDisplayKmh,
   speedLimitKmhToStoredMph,
+  SPEED_LIMIT_DEBOUNCE_MS,
   SPEED_LIMIT_MAX_KMH,
   SPEED_LIMIT_MIN_KMH,
 } from '@/state/fleet';
@@ -15,12 +16,14 @@ import type { VehicleViewState } from '@/types/vehicleTypes';
 import { Checkbox } from './Checkbox';
 import { HoldRepeatButton } from './HoldRepeatButton';
 import { SlideUpSheet } from './SlideUpSheet';
+import { useDebouncedCallback } from './useDebouncedCallback';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
 // "Customize Parental Controls" bottom sheet (Parental Controls' "…"). Slides up over a dimmed screen;
 // tapping above closes it. Each row toggles its own state key; the Limit Speed row reveals a held-repeat
-// stepper (MPH in state, km/h on screen — same convention as Speed Limit Mode) when checked.
+// stepper (MPH in state, km/h on screen — same convention as Speed Limit Mode) when checked. The number
+// updates on every press; the ParentalControlsSetSpeedLimit command is debounced 1.2s (Tesla's `debounceMS`).
 export function ParentalControlsSheet({
   visible,
   state,
@@ -33,18 +36,26 @@ export function ParentalControlsSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const kmh = speedLimitDisplayKmh(state.parentalLimitSpeedMph);
-  const kmhRef = useRef(kmh);
+  // Local km/h for immediate display; the debounced patch is the only thing that reaches the car (see
+  // SpeedLimitSheet for the same pattern).
+  const propKmh = speedLimitDisplayKmh(state.parentalLimitSpeedMph);
+  const [kmh, setKmh] = useState(propKmh);
   useEffect(() => {
-    kmhRef.current = kmh;
-  }, [kmh]);
+    setKmh(propKmh);
+  }, [propKmh]);
+  const debouncedSetMph = useDebouncedCallback(
+    (mph: number) => actions.patch({ parentalLimitSpeedMph: mph }),
+    SPEED_LIMIT_DEBOUNCE_MS,
+  );
 
   const step = (dir: -1 | 1) => {
-    const nextKmh = kmhRef.current + dir;
-    if (nextKmh < SPEED_LIMIT_MIN_KMH || nextKmh > SPEED_LIMIT_MAX_KMH) return;
-    kmhRef.current = nextKmh;
-    Haptics.selectionAsync().catch(() => {});
-    actions.patch({ parentalLimitSpeedMph: speedLimitKmhToStoredMph(nextKmh) });
+    setKmh((k) => {
+      const next = k + dir;
+      if (next < SPEED_LIMIT_MIN_KMH || next > SPEED_LIMIT_MAX_KMH) return k;
+      Haptics.selectionAsync().catch(() => {});
+      debouncedSetMph(speedLimitKmhToStoredMph(next));
+      return next;
+    });
   };
 
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -7,17 +7,21 @@ import * as Haptics from 'expo-haptics';
 import {
   speedLimitDisplayKmh,
   speedLimitKmhToStoredMph,
+  SPEED_LIMIT_DEBOUNCE_MS,
   SPEED_LIMIT_MAX_KMH,
   SPEED_LIMIT_MIN_KMH,
 } from '@/state/fleet';
 import { HoldRepeatButton } from './HoldRepeatButton';
 import { SlideUpSheet } from './SlideUpSheet';
+import { useDebouncedCallback } from './useDebouncedCallback';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
 // "Adjust Speed Limit" bottom sheet (Speed Limit Mode's "…"). Slides up over a dimmed screen; tapping
 // above the panel closes it. Stored in MPH (the car's unit) but stepped in km/h by 1 — matching the Tesla
-// app's stepper — so the reading moves 116→115→114, not the jumpy 116→114 you'd get stepping MPH.
+// app's stepper — so the reading moves 116→115→114, not the jumpy 116→114 you'd get stepping MPH. The
+// number updates on every press; the car command is debounced 1.2s (Tesla's `debounceMS`), so a burst of
+// presses sends ONE command with the final value instead of one per press.
 export function SpeedLimitSheet({
   visible,
   mph,
@@ -30,19 +34,23 @@ export function SpeedLimitSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const kmh = speedLimitDisplayKmh(mph);
-  // Mirror the km/h reading in a ref so a held button advances from the live value, not the press-in snapshot.
-  const kmhRef = useRef(kmh);
+  // Local km/h for immediate display; the debounced onChange is the only thing that reaches the car. Re-sync
+  // from the prop when it changes from outside (a failed command's revert, or telemetry) — not our own send.
+  const propKmh = speedLimitDisplayKmh(mph);
+  const [kmh, setKmh] = useState(propKmh);
   useEffect(() => {
-    kmhRef.current = kmh;
-  }, [kmh]);
+    setKmh(propKmh);
+  }, [propKmh]);
+  const debouncedChange = useDebouncedCallback(onChange, SPEED_LIMIT_DEBOUNCE_MS);
 
   const step = (dir: -1 | 1) => {
-    const nextKmh = kmhRef.current + dir;
-    if (nextKmh < SPEED_LIMIT_MIN_KMH || nextKmh > SPEED_LIMIT_MAX_KMH) return; // at a bound
-    kmhRef.current = nextKmh;
-    Haptics.selectionAsync().catch(() => {});
-    onChange(speedLimitKmhToStoredMph(nextKmh));
+    setKmh((k) => {
+      const next = k + dir;
+      if (next < SPEED_LIMIT_MIN_KMH || next > SPEED_LIMIT_MAX_KMH) return k; // at a bound
+      Haptics.selectionAsync().catch(() => {});
+      debouncedChange(speedLimitKmhToStoredMph(next));
+      return next;
+    });
   };
 
   const atMin = kmh <= SPEED_LIMIT_MIN_KMH;
@@ -60,7 +68,7 @@ export function SpeedLimitSheet({
           </HoldRepeatButton>
 
           <View style={styles.valueCol}>
-            <Text style={styles.value}>{speedLimitDisplayKmh(mph)}</Text>
+            <Text style={styles.value}>{kmh}</Text>
             <Text style={styles.unit}>km/h</Text>
           </View>
 

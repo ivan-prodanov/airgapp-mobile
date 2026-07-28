@@ -355,6 +355,9 @@ export const AMP_MAX = 16;
 // unavoidable at the car's granularity, and invisible in the UI).
 export const SPEED_LIMIT_MIN_KMH = 80;
 export const SPEED_LIMIT_MAX_KMH = 193;
+// The speed steppers show their number immediately but only send the car command this long after the last
+// change — verbatim from the Tesla app's Adjust-Speed-Limit control (`debounceMS: 1200`).
+export const SPEED_LIMIT_DEBOUNCE_MS = 1200;
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
