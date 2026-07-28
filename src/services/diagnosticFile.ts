@@ -67,7 +67,20 @@ async function appendDiagnosticUnsafe(title: string, lines: string[]): Promise<s
     // makes each write O(size) — the frame-capture run reached 90 KB and was
     // rewriting all of it at ~1 Hz. Keep the TAIL: recent events are what a
     // failure is diagnosed from.
-    const MAX_BYTES = 200_000;
+    //
+    // 500 KB, raised from 200 KB on 2026-07-28: agents reading back over a long
+    // run kept losing the window, and this is the direct lever for it — the
+    // category allow-list only decides what competes for the space.
+    //
+    // The cost is real but bounded: a full rewrite per flush, and flushes are
+    // batched at 4s (logFileSink.FLUSH_MS), so this is ~125 KB/s of writes in the
+    // worst case rather than per-event. That was the trade that mattered when the
+    // frame capture wrote at 1 Hz; at a 4s batch it is comfortable.
+    //
+    // Truncation drops the OLDEST HALF rather than trimming to the limit, so the
+    // expensive rewrite-everything path runs once per 250 KB instead of on every
+    // append once full.
+    const MAX_BYTES = 500_000;
     let base = previous;
     if (base.length + block.length > MAX_BYTES) {
       base = base.slice(-Math.floor(MAX_BYTES / 2));
