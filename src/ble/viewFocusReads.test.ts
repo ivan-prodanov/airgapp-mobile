@@ -86,17 +86,26 @@ test('the focused read is strictly cheaper than the full read it rides beside', 
 test('the tyre overlay is what makes us read TPMS at all', () => {
   // Screen-keyed, one level finer: a panel nobody has opened is worth no round
   // trip. Opening it starts the read; closing it stops it immediately.
-  assert.deepEqual(planForCameraMode('TOP_DOWN', { tirePressureVisible: true }).states, ['tires']);
+  // 'tires' present and 'drive' gone is the claim; closures stay (the trunk and
+  // frunk markers are on this screen, so dropping them here would disable the
+  // no-op-close fix exactly where it matters most).
+  const tyre = planForCameraMode('TOP_DOWN', { tirePressureVisible: true }).states;
+  assert.ok(tyre.includes('tires'));
+  assert.equal(tyre.includes('drive'), false);
   assert.ok(planForCameraMode('TOP_DOWN', { tirePressureVisible: false }).states.includes('drive'));
   assert.ok(planForCameraMode('TOP_DOWN').states.includes('drive'), 'absent flag ⇒ no TPMS read');
 });
 
 test('TPMS REPLACES drive on controls rather than adding to it', () => {
-  // Two states is two round trips per tick, and nothing on the Controls screen
-  // renders speed — the status line lives on Home. Keeping both would double the
-  // cost for a number nobody can see.
+  // Nothing on the Controls screen renders speed — the status line lives on
+  // Home — so drive gives up its slot to tyres rather than sharing.
+  //
+  // Asserted as "drive is gone", not "length === 1": closures DO stay, because
+  // the trunk and frunk markers are on this screen. Pinning the length made an
+  // unrelated addition look like the replacement had regressed.
   const plan = planForCameraMode('TOP_DOWN', { tirePressureVisible: true });
-  assert.equal(plan.states.length, 1);
+  assert.ok(plan.states.includes('tires'));
+  assert.equal(plan.states.includes('drive'), false, 'drive gives up its slot');
   assert.equal(plan.intervalMs, CADENCE_MS.controls, 'same cadence as the screen it belongs to');
 });
 
@@ -139,12 +148,20 @@ test('the home tick is the BLE-recovered 1250, not the cloud path`s 5000', () =>
   // VEHICLE_DATA_POLLING_INTERVAL_ONLINE (5000) is the CLOUD path and must not
   // be used here — that mix-up is exactly what this test exists to prevent.
   const plan = planForCameraMode('PARKED', { mediaVisible: true });
-  assert.equal(plan.intervalMs, 1250);
-  assert.equal(plan.states.length, 3);
-  // Their home set is four states at 1250 = 5000ms per slice; ours is three, so
-  // each lands sooner. Asserted as a bound, not an equality, because the set
-  // size is ours to choose and the TICK is the recovered number.
-  assert.ok(plan.states.length * plan.intervalMs <= 5000);
+  assert.equal(plan.intervalMs, 1250, 'the TICK is the recovered number');
+  // Per-slice latency is the thing worth bounding, and it is a TRADE, not a
+  // constant: their home set is four states at 1250 = 5s per slice. Ours is five
+  // with the media card up — drive, media, mediaDetail, closures, climate — so
+  // 6.25s. Media costs two slots because its fields are split across two
+  // submessages, and drive is ours (Home renders speed, theirs does not).
+  //
+  // Slightly slower than theirs per slice, and worth it: before this, closures
+  // waited on a 20s tick and climate on a 60s-throttled poll that measured 763s
+  // at worst. 6.25s is the price of both being live at all.
+  assert.ok(
+    plan.states.length * plan.intervalMs <= 6500,
+    `per-slice latency ${plan.states.length * plan.intervalMs}ms`,
+  );
 });
 
 test('media is only polled when the card is actually on screen', () => {
@@ -185,17 +202,38 @@ test('the climate screen does NOT poll closures', () => {
   assert.equal(readPlanFor('climate').states.includes('closures'), false);
 });
 
-test('closures take a SLOT — they do not add a tick', () => {
+test('extra states take a SLOT — they do not add a tick', () => {
   // The answer to "won't this spam?": the interval is unchanged and the rotation
-  // is what pays for the extra state, so the read RATE is identical. Closures
-  // land every (slots x interval) instead of every 20s.
+  // is what pays for extra states, so the read RATE is identical however many
+  // are listed. Each lands every (slots x interval) instead of on the slow poll.
   const plan = readPlanFor('controls');
   assert.equal(plan.intervalMs, CADENCE_MS.controls, 'interval unchanged');
-  assert.equal(plan.states.length, 2, 'drive + closures, one per tick');
+  assert.deepEqual(plan.states, ['drive', 'closures', 'climate']);
+});
+
+test('climate is in the rotation wherever the Climate row is rendered', () => {
+  // It otherwise rides the 60s-throttled infotainment poll. Measured on-car over
+  // 30 minutes: mean gap 123s, WORST 763s — twelve minutes of a climate value the
+  // car may have rejected.
+  for (const focus of ['home', 'controls'] as const) {
+    assert.ok(readPlanFor(focus).states.includes('climate'), `${focus} must poll climate`);
+  }
+});
+
+test('every branch that bypasses readPlanFor keeps closures', () => {
+  // These branches return literals rather than extending the plan, so a state
+  // added to readPlanFor is silently missing here. The first cut of the closures
+  // change did exactly that and disabled the trunk fix whenever the media card
+  // was up, or the tyre overlay open — both on the screens that actuate closures.
+  const bypasses = [
+    planForCameraMode('HOME', { mediaVisible: true }),
+    planForCameraMode('TOP_DOWN', { tirePressureVisible: true }),
+  ];
+  for (const plan of bypasses) assert.ok(plan.states.includes('closures'));
 });
 
 test('the rotation actually alternates, so neither state starves', () => {
   const plan = readPlanFor('controls');
   const seen = [0, 1, 2, 3].map((tick) => nextRotatedState(plan.states, tick)[0]);
-  assert.deepEqual(seen, ['drive', 'closures', 'drive', 'closures']);
+  assert.deepEqual(seen, ['drive', 'closures', 'climate', 'drive']);
 });

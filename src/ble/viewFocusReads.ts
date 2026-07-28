@@ -115,7 +115,11 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
       // in the home group at 1250). Ours does, because this is the camera mode
       // our trunk and frunk markers live in — the exact screen where a silently
       // no-op'd close leaves a wrong value on screen with no push coming.
-      return { states: ['drive', 'closures'], intervalMs: CADENCE_MS.controls };
+      //
+      // 'climate' rides along for the same freshness reason as home: the Climate
+      // row sits behind this camera mode and otherwise waits on the 60s-throttled
+      // infotainment poll (measured mean 123s, worst 763s).
+      return { states: ['drive', 'closures', 'climate'], intervalMs: CADENCE_MS.controls };
     case 'home':
     default:
       // Home has no literal in the recovered strings, but it is where the
@@ -132,7 +136,7 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
       // setGetclosuresstate at 1250 (read from the DISPATCH SITE, not the
       // constant pool — pairing it with the adjacent 1650 would have been wrong
       // in exactly the way this file already warns about).
-      return { states: ['drive', 'closures'], intervalMs: CADENCE_MS.controls };
+      return { states: ['drive', 'closures', 'climate'], intervalMs: CADENCE_MS.controls };
   }
 }
 
@@ -186,7 +190,14 @@ export function planForCameraMode(
   // than ~3.3s. Gated on the card being VISIBLE, exactly like the tyre overlay:
   // a card nobody is looking at is not worth a round trip.
   if (focus === 'home' && opts?.mediaVisible) {
-    return { states: ['drive', 'media', 'mediaDetail'], intervalMs: CADENCE_MS.home };
+    // Closures and climate stay IN. This branch returns a literal instead of
+    // extending readPlanFor, so every state added to the home plan has to be
+    // repeated here — and the first version of the closures change forgot to,
+    // which silently disabled the trunk fix whenever the media card was up.
+    return {
+      states: ['drive', 'media', 'mediaDetail', 'closures', 'climate'],
+      intervalMs: CADENCE_MS.home,
+    };
   }
   // TPMS is fetched ONLY while the tyre overlay is open. This is the same
   // screen-keyed principle one level finer: the app's own screens decide what is
@@ -197,7 +208,10 @@ export function planForCameraMode(
   // per tick, and nothing on the Controls screen renders speed — the status line
   // lives on Home.
   if (focus === 'controls' && opts?.tirePressureVisible) {
-    return { states: ['tires'], intervalMs: CADENCE_MS.controls };
+    // Tyres REPLACE drive (nothing here renders speed), but NOT closures: the
+    // trunk and frunk markers are on this very screen, so dropping closures here
+    // would disable the fix exactly where it is most needed.
+    return { states: ['tires', 'closures'], intervalMs: CADENCE_MS.controls };
   }
   return readPlanFor(focus);
 }
