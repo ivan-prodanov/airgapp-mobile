@@ -9,7 +9,9 @@ test('chargingStateText: the four branches of getVehicleChargingStateText', () =
   assert.equal(chargingStateText('Charging'), 'Charging');
   assert.equal(chargingStateText('Complete'), 'Charging Complete');
   assert.equal(chargingStateText('Stopped'), 'Charging Stopped');
-  assert.equal(chargingStateText('NoPower'), 'No Power');
+  // Verified against the shipped English table (main.decompiled.js:926615), not
+  // inferred from the key — which is how it was wrong the first time.
+  assert.equal(chargingStateText('NoPower'), 'Charging Error - No Power');
 });
 
 test('chargingStateText: states with no arm in their switch render nothing', () => {

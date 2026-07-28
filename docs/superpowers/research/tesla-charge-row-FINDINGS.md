@@ -396,7 +396,16 @@ so the header's right side is simply empty.
 | Stopped | `vehicle_status_screen_charging_stopped` | Charging Stopped |
 | NoPower | `vehicle_status_screen_charging_no_power` | No Power* |
 
-\* the only one of the four whose English literal is not in the bundle; the other three are.
+> **CORRECTED 2026-07-28.** `no_power` is **"Charging Error - No Power"**, not "No Power". I could
+> find in-bundle literals for the other three and inferred this one from the key name, which is the
+> same mistake as reading a style without its call site.
+>
+> ⭐ **THE ENGLISH TRANSLATION TABLE IS IN THE BUNDLE — `main.decompiled.js:926615`.** Every key and
+> its shipped English value, as one object literal (the locale variants follow, one line each, from
+> ~926626). Look strings up there rather than inferring them from key names or hunting for loose
+> literals. Verified against it: `vehicle_status_screen_last_seen_age` = "Last seen {{age}}",
+> `vehicle_status_screen_charging` = "Charging", `_complete` = "Charging Complete", `_stopped` =
+> "Charging Stopped".
 
 #### Where it actually goes — @4157228, and NOT where I first put it
 
@@ -469,3 +478,34 @@ them with `SpecialCharacters.dotSeparator` → **"16A · 230V"**. It needs `char
 Omitted deliberately: `getChargeRateDistanceDisplayValue` (needs GuiSettings units — we take the kW
 branch throughout, same assumption as §9) and `getVehicleChargeSessionCostText` (Supercharger
 billing, cloud-only).
+
+
+---
+
+## 13. The Location screen has NO refresh and NO "ago" pill (2026-07-28)
+
+Ivan: *"ours has some refresh icon for some reason, what does theirs have?"*
+
+**Theirs has neither.** `VehicleLocationScreen` @5059373-5062126 — the screen that renders
+`vehicle_location_screen_no_vehicle_location_label` — contains no BusyIcon, no refresh control, and
+no timestamp. Every string it uses:
+
+```
+vehicle_location_screen_{supercharger,destinationcharger,othercharger,
+                         servicecenter,storecenter,bodyshop}_label
+vehicle_location_screen_no_vehicle_location_label
+location_directions_failure_message
+vehicle_error_network_request_error
+```
+
+Marker labels, one empty state, two errors. Nothing time-related.
+
+The whole `vehicle_location_screen_*` key family confirms it — filters, tab labels, recents-section
+headers, shift states (`Park`/`Drive`/`Neutral`/`Reverse`), permissions. **There is no
+last-updated, refresh or "ago" key on that screen at all.**
+
+Where the age actually lives: the HOME header, `vehicle_status_screen_last_seen_age` =
+"Last seen {{age}}". One place, not two.
+
+So our top-bar pill — refresh glyph plus a relative time — is ours, not theirs. That is a product
+decision to make deliberately rather than a parity gap to close.
