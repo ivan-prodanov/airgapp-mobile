@@ -34,9 +34,9 @@ Order in the home screen's own height accumulator (@4561973–4562013):
 > recovered 70pt panels, which made the misreading look independently confirmed.
 > A number agreeing with something true is not evidence that you read it right.
 
-`Gutter` is 10. **The MediaControl 140 independently confirms the media card's two 70pt panels** —
-recovered separately in `tesla-tpms-markers-FINDINGS.md`'s sibling work and now cross-checked from
-a second place in their code.
+`Gutter` is 10. The MediaControl 140 does equal the media card's two independently-recovered 70pt
+panels — but see the correction above: that agreement is what made a misreading look confirmed, so
+it is a coincidence to be wary of rather than a cross-check to lean on.
 
 ## 2. Render chain
 
@@ -102,8 +102,10 @@ StopRestartPowershareButton  @4155147   (V2H — not applicable to us)
 ReportIssueButton            @4154981   (cloud — not applicable)
 ```
 
-**So the 300pt is:** a charge-limit slider (with `sliderSnapPoints`), a percentage/range readout,
-scheduled-charging text, and a control-button row (Start/Stop Charging, Open/Close Charge Port).
+**So the panel is:** a charge-limit slider (with `sliderSnapPoints`), a charge-limit label, the last
+session's energy, an amperage control, and a control-button row (Start/Stop Charging, Open/Close
+Charge Port) — sized to whichever of those the current state actually shows. Measured at ~226pt for
+the idle, unplugged state.
 
 ## 6. Show / hide — `VehicleHomeScreen` @4561054–4561138
 
