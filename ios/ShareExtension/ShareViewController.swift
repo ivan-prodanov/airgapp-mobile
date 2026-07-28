@@ -12,6 +12,7 @@ class ShareViewController: UIViewController {
   private let spinner = UIActivityIndicatorView(style: .large)
   private let statusLabel = UILabel()
   private let detailLabel = UILabel()
+  private let stageLabel = UILabel()
   private var resolved: ResolvedLocation?
   private var rawShare: String = ""
   private var completed = false
@@ -38,9 +39,17 @@ class ShareViewController: UIViewController {
     detailLabel.textAlignment = .center
     detailLabel.numberOfLines = 2
     detailLabel.isHidden = true
-    let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, detailLabel])
+    // The live commentary. Without it this sheet is a spinner on white for up to
+    // twelve seconds while it tries one radio and then another, and there is no
+    // way to tell "working on it" from "hung".
+    stageLabel.font = .systemFont(ofSize: 13)
+    stageLabel.textColor = .tertiaryLabel
+    stageLabel.textAlignment = .center
+    stageLabel.numberOfLines = 1
+    stageLabel.text = "Finding the location…"
+    let stack = UIStackView(arrangedSubviews: [spinner, statusLabel, detailLabel, stageLabel])
     stack.axis = .vertical
-    stack.spacing = 14
+    stack.spacing = 10
     stack.alignment = .center
     stack.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(stack)
@@ -96,6 +105,12 @@ class ShareViewController: UIViewController {
     DispatchQueue.main.async {
       guard !self.completed else { return }
       self.resolved = loc
+      if let r = loc {
+        // Name the place the moment we know it: the most reassuring thing this
+        // sheet can show is that it read the right location.
+        self.detailLabel.text = r.name ?? r.address ?? String(format: "%.4f, %.4f", r.latitude, r.longitude)
+        self.detailLabel.isHidden = false
+      }
       guard let r = loc else {
         ShareOutboxStore.trace("resolved=nil — nothing to send")
         return self.showTerminal("Error", "Couldn't read that location")
@@ -141,6 +156,7 @@ class ShareViewController: UIViewController {
 
     let label = r.name ?? r.address
     let arbiter = TransportArbiter(arms: arms)
+    self.setStage(arms.first.map { Self.stageText(for: $0.name) } ?? "Connecting…")
 
     // Bounded: the share sheet must not hang forever if a transport stalls.
     var settled = false
@@ -152,7 +168,12 @@ class ShareViewController: UIViewController {
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.sendDeadline, execute: deadline)
 
-    arbiter.send(vin: car.vin, lat: r.latitude, lon: r.longitude, label: label, privateScalarHex: keyHex) { result, attempts in
+    arbiter.send(
+      vin: car.vin, lat: r.latitude, lon: r.longitude, label: label, privateScalarHex: keyHex,
+      onArm: { [weak self] name in
+        DispatchQueue.main.async { self?.setStage(Self.stageText(for: name)) }
+      }
+    ) { result, attempts in
       DispatchQueue.main.async {
         guard !settled else { return }
         settled = true
@@ -184,13 +205,35 @@ class ShareViewController: UIViewController {
 
   private static let sendDeadline: TimeInterval = 25
 
+  // Plain words for each arm. "Pi" is what Ivan calls the box; "Bluetooth" is
+  // what the phone calls the radio. Neither is jargon to the person reading it.
+  private static func stageText(for arm: String) -> String {
+    switch arm {
+    case "ble": return "Trying Bluetooth…"
+    case "pi": return "Trying your Pi…"
+    default: return "Sending…"
+    }
+  }
+
+  private func setStage(_ text: String) {
+    stageLabel.text = text
+    stageLabel.isHidden = false
+  }
+
   // Show the outcome briefly, then dismiss. The user gets a verdict rather than a
   // sheet that vanishes and leaves them guessing whether it worked.
   private func showTerminal(_ title: String, _ detail: String) {
     spinner.stopAnimating()
     statusLabel.text = title
-    detailLabel.text = detail
-    detailLabel.isHidden = false
+    // The place stays in detailLabel — on success it is the confirmation, and on
+    // failure it is what you would be retrying — so the reason goes below it.
+    if detailLabel.isHidden {
+      detailLabel.text = detail
+      detailLabel.isHidden = false
+      stageLabel.isHidden = true
+    } else {
+      stageLabel.text = detail
+    }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in self?.finishRequest() }
   }
 

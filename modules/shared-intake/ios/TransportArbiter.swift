@@ -75,7 +75,11 @@ public final class TransportArbiter {
   // That is the right trade here: a destination arriving twice is a visible
   // annoyance, and one that never arrives while we report success is a silent
   // loss of the thing the user asked for.
+  // onArm fires before each attempt so the UI can say what it is doing. The
+  // walk can take twelve seconds on a cold scan before it even reaches the second
+  // arm, and a spinner that never changes is indistinguishable from a hang.
   public func send(vin: String, lat: Double, lon: Double, label: String?, privateScalarHex: String,
+                   onArm: ((String) -> Void)? = nil,
                    completion: @escaping (Result<EngineSendResult, Error>, [Attempt]) -> Void) {
     var attempts: [Attempt] = []
     var remaining = arms[...]
@@ -87,6 +91,7 @@ public final class TransportArbiter {
         return completion(failure, attempts)
       }
       remaining = remaining.dropFirst()
+      onArm?(arm.name)
 
       guard let built = arm.make() else {
         ShareOutboxStore.trace("arbiter: \(arm.name) unavailable (not configured) → next")
