@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
-import * as Haptics from 'expo-haptics';
+import { useEffect, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { SymbolView } from "expo-symbols";
+import * as Haptics from "expo-haptics";
 
-import { TeslaFonts } from '@/constants/fonts';
+import { TeslaFonts } from "@/constants/fonts";
 
 // AmpStepper — the charging-current control, lifted out of app/charging.tsx so
 // the home charge panel uses the SAME one. Same reasoning as ChargeLimitSlider:
@@ -22,7 +22,8 @@ import { TeslaFonts } from '@/constants/fonts';
 // Their detent haptic is Light (recovered from the slider's throttleHaptic), and
 // this is the same class of feedback, so it matches rather than using the app's
 // firmer Rigid press tick.
-const stepTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+const stepTick = () =>
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
 // Hold-to-repeat timing. The first repeat waits, so a normal tap is never
 // mistaken for a hold; after that it accelerates to a steady rate.
@@ -48,7 +49,13 @@ export interface AmpStepperProps {
   onCommit: (amps: number) => void;
 }
 
-export function AmpStepper({ amps, min, max, onChange, onCommit }: AmpStepperProps) {
+export function AmpStepper({
+  amps,
+  min,
+  max,
+  onChange,
+  onCommit,
+}: AmpStepperProps) {
   // Local while interacting, so the number tracks the press and the car hears
   // one command at the end.
   const [live, setLive] = useState<number | null>(null);
@@ -103,11 +110,21 @@ export function AmpStepper({ amps, min, max, onChange, onCommit }: AmpStepperPro
 
   return (
     <View style={styles.bar}>
-      <Chevron dir="left" hidden={shown <= min} onPressIn={() => press(-1)} onRelease={release} />
+      <Chevron
+        dir="left"
+        hidden={shown <= min}
+        onPressIn={() => press(-1)}
+        onRelease={release}
+      />
       <View style={styles.valueWrap} pointerEvents="none">
         <Text style={styles.value}>{shown} A</Text>
       </View>
-      <Chevron dir="right" hidden={shown >= max} onPressIn={() => press(1)} onRelease={release} />
+      <Chevron
+        dir="right"
+        hidden={shown >= max}
+        onPressIn={() => press(1)}
+        onRelease={release}
+      />
     </View>
   );
 }
@@ -118,7 +135,7 @@ function Chevron({
   onPressIn,
   onRelease,
 }: {
-  dir: 'left' | 'right';
+  dir: "left" | "right";
   hidden: boolean;
   onPressIn: () => void;
   onRelease: () => void;
@@ -136,7 +153,12 @@ function Chevron({
       // repeat would keep running with nothing to stop it.
       onTouchCancel={onRelease}
     >
-      <SymbolView name={dir === 'left' ? 'chevron.left' : 'chevron.right'} tintColor="white" size={22} weight="medium" />
+      <SymbolView
+        name={dir === "left" ? "chevron.left" : "chevron.right"}
+        tintColor="white"
+        size={22}
+        weight="medium"
+      />
     </Pressable>
   );
 }
@@ -155,33 +177,33 @@ const styles = StyleSheet.create({
   // space-between with ZERO horizontal padding, so they sit at the bar's edges
   // (I had paddingHorizontal 20, then 8). And the value is 15 Medium, not 16/600.
   bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    position: 'relative',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    position: "relative",
+    backgroundColor: "rgba(255,255,255,0.08)",
     borderRadius: 0.5 * GUTTER,
     height: 4.5 * GUTTER,
   },
   slot: {
     width: CHEVRON_SLOT,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 100,
   },
   // currentTextContainer — absolutely centred across the FULL bar, so the value
   // stays dead-centre no matter which chevrons are present. Their design does
   // not need my "keep the slot to stop the number jumping" trick; it cannot jump.
   valueWrap: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
   },
   value: {
     fontFamily: TeslaFonts.medium,
     fontSize: 15,
-    color: 'white',
+    color: "white",
   },
 });

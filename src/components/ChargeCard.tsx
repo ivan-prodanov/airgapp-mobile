@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { TeslaFonts } from '@/constants/fonts';
-import { controlHaptic } from '@/state/controlHaptic';
-import { ChargeLimitSlider } from './ChargeLimitSlider';
-import { AmpStepper } from './AmpStepper';
+import { TeslaFonts } from "@/constants/fonts";
+import { controlHaptic } from "@/state/controlHaptic";
+import { ChargeLimitSlider } from "./ChargeLimitSlider";
+import { AmpStepper } from "./AmpStepper";
 
 // ChargeCard — the home-screen charging panel.
 //
@@ -43,7 +43,8 @@ import { AmpStepper } from './AmpStepper';
 //
 //   container              marginBottom Gutter, paddingTop 1.5*Gutter, minHeight 8*Gutter
 //   containerNonCT         bg Themes[DARK].secondaryBackgroundColor, radius Gutter*0.5, opacity .95
-//   chargeTextContainer    marginHorizontal 0.5*Gutter
+//   chargeTextContainer    marginHorizontal 0.5*Gutter        <- WRAPS the texts AND the slider
+//   statusText             marginHorizontal 1.5*Gutter, UniversalSans Medium
 //   chargeRateText(x)      row, marginTop 0.5*Gutter, marginBottom x ? Gutter : 0
 //   sliderContainer        alignSelf flex-start, height 3*Gutter, marginHorizontal 1.5*Gutter
 //   targetSlider           overflow visible, width 100%
@@ -56,18 +57,34 @@ import { AmpStepper } from './AmpStepper';
 //   chargeButtonText       textAlign center   (font = Button SMALL -> BodyLabel 14/20/.1)
 //   buttonDivider          width 1, height 100%, bg Themes[DARK].backgroundColor
 //
-// Note the horizontal insets are NOT uniform — text 5, slider 15, amps 20,
-// buttons 0 from the card edge. Ours used a single paddingHorizontal 18 for
-// everything, which is why nothing lined up. The card now has no horizontal
-// padding and each child carries its own, exactly as theirs does.
+// THE INSETS COMPOSE — this is what I got wrong twice. sliderContainer and the
+// texts are CHILDREN of chargeTextContainer, not siblings of it, so their 15
+// stacks on its 5:
+//
+//     text    chargeTextContainer 5 + statusText      15 = 20
+//     slider  chargeTextContainer 5 + sliderContainer 15 = 20
+//     amps                            ampsContainer   20 = 20
+//
+// All three share one left edge at 20 from the card, which is exactly what
+// Ivan's screenshot shows. My first pass used one paddingHorizontal 18 for
+// everything; my second read 5/15/20 off the StyleSheet and applied them as
+// siblings, which rendered 5/5/15 — three different edges, none of them right.
+// Reading the values was not enough; the tree had to be read too.
+//
+// The card itself sits at homeScreenGutter - homeScreenBoxGutter = 20 - 10 = 10
+// from the screen edge, not the 16 the surrounding menu uses.
 const GUTTER = 10;
 const PANEL_RADIUS = 0.5 * GUTTER;
-const PANEL_BG = '#222324';
-const TEXT = '#F3F3F3';
-const TEXT_LIGHT = '#8A8B8B';
+// Specifications.homeScreenGutter(20) - homeScreenBoxGutter(10).
+const CARD_INSET = 10;
+// HomeScreen's `menu` paddingHorizontal, which the card has to undo.
+const MENU_PADDING = 16;
+const PANEL_BG = "#222324";
+const TEXT = "#F3F3F3";
+const TEXT_LIGHT = "#8A8B8B";
 // The page behind the card. The divider is drawn in it so the row reads as
 // separated rather than ruled — the same trick as MediaCard's 1pt gaps.
-const PAGE_BG = '#000000';
+const PAGE_BG = "#000000";
 
 // Their slider is `sliderMax` + `sliderSnapPoints`. The car supplies the real
 // bounds (charge_limit_soc_min/max/std); these are the fallbacks for a car that
@@ -142,9 +159,11 @@ export function ChargeCard({
           Type comes from app/charging.tsx's own limitLabel (19/700), so the two
           screens read the same. */}
       <View style={styles.textBlock}>
-        <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
+        <Text style={styles.limitLabel}>
+          Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%
+        </Text>
 
-      {/* Recovered: `vehicle_charge_screen_range_added` =
+        {/* Recovered: `vehicle_charge_screen_range_added` =
           "{{range}} added during last charging session", filled by
           getChargeAddedText(chargeState, guiSettings) and gated by
           isChargeAddedNotNil(...). The placeholder is {{range}} because the same
@@ -163,29 +182,29 @@ export function ChargeCard({
             {Math.round(energyAddedKwh)} kWh added during last charging session
           </Text>
         ) : null}
-      </View>
 
-      {/* sliderContainer + targetSlider { overflow:'visible', width:'100%' }.
+        {/* sliderContainer + targetSlider { overflow:'visible', width:'100%' }.
           Their slider takes usablePercentageCharged AND nominalPercentageCharged
           as SEPARATE fills, `target` as the thumb, plus snapPercentageLocations
           and a defaultChargeToMaxMarker. We have one SoC, so one fill — the
           nominal/usable split needs fields we do not read yet. */}
-      <View style={styles.sliderContainer}>
-        {/* The SAME control as app/charging.tsx — normal/changing states, the
+        <View style={styles.sliderContainer}>
+          {/* The SAME control as app/charging.tsx — normal/changing states, the
             detent breaks that appear only while changing, and the growing thumb.
             Ivan: use ours and polish it, not a second one. */}
-        <ChargeLimitSlider
-          batteryPercent={batteryLevel}
-          limitPercent={chargeLimitPercent}
-          min={LIMIT_MIN}
-          max={LIMIT_MAX}
-          onChange={setLiveLimit}
-          onCommit={(v) => {
-            setLiveLimit(null);
-            onSetChargeLimit(v);
-          }}
-          onSlidingChange={onSlidingChange}
-        />
+          <ChargeLimitSlider
+            batteryPercent={batteryLevel}
+            limitPercent={chargeLimitPercent}
+            min={LIMIT_MIN}
+            max={LIMIT_MAX}
+            onChange={setLiveLimit}
+            onCommit={(v) => {
+              setLiveLimit(null);
+              onSetChargeLimit(v);
+            }}
+            onSlidingChange={onSlidingChange}
+          />
+        </View>
       </View>
 
       {/* Amperage. Ivan: "some of the states should have a way to change the
@@ -202,7 +221,13 @@ export function ChargeCard({
       {/* bottomCardMargin (25) wraps ampsContainer (marginTop 15, inset 20). */}
       <View style={styles.ampWrap}>
         <View style={styles.ampsContainer}>
-          <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
+          <AmpStepper
+            amps={chargingAmps}
+            min={ampMin}
+            max={ampMax}
+            onChange={() => {}}
+            onCommit={onSetAmps}
+          />
         </View>
       </View>
 
@@ -217,19 +242,21 @@ export function ChargeCard({
             its own command is in flight, which is their actual use of disabled. */}
         {cableAttached ? (
           <ChargeButton
-            label={charging ? 'Stop Charging' : 'Start Charging'}
-            disabled={!!pending?.has('charging')}
+            label={charging ? "Stop Charging" : "Start Charging"}
+            disabled={!!pending?.has("charging")}
             onPress={() => onStartStopCharging(!charging)}
           />
         ) : null}
         {/* buttonDivider — only between two buttons, never dangling beside one. */}
-        {cableAttached && !(chargePortOpen && cableAttached) ? <View style={styles.buttonDivider} /> : null}
+        {cableAttached && !(chargePortOpen && cableAttached) ? (
+          <View style={styles.buttonDivider} />
+        ) : null}
         {/* Same rule: with the cable latched the port cannot close, so the
             control goes rather than sitting there greyed. */}
         {chargePortOpen && cableAttached ? null : (
           <ChargeButton
-            label={chargePortOpen ? 'Close Charge Port' : 'Open Charge Port'}
-            disabled={!!pending?.has('chargePortOpen')}
+            label={chargePortOpen ? "Close Charge Port" : "Open Charge Port"}
+            disabled={!!pending?.has("chargePortOpen")}
             onPress={() => onToggleChargePort(!chargePortOpen)}
           />
         )}
@@ -250,7 +277,10 @@ function ChargeButton({
   // Text only — theirs carries no icon, and it renders DIM rather than white.
   return (
     <Pressable
-      style={({ pressed }) => [styles.controlButton, { opacity: disabled ? 0.35 : pressed ? 0.5 : 1 }]}
+      style={({ pressed }) => [
+        styles.controlButton,
+        { opacity: disabled ? 0.35 : pressed ? 0.5 : 1 },
+      ]}
       disabled={disabled}
       onPress={() => {
         controlHaptic();
@@ -270,6 +300,9 @@ const styles = StyleSheet.create({
     backgroundColor: PANEL_BG,
     borderRadius: PANEL_RADIUS,
     marginBottom: GUTTER,
+    // container.marginHorizontal = homeScreenGutter - homeScreenBoxGutter = 10.
+    // HomeScreen's menu pads 16, so the card pulls back out to land at 10.
+    marginHorizontal: CARD_INSET - MENU_PADDING,
     minHeight: 8 * GUTTER,
     paddingTop: 1.5 * GUTTER,
     paddingBottom: 0,
@@ -287,7 +320,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 0.5 * GUTTER,
   },
   // chargeRateText(hasValue) — marginTop 0.5*Gutter, marginBottom Gutter.
+  // statusText — marginHorizontal 1.5*Gutter, INSIDE chargeTextContainer's 0.5.
+  // The marginTop/Bottom are chargeRateText's, folded in: that wrapper is a row
+  // only so an icon can sit beside the text, and we render text alone.
   statusText: {
+    marginHorizontal: 1.5 * GUTTER,
     marginTop: 0.5 * GUTTER,
     marginBottom: GUTTER,
     fontFamily: TeslaFonts.medium,
@@ -307,14 +344,14 @@ const styles = StyleSheet.create({
   // buttons. I had no such thing.
   buttonDivider: {
     width: 1,
-    alignSelf: 'stretch',
+    alignSelf: "stretch",
     backgroundColor: PAGE_BG,
   },
   controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-evenly',
-    width: '100%',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-evenly",
+    width: "100%",
   },
   // bottomCardMargin wraps the amps; ampsContainer is the amps' own inset.
   ampWrap: {
@@ -325,6 +362,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 1.5 * GUTTER + 0.5 * GUTTER,
   },
   limitLabel: {
+    marginHorizontal: 1.5 * GUTTER,
     fontFamily: TeslaFonts.medium,
     fontSize: 14,
     lineHeight: 20,
@@ -341,9 +379,9 @@ const styles = StyleSheet.create({
   // button {flex:1, opacity:0.9} + chargeButton {minHeight:46, paddingVertical:13}.
   controlButton: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     minHeight: 46,
     paddingVertical: 13,
     opacity: 0.9,
@@ -356,7 +394,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     letterSpacing: 0.1,
-    textAlign: 'center',
+    textAlign: "center",
     color: TEXT_LIGHT,
   },
 });

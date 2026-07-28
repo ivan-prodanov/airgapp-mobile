@@ -223,3 +223,65 @@ assignments inside nested functions belong to a different frame. Match on the **
 level** (12 spaces here) and take the last assignment before the `StyleSheet.create`. That is how
 `r16=1`, `r12=1.5`, `r17=0.5`, `r10=1.5*Gutter`, `r21=0.5*Gutter` resolve — and why the naive read
 gave `paddingTop: 26*Gutter = 260`, which is absurd on its face and was the tell.
+
+
+---
+
+## 10. The insets COMPOSE — the tree matters as much as the values (2026-07-28)
+
+Ivan, on the left edges of the charge-limit text, the kWh line and the slider: *"in our app vs tesla
+app. Why?"*
+
+Recovering §9's numbers was not enough, because I applied them as siblings of the card. They are not
+siblings. `ChargeRow`'s render (@4157717–4157752) nests them:
+
+```
+<View style={[container, containerNonCT]}>          @4158452, onLayout
+  <View style={contentsContainer}>                   column, flexGrow 1
+    <View style={chargeTextContainer}>               marginHorizontal 0.5*Gutter = 5
+      <View style={[chargeStateHeader…]}>            <Text style={statusText}>  mH 1.5*Gutter = 15
+      <View style={sliderContainer}>                 marginHorizontal 1.5*Gutter = 15
+        <Slider style={targetSlider}/>
+    <View style={bottomCardMargin}>                  marginBottom 2.5*Gutter = 25
+      <VehicleChargeAmps style={ampsContainer}/>     marginHorizontal 2*Gutter = 20
+    <View style={controlsDivider}/> <ControlButtons/>
+```
+
+So every left edge resolves to the SAME value:
+
+| element | chain | left |
+|---|---|---|
+| charge-limit text | `chargeTextContainer` 5 + `statusText` 15 | **20** |
+| kWh line | `chargeTextContainer` 5 + `statusText` 15 | **20** |
+| slider | `chargeTextContainer` 5 + `sliderContainer` 15 | **20** |
+| amps | `ampsContainer` 20 | **20** |
+| buttons | `controlButtonContainer` width 100% | 0 |
+
+`statusText` @4159289 is `{fontFamily: getUniversalSansFontFamily('Medium'), marginHorizontal:
+1.5*Gutter}` — the piece that makes the texts line up with the slider rather than sitting 15 further
+left.
+
+### The card's own inset
+
+```
+Gutter = 10                                   @1338473
+Specifications.homeScreenGutter    = 20       @1338673
+Specifications.homeScreenBoxGutter = 10       @1338674
+container.marginHorizontal = 20 - 10 = 10
+```
+
+The card sits **10** from the screen edge. Our HomeScreen `menu` pads 16, so the card carries
+`marginHorizontal: 10 - 16` to land in the same place.
+
+### The lesson, which is the reusable part
+
+Three passes on the same panel:
+
+1. one `paddingHorizontal: 18` for everything — invented;
+2. read 5 / 15 / 20 out of the StyleSheet and applied them as siblings — rendered 5 / 5 / 15, three
+   different edges, none correct;
+3. read the RENDER as well, found the nesting, and all four resolve to 20.
+
+Pass 2 felt like a recovery and was still wrong. **A style value is meaningless without the tree it
+attaches to** — recover the JSX nesting alongside the StyleSheet, or the numbers will be right and
+the layout still wrong.
