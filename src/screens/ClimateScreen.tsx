@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
 import { showNum } from '../state/readProbe';
 import { showsOverheatActivationTemp } from '../ble/climateDisplay';
+import { TeslaFonts } from '../constants/fonts';
 import { useCarLinkStatus } from '../state/VehicleProvider';
 import { vehicleStatusText } from '../ble/vehicleStatusText';
 import { StatusBarFade } from '../components/StatusBarFade';
@@ -367,7 +368,7 @@ function Row({
       ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={24} />
+      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -396,7 +397,7 @@ function GroupRow({
       ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={24} />
+      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -444,11 +445,32 @@ function Segmented({
 //   Themes[DARK].buttonActivePrimary    = Colors.buttonBlue = '#3368FF'
 //   Themes[DARK].textColorLight         = '#8A8B8B'
 //   Themes[DARK].textColor              = '#F3F3F3'
+// TYPE. Recovered ladder (main.decompiled.js ~1339774-1339860) — the
+// non-Cybertruck Typography block, each entry carrying its own `type` (face):
+//
+//   Medium 64/77/0   Medium 40/46/0   Medium 32/36/0.5  Medium 24/28/0.5
+//   Medium 20/24/0.5 Medium 18/24/0.5 Medium 16/24/0
+//   Body        Regular 14/20/-0.1     BodyLabel    Medium 14/20/0.1
+//   Caption     Regular 12/16/-0.1     CaptionLabel Medium 12/16/0.1
+//   AxisLabel   Medium 10/16/0         Overline     Medium 12/20/0.25 upper
+//
+// THE SCREEN HAD NO fontFamily AT ALL — every label was rendering in San
+// Francisco. That is most of what Ivan meant by "nothing like it": the colours
+// were half-right while the typeface was simply wrong everywhere.
+//
+// Sizes are ladder entries, not free numbers. What LOOKS bolder in their
+// screenshots (the COP heading) is the COLOUR, not the weight — the whole ladder
+// is one face, and only Body/Caption use Regular, which we do not ship.
+const FONT = TeslaFonts.medium;
 const BORDER = 'rgba(255,255,255,0.1)';
 const ACTIVE_BLUE = '#3368FF';
 const TEXT_DIM = '#8A8B8B';
 const TEXT_BRIGHT = '#F3F3F3';
-const RADIUS = 14;
+// Measured off the awake screenshots at 2.29 px/pt (921px / 402pt). Stated as
+// MEASURED, not recovered — the row component's own StyleSheet is behind
+// useThemedStyle and I could not pin it without another long dig.
+const RADIUS = 12;
+const ICON_SIZE = 20;
 // Their most common activeOpacity (two call sites). The pressed card in Ivan's
 // 4th screenshot dims noticeably but stays readable, which fits; I could not tie
 // it to THIS component, so it is the best-supported value rather than a proven one.
@@ -497,10 +519,13 @@ const styles = StyleSheet.create({
     opacity: 0.2,
   },
   climateTemps: {
+    // BodyLabel 14/20/0.1 — "Interior 37°C · Exterior 30°C".
     textAlign: 'center',
-    fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.5)',
+    fontFamily: FONT,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT_DIM,
     marginTop: 6,
   },
   // Cached-but-stale cabin temps fade, mirroring the Home battery row (§C3).
@@ -522,7 +547,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   quickLabel: {
-    fontSize: 13,
+    // CaptionLabel 12/16/0.1.
+    fontFamily: FONT,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
     color: TEXT_DIM,
   },
   quickLabelActive: {
@@ -534,8 +563,10 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   temp: {
-    fontSize: 47,
-    fontWeight: '300',
+    // Ladder entry 40/46, not the free-chosen 47/300 we had.
+    fontFamily: FONT,
+    fontSize: 40,
+    lineHeight: 46,
     minWidth: 128,
     textAlign: 'center',
     letterSpacing: 0.5,
@@ -569,7 +600,10 @@ const styles = StyleSheet.create({
     borderColor: ACTIVE_BLUE,
   },
   rowText: {
+    // Ladder 16/24/0.
+    fontFamily: FONT,
     fontSize: 16,
+    lineHeight: 24,
     // Dim by default — the whole list reads as "available", not "on".
     color: TEXT_DIM,
   },
@@ -604,14 +638,19 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   sectionLabel: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: 'white',
+    // Same 16/24 as the rows. It reads heavier only because it is BRIGHT.
+    fontFamily: FONT,
+    fontSize: 16,
+    lineHeight: 24,
+    color: TEXT_BRIGHT,
     marginLeft: 4,
   },
   sectionLabelMuted: {
-    fontSize: 13,
-    fontWeight: '400',
+    // CaptionLabel 12/16/0.1.
+    fontFamily: FONT,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
     color: TEXT_DIM,
   },
   segmented: {
@@ -631,12 +670,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
   segmentText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.55)',
+    // BodyLabel 14/20/0.1. Selection is expressed by COLOUR and the pill, not by
+    // a weight change — the ladder has one face per size.
+    fontFamily: FONT,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT_DIM,
   },
   segmentTextSelected: {
-    color: 'white',
-    fontWeight: '600',
+    color: TEXT_BRIGHT,
   },
 });
