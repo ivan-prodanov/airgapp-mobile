@@ -479,9 +479,31 @@ const TEXT_BRIGHT = '#F3F3F3';
 // "border much wider" Ivan saw. Radii on the ladder are 16 (minHeight 48) and
 // 10 (minHeight 40); 10 is the one that reads as "more rectangular" against the
 // 12 we had, and it is a real tier rather than a number I picked.
+// THE ROWS ARE <Button appearance={TOGGLE} size={LARGE}> (@5223636), so the
+// spec is not a measurement — it is three recovered objects composed:
+//
+//   climate screen's own `largeButton` (@5221317)
+//     { height: 6*Gutter = 60, justifyContent: 'flex-start',
+//       alignItems: 'center', width: '100%' }
+//
+//   getButtonSizeStyle(LARGE) (@1340517)
+//     { minHeight: 5*Gutter = 50, paddingHorizontal: 10, paddingVertical: 13,
+//       iconWidth: 24, iconHeight: 24, iconMarginHorizontal: 10,
+//       textMarginHorizontal: 10 }   + borderWidth 2 on every tier
+//
+//   getButtonFontStyle(LARGE) (@1340624)  ->  TextCategory.BodyLabel = 14/20/0.1
+//
+// Which corrects three things I had guessed: the label is 14/20, not 16/24; the
+// icon is 24, not 20; and the row is a fixed 60 tall with 10pt side padding,
+// not 16 with padding-derived height. That is the "internal layout of the button
+// is much different".
+const ROW_HEIGHT = 60;
+const ROW_PADDING_H = 10;
+const ROW_ICON = 24;
+const ROW_ICON_MARGIN = 10;
 const RADIUS = 16;
 const BORDER_WIDTH = 2;
-const ICON_SIZE = 20;
+const ICON_SIZE = ROW_ICON;
 // Content inset. MEASURED off Ivan's side-by-side at 2.29 px/pt (921px / 402pt):
 // their cards span x 66..855, ours spanned 37..884 — 29pt of margin against our
 // 16. That single number is most of "entire structure of the panel, margins":
@@ -624,9 +646,11 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
+    justifyContent: 'flex-start',
+    width: '100%',
+    height: ROW_HEIGHT,
+    gap: ROW_ICON_MARGIN + 10,
+    paddingHorizontal: ROW_PADDING_H,
     borderRadius: RADIUS,
     borderCurve: 'continuous',
     borderWidth: BORDER_WIDTH,
@@ -637,10 +661,11 @@ const styles = StyleSheet.create({
     borderColor: ACTIVE_BLUE,
   },
   rowText: {
-    // Ladder 16/24/0.
+    // getButtonFontStyle(LARGE) -> BodyLabel 14/20/0.1. Was 16/24, guessed.
     fontFamily: FONT,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     // Dim by default — the whole list reads as "available", not "on".
     color: TEXT_DIM,
   },
@@ -658,9 +683,11 @@ const styles = StyleSheet.create({
   groupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 15,
-    paddingHorizontal: 16,
+    justifyContent: 'flex-start',
+    width: '100%',
+    height: ROW_HEIGHT,
+    gap: ROW_ICON_MARGIN + 10,
+    paddingHorizontal: ROW_PADDING_H,
   },
   groupRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
