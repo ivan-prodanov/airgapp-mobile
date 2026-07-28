@@ -58,7 +58,7 @@ export function startLogFileSink(): () => void {
   if (stop) return stop;
   const unsub = subscribe((e) => {
     if (e.level === 'debug') return;
-    if (NOISY.has(e.cat)) return;
+    if (!CATEGORIES.has(e.cat)) return;
     buffer.push(format(e));
     // Hard cap: a runaway loop must not grow the buffer without bound.
     if (buffer.length >= MAX_BUFFERED) {
