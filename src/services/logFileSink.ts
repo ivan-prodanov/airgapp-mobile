@@ -19,22 +19,45 @@ import { appendDiagnostic } from './diagnosticFile';
 const FLUSH_MS = 4000;
 const MAX_BUFFERED = 200;
 
-// Everything except debug-level noise is persisted.
+// ALLOW-list. Ivan's call (f9783e7): the file is capped at 200 KB and each
+// append rewrites it, so breadth is bought with HISTORY, and agents reading back
+// over a long run need the window more than they need every category.
 //
-// This was an ALLOW-list of categories, and on 2026-07-27 it silently swallowed
-// every 'outbox' line — seven call sites, none of which could ever reach the
-// file. Hours went into "the share queue does nothing" while reading a log that
-// structurally could not have shown it working, and the absence of lines was
-// read as evidence the code never ran.
+// ⚠️ RESTORED 2026-07-28. That revert flipped the CHECK back to the allow-list
+// but never restored this CONSTANT, so `CATEGORIES.has(...)` referenced an
+// undefined binding and threw on EVERY entry. The sink wrote nothing from then
+// on, and `pull-logs.sh` kept returning the stale tail of the old file — which
+// is why it failed its own integrity check and why a whole session's worth of
+// "there are no stream lines, so the stream never runs" was reasoning about a
+// log that could not have contained them.
 //
-// The list was not even earning its keep as a volume guard: 'poll', the ~1 Hz
-// category, was IN it. Batching plus MAX_BUFFERED is what actually bounds the
-// cost, and neither depends on the category.
+// That is the SECOND time this file has produced exactly that failure: the note
+// it replaced described the same thing happening to 'outbox' the day before. The
+// lesson survives the policy change — an absent line is not evidence, until you
+// have checked that the line could have been written.
 //
-// So a category is visible by default and one that proves too chatty goes in
-// NOISY. A diagnostic you have to remember to enable is one you will not have on
-// the day you need it.
-const NOISY = new Set<string>([]);
+// So: adding a logi() with a NEW category means adding it here, or it is
+// invisible.
+//
+// 'push' and 'read' added 2026-07-28 for the closure-freshness work, and their
+// absence is the THIRD instance of this exact failure in two days: the whole
+// "we receive no unsolicited pushes, therefore the stream is broken" conclusion
+// rested on a log that could not contain a single 'push' line. Every closure
+// fact the app learns arrives on one of these two categories, so diagnosing
+// closures without them is diagnosing blind.
+//
+// They cost history — 'read' fires per poll. Drop them again once the closure
+// behaviour is settled.
+const CATEGORIES = new Set([
+  'poll',
+  'ble',
+  'txp',
+  'cmd',
+  'stream',
+  'lifecycle',
+  'push',
+  'read',
+]);
 
 function format(e: LogEntry): string {
   const data = e.data ? ` ${JSON.stringify(e.data)}` : '';

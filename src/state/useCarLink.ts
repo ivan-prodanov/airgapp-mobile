@@ -785,7 +785,20 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const syncStream = useCallback(() => {
     const cfg = cfgRef.current;
     const carCfg = carCfgRef.current;
+    // ⚠️ DIAGNOSTIC ONLY (2026-07-28) — no behaviour change.
+    //
+    // There are ZERO `stream` lines in the log, which means the Pi event stream
+    // never opens, which means we get no unsolicited closure pushes at all and
+    // every closure fact waits for the 20s VCSEC tick. syncStream runs after
+    // every successful poll and has exactly two early exits; this says WHICH one
+    // is taken, so the next log pull answers it instead of another guess.
+    //
+    // Remove once the cause is known.
     if (!carCfg?.vin || selectedTransportRef.current !== 'pi') {
+      logi('stream', 'sync: skip', {
+        why: !carCfg?.vin ? 'no vin' : 'transport not pi',
+        txp: selectedTransportRef.current ?? 'none',
+      });
       // BLE selected (delivers pushes itself) or nothing to stream against.
       stopStream();
       return;
@@ -794,10 +807,15 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     if (!sessionId) {
       // No live Pi session cached — shouldn't happen right after a
       // successful Pi poll, but never stream against nothing.
+      logi('stream', 'sync: no session', { vin: carCfg.vin.slice(-6), baseUrl: !!cfg?.baseUrl });
       stopStream();
       return;
     }
-    if (sessionId === streamSessionIdRef.current) return; // already streaming this one
+    if (sessionId === streamSessionIdRef.current) {
+      logd('stream', 'sync: already streaming', { sessionId });
+      return; // already streaming this one
+    }
+    logi('stream', 'sync: starting', { sessionId, hasCfg: !!cfg?.baseUrl && !!cfg?.token });
     startStream(sessionId);
   }, [stopStream, startStream]);
 
