@@ -116,10 +116,15 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
       // our trunk and frunk markers live in — the exact screen where a silently
       // no-op'd close leaves a wrong value on screen with no push coming.
       //
-      // 'climate' rides along for the same freshness reason as home: the Climate
-      // row sits behind this camera mode and otherwise waits on the 60s-throttled
-      // infotainment poll (measured mean 123s, worst 763s).
-      return { states: ['drive', 'closures', 'climate'], intervalMs: CADENCE_MS.controls };
+      // NO climate here. I added it, Ivan pushed back, and he was right: nothing
+      // in this camera mode renders a climate value — you are looking at the car
+      // and its markers — and THEIRS does not poll it here either (their
+      // controls branch is parked accessory / charge / drive / tyres at 1650).
+      //
+      // It was not free: a third slot pushed closures from ~3.3s to ~5s on the
+      // exact screen where the trunk and frunk are actuated, which is the latency
+      // the closures change existed to fix. Two slots, 3.3s.
+      return { states: ['drive', 'closures'], intervalMs: CADENCE_MS.controls };
     case 'home':
     default:
       // Home has no literal in the recovered strings, but it is where the

@@ -208,16 +208,22 @@ test('extra states take a SLOT — they do not add a tick', () => {
   // are listed. Each lands every (slots x interval) instead of on the slow poll.
   const plan = readPlanFor('controls');
   assert.equal(plan.intervalMs, CADENCE_MS.controls, 'interval unchanged');
-  assert.deepEqual(plan.states, ['drive', 'closures', 'climate']);
+  assert.deepEqual(plan.states, ['drive', 'closures'], 'no climate: nothing here renders it');
 });
 
-test('climate is in the rotation wherever the Climate row is rendered', () => {
+test('climate is polled on home, where the Climate row IS rendered', () => {
   // It otherwise rides the 60s-throttled infotainment poll. Measured on-car over
-  // 30 minutes: mean gap 123s, WORST 763s — twelve minutes of a climate value the
-  // car may have rejected.
-  for (const focus of ['home', 'controls'] as const) {
-    assert.ok(readPlanFor(focus).states.includes('climate'), `${focus} must poll climate`);
-  }
+  // 30 minutes: mean gap 123s, WORST 763s. Theirs polls climate in the home
+  // rotation too — setGetclimatestate appears in both default branches (1250 with
+  // closures/media/charge, and 2500 with charge alone), ~5s per slice either way.
+  assert.ok(readPlanFor('home').states.includes('climate'));
+});
+
+test('climate is NOT polled on controls — nothing there renders it', () => {
+  // Their controls branch is parked accessory / charge / drive / tyres at 1650:
+  // no climate. Ours matches. A third slot here cost closures ~1.7s on the very
+  // screen the trunk is actuated from, which is the latency that change fixed.
+  assert.equal(readPlanFor('controls').states.includes('climate'), false);
 });
 
 test('every branch that bypasses readPlanFor keeps closures', () => {
@@ -235,5 +241,5 @@ test('every branch that bypasses readPlanFor keeps closures', () => {
 test('the rotation actually alternates, so neither state starves', () => {
   const plan = readPlanFor('controls');
   const seen = [0, 1, 2, 3].map((tick) => nextRotatedState(plan.states, tick)[0]);
-  assert.deepEqual(seen, ['drive', 'closures', 'climate', 'drive']);
+  assert.deepEqual(seen, ['drive', 'closures', 'drive', 'closures']);
 });
