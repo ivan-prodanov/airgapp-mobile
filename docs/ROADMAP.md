@@ -8,6 +8,22 @@ reasoned rather than measured.
 
 ## P0 — next
 
+### Optimism is destructive, not layered
+**Identified 2026-07-28 while fixing the trunk double-tap.** Our optimistic value is written straight
+into the view state, overwriting the last known real value. The official app instead keeps a
+per-vehicle LIST of pending optimistic commands and renders `real + pending overlay`, dropping an
+entry by `commandId` on `VEHICLE_COMMAND_SUCCESS`. Removing the overlay instantly reveals a real
+value that was never touched — which is why their trunk snaps back in ~1s with no read at all.
+
+We now paper over this with a verify-read after every command settles (~600ms total). That matches
+the timing but not the model, and it costs a BLE round-trip per command. Layering the optimism —
+keeping `state` real and resolving `state + inFlightCommands` at render — would remove the extra
+read, make rollback trivial (drop the entry), and delete the intent-grace machinery entirely.
+
+Not urgent now that the timing is close, but it is the honest end state, and every remaining
+grace/rollback subtlety is a symptom of not having it.
+
+
 ### ~~Optimistic updates outlive reality (the frunk double-tap)~~ — FIXED 2026-07-28
 
 Fixed by making the frunk's optimism ASYMMETRIC, recovered from the official app after Ivan pointed

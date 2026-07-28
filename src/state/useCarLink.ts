@@ -1013,10 +1013,28 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           clearPending();
           // The car has answered, so it is authoritative again: drop the
           // optimistic protection instead of letting it run the full GRACE_MS.
-          // This is what bounds the wrong-state window to the command's own
-          // round-trip — the ~1s Ivan measured in the real app, against our 30s.
           if (!superseded) dropIntent(affectedKeys);
           settleInFlight();
+          // ...AND GO LOOK. Releasing the intent only stops us SUPPRESSING the
+          // truth; it does not produce any. Our optimistic value is written
+          // destructively into the view state, so nothing corrects it until a
+          // read lands — and the poll is POLL_MS (20s) away.
+          //
+          // That is the whole of the gap Ivan measured. The official app never
+          // needs this read: its optimistic value is a LAYER over the real store
+          // (a per-vehicle list of pending commands, dropped by commandId on
+          // VEHICLE_COMMAND_SUCCESS), so removing the layer instantly reveals a
+          // real value that was never overwritten. Press Open Trunk, tap again
+          // midway, and their "closed" falls back to the untouched "open" about
+          // a second later. Ours had nothing to fall back TO.
+          //
+          // A push does not help here either: the trunk freezes half-open, so
+          // the car's state never changes and there is no event to send.
+          //
+          // Safe to fire unconditionally — tick() no-ops if one is already in
+          // flight, and settleInFlight() above has already dropped inFlightRef
+          // to 0 so this one is not skipped as "command in flight".
+          if (!superseded) void tickRef.current?.();
           if (bgId != null) {
             try {
               endBackgroundTask(bgId);
