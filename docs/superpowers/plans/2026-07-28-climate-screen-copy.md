@@ -20,7 +20,7 @@ Every error in the four passes came from skipping that:
 | label 16/24 | BodyLabel **14/20/0.1** |
 | icon 20 | **24** |
 | row height from padding, 16pt sides | fixed **60** tall, **10pt** sides |
-| radius 10, then 12, then 16 | 16 **plus `borderCurve: 'continuous'`** — the curve, not the radius |
+| radius 10, then 12, then 16 | **5** — `Specifications.borderRadius`. No `borderCurve`; the Button never sets one |
 | setpoint = Regular (read `fontWeight:'400'`) | **Medium** — `fontWeight` cannot reach another cut |
 | border = hairline | **2** |
 
@@ -62,14 +62,17 @@ styles.largeButton                    @5221317   (climate screen's own)
   alignItems 'center'
   width '100%'
 
-getButtonSizeStyle(LARGE)             @1340517
+LARGE size tier                       @1340527
   minWidth 5*Gutter = 50   minHeight 5*Gutter = 50
   paddingHorizontal 10     paddingVertical 13
   iconWidth 24  iconHeight 24  iconMarginHorizontal 10
   textMarginHorizontal 10
-  borderWidth 2            (every tier carries 2)
-  borderRadius 16 (minHeight 48) / 10 (minHeight 40)
-  borderCurve 'continuous'  ← 24 uses across the bundle
+
+getButtonSizeStyle(theme, appearance, size)   @1340676
+  returns ONLY { borderRadius, borderWidth } — size is not read
+  borderRadius: Cybertruck -> 0, GHOST -> 0, else Specifications.borderRadius = 5
+  borderWidth:  2, zeroed only for GHOST
+  NO borderCurve anywhere in the module
 
 getButtonFontStyle(LARGE)             @1340624
   -> TextCategory.BodyLabel = Medium 14/20/0.1
@@ -209,11 +212,44 @@ their options array is built unconditionally (`new Array(3)`, @5224664).
    compute to roughly the same shade over this backdrop — worse than being obviously wrong, because
    it would have drifted the moment the surface behind it changed. `#2C2C2C` is also
    `buttonActiveSecondary`, the selected segment pill, so one value covers both.
-2. **`ButtonSize.LARGE`'s own radius.** Tiers found were minHeight 48→16 and 40→10; LARGE is
-   minHeight 50 and its entry was not located. Currently using 16.
-3. **The segmented control's component.** It is `_closure1_slot12.default` (dep index 11) at
-   @5224645 with an `options` array and a `busy` prop. Name it, then read its styles rather than
-   hand-rolling the pill.
+2. ~~**`ButtonSize.LARGE`'s own radius.**~~ **RESOLVED — and the question was malformed.** Ivan:
+   *"make sure you get it from the right button… the one on iOS looks rectanglish and all your doings
+   is very round buttons"*. Correct on both counts.
+
+   The 48→16 / 40→10 tiers I had been sourcing radius from are in **`getInputSizeStyleMap`**
+   (@1341498) — the sizing table for **text inputs**. Inputs are round; these buttons are not. I
+   never checked the enclosing function name, and the tier shape was plausible enough that four
+   passes of nudging the number never questioned the table.
+
+   The real `getButtonSizeStyle` (@1340676) takes `(theme, appearance, size)` and returns only
+   `{borderRadius, borderWidth}`. **Radius does not vary by size** — so "LARGE's own radius" never
+   existed to be found:
+
+   ```
+   Cybertruck theme -> 0
+   appearance GHOST -> 0
+   everything else  -> Specifications.borderRadius = 5   (@1338718)
+   borderWidth       -> 2, zeroed only for GHOST
+   ```
+
+   `borderWidth: 2` was right by luck — both tables happened to say 2. `borderCurve: 'continuous'`
+   was pure invention: it appears nowhere in the button module.
+
+3. ~~**The segmented control's component.**~~ **RESOLVED: `ToggleSelector`** (@1870333) — found by
+   searching for the one function reading both an `options` and a `busy` prop. Stylesheet @1870274:
+
+   ```
+   wrapper     { borderRadius: 5, borderWidth: 1, height: 50, width: '100%' }
+   innerHandle { borderRadius: 5, height: '100%' }
+   handle      { height: '100%', position: 'absolute' }
+   option      { flex: 1, alignItems: 'center', justifyContent: 'center' }
+   options     { flexDirection: 'row', height: '100%', justifyContent: 'space-around', zIndex: 2 }
+   ```
+
+   Dark theme: border `Gray.mildDarker` **#212121** on both track and pill; pill fill `Gray.dark`
+   **#353535**; track fill also #212121 (transparent only when `hideBackground` is passed, which the
+   climate call site does not pass). **No padding, no gap** — the pill is full height, inset by the
+   1px border alone. Mine was inset 4pt with a 9pt radius, which read as a floating capsule.
 4. **The setpoint row's own spec** — power/vent are almost certainly Buttons too. Ours currently
    breaks out of the content inset by a measured −12; find the real container.
 5. **`status=BUSY`** — what it renders. We show nothing.
@@ -227,7 +263,7 @@ Done:
 - [x] Bundle `UniversalSans-Text-Regular-430.ttf`; register in `TESLA_FONT_MAP`
 - [x] Row = 60 tall, `paddingHorizontal` 10, `justifyContent: flex-start`, 20pt icon gap
 - [x] Row label BodyLabel 14/20/0.1, icon 24
-- [x] `borderWidth: 2`, `borderRadius: 16`, `borderCurve: 'continuous'`
+- [x] `borderWidth: 2`, `borderRadius: **5**`, no `borderCurve`
 - [x] Idle `#8A8B8B` / engaged `#3368FF` + white
 - [x] Setpoint 40/46/0 **Medium**, tracks `climateOn`
 - [x] Content inset 28; setpoint row breaks out to 16
@@ -235,9 +271,9 @@ Done:
 
 Open:
 
-- [ ] Resolve §8.1 and set the border colour from source
+- [x] Border colour from source (§8.1); radius from the right component (§8.2)
+- [x] Segmented control from its real component, `ToggleSelector` (§8.3)
 - [ ] Camp/Pet icon names, then extract all five glyphs
-- [ ] Segmented control from its real component
 - [ ] "Defrosting Car" status line
 - [ ] `status=BUSY` treatment
 - [ ] Sweep the rest of the app for Body/Caption tiers still rendering Medium now that Regular ships

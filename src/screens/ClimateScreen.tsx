@@ -504,10 +504,11 @@ const TEXT_ON_ACTIVE = '#F1F1F1';
 //     { height: 6*Gutter = 60, justifyContent: 'flex-start',
 //       alignItems: 'center', width: '100%' }
 //
-//   getButtonSizeStyle(LARGE) (@1340517)
-//     { minHeight: 5*Gutter = 50, paddingHorizontal: 10, paddingVertical: 13,
+//   getButtonSizeStyle(LARGE) (@1340527 — the REAL one, see the radius note)
+//     { minWidth: 5*Gutter = 50, minHeight: 5*Gutter = 50,
+//       paddingHorizontal: 10, paddingVertical: 13,
 //       iconWidth: 24, iconHeight: 24, iconMarginHorizontal: 10,
-//       textMarginHorizontal: 10 }   + borderWidth 2 on every tier
+//       textMarginHorizontal: 10 }
 //
 //   getButtonFontStyle(LARGE) (@1340624)  ->  TextCategory.BodyLabel = 14/20/0.1
 //
@@ -519,7 +520,27 @@ const ROW_HEIGHT = 60;
 const ROW_PADDING_H = 10;
 const ROW_ICON = 24;
 const ROW_ICON_MARGIN = 10;
-const RADIUS = 16;
+// RADIUS. Ivan: "the one on iOS looks rectanglish and all your doings is very
+// round buttons". He was right, and the cause was that I had been reading the
+// wrong component's table: the tiers I sourced 16 from live in
+// `getInputSizeStyleMap` (@1341498) — the sizing map for TEXT INPUTS. Inputs are
+// round; these buttons are not.
+//
+// The real `getButtonSizeStyle` (@1340676) takes (theme, appearance, size) and
+// returns ONLY { borderRadius, borderWidth }. Radius does not vary by size at
+// all — there is no "LARGE radius" to look up, which is why open question §8.2
+// could never have been answered as posed:
+//
+//   Cybertruck theme -> 0
+//   appearance GHOST -> 0
+//   everything else  -> Specifications.borderRadius
+//
+// and `Specifications.borderRadius` (@1338718) is **5**. On a 60pt-tall row that
+// is very nearly a rectangle, which is exactly what he was looking at.
+const RADIUS = 5;
+// Confirmed from the same function: `borderWidth` is seeded 2 and only zeroed
+// for GHOST. This one I had right, for the wrong reason — both tables happened
+// to say 2.
 const BORDER_WIDTH = 2;
 const ICON_SIZE = ROW_ICON;
 // Content inset. MEASURED off Ivan's side-by-side at 2.29 px/pt (921px / 402pt):
@@ -670,7 +691,6 @@ const styles = StyleSheet.create({
     gap: ROW_ICON_MARGIN + 10,
     paddingHorizontal: ROW_PADDING_H,
     borderRadius: RADIUS,
-    borderCurve: 'continuous',
     borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
   },
@@ -692,7 +712,6 @@ const styles = StyleSheet.create({
   },
   group: {
     borderRadius: RADIUS,
-    borderCurve: 'continuous',
     borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
     overflow: 'hidden',
@@ -735,22 +754,45 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_DIM,
   },
+  // The COP selector is `ToggleSelector` (@1870333) — the component that takes
+  // the { options, busy } pair the call site passes. Its stylesheet (@1870274):
+  //
+  //   wrapper     { borderRadius: Specifications.borderRadius, borderWidth: 1,
+  //                 height: 50, width: '100%' }
+  //   innerHandle { borderRadius: Specifications.borderRadius, height: '100%' }
+  //   option      { flex: 1, alignItems: 'center', justifyContent: 'center' }
+  //   options     { flexDirection: 'row', height: '100%',
+  //                 justifyContent: 'space-around', zIndex: 2 }
+  //
+  // So the same radius 5 as the rows, and — the part I had wrong — the track has
+  // NO padding and NO gap. The selected pill is FULL height, inset only by the
+  // 1px border. I had it inset 4pt on every side with a 9pt radius, which is why
+  // it read as a soft floating capsule instead of a filled cell.
+  //
+  // Dark theme (@1870650/@1870673): borderColor = Gray.mildDarker #212121 for
+  // both track and pill; pill fill = Gray.dark #353535. The track's own fill is
+  // that same #212121 — it is only transparent when `hideBackground` is passed,
+  // and the climate call site does not pass it.
+  //
+  // Theirs animates an absolutely-positioned handle across the track; ours sets
+  // the background on the selected cell. Same pixels at rest, no animation.
   segmented: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
+    height: 50,
+    width: '100%',
+    backgroundColor: '#212121',
+    borderWidth: 1,
+    borderColor: '#212121',
+    borderRadius: RADIUS,
   },
   segment: {
     flex: 1,
-    paddingVertical: 11,
     alignItems: 'center',
-    borderRadius: 9,
+    justifyContent: 'center',
+    borderRadius: RADIUS,
   },
   segmentSelected: {
-    // buttonActiveSecondary = #2C2C2C, the same token as the idle row border.
-    backgroundColor: '#2C2C2C',
+    backgroundColor: '#353535',
   },
   segmentText: {
     // BodyLabel 14/20/0.1. Selection is expressed by COLOUR and the pill, not by
