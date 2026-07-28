@@ -50,6 +50,9 @@ public final class BleBytePipe: NSObject {
   // The last state CoreBluetooth reported. Kept because a FRESH manager's first
   // callback is not trustworthy — see centralManagerDidUpdateState.
   private var lastState: CBManagerState = .unknown
+  // Set the moment the car's advertisement is seen. It splits the two failures a
+  // single timeout cannot tell apart — see connect().
+  private var sawTarget = false
   private var connectCompletion: ((Result<Int, Error>) -> Void)?
   private var connectDeadline: DispatchWorkItem?
   private let queue = DispatchQueue(label: "local.airgapp.ext.ble")
@@ -75,13 +78,39 @@ public final class BleBytePipe: NSObject {
 
   public override init() { super.init() }
 
+  // How long to wait for the car's ADVERTISEMENT specifically.
+  //
+  // Discovery and connection fail for opposite reasons, and one number cannot
+  // serve both. If the car is not here, no advertisement ever arrives and every
+  // further second is dead time the Pi arm needs. If it IS here, we will have seen
+  // it almost immediately — a Tesla advertises continuously, more slowly while
+  // asleep — and what takes time after that is connect + discover + subscribe,
+  // which the full budget still covers.
+  //
+  // So: bail at 3s if nothing has been SEEN, and allow the full budget once it
+  // has. Out of range that halves the wait before the Pi runs; in range it
+  // changes nothing, because discovery there is sub-second.
+  private static let discoveryTimeout: TimeInterval = 3
+
   public func connect(vin: String, timeoutMs: Int, completion: @escaping (Result<Int, Error>) -> Void) {
     queue.async {
       self.targetName = BleBytePipe.vehicleLocalName(vin)
       self.connectCompletion = completion
+      self.sawTarget = false
 
-      // Bounded: out of range this simply never finds anything, and the share
-      // sheet is waiting on us. The arbiter has another arm.
+      // The early out: nothing seen at all means the car is not here.
+      self.queue.asyncAfter(deadline: .now() + Self.discoveryTimeout) { [weak self] in
+        guard let self = self, !self.sawTarget, self.connectCompletion != nil else { return }
+        self.central?.stopScan()
+        // Only claim "not nearby" if the radio was actually up to look.
+        switch self.lastState {
+        case .poweredOff: self.settle(.failure(PipeError.poweredOff))
+        case .unauthorized: self.settle(.failure(PipeError.unauthorized))
+        default: self.settle(.failure(PipeError.notFound(self.targetName)))
+        }
+      }
+
+      // The outer bound, for a car that WAS seen but never finished connecting.
       let deadline = DispatchWorkItem { [weak self] in
         guard let self = self else { return }
         self.central?.stopScan()
@@ -163,6 +192,7 @@ extension BleBytePipe: CBCentralManagerDelegate {
     // required because the car does not advertise its GATT service UUID.
     let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? peripheral.name ?? ""
     guard name == targetName else { return }
+    sawTarget = true
     central.stopScan()
     self.peripheral = peripheral
     peripheral.delegate = self
