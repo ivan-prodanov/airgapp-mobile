@@ -68,11 +68,12 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
 
   // ── Controls ───────────────────────────────────────────────────────────────
   if (prev.locked !== next.locked) emit({ type: next.locked ? 'lock' : 'unlock' }, 'locked');
-  // Frunk actuate is a TOGGLE on the car: the SAME openFrunk command opens it,
-  // and sending it again closes it (Tesla's own app sends OPEN for "Close" too;
-  // aftermarket auto-close add-ons ride the same command). So emit openFrunk on
-  // BOTH transitions, not just open.
-  if (prev.frunkOpen !== next.frunkOpen) emit({ type: 'openFrunk' }, 'frunkOpen');
+  // NO frunk rule. Frunk actuation is dispatched EXPLICITLY (useFleetState's
+  // actuateFrunk) rather than derived from a state diff, because the two are no
+  // longer in step: the command must fire on every tap, while the optimistic
+  // value only ever moves to OPEN (see actuateFrunkState). A diff rule would
+  // send nothing on the second tap — exactly the tap an aftermarket auto-close
+  // rides — and the car would never hear it.
   if (prev.trunkOpen !== next.trunkOpen) {
     emit({ type: next.trunkOpen ? 'openTrunk' : 'closeTrunk' }, 'trunkOpen');
   }

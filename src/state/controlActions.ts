@@ -85,7 +85,9 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     // Toggle: the frunk actuate is a toggle on the car, so BOTH taps send the
     // same openFrunk command (see reconcile.ts). The state flip drives the
     // reconciler AND the optimistic open/closed label.
-    run: (_s, a) => a.toggle('frunkOpen'),
+    // NOT toggle('frunkOpen'). See actuateFrunkState: the command fires on every
+    // tap, but the optimistic value only ever moves to OPEN.
+    run: (_s, a) => a.actuateFrunk(),
   },
   trunk: {
     id: 'trunk',
@@ -217,15 +219,19 @@ export const DEFAULT_FAVORITES: ControlActionId[] = ['lock', 'climate', 'chargin
 
 // The VehicleStateKeys a control's real command puts in flight — used to render
 // a pending affordance on the favorites bar (a key is "pending" while its
-// command is dispatched but unconfirmed; see useCarLink.dispatch). Only lock is
-// a live BLE command today; everything else is [] and never shows pending until
-// the command sweep wires it (add the key(s) here when it does). Empty arrays
-// keep demo/unlinked cars unaffected regardless.
+// command is dispatched but unconfirmed; see useCarLink.dispatch). Anything
+// still [] is not a live BLE command yet; add its key(s) here when it becomes
+// one. Empty arrays keep demo/unlinked cars unaffected regardless.
+//
+// `frunk` was left [] by that rule and then missed when openFrunk went live, so
+// the frunk never showed a busy affordance anywhere — which is part of why the
+// double-tap was so easy to trigger: nothing on screen said the first command
+// was still running.
 export const CONTROL_AFFECTED_KEYS: Record<ControlActionId, VehicleStateKey[]> = {
   lock: ['locked'],
   climate: [],
   charging: [],
-  frunk: [],
+  frunk: ['frunkOpen'],
   trunk: [],
   vent: [],
   flash: [],

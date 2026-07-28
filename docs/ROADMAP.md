@@ -10,10 +10,34 @@ reasoned rather than measured.
 
 ### ~~Optimistic updates outlive reality (the frunk double-tap)~~ — FIXED 2026-07-28
 
-Fixed at the source: `buildVehicleActions` now DROPS a toggle whose command is still in flight, so a
-second tap can never derive an optimistic value from the first tap's unconfirmed guess. Controls and
-Home both show the busy affordance and disable while their own command runs — the official app's
-rule, `disabled = useCommandTypeBusyStatus(...).busy`. 5 tests in `useVehicleState.test.ts`.
+Fixed by making the frunk's optimism ASYMMETRIC, recovered from the official app after Ivan pointed
+out its behaviour (tap → opens instantly; tap again → stays open until the car says otherwise):
+
+```
+sendFrunkCommand @3986012
+  hasPoweredFrunk ? send(Front, !isOpen)   // a real directional close
+                  : send(Front, true)      // ALWAYS open. No close command exists.
+```
+
+A standard Model Y has no powered frunk, so their app cannot express "close" and never guesses one.
+`checkFrunkTrunkCommand` @1186905 matches on the resolution side: an optimistic OPEN clears once the
+closure reports not-closed, a CLOSE once it reports closed, correlated by `commandId`.
+
+So ours now: the command fires on EVERY tap (dispatched explicitly — `reconcile.ts` deliberately has
+no frunk diff rule, which would send nothing on the second tap, the exact tap an aftermarket
+auto-close rides), while `actuateFrunkState` only ever moves the value to OPEN. Closed comes from the
+stream or the poll.
+
+**A FIRST ATTEMPT WAS WRONG AND SHIPPED BRIEFLY.** It dropped any toggle whose command was in flight.
+That covered only the ~1-2s the command takes, while the lid takes ~5s — a tap at t=3s still produced
+an optimistic CLOSED for the grace to defend. It also suppressed the re-actuate an auto-close needs.
+The test passed because it encoded my model of the repro rather than the physical timing.
+
+**A SECOND ERROR WAS CAUGHT BEFORE SHIPPING**, and is the more interesting one: `dispatch`'s
+`affectedKeys` both marks the control busy AND stamps the intent-grace window. Claiming `frunkOpen`
+on the re-actuate would have suppressed exactly the "closed" read we wait for — the original defect
+with the directions reversed. `frunkActuateClaimedKeys` claims only what we actually assert. The cost
+is no busy affordance on the re-actuate tap, since one parameter does both jobs; worth separating.
 
 **Two things this write-up had wrong, worth keeping:**
 

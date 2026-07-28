@@ -29,6 +29,14 @@ export interface VehicleActions {
   setTirePressureVisible: (visible: boolean) => void;
   setScreenCameraMode: (cameraMode: CameraMode) => void;
   toggle: (key: VehicleStateKey) => void;
+  /**
+   * Frunk actuate. NOT `toggle('frunkOpen')`.
+   *
+   * Always sends the command (the car's actuator toggles, and aftermarket
+   * auto-close add-ons ride the same one), but only ever moves the optimistic
+   * value to OPEN. Closed arrives from the stream or the poll.
+   */
+  actuateFrunk: () => void;
   patch: (patch: Partial<VehicleViewState>) => void;
   // Tapping the seat/wheel icon steps the level down (3→2→1→off); the menu sets the mode outright.
   stepSeatClimate: (seat: SeatPosition) => void;
@@ -48,46 +56,20 @@ export interface VehicleActions {
 // callback. The fleet hook provides `apply`; the action implementations live in fleet.ts so they
 // stay pure and unit-tested.
 //
-// `isCommandInFlight` guards TOGGLES ONLY, and it is the fix for the frunk
-// double-tap (P0, reported on-car 2026-07-27).
-//
-// `toggleState` derives the new value from `state[key]` — which, after a tap
-// whose command has not landed, is an UNCONFIRMED optimistic guess. Frunk
-// actuate is a TOGGLE: both taps send the same openFrunk, so the car may ignore
-// the second outright while the lid is mid-travel. The app then holds a value
-// the car never agreed to, and filterPatchUnderIntent DEFENDS it — the car's
-// correcting read is a CONTRADICTION, and confirm-and-release only releases on
-// agreement. Hence up to 30 seconds of confidently-wrong UI.
-//
-// Note what that rules out. Confirm-and-release shipped 2026-07-18, nine days
-// BEFORE the report, so the roadmap's first suggested direction was already in
-// place and cannot help here by construction. Shortening GRACE_MS would only
-// shorten the wrong state. The value must not be produced in the first place.
-//
-// Only `toggle` is guarded, because only `toggle` derives from the current
-// value. `patch`/`setTargetTemp`/`setChargeLimit` carry an ABSOLUTE value the
-// user picked, so a second one is a legitimate new intent, not a compounding
-// guess — and coalesce.ts already collapses those bursts.
-//
-// The guard lasts as long as the COMMAND (~1-2s over BLE, cleared on every
-// terminal path in runDispatch), not the 30s grace. It is the same rule the
-// official app expresses by disabling a control while its own command is busy:
-// `disabled = useCommandTypeBusyStatus(...).busy`.
+// The frunk double-tap fix does NOT live here. An earlier attempt guarded
+// toggles whose command was still in flight; that only covered the ~1-2s the
+// command takes, while the lid takes ~5s to open, so a tap at t=3s still
+// produced an optimistic CLOSED the grace then defended. It also suppressed the
+// re-actuate that an aftermarket auto-close needs. Replaced by asymmetric
+// optimism in `actuateFrunkState` + an explicit dispatch — see fleet.ts.
 export function buildVehicleActions(
   apply: (update: (state: VehicleViewState) => VehicleViewState) => void,
-  isCommandInFlight: (key: VehicleStateKey) => boolean = () => false,
-): VehicleActions {
+): Omit<VehicleActions, 'actuateFrunk'> {
   return {
     setCameraMode: (cameraMode) => apply((s) => setCameraModeState(s, cameraMode)),
     setTirePressureVisible: (visible) => apply((s) => ({ ...s, tirePressureVisible: visible })),
     setScreenCameraMode: (cameraMode) => apply((s) => setScreenCameraModeState(s, cameraMode)),
-    toggle: (key) => {
-      // Dropped, not queued: for a toggle there is nothing meaningful to queue.
-      // The user's second tap asks for "the other state", but which state that
-      // is depends on an answer the car has not given yet.
-      if (isCommandInFlight(key)) return;
-      apply((s) => toggleState(s, key));
-    },
+    toggle: (key) => apply((s) => toggleState(s, key)),
     patch: (partial) => apply((s) => patchState(s, partial)),
     stepSeatClimate: (seat) => apply((s) => stepSeatClimateState(s, seat)),
     setSeatClimate: (seat, mode) => apply((s) => setSeatClimateState(s, seat, mode)),

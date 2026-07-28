@@ -179,7 +179,9 @@ export default function ExploreScreen() {
       </Section>
 
       <Section title="Closures">
-        <ToggleRow icon="car.side.front.open.fill" label="Frunk" stateKey="frunkOpen" value={state.frunkOpen} onToggle={actions.toggle} theme={theme} />
+        {/* actuateFrunk, not toggle: the demo row must send on every tap like the
+            real control, and must not drive the optimistic value to closed. */}
+        <ToggleRow icon="car.side.front.open.fill" label="Frunk" stateKey="frunkOpen" value={state.frunkOpen} onToggle={() => actions.actuateFrunk()} theme={theme} />
         <ToggleRow icon="car.side.rear.open.fill" label="Trunk" stateKey="trunkOpen" value={state.trunkOpen} onToggle={actions.toggle} theme={theme} />
         <ToggleRow icon="car.top.door.front.left.open.fill" label="Driver door" stateKey="driverFrontDoorOpen" value={state.driverFrontDoorOpen} onToggle={actions.toggle} theme={theme} />
         <ToggleRow icon="car.top.door.front.right.open.fill" label="Passenger door" stateKey="passengerFrontDoorOpen" value={state.passengerFrontDoorOpen} onToggle={actions.toggle} theme={theme} />

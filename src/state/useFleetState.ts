@@ -16,6 +16,8 @@ import {
   updateEnrolledVehicleState,
   type FleetState,
   type Vehicle,
+  actuateFrunkState,
+  frunkActuateClaimedKeys,
 } from './fleet';
 import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
@@ -171,19 +173,32 @@ export function useFleetState(): {
     [carLink, applyActive, current.state],
   );
 
-  // The toggle guard: a control whose command is still in flight ignores further
-  // taps, so a second tap can never derive an optimistic value from the first
-  // one's unconfirmed guess. See buildVehicleActions for why this is the fix for
-  // the frunk double-tap rather than anything in the grace window.
+  // Frunk actuate. Lives here rather than in buildVehicleActions because it is
+  // the one control that needs BOTH a command and a state change, and they are
+  // deliberately not in step:
   //
-  // Depended on directly rather than read through a ref. `carLink.pending` keeps
-  // its identity when the set is unchanged (useCarLink:489), and `actions` is
-  // already rebuilt on every state change via applyActiveUser — so this adds no
-  // churn, and a ref here would only be a render-phase read the linter is right
-  // to flag.
+  //   • the command fires on EVERY tap — the car's actuator is a toggle and an
+  //     aftermarket auto-close rides the same openFrunk, so the second tap has
+  //     to reach the car;
+  //   • the optimistic value only ever moves to OPEN (actuateFrunkState), so we
+  //     never hold a CLOSED the car has not confirmed. That is the double-tap
+  //     fix, recovered from their sendFrunkCommand.
+  //
+  // Dispatched explicitly, so reconcile.ts deliberately has no frunk diff rule —
+  // a diff rule would send nothing on the second tap, which is the exact tap
+  // that matters.
+  const actuateFrunk = useCallback(() => {
+    // Claim ONLY what we actually assert. affectedKeys stamps the intent-grace
+    // window as well as the busy flag, and on a re-actuate we assert nothing —
+    // claiming there would suppress the very "closed" read we are waiting for.
+    // See frunkActuateClaimedKeys.
+    carLink.dispatch({ type: 'openFrunk' }, () => {}, frunkActuateClaimedKeys(current.state));
+    applyActive(actuateFrunkState);
+  }, [carLink, applyActive, current.state]);
+
   const actions = useMemo(
-    () => buildVehicleActions(applyActiveUser, (key) => carLink.pending.has(key)),
-    [applyActiveUser, carLink.pending],
+    () => ({ ...buildVehicleActions(applyActiveUser), actuateFrunk }),
+    [applyActiveUser, actuateFrunk],
   );
 
   // One-shot commands bypass the state diff (nothing optimistic to mirror), but

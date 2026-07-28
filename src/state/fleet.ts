@@ -189,6 +189,51 @@ export function toggleState(state: VehicleViewState, key: VehicleStateKey): Vehi
   return { ...state, [key]: !value };
 }
 
+// Frunk actuation is NOT a toggle of the view state, and that asymmetry is the
+// fix for the double-tap defect.
+//
+// Recovered from the official app (sendFrunkCommand @3986012):
+//
+//     hasPoweredFrunk ? send(Front, !isOpen)   // a real directional close
+//                     : send(Front, true)      // ALWAYS open. No close exists.
+//
+// A standard Model Y has no powered frunk, so their app cannot express "close"
+// and therefore never guesses at one. The second tap re-sends the actuate and
+// the UI waits for the car. `checkFrunkTrunkCommand` @1186905 confirms the same
+// shape on the resolution side: an optimistic OPEN clears once the closure
+// reports not-closed, a CLOSE once it reports closed, correlated by commandId.
+//
+// So: opening is safe to assume (the car always pops it), closing is not — the
+// lid may be mid-travel, the car may ignore the repeat, or an aftermarket
+// auto-close may or may not catch it. Returning the SAME OBJECT when already
+// open matters: no state change means no reconciler emit and nothing for the
+// intent grace to defend.
+export function actuateFrunkState(state: VehicleViewState): VehicleViewState {
+  return state.frunkOpen ? state : { ...state, frunkOpen: true };
+}
+
+/**
+ * The keys the frunk actuate CLAIMS optimistically — which is not the same as
+ * "the keys its command affects".
+ *
+ * `dispatch`'s affectedKeys does two jobs: it marks the control busy, and it
+ * stamps the intent-grace window that suppresses contradicting reads. The
+ * second job is only ever correct for a value we actually asserted.
+ *
+ * On a re-actuate we assert nothing (see actuateFrunkState), so claiming
+ * `frunkOpen` there would suppress precisely the read we are waiting for: the
+ * car reports CLOSED, our value still says OPEN, and filterPatchUnderIntent
+ * strips it as a contradiction for up to 30s. That is the original defect with
+ * the directions reversed, and it is what this function exists to prevent.
+ *
+ * The cost is that the re-actuate tap shows no busy affordance, because the two
+ * jobs share one parameter. Correctness first; the affordance is worth
+ * separating later.
+ */
+export function frunkActuateClaimedKeys(state: VehicleViewState): VehicleStateKey[] {
+  return state.frunkOpen ? [] : ['frunkOpen'];
+}
+
 export function setCameraModeState(state: VehicleViewState, cameraMode: CameraMode): VehicleViewState {
   return { ...state, cameraMode };
 }

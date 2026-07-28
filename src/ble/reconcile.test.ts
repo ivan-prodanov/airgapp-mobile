@@ -34,13 +34,19 @@ test('lock / unlock', () => {
   expect(s({ locked: true }), s({ locked: false }), [{ cmd: { type: 'unlock' }, keys: ['locked'] }]);
 });
 
-test('frunk actuate is a toggle — BOTH directions send the same openFrunk command', () => {
-  expect(s({ frunkOpen: false }), s({ frunkOpen: true }), [
-    { cmd: { type: 'openFrunk' }, keys: ['frunkOpen'] },
-  ]);
-  expect(s({ frunkOpen: true }), s({ frunkOpen: false }), [
-    { cmd: { type: 'openFrunk' }, keys: ['frunkOpen'] },
-  ]);
+test('the frunk emits NOTHING from a diff — actuation is dispatched explicitly', () => {
+  // This test used to assert the opposite: that BOTH transitions emit openFrunk.
+  // That rule was correct while the optimistic value toggled, and it is exactly
+  // what made the double-tap defect possible.
+  //
+  // The command is now dispatched explicitly by useFleetState's actuateFrunk,
+  // because the command and the state deliberately no longer move together: the
+  // command fires on EVERY tap (their sendFrunkCommand always sends open on a
+  // non-powered frunk, and an aftermarket auto-close rides it), while the
+  // optimistic value only ever moves to OPEN. A diff rule cannot express that —
+  // it would send nothing on the second tap, which is the tap that matters.
+  expect(s({ frunkOpen: false }), s({ frunkOpen: true }), []);
+  expect(s({ frunkOpen: true }), s({ frunkOpen: false }), []);
 });
 
 test('trunk / charge port open+close', () => {
