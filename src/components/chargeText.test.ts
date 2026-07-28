@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { chargingStateText, chargingTextStrings } from './chargeText';
+import { chargingStateText, chargingTextStrings, STATE_SEPARATOR } from './chargeText';
 
 // Recovered from chargeRowStateSelector @3884280-3884400. See chargeText.ts.
 
@@ -85,4 +85,14 @@ test('kW keeps a decimal only below 10, where it carries information', () => {
     chargerVoltageV: null,
   });
   assert.deepEqual(dc, ['149 kW']);
+});
+
+test('the state runs INLINE after the limit, behind a dot separator', () => {
+  // @4157408: ''.concat(dotSeparator, '  ') with `this` = '  ' — two spaces,
+  // U+00B7, two spaces. Not a layout gap; a literal string in a nested <Text>.
+  assert.equal(STATE_SEPARATOR, '  ·  ');
+  assert.equal(
+    `Charge limit: 80%${STATE_SEPARATOR}${chargingStateText('Charging')}`,
+    'Charge limit: 80%  ·  Charging',
+  );
 });

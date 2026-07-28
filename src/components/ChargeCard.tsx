@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
-import { chargingStateText, chargingTextStrings } from './chargeText';
+import { chargingStateText, chargingTextStrings, STATE_SEPARATOR } from './chargeText';
 import { ChargeLimitSlider } from './ChargeLimitSlider';
 import { AmpStepper } from './AmpStepper';
 
@@ -174,16 +174,32 @@ export function ChargeCard({
 
           Type comes from app/charging.tsx's own limitLabel (19/700), so the two
           screens read the same. */}
-      {/* chargeStateHeader — {flexDirection:'row', justifyContent:'space-between'}.
-          It has always had TWO children in theirs: the limit on the left, and
-          `chargingStateText` on the right in textColorLight. We rendered only
-          the left one, which is why Ivan asked what belongs to its right. */}
+      {/* chargeStateHeader @4157228. My first pass put the state text on the far
+          right as a second flex child, reasoning from the space-between. Wrong
+          on both counts:
+
+            1. The state is a NESTED <Text> INSIDE the limit <Text>, so it runs
+               INLINE — "Charge limit: 80%  ·  Charging" — not right-aligned.
+            2. The space-between exists for chargeStateHeader's OTHER child: a
+               charge-limit-reason tooltip icon (`showChargeLimitingIcon` +
+               chargeControllerTipIconContainer). That is what gets pushed right,
+               not the state.
+
+          So the space-between was real and my reading of WHY was invented. We do
+          not surface the tooltip (it needs getChargeLimitReason, cloud-side), so
+          the row has one child — kept as a row anyway, since that is the shape
+          the icon would slot into. */}
       <View style={styles.textBlock}>
         <View style={styles.headerRow}>
           <Text style={styles.limitLabel}>
             Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%
+            {stateText ? (
+              <Text style={styles.headerState}>
+                {STATE_SEPARATOR}
+                {stateText}
+              </Text>
+            ) : null}
           </Text>
-          {stateText ? <Text style={styles.headerState}>{stateText}</Text> : null}
         </View>
 
         {/* chargeRateText — a ROW of `chargingTextStrings`, not one fixed line.
@@ -366,9 +382,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  // The right half of chargeStateHeader: same BodyLabel, textColorLight.
+  // The nested state Text. Same statusText face and size as the limit it runs
+  // on from — only the colour differs (textColorLight vs textColor). No margins:
+  // it is inline inside the parent Text, where they would not apply anyway.
   headerState: {
-    marginHorizontal: 1.5 * GUTTER,
     fontFamily: TeslaFonts.medium,
     fontSize: 14,
     lineHeight: 20,

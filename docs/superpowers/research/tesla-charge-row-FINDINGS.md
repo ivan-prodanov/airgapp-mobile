@@ -384,9 +384,38 @@ so the header's right side is simply empty.
 
 \* the only one of the four whose English literal is not in the bundle; the other three are.
 
-`chargeStateHeader` is `{flexDirection:'row', justifyContent:'space-between'}` — the space-between
-was always the tell that it holds two children. Left is `tr('vehicle_charging_limit_text',{target})`
-in `textColor`; right is this, in **`textColorLight`**.
+#### Where it actually goes — @4157228, and NOT where I first put it
+
+```jsx
+<View style={chargeStateHeader}>                          // row, space-between
+  <Text style={[statusText, {color: textColor}]}>
+    {"Charge limit: 80%"}
+    <Text style={[statusText, {color: textColorLight}]}>  // NESTED -> inline
+      {"  \u00b7  " + chargingStateText}
+    </Text>
+  </Text>
+  {showChargeLimitingIcon && <TooltipIcon style={chargeControllerTipIconContainer}/>}
+</View>
+```
+
+Two corrections to my first pass, which put the state on the far right as a second flex child:
+
+1. **The state is a NESTED `<Text>` inside the limit `<Text>`**, so it runs INLINE:
+   `Charge limit: 80%  ·  Charging`. Same face and size; only the colour differs
+   (`textColorLight` vs `textColor`).
+2. **The `space-between` is for the OTHER child** — a charge-limit-reason tooltip icon. THAT is what
+   gets pushed right, not the state text.
+
+So the `space-between` was real and my inference about what it was for was invented. A layout
+property tells you there are two children; it does not tell you which two.
+
+**Between the texts is a literal string, not a gap:** they build
+`''.concat(SpecialCharacters.dotSeparator, '  ')` with `this = '  '` — two spaces, U+00B7 MIDDLE DOT,
+two spaces — and prepend it to the state, only when the limit string is non-null.
+`SpecialCharacters = {degree:'°', dotSeparator:'·', bullet:'•', percentage:'%', zeroWidthJoiner:'\u200d'}`.
+
+We do not render the tooltip (it needs `getChargeLimitReason`, cloud-side), so our row has one child
+— kept as a row anyway, since that is the shape the icon would slot into.
 
 ### 12.2 `chargingTextStrings` — the branch that matters
 

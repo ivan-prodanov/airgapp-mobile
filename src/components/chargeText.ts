@@ -21,6 +21,19 @@
 // line belongs to the idle state. Charging shows live values, and the added
 // energy appears as a bare "+N kWh".
 
+/**
+ * What sits BETWEEN the charge limit and the state, @4157408.
+ *
+ * Not a layout gap — a literal string. They build
+ *   ''.concat(SpecialCharacters.dotSeparator, '  ')  with `this` = '  '
+ * i.e. two spaces, U+00B7 MIDDLE DOT, two spaces, and prepend it to the state
+ * text. The result is ONE line: "Charge limit: 80%  ·  Charging".
+ *
+ * It is only prepended when the limit string is non-null — the separator never
+ * leads.
+ */
+export const STATE_SEPARATOR = '  \u00b7  ';
+
 /** getVehicleChargingStateText @1225331 — four branches on ChargingState. */
 export function chargingStateText(chargingState: string | null): string | null {
   switch ((chargingState ?? '').toLowerCase()) {
