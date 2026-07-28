@@ -117,11 +117,21 @@ export function ChargeCard({
           screens read the same. */}
       <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
 
-      {/* Their second line is the LAST SESSION's energy, not a live rate:
-          "58 kWh added during last charging session" — charge_energy_added.
-          I had put time-remaining and kW here, which is a different fact about a
-          different session. Omitted entirely when the car reports nothing. */}
-      {energyAddedKwh != null && energyAddedKwh > 0 ? (
+      {/* Recovered: `vehicle_charge_screen_range_added` =
+          "{{range}} added during last charging session", filled by
+          getChargeAddedText(chargeState, guiSettings) and gated by
+          isChargeAddedNotNil(...). The placeholder is {{range}} because the same
+          slot carries EITHER energy or distance:
+
+              guiChargeRateUnits === ChargeRateUnit.KW ? charge_energy_added
+                                                       : charge_miles_added_rated
+
+          We do not read GuiSettings yet, so we always take the kWh branch — which
+          is what Ivan's car shows. Unit-switching is blocked on getGuiSettings.
+
+          Gate is non-nil, matching their isSomething. My earlier `> 0` would have
+          hidden a legitimately-reported zero. */}
+      {energyAddedKwh != null ? (
         <Text style={styles.statusText} numberOfLines={1}>
           {Math.round(energyAddedKwh)} kWh added during last charging session
         </Text>
@@ -161,7 +171,11 @@ export function ChargeCard({
           shows it, and that is right — the charge current is a SETTING for the
           next session, not an action on the current one. My "the car rejects it
           otherwise" was reasoning about a command, not about the control. */}
-      <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
+      {/* Extra air beneath it: measured ~23pt from the bar's bottom edge to the
+          rule on the reference, against the card's 14pt rhythm. */}
+      <View style={styles.ampWrap}>
+        <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
+      </View>
 
       {/* The divider is the button row's TOP BORDER, not a sibling. As a
           sibling the card's `gap` put 10pt above AND below a 1pt line, which is
@@ -232,7 +246,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     // Explicit rhythm instead of space-between. space-between on a fixed box is
     // what produced the dead air between the limit label and the slider.
-    gap: 10,
+    gap: 14,
   },
   // TextCategory.BodyLabel, the same 14/20/0.1 the rest of the recovered UI uses.
   sliderContainer: {
@@ -264,6 +278,9 @@ const styles = StyleSheet.create({
   },
   limitRow: {
     flexDirection: 'row',
+  },
+  ampWrap: {
+    marginBottom: 9,
   },
   limitLabel: {
     fontFamily: TeslaFonts.medium,

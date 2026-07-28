@@ -64,6 +64,7 @@ export interface CarLinkCache {
   minutesToChargeLimit: number | null;
   chargerPowerKw: number | null;
   chargeRateMph: number | null;
+  energyAddedKwh: number | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -134,6 +135,7 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     minutesToChargeLimit: num(cached?.minutesToChargeLimit),
     chargerPowerKw: num(cached?.chargerPowerKw),
     chargeRateMph: num(cached?.chargeRateMph),
+    energyAddedKwh: num(cached?.energyAddedKwh),
     media:
       cached?.media && typeof cached.media === 'object'
         ? {
