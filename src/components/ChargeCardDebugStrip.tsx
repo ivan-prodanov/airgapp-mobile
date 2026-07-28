@@ -82,6 +82,8 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Charging AC',
     patch: {
+      chargerActualCurrentA: 16,
+      chargerVoltageV: 230,
       // accumulating mid-session
       energyAddedKwh: 12,
       fastCharging: false,
@@ -99,6 +101,8 @@ export const CHARGE_PRESETS: ChargePreset[] = [
   {
     label: 'Supercharge',
     patch: {
+      chargerActualCurrentA: 320,
+      chargerVoltageV: 400,
       // DC — also the only preset that hides the amps
       energyAddedKwh: 34,
       fastCharging: true,

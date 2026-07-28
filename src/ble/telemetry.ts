@@ -62,6 +62,9 @@ export interface InfotainmentSnapshot {
      * so the stepper is HIDDEN on DC, where the current is not ours to set.
      */
     fastCharging?: boolean;
+    /** Live delivery, for the charging status row: "16A · 230V". */
+    chargerActualCurrentA?: number | null;
+    chargerVoltageV?: number | null;
     soc: number | undefined;
     rangeMiles: number | null;
     chargingState: string | undefined;
@@ -327,6 +330,8 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       // DC/Supercharger. The field is in the proto and we simply never read it,
       // which is why our amp stepper stayed visible while Supercharging.
       fastCharging: cs.fastChargerPresent === true,
+      chargerActualCurrentA: num(cs.chargerActualCurrent) ?? null,
+      chargerVoltageV: num(cs.chargerVoltage) ?? null,
       chargeLimitSoc: num(cs.chargeLimitSoc),
     };
   }
@@ -641,6 +646,9 @@ export function infotainmentToPatch(snap: InfotainmentSnapshot): Partial<Vehicle
     if (snap.charge.chargerPowerKw != null) patch.chargerPowerKw = snap.charge.chargerPowerKw;
     if (snap.charge.energyAddedKwh != null) patch.energyAddedKwh = snap.charge.energyAddedKwh;
     if (snap.charge.fastCharging != null) patch.fastCharging = snap.charge.fastCharging;
+    if (snap.charge.chargerActualCurrentA != null)
+      patch.chargerActualCurrentA = snap.charge.chargerActualCurrentA;
+    if (snap.charge.chargerVoltageV != null) patch.chargerVoltageV = snap.charge.chargerVoltageV;
     if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
   }
 

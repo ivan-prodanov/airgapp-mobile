@@ -35,6 +35,8 @@ const IGNORED_KEYS = new Set<keyof VehicleViewState>([
   'chargerPowerKw',
   'energyAddedKwh',
   'fastCharging',
+  'chargerActualCurrentA',
+  'chargerVoltageV',
   'chargeRateMph',
   // The car's GPS position drives the map pin only, never the 3D product payload.
   'carLocation',

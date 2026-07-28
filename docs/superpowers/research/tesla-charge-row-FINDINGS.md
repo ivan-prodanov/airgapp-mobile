@@ -354,3 +354,63 @@ Not applicable to us and deliberately omitted: ReportIssue (cloud), StopRestartP
 `charge_energy_added` resets when a session begins, accumulates through it, and retains the last
 session's total once disconnected — so it genuinely differs per state. Every value being 0 was a hole
 in our demo presets, which never set the field, not a fault in the panel.
+
+
+---
+
+## 12. The complete TEXT model (2026-07-28)
+
+Ivan: *"right of Charge limit should be the current state no? while charging the text '0kwh added
+during last charging session' seems off it should be different."* Both right; both were missing.
+
+`chargeRowStateSelector` (@3884280-3884400) returns two text fields, not one:
+
+```
+chargingStateText     one string, rendered RIGHT of the limit in chargeStateHeader
+chargingTextStrings   an ARRAY, rendered as a ROW beneath it (chargeRateText)
+```
+
+### 12.1 `chargingStateText` — getVehicleChargingStateText @1225331
+
+Four branches on `ChargingState`; every other state (Disconnected, Starting, Unknown) has **no arm**,
+so the header's right side is simply empty.
+
+| ChargingState | key | English (in-bundle) |
+|---|---|---|
+| Charging | `vehicle_status_screen_charging` | Charging |
+| Complete | `vehicle_status_screen_charging_complete` | Charging Complete |
+| Stopped | `vehicle_status_screen_charging_stopped` | Charging Stopped |
+| NoPower | `vehicle_status_screen_charging_no_power` | No Power* |
+
+\* the only one of the four whose English literal is not in the bundle; the other three are.
+
+`chargeStateHeader` is `{flexDirection:'row', justifyContent:'space-between'}` — the space-between
+was always the tell that it holds two children. Left is `tr('vehicle_charging_limit_text',{target})`
+in `textColor`; right is this, in **`textColorLight`**.
+
+### 12.2 `chargingTextStrings` — the branch that matters
+
+```js
+if (isCharging) {                                    // @971
+  if (isFastCharging || units === KW)  push(getVehicleChargingkWText())
+  if (units !== KW)                    push(getChargeRateDistanceDisplayValue())
+  if (chargeAdded != null)             push('+' + getChargeAddedText())
+  if (supercharger || roaming)         push(getVehicleChargeSessionCostText())
+  if (!isFastCharging)                 push(getVehicleChargingCurrentAndVoltageText())
+} else {                                             // @868
+  if (chargeAdded != null && isChargeAddedNotNil)
+    push(tr('vehicle_charge_screen_range_added', {range: getChargeAddedText()}))
+}
+```
+
+**The "added during last charging session" sentence belongs to the IDLE state only.** While charging
+the row is live values, and the added energy appears as a bare `+N kWh`. We rendered the idle line
+unconditionally, so a charging car described its last session instead of its current one.
+
+`getVehicleChargingCurrentAndVoltageText` @1231969 builds `<n>A` (or `<a>/<b>A`) and `<n>V` and joins
+them with `SpecialCharacters.dotSeparator` → **"16A · 230V"**. It needs `charger_actual_current` and
+`charger_voltage`, neither of which we read; both are now extracted.
+
+Omitted deliberately: `getChargeRateDistanceDisplayValue` (needs GuiSettings units — we take the kW
+branch throughout, same assumption as §9) and `getVehicleChargeSessionCostText` (Supercharger
+billing, cloud-only).

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
+import { chargingStateText, chargingTextStrings } from './chargeText';
 import { ChargeLimitSlider } from './ChargeLimitSlider';
 import { AmpStepper } from './AmpStepper';
 
@@ -100,10 +101,9 @@ export interface ChargeCardProps {
   charging: boolean;
   chargePortOpen: boolean;
   cableAttached: boolean;
-  // Still plumbed, deliberately unrendered. Their idle panel's second line is
-  // the LAST session's energy (verified from Ivan's side-by-side); what it shows
-  // WHILE charging is not verified, and the fake presets cannot settle it since
-  // they are my own invention. These are the fields that line would need.
+  // These feed `chargingTextStrings` — see chargeText.ts. The note that used to
+  // sit here said the charging-state line "is not verified"; it is now, from
+  // chargeRowStateSelector, so they are rendered rather than merely plumbed.
   minutesToChargeLimit: number | null;
   chargerPowerKw: number | null;
   chargeRateMph: number | null;
@@ -116,6 +116,8 @@ export interface ChargeCardProps {
    * car is well past the API floor), so `fastCharging` is the whole gate here.
    */
   fastCharging: boolean;
+  chargerActualCurrentA: number | null;
+  chargerVoltageV: number | null;
   chargingAmps: number;
   ampMin: number;
   ampMax: number;
@@ -138,11 +140,15 @@ export interface ChargeCardProps {
 export function ChargeCard({
   batteryLevel,
   chargeLimitPercent,
+  chargingState,
   charging,
   chargePortOpen,
   cableAttached,
+  chargerPowerKw,
   energyAddedKwh,
   fastCharging,
+  chargerActualCurrentA,
+  chargerVoltageV,
   chargingAmps,
   ampMin,
   ampMax,
@@ -157,6 +163,7 @@ export function ChargeCard({
   // the label could not move during a drag, since the committed value does not
   // change until the end.
   const [liveLimit, setLiveLimit] = useState<number | null>(null);
+  const stateText = chargingStateText(chargingState);
 
   return (
     <View style={styles.card}>
@@ -167,24 +174,39 @@ export function ChargeCard({
 
           Type comes from app/charging.tsx's own limitLabel (19/700), so the two
           screens read the same. */}
+      {/* chargeStateHeader — {flexDirection:'row', justifyContent:'space-between'}.
+          It has always had TWO children in theirs: the limit on the left, and
+          `chargingStateText` on the right in textColorLight. We rendered only
+          the left one, which is why Ivan asked what belongs to its right. */}
       <View style={styles.textBlock}>
-        <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.limitLabel}>
+            Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%
+          </Text>
+          {stateText ? <Text style={styles.headerState}>{stateText}</Text> : null}
+        </View>
 
-        {/* Recovered: `vehicle_charge_screen_range_added` =
-          "{{range}} added during last charging session", filled by
-          getChargeAddedText(chargeState, guiSettings) and gated by
-          isChargeAddedNotNil(...). The placeholder is {{range}} because the same
-          slot carries EITHER energy or distance:
-
-              guiChargeRateUnits === ChargeRateUnit.KW ? charge_energy_added
-                                                       : charge_miles_added_rated
-
-          We do not read GuiSettings yet, so we always take the kWh branch — which
-          is what Ivan's car shows. Unit-switching is blocked on getGuiSettings.
-
-          Gate is non-nil, matching their isSomething. My earlier `> 0` would have
-          hidden a legitimately-reported zero. */}
-        {energyAddedKwh != null ? (
+        {/* chargeRateText — a ROW of `chargingTextStrings`, not one fixed line.
+            idle     -> ["N kWh added during last charging session"]
+            charging -> ["7.4 kW", "+12 kWh", "16A \u00b7 230V"]
+          See chargeText.ts for the recovered branch table. Ours only ever had
+          the idle line, so a charging car showed a sentence about the last
+          session instead of what the car is doing right now. */}
+        {charging ? (
+          <View style={styles.statusRow}>
+            {chargingTextStrings({
+              fastCharging,
+              chargerPowerKw,
+              energyAddedKwh,
+              chargerActualCurrentA,
+              chargerVoltageV,
+            }).map((line, i) => (
+              <Text key={line} style={[styles.statusItem, i > 0 && styles.statusGap]}>
+                {line}
+              </Text>
+            ))}
+          </View>
+        ) : energyAddedKwh != null ? (
           <Text style={styles.statusText} numberOfLines={1}>
             {Math.round(energyAddedKwh)} kWh added during last charging session
           </Text>
@@ -194,7 +216,7 @@ export function ChargeCard({
           Their slider takes usablePercentageCharged AND nominalPercentageCharged
           as SEPARATE fills, `target` as the thumb, plus snapPercentageLocations
           and a defaultChargeToMaxMarker. We have one SoC, so one fill — the
-          nominal/usable split needs fields we do not read yet. */}
+            nominal/usable split needs fields we do not read yet. */}
         <View style={styles.sliderContainer}>
           {/* The SAME control as app/charging.tsx — normal/changing states, the
             detent breaks that appear only while changing, and the growing thumb.
@@ -339,6 +361,40 @@ const styles = StyleSheet.create({
   sliderContainer: {
     height: 3 * GUTTER,
     marginHorizontal: 1.5 * GUTTER,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  // The right half of chargeStateHeader: same BodyLabel, textColorLight.
+  headerState: {
+    marginHorizontal: 1.5 * GUTTER,
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT_LIGHT,
+  },
+  // chargeRateText — the row the charging strings sit in. It carries the 15pt
+  // inset itself; the items inside must NOT also carry statusText's
+  // marginHorizontal or every one of them would be pushed a further 15.
+  statusRow: {
+    flexDirection: 'row',
+    marginHorizontal: 1.5 * GUTTER,
+    marginTop: 0.5 * GUTTER,
+    marginBottom: GUTTER,
+  },
+  // chargingText(i) — marginLeft 1.5*Gutter on every item but the first, so the
+  // row reads as separated values rather than a run-on string.
+  statusGap: {
+    marginLeft: 1.5 * GUTTER,
+  },
+  statusItem: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT_LIGHT,
   },
   // chargeTextContainer.
   textBlock: {

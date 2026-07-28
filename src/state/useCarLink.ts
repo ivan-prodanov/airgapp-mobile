@@ -583,6 +583,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             if (cached.chargeRateMph != null) patch.chargeRateMph = cached.chargeRateMph;
             if (cached.energyAddedKwh != null) patch.energyAddedKwh = cached.energyAddedKwh;
             if (cached.fastCharging != null) patch.fastCharging = cached.fastCharging;
+            if (cached.chargerActualCurrentA != null)
+              patch.chargerActualCurrentA = cached.chargerActualCurrentA;
+            if (cached.chargerVoltageV != null) patch.chargerVoltageV = cached.chargerVoltageV;
             if (
               cached.carLocation &&
               Number.isFinite(cached.carLocation.lat) &&
@@ -1254,6 +1257,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       chargeRateMph: patch.chargeRateMph ?? base.chargeRateMph,
       energyAddedKwh: patch.energyAddedKwh ?? base.energyAddedKwh,
       fastCharging: patch.fastCharging ?? base.fastCharging,
+      chargerActualCurrentA: patch.chargerActualCurrentA ?? base.chargerActualCurrentA,
+      chargerVoltageV: patch.chargerVoltageV ?? base.chargerVoltageV,
     };
     cacheRef.current = next;
     saveCacheRef.current?.(next);
@@ -1296,6 +1301,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         chargeRateMph: null,
         energyAddedKwh: null,
         fastCharging: null,
+        chargerActualCurrentA: null,
+        chargerVoltageV: null,
         interiorTempC: null,
         exteriorTempC: null,
         targetTempC: null,

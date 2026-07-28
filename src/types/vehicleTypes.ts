@@ -229,6 +229,8 @@ export interface VehicleViewState {
   energyAddedKwh: number | null;
   /** DC / Supercharger. Hides the amp stepper — see telemetry's fastCharging. */
   fastCharging: boolean;
+  chargerActualCurrentA: number | null;
+  chargerVoltageV: number | null;
   chargeRateMph: number | null;
   chargingAmps: number;
 }
@@ -315,6 +317,8 @@ export const initialVehicleState: VehicleViewState = {
   chargerPowerKw: null,
   energyAddedKwh: null,
   fastCharging: false,
+  chargerActualCurrentA: null,
+  chargerVoltageV: null,
   chargeRateMph: null,
   chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
 };
