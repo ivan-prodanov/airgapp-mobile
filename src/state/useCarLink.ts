@@ -1701,9 +1701,35 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // ONE state per tick, rotating. See nextRotatedState — this is how we
         // reach Tesla's recovered 5s-per-slice cadence without paying their
         // 23-slices-per-call, which the 452-byte cap makes impossible for us.
-        const states = nextRotatedState(plan.states, focusRotation) as InfotainmentStateKey[];
+        const slots = nextRotatedState(plan.states, focusRotation);
         focusRotation += 1;
         const t0 = Date.now();
+
+        // CLOSURES ride this rotation as a VCSEC read, not an infotainment one.
+        // No extra traffic: it takes a slot rather than adding a tick, which is
+        // the whole point of the rotation and the answer to "won't this spam?".
+        //
+        // It exists because a command the car ACCEPTS but does not act on
+        // produces no push — pushes are change events, and a no-op is a
+        // non-event. Measured: closeTrunk ok, trunk never moved, zero pushes,
+        // 11.6s of wrong UI until the 20s tick came round.
+        if (slots.includes('closures')) {
+          const st = await gw.readVcsecStatus();
+          if (stopped || paused) return;
+          const now = Date.now();
+          const { patch } = vcsecStatusToPatch(st, {}, now);
+          const closurePatch = filterPatchUnderIntent(
+            patch,
+            intentRef.current,
+            now,
+            getActiveStateRef.current(),
+          );
+          logi('poll', 'focused', { states: 'closures', mode: active.cameraMode, ms: now - t0 });
+          if (Object.keys(closurePatch).length) applyTelemetryRef.current(closurePatch);
+          return;
+        }
+
+        const states = slots as InfotainmentStateKey[];
         const snap = await gw.awakeSync({ states, priority: 'background' });
         if (stopped || paused) return;
         // Logged so the cadence and the screen-keying are VERIFIABLE from

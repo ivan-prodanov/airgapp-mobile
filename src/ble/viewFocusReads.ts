@@ -61,8 +61,22 @@ import type { InfotainmentStateKey } from './gateway';
 // sync with what is rendered because it IS what selects the render.
 export type ViewFocus = 'home' | 'controls' | 'climate';
 
+/**
+ * One rotation slot. Mostly infotainment states, plus 'closures' — which is a
+ * VCSEC read, not a domain-3 one, so the caller has to branch on it.
+ *
+ * Closures are here because of the defect measured on-car 2026-07-28: the car
+ * ACCEPTED a closeTrunk (outcome ok) and the trunk never moved. VCSEC pushes are
+ * CHANGE events, so a command that silently does nothing produces no event at
+ * all — five for five in the log, pushes appeared iff a closure actually moved.
+ * Detecting "what I asked for didn't happen" is a non-event, and the only thing
+ * that can see a non-event is a read. Closures rode the 20s VCSEC tick, so the
+ * app showed a wrong trunk for 11.6s.
+ */
+export type FocusSlot = InfotainmentStateKey | 'closures';
+
 export interface FocusReadPlan {
-  states: InfotainmentStateKey[];
+  states: FocusSlot[];
   intervalMs: number;
 }
 
@@ -95,7 +109,13 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
       return { states: ['climate'], intervalMs: CADENCE_MS.climate };
     case 'controls':
       // 'on controls screen, fetching drive state'.
-      return { states: ['drive'], intervalMs: CADENCE_MS.controls };
+      //
+      // DELIBERATE DEVIATION: theirs does NOT poll closures here (their controls
+      // group is drive / charge / parked accessory / tyre pressure; closures sit
+      // in the home group at 1250). Ours does, because this is the camera mode
+      // our trunk and frunk markers live in — the exact screen where a silently
+      // no-op'd close leaves a wrong value on screen with no push coming.
+      return { states: ['drive', 'closures'], intervalMs: CADENCE_MS.controls };
     case 'home':
     default:
       // Home has no literal in the recovered strings, but it is where the
@@ -107,7 +127,12 @@ export function readPlanFor(focus: ViewFocus): FocusReadPlan {
       // Home has no counterpart in the app's screen list, so this pairing stays
       // MINE. It borrows the controls tier because it reads the same state for
       // the same reason — the status line is drive data.
-      return { states: ['drive'], intervalMs: CADENCE_MS.controls };
+      //
+      // 'closures' matches theirs: their home/default group dispatches
+      // setGetclosuresstate at 1250 (read from the DISPATCH SITE, not the
+      // constant pool — pairing it with the adjacent 1650 would have been wrong
+      // in exactly the way this file already warns about).
+      return { states: ['drive', 'closures'], intervalMs: CADENCE_MS.controls };
   }
 }
 

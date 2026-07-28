@@ -19,12 +19,25 @@ test('an unknown or missing cameraMode falls back to home, never undefined', () 
   assert.ok(planForCameraMode(undefined).states.length > 0);
 });
 
-test('every focus reads exactly ONE state — the scoping IS the change', () => {
+test('every focus reads exactly ONE state PER TICK — the scoping IS the change', () => {
   // Four states per tick is what forced the 60s throttle: each is a full command
-  // round trip. If a plan ever grows a second state, the cadence stops being
-  // affordable and this test should fail loudly rather than the link degrading.
+  // round trip. The invariant that matters is therefore per-TICK cost.
+  //
+  // This used to assert `plan.states.length === 1`, which conflated "one state
+  // per tick" with "one state in the plan". Rotation makes those different: a
+  // plan may list several and still read exactly one each tick. Closures joined
+  // the rotation on 2026-07-28 and tripped this — correctly flagging that
+  // something changed, but for the wrong reason. Asserting the real invariant
+  // keeps the guard honest instead of deleting it.
   for (const focus of ['home', 'controls', 'climate'] as const) {
-    assert.equal(readPlanFor(focus).states.length, 1, `${focus} must read one state`);
+    const plan = readPlanFor(focus);
+    for (let tick = 0; tick < plan.states.length * 2; tick++) {
+      assert.equal(
+        nextRotatedState(plan.states, tick).length,
+        1,
+        `${focus} must read one state per tick`,
+      );
+    }
   }
 });
 
@@ -36,8 +49,8 @@ test('controls and home both read drive state — that is where speed is rendere
   // 'on controls screen, fetching drive state'. Home has no recovered literal,
   // but VehicleStatusText renders speed + the blue "Driving" label there, and
   // both come from DriveState. This is the case the change exists to fix.
-  assert.deepEqual(readPlanFor('controls').states, ['drive']);
-  assert.deepEqual(readPlanFor('home').states, ['drive']);
+  assert.ok(readPlanFor('controls').states.includes('drive'));
+  assert.ok(readPlanFor('home').states.includes('drive'));
 });
 
 test('each focus uses its RECOVERED per-screen cadence, not one blanket value', () => {
@@ -62,8 +75,11 @@ test('the focused read is strictly cheaper than the full read it rides beside', 
   // anything above ~15 would start crowding user commands.
   // At the controls tier (1650ms) this is ~36 round trips/min for ONE state.
   // That is Tesla's own rate for this screen, so the ceiling tracks theirs.
+  // ROTATION, so the plan's length does NOT multiply the cost — one state is
+  // read per tick whatever the plan lists. That is precisely why adding closures
+  // was affordable: it takes a slot, it does not add a trip.
   const plan = readPlanFor('home');
-  const tripsPerMinute = (60_000 / plan.intervalMs) * plan.states.length;
+  const tripsPerMinute = 60_000 / plan.intervalMs;
   assert.ok(tripsPerMinute <= 40, `focused read costs ${tripsPerMinute} round trips/min`);
 });
 
@@ -71,8 +87,8 @@ test('the tyre overlay is what makes us read TPMS at all', () => {
   // Screen-keyed, one level finer: a panel nobody has opened is worth no round
   // trip. Opening it starts the read; closing it stops it immediately.
   assert.deepEqual(planForCameraMode('TOP_DOWN', { tirePressureVisible: true }).states, ['tires']);
-  assert.deepEqual(planForCameraMode('TOP_DOWN', { tirePressureVisible: false }).states, ['drive']);
-  assert.deepEqual(planForCameraMode('TOP_DOWN').states, ['drive'], 'absent flag ⇒ no TPMS read');
+  assert.ok(planForCameraMode('TOP_DOWN', { tirePressureVisible: false }).states.includes('drive'));
+  assert.ok(planForCameraMode('TOP_DOWN').states.includes('drive'), 'absent flag ⇒ no TPMS read');
 });
 
 test('TPMS REPLACES drive on controls rather than adding to it', () => {
@@ -87,8 +103,11 @@ test('TPMS REPLACES drive on controls rather than adding to it', () => {
 test('the tyre flag does NOT leak onto other screens', () => {
   // fleet.ts already forces the flag false when leaving TOP_DOWN, but the read
   // plan must not depend on that staying true.
-  assert.deepEqual(planForCameraMode('CLIMATE', { tirePressureVisible: true }).states, ['climate']);
-  assert.deepEqual(planForCameraMode('PARKED', { tirePressureVisible: true }).states, ['drive']);
+  // Asserts the LEAK, not the exact plan: these screens must not gain 'tires'.
+  // Pinning the whole array made an unrelated addition (closures) look like a
+  // leak regression.
+  assert.equal(planForCameraMode('CLIMATE', { tirePressureVisible: true }).states.includes('tires'), false);
+  assert.equal(planForCameraMode('PARKED', { tirePressureVisible: true }).states.includes('tires'), false);
 });
 
 // ── Rotation ────────────────────────────────────────────────────────────────
@@ -132,11 +151,51 @@ test('media is only polled when the card is actually on screen', () => {
   // Same principle as the tyre overlay: a panel nobody opened is worth no round
   // trips. Without the card, Home stays exactly as it was.
   const without = planForCameraMode('PARKED', { mediaVisible: false });
-  assert.deepEqual(without.states, ['drive']);
+  assert.equal(without.states.includes('media'), false);
 });
 
 test('the media rotation does not leak onto Controls or Climate', () => {
   // Those screens do not render the card, so they must not pay for it.
-  assert.deepEqual(planForCameraMode('TOP_DOWN', { mediaVisible: true }).states, ['drive']);
-  assert.deepEqual(planForCameraMode('CLIMATE', { mediaVisible: true }).states, ['climate']);
+  assert.equal(planForCameraMode('TOP_DOWN', { mediaVisible: true }).states.includes('media'), false);
+  assert.equal(planForCameraMode('CLIMATE', { mediaVisible: true }).states.includes('media'), false);
+});
+
+// ── closures in the rotation ────────────────────────────────────────────────
+//
+// The trunk defect, measured on-car 2026-07-28:
+//
+//   dispatch closeTrunk -> settle 120ms "ok" -> trunk NEVER MOVES -> zero pushes
+//   ... 11.6s ... read vcsec {rearTrunk:"open"} -> UI finally corrects
+//
+// VCSEC pushes are CHANGE events (five for five in that log: pushes appeared iff
+// a closure actually moved). A command the car accepts but does not act on is a
+// NON-event, and only a read can see a non-event. Closures rode the 20s tick.
+test('closures are in the rotation wherever a closure can be actuated', () => {
+  for (const focus of ['home', 'controls'] as const) {
+    assert.ok(
+      readPlanFor(focus).states.includes('closures'),
+      `${focus} must poll closures — its screen actuates them`,
+    );
+  }
+});
+
+test('the climate screen does NOT poll closures', () => {
+  // Theirs is climate-only there, and nothing on that screen opens a closure —
+  // so paying a VCSEC round-trip for it would be pure cost.
+  assert.equal(readPlanFor('climate').states.includes('closures'), false);
+});
+
+test('closures take a SLOT — they do not add a tick', () => {
+  // The answer to "won't this spam?": the interval is unchanged and the rotation
+  // is what pays for the extra state, so the read RATE is identical. Closures
+  // land every (slots x interval) instead of every 20s.
+  const plan = readPlanFor('controls');
+  assert.equal(plan.intervalMs, CADENCE_MS.controls, 'interval unchanged');
+  assert.equal(plan.states.length, 2, 'drive + closures, one per tick');
+});
+
+test('the rotation actually alternates, so neither state starves', () => {
+  const plan = readPlanFor('controls');
+  const seen = [0, 1, 2, 3].map((tick) => nextRotatedState(plan.states, tick)[0]);
+  assert.deepEqual(seen, ['drive', 'closures', 'drive', 'closures']);
 });
