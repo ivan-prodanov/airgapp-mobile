@@ -659,6 +659,22 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           (name) => {
             const txp = name === 'pi' ? 'pi' : 'ble';
             selectedTransportRef.current = txp;
+            // A direct-BLE link that OPENS is proof the bond is healthy — a
+            // wedged bond is precisely one the OS will not let us connect over.
+            // So this is the success signal the wedge detector was built around
+            // and, until now, never received: `noteConnectSuccess` existed, is
+            // documented in PhoneKeyRecoveryCard as "the only thing that clears
+            // a wedge", and had ZERO callers in the app.
+            //
+            // The consequence Ivan hit: once native reported a removed bond, the
+            // Set Up Phone Key card was permanent. He forgot the device, re-paired,
+            // BLE worked — and the card stayed, because nothing cleared the flag.
+            // Retry only called refresh(), which re-reads the car without ever
+            // touching the verdict, so it genuinely could not do anything.
+            //
+            // Cheap to call on every open: publish() early-returns unless the
+            // visible verdict actually changed.
+            if (txp === 'ble') bondWedgeStore.noteConnectSuccess();
             // Remember + persist the winner (only on change — opens are frequent,
             // the transport rarely flips) so the next launch seeds this.
             if (lastGoodTransportRef.current !== txp) {
