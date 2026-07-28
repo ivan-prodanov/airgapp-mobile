@@ -145,6 +145,47 @@ Mitigated for the eight **probes** (they hold the app's polling while they run).
 the debug screen's Lock / Unlock / Wake buttons.** Proper fix is one shared gateway — a real
 refactor of `carlink.tsx`, deliberately not started at the end of a long day.
 
+### Generate the Xcode project from a committed spec (XcodeGen or Tuist)
+`/ios` is now tracked (`d1efc08`) — the pragmatic fix for a folder that was ignored as "generated"
+while being hand-maintained and un-regenerable. That closes the data-loss hole. It does not close
+the reason the folder was ignorable-looking in the first place.
+
+**Why this is the real answer, not just tidiness.**
+
+`project.pbxproj` is a single machine-written file listing every source, build phase, target
+membership and setting. It merges terribly — two people adding a file touch the same lines with
+opaque 24-hex identifiers, and a botched resolution produces a project that opens fine and links the
+wrong thing. That is the one genuine argument for ignoring the tree, and committing it accepts the
+risk rather than removing it.
+
+Generating it removes the risk instead: the source of truth becomes a readable YAML/Swift spec
+listing targets, sources, entitlements and settings. That file merges like code. The `.xcodeproj`
+becomes a build artifact and goes back in `.gitignore` — legitimately this time, because it really
+would be generated.
+
+**We are already halfway there and did not notice.** `ios/scripts/add_engine_files.rb` and
+`add_share_resolver_files.rb` are declarative, idempotent registration of sources, resources and
+frameworks into a target — a hand-rolled project generator with one backend. Every new file this
+session (`CarPresence`, `TransportArbiter`, `BleBytePipe`) had to be added to a list there AND
+survive a `pod install`, and twice the build broke because it was in one list but not the other
+(`cannot find 'CarPresence' in scope`, then the same for `BleBytePipe`). A spec makes that one list.
+
+**What it has to reproduce** — this is why it is a project and not an afternoon:
+- the embedded Godot engine linkage and its static-framework build settings,
+- the ShareExtension target: entitlements, App Group, keychain access group, `AirgappEngine.js` as a
+  bundle resource, JavaScriptCore, and sources compiled by reference from `modules/`,
+- CocoaPods integration (`use_frameworks!` disabled for 79 pods by the Expo script),
+- the Release configuration that a device build actually uses.
+
+**Do not start this without a working-build checkpoint to return to.** The failure mode is a
+generated project that compiles and subtly differs — a missing entitlement, a dropped build setting —
+and those surface on device, not at build time. The check that it worked is a byte-comparable `.app`
+and a share that still reaches the car, not "it builds".
+
+Alternative worth considering first: Expo CNG with config plugins. Rejected for now — expressing the
+Godot engine and a Swift share extension as plugins is more work than XcodeGen for the same benefit,
+and `expo prebuild` remains the command that must never run here.
+
 ### The outbox outlives its purpose, and `unverified` can duplicate
 The share extension sends for itself now, so the outbox is no longer the delivery path — but it
 cannot be deleted yet: `arms = [pi]` because the BLE arm does not exist, so an out-of-range share
@@ -154,13 +195,6 @@ not open the app"), and it goes when the BLE arm lands.
 Separately, an `unverified` verdict still queues, so a send that DID land without a readable verdict
 can arrive twice. Chosen over reporting success for something that may never have arrived — but it
 is the same behaviour that read as "I shared A and B showed up" on 2026-07-27.
-
-### The Share Extension's Swift is not under version control
-`/ios` is gitignored wholesale (it holds the hand-built Godot project that `expo prebuild` must
-never clobber), so `ios/ShareExtension/*.swift` — real, hand-written logic including the resolver
-and the outbox write — exists on disk only. A clean checkout does not build a working share.
-Pre-existing, and left alone deliberately: un-ignoring part of `/ios` is a call for Ivan, not a
-side effect of a bug fix.
 
 ### The `writePending` deferral is freshest-first
 If several challenges pile up inside the seal→write hazard, only the newest is answered. Correct
