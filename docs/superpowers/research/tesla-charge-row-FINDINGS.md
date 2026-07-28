@@ -110,15 +110,29 @@ the idle, unplugged state.
 ## 6. Show / hide — `VehicleHomeScreen` @4561054–4561138
 
 ```js
-const chargePortOpen = useTypedSelector(getSelectedVehicleChargePortOpen);
-const [showCharge, toggleCharge] = useState(chargePortOpen);       // useState + _slicedToArray(…,2)
+const chargePortOpen = useTypedSelector(getSelectedVehicleChargePortOpen);   // @4561054
+const prev           = usePrevious(chargePortOpen);                          // @4561060
+const [showCharge, toggleCharge] = useState(chargePortOpen);                 // @4561106
 
-useEffect(() => {                                                   // @4561574
-  if (showCharge && <flag> && !chargePortOpen) toggleCharge(false);
-});
+const justClosed = prev === true && !chargePortOpen;                         // @4561152
+
+useEffect(() => {                                                            // @4561574
+  if (showCharge && justClosed) toggleCharge(false);
+}, [showCharge, justClosed]);
 
 <VehicleHomeHeader showCharge={showCharge} toggleCharge={toggleCharge} … />
 ```
+
+> **RESOLVED 2026-07-28.** The `<flag>` left open above is `usePrevious(chargePortOpen) === true &&
+> !chargePortOpen` — **the auto-hide is an EDGE, not a level.** It fires only on the open → closed
+> transition.
+>
+> Ours was a bare `if (!chargePortOpen) setShowCharge(false)` and produced the right behaviour only
+> because the effect's dependency array happened to be `[chargePortOpen]`. Adding `showCharge` to
+> those deps — the obvious response to an exhaustive-deps warning — would have made the battery tap
+> hide the panel again immediately on an unplugged car. Now an explicit previous-value ref, with
+> the predicates extracted to `src/state/chargePanel.ts` and 9 tests, since the screen itself has no
+> coverage.
 
 `toggleCharge` IS the `useState` setter, handed to the header — that is the battery tap. The demo
 screen stubs the same pair (`{toggleCharge: () => false, showCharge: false}` @4559458), which is a

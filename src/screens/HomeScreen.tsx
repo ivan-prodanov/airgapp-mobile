@@ -24,6 +24,7 @@ import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard } from '@/components/ChargeCard';
+import { isChargePanelVisible, shouldClearShowCharge } from '@/state/chargePanel';
 // ⚠️ TEMPORARY — remove with the strip (one revert).
 import { useChargePreset } from '@/components/ChargeCardDebugStrip';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
@@ -243,13 +244,24 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   // hide it; the tap only decides things once you are unplugged. That is exactly
   // how Ivan described it. My first cut seeded useState from the port and synced
   // on transitions, which let you hide it while plugged in.
-  const chargePanelVisible = state.chargePortOpen || showCharge;
+  const chargePanelVisible = isChargePanelVisible(state.chargePortOpen, showCharge);
   // And their effect: unplugging clears the manual toggle, so the panel does not
   // linger from a seed. Without it, `showCharge` stays true from the initial
   // useState and the OR keeps the panel up forever after one plug-in.
+  //
+  // It is an EDGE — theirs reads `usePrevious(chargePortOpen)` and fires only on
+  // the open -> closed TRANSITION. Ours used a bare level check and got away with
+  // it only because the dep array was `[chargePortOpen]`; adding `showCharge`
+  // there, the obvious answer to an exhaustive-deps warning, would have made the
+  // battery tap hide the panel again immediately on an unplugged car. The ref
+  // says the edge out loud instead of leaving it to the deps.
+  const prevPortOpen = useRef<boolean | undefined>(undefined);
   useEffect(() => {
-    if (!state.chargePortOpen) setShowCharge(false);
-  }, [state.chargePortOpen]);
+    if (shouldClearShowCharge(prevPortOpen.current, state.chargePortOpen, showCharge)) {
+      setShowCharge(false);
+    }
+    prevPortOpen.current = state.chargePortOpen;
+  }, [state.chargePortOpen, showCharge]);
 
   // ── Media bar ─────────────────────────────────────────────────────────────
   // CarServer.MediaPlaybackStatus: 0 Stopped, 1 Playing, 2 Paused.
