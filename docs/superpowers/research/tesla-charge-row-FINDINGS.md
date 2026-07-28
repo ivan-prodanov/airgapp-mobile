@@ -401,8 +401,20 @@ so the header's right side is simply empty.
 Two corrections to my first pass, which put the state on the far right as a second flex child:
 
 1. **The state is a NESTED `<Text>` inside the limit `<Text>`**, so it runs INLINE:
-   `Charge limit: 80%  ·  Charging`. Same face and size; only the colour differs
-   (`textColorLight` vs `textColor`).
+   `Charge limit: 80%  ·  Charging`.
+
+   **The two are stylistically identical apart from colour**, verified prop by prop — both pass
+   `category: TextCategory.BodyLabel` (14/20/0.1), both take `statusText`'s
+   `getUniversalSansFontFamily('Medium')`, and **neither sets `appearance`** (worth checking, since
+   an appearance would override the colour underneath). The dark-theme values, @1337738/@1338045:
+
+   ```
+   textColor      = '#F3F3F3'      // the limit
+   textColorLight = '#8A8B8B'      // the state
+   ```
+
+   Those are the same two constants the rest of the recovered UI uses, so the palette is confirmed
+   rather than merely consistent.
 2. **The `space-between` is for the OTHER child** — a charge-limit-reason tooltip icon. THAT is what
    gets pushed right, not the state text.
 
