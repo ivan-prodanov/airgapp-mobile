@@ -260,6 +260,7 @@ public final class AirgappEngine {
   // Send one destination. `completion` fires on an arbitrary queue.
   public func sendNavigation(vin: String, lat: Double, lon: Double, label: String?,
                              privateScalarHex: String, transport: String = "host",
+                             commandDeadlineMs: Int? = nil,
                              completion: @escaping (Result<EngineSendResult, Error>) -> Void) {
     queue.async {
       do {
@@ -271,6 +272,7 @@ public final class AirgappEngine {
       var args: [String: Any] = [
         "vin": vin, "lat": lat, "lon": lon, "privateScalarHex": privateScalarHex, "transport": transport,
       ]
+      if let deadline = commandDeadlineMs { args["commandDeadlineMs"] = deadline }
       if let label = label, !label.isEmpty { args["label"] = label }
       guard
         let data = try? JSONSerialization.data(withJSONObject: args),

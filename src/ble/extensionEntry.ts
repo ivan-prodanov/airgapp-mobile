@@ -59,6 +59,11 @@ export interface ExtensionSendArgs {
   // transport driving a dumb Swift byte pipe, because framing and correlation
   // must not be reimplemented in Swift. Defaults to 'host'.
   transport?: 'host' | 'ble';
+  // How long this ATTEMPT may take, in ms. The arbiter owns the overall budget
+  // and hands each arm a slice of what is left; without this the engine uses its
+  // own 25s default, two arms can want 50s between them, and the share sheet's
+  // deadline fires first — which makes the second arm decorative.
+  commandDeadlineMs?: number;
 }
 
 export interface ExtensionSendResult {
@@ -117,7 +122,12 @@ export async function sendNavigationFromExtension(args: ExtensionSendArgs): Prom
   }
 
   try {
-    const gw = createCarGateway({ transport, vin: args.vin, deviceKeys: keysFromHex(args.privateScalarHex) });
+    const gw = createCarGateway({
+      transport,
+      vin: args.vin,
+      deviceKeys: keysFromHex(args.privateScalarHex),
+      ...(args.commandDeadlineMs ? { commandDeadlineMs: args.commandDeadlineMs } : {}),
+    });
     const outcome = await gw.runCommand({
       type: 'navigateTo',
       lat: args.lat,

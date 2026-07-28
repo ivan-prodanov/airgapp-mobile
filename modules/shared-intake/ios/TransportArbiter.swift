@@ -22,13 +22,19 @@ import Foundation
 public final class TransportArbiter {
   public struct Arm {
     public let name: String
+    // The most this arm should ever be given, even with budget to spare. BLE
+    // either reaches a car that is nearby in about a second or it is not going to;
+    // the Pi legitimately needs longer for a cold Pi-side scan. Without a cap the
+    // first arm can swallow the whole budget and starve the second.
+    public let capMs: Int
     // Builds the engine for this arm. Each arm knows how it reaches the car —
     // the Pi behind a Swift EngineTransport, BLE through a JS transport over a
     // dumb byte pipe — and the arbiter only cares that it produces a verdict.
     public let make: () -> (engine: AirgappEngine, transport: String)?
 
-    public init(name: String, make: @escaping () -> (engine: AirgappEngine, transport: String)?) {
+    public init(name: String, capMs: Int, make: @escaping () -> (engine: AirgappEngine, transport: String)?) {
       self.name = name
+      self.capMs = capMs
       self.make = make
     }
   }
@@ -78,11 +84,25 @@ public final class TransportArbiter {
   // onArm fires before each attempt so the UI can say what it is doing. The
   // walk can take twelve seconds on a cold scan before it even reaches the second
   // arm, and a spinner that never changes is indistinguishable from a hang.
+  // Below this there is no point starting an arm: a session cannot be opened and
+  // a command exchanged in the time left, so it would fail on the clock rather
+  // than on its merits and waste the seconds the caller could spend saying so.
+  private static let minimumUsefulMs = 4_000
+
+  // totalBudget is the WHOLE walk, and each arm gets min(its cap, what is left).
+  //
+  // This exists because three layers were independently guessing: the sheet's
+  // deadline, the transports' own timeouts, and the engine's 25s per-command
+  // default. Two arms wanting 25s each inside a 30s sheet meant the second one
+  // could never finish — a fallback that exists on paper only. One budget,
+  // divided, is the only arrangement where that cannot happen.
   public func send(vin: String, lat: Double, lon: Double, label: String?, privateScalarHex: String,
-                   onArm: ((String) -> Void)? = nil,
+                   totalBudgetMs: Int, onArm: ((String) -> Void)? = nil,
                    completion: @escaping (Result<EngineSendResult, Error>, [Attempt]) -> Void) {
     var attempts: [Attempt] = []
     var remaining = arms[...]
+    let startedAt = Date()
+    func remainingMs() -> Int { totalBudgetMs - Int(Date().timeIntervalSince(startedAt) * 1000) }
 
     func next() {
       guard let arm = remaining.first else {
@@ -91,6 +111,12 @@ public final class TransportArbiter {
         return completion(failure, attempts)
       }
       remaining = remaining.dropFirst()
+
+      let budget = min(arm.capMs, remainingMs())
+      if budget < Self.minimumUsefulMs {
+        ShareOutboxStore.trace("arbiter: \(arm.name) SKIPPED — only \(remainingMs())ms left of \(totalBudgetMs)ms")
+        return next()
+      }
       onArm?(arm.name)
 
       guard let built = arm.make() else {
@@ -98,9 +124,11 @@ public final class TransportArbiter {
         return next()
       }
 
+      ShareOutboxStore.trace("arbiter: \(arm.name) starting with \(budget)ms (\(remainingMs())ms left)")
       built.engine.sendNavigation(
         vin: vin, lat: lat, lon: lon, label: label,
-        privateScalarHex: privateScalarHex, transport: built.transport
+        privateScalarHex: privateScalarHex, transport: built.transport,
+        commandDeadlineMs: budget
       ) { result in
         attempts.append(Attempt(arm: arm.name, result: result))
         switch result {

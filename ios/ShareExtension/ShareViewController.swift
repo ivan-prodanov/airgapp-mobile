@@ -139,13 +139,17 @@ class ShareViewController: UIViewController {
     // that way costs a Pi attempt; being wrong the other way takes the BLE radio
     // while standing next to the car.
     let pi = SharedSecrets.piConfig().map { cfg in
-      TransportArbiter.Arm(name: "pi") {
+      // 22s: a cold Pi-side scan legitimately takes 8-15s.
+      TransportArbiter.Arm(name: "pi", capMs: 22_000) {
         (AirgappEngine(transport: PiTransport(config: cfg)), "host")
       }
     }
     // BLE reaches the car with no network at all — a garage or underground car
     // park, where the Pi is unreachable and this is the only way through.
-    let ble = TransportArbiter.Arm(name: "ble") {
+    // 10s: BLE reaches a car that is nearby in about a second (measured), and a
+    // car that is not there is decided in 3 by the discovery timeout. Anything
+    // beyond this is time the Pi arm needs.
+    let ble = TransportArbiter.Arm(name: "ble", capMs: 10_000) {
       let pipe = BleBytePipe()
       // The engine drives the JS-side transport; this EngineTransport is never
       // called on the BLE arm, so it is a stub rather than a real path.
@@ -173,6 +177,7 @@ class ShareViewController: UIViewController {
 
     arbiter.send(
       vin: car.vin, lat: r.latitude, lon: r.longitude, label: label, privateScalarHex: keyHex,
+      totalBudgetMs: Int(Self.sendDeadline * 1000),
       onArm: { [weak self] name in
         DispatchQueue.main.async { self?.setStage(Self.stageText(for: name)) }
       }
@@ -211,7 +216,12 @@ class ShareViewController: UIViewController {
   // for 45s, a share out of BLE range could only ever end in a timeout — the Pi
   // was never given long enough to answer. 6s (BLE) + 20s (Pi) = 26s, so 30s
   // leaves margin for resolution and the handshake.
-  private static let sendDeadline: TimeInterval = 30
+  // The whole-sheet budget, and the ONE authority: the arbiter divides it between
+  // arms (10s BLE + 22s Pi = 32s of caps) and hands each engine its slice, so no
+  // layer sets its own timeout any more. It must exceed the caps it will actually
+  // walk, or the last arm is decorative — which is what 25s did when the engine's
+  // own 25s-per-command default meant two arms could want 50s between them.
+  private static let sendDeadline: TimeInterval = 35
 
   // Plain words for each arm. "Pi" is what Ivan calls the box; "Bluetooth" is
   // what the phone calls the radio. Neither is jargon to the person reading it.
