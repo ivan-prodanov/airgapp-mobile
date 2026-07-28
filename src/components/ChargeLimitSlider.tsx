@@ -331,25 +331,21 @@ const styles = StyleSheet.create({
   row: {
     paddingVertical: 20,
   },
-  // Recovered `baseTrack` (@4006468): the fill is rounded on the LEFT ONLY —
-  //   {borderBottomLeftRadius: 0.2*Gutter, borderTopLeftRadius: 0.2*Gutter,
-  //    height:'100%', left:0, position:'absolute'}
-  // with no right radii at all, so its right end is a clean square cut. Ivan
-  // spotted it: "the right end of the slider should not be rounded". Ours had a
-  // symmetric borderRadius 3 on both the track and the fill.
-  //
-  // The track takes the same treatment so the two left ends agree; its right end
-  // is square for the same reason. (Theirs clips instead — `maxTrack` is
-  // {borderWidth:0, overflow:'hidden'} — but we cannot use overflow:hidden here
-  // because our thumb is a child of the track and would be cut in half.)
+  // The TRACK stays symmetric. Ivan, correcting my over-application of the
+  // baseTrack finding: he meant the filled part only, and the track's own two
+  // ends are rounded in theirs exactly as ours already were.
   track: {
     width: '100%',
     height: TRACK_H,
-    borderTopLeftRadius: CAP_RADIUS,
-    borderBottomLeftRadius: CAP_RADIUS,
+    borderRadius: 3,
     backgroundColor: TRACK,
     justifyContent: 'center',
   },
+  // Recovered `baseTrack` (@4006468): the FILL is rounded on the LEFT ONLY —
+  //   {borderBottomLeftRadius: 0.2*Gutter, borderTopLeftRadius: 0.2*Gutter,
+  //    height:'100%', left:0, position:'absolute'}
+  // no right radii at all, so where the green meets the grey it is a clean
+  // square cut. Ours rounded both ends of the fill.
   fill: {
     position: 'absolute',
     left: 0,

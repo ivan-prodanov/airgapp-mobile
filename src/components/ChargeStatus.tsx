@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text } from 'react-native';
+import { Animated, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 import { batteryLabel, batteryTextColor } from '@/ble/batteryDisplay';
 import { TeslaFonts } from '@/constants/fonts';
@@ -21,6 +21,12 @@ export function ChargeStatus({
   // Tapping the % also refreshes, like a pull-down. (The official app's tap
   // sends `energyDisplayFormat` to the car, which counts as a userInitiatedCommand
   // and so lights the same wake/spinner path — see findings §C4/§A.)
+  //
+  // MUST NOT be the pull-to-refresh handler itself: that one fires a Medium
+  // impact for crossing the pull threshold, and a tap has no threshold to cross.
+  // Ivan: "theres a haptic, remove that haptic the tesla app doesnt have it".
+  // Their onPress (@4567835) toggles the flag and calls the format command —
+  // no haptic anywhere in it.
   onRefresh,
   // The charge panel's show/hide. Recovered: the official app hands
   // VehicleHomeHeader a `toggleCharge` that IS the `useState` setter behind the
@@ -61,10 +67,16 @@ export function ChargeStatus({
       {/* The BATTERY GLYPH is the charge-panel toggle, not the % text — the %
           keeps its own job (percent <-> distance, plus a refresh). Splitting
           them means neither tap has to guess which one you meant. */}
-      <Pressable hitSlop={8} onPress={onToggleChargePanel} disabled={!onToggleChargePanel}>
+      {/* TouchableOpacity, not Pressable. Ivan: "there's some fade-out-fade-in
+          effect when tapping their battery or their battery %". That is exactly
+          what it is — BOTH taps are a TouchableOpacity in theirs (@4567769 for
+          the glyph, @4567830 for the %), neither passing activeOpacity, so both
+          take RN's default 0.2: fade out on press-in, fade back on release.
+          Ours were plain Pressables, which do not animate at all. */}
+      <TouchableOpacity hitSlop={8} onPress={onToggleChargePanel} disabled={!onToggleChargePanel}>
         <MiniBatteryView pct={batteryLevel} charging={charging} />
-      </Pressable>
-      <Pressable
+      </TouchableOpacity>
+      <TouchableOpacity
         hitSlop={8}
         onPress={() => {
           setMode((m) => (m === 'percent' ? 'distance' : 'percent'));
@@ -74,7 +86,7 @@ export function ChargeStatus({
         <Text style={[styles.text, { color: batteryTextColor(charging) }]}>
           {batteryLabel(mode, batteryLevel, rangeMiles, 'km')}
         </Text>
-      </Pressable>
+      </TouchableOpacity>
     </Animated.View>
   );
 }

@@ -280,9 +280,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
     media?.remoteControlEnabled === true &&
     (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
 
-  const onRefresh = () => {
-    // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  // The refresh itself, with NO haptic. The pull-down adds one; the battery-%
+  // tap must not, because their tap handler has none — it was only ever there
+  // for crossing the pull threshold, and the % tap borrowed the whole function.
+  const refreshNow = () => {
     if (carLink.linked) {
       // Really wake + re-read the car; carLink.wakeInFlight drives the spinner
       // for the whole round trip.
@@ -295,6 +296,12 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
       setDemoWaking(false);
       actions.patch({ awake: true });
     }, 1400);
+  };
+
+  const onRefresh = () => {
+    // Little Taptic tap when the pull crosses the refresh threshold, like the real app / Mail / etc.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    refreshNow();
   };
 
   return (
@@ -501,7 +508,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               rangeMiles={state.rangeMiles}
               charging={state.charging}
               stale={status.stale}
-              onRefresh={onRefresh}
+              onRefresh={refreshNow}
               onToggleChargePanel={() => setShowCharge((v) => !v)}
             />
           </View>
