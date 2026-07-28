@@ -23,7 +23,7 @@ import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { MediaCard } from '@/components/MediaCard';
-import { ChargeCard } from '@/components/ChargeCard';
+import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
 import { isChargePanelVisible, shouldClearShowCharge } from '@/state/chargePanel';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
@@ -421,39 +421,41 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               papered over it with an extra `|| fakeCharge` term instead of
               questioning the gate. The presets are gone now, the gate is not. */}
           {chargePanelVisible ? (
-            <ChargeCard
-              batteryLevel={state.batteryLevel}
-              rangeMiles={state.rangeMiles}
-              chargeLimitPercent={state.chargeLimitPercent}
-              chargingState={state.chargingState}
-              charging={state.charging}
-              chargePortOpen={state.chargePortOpen}
-              cableAttached={state.cableAttached}
-              minutesToChargeLimit={state.minutesToChargeLimit}
-              chargerPowerKw={state.chargerPowerKw}
-              chargeRateMph={state.chargeRateMph}
-              energyAddedKwh={state.energyAddedKwh}
-              fastCharging={state.fastCharging}
-              chargerActualCurrentA={state.chargerActualCurrentA}
-              chargerVoltageV={state.chargerVoltageV}
-              chargerPilotCurrentA={state.chargerPilotCurrentA}
-              chargingAmps={state.chargingAmps}
-              ampMin={AMP_MIN}
-              ampMax={AMP_MAX}
-              onSetAmps={(a) => actions.patch({ chargingAmps: a })}
-              pending={carLink.pending}
-              onSlidingChange={setChargeSliding}
-              useMiles={false}
-              onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
-              // All three go through actions.patch, not a bespoke sender: the
-              // reconciler ALREADY maps charging -> chargeStart/chargeStop,
-              // chargeLimitPercent -> setChargeLimit and chargePortOpen ->
-              // openChargePort/closeChargePort. So they get the optimistic
-              // mirror, the rollback and the grace window for free, and there is
-              // no second code path to keep in step.
-              onStartStopCharging={(start) => actions.patch({ charging: start })}
-              onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
-            />
+            <View style={styles.chargeCardWrap}>
+              <ChargeCard
+                batteryLevel={state.batteryLevel}
+                rangeMiles={state.rangeMiles}
+                chargeLimitPercent={state.chargeLimitPercent}
+                chargingState={state.chargingState}
+                charging={state.charging}
+                chargePortOpen={state.chargePortOpen}
+                cableAttached={state.cableAttached}
+                minutesToChargeLimit={state.minutesToChargeLimit}
+                chargerPowerKw={state.chargerPowerKw}
+                chargeRateMph={state.chargeRateMph}
+                energyAddedKwh={state.energyAddedKwh}
+                fastCharging={state.fastCharging}
+                chargerActualCurrentA={state.chargerActualCurrentA}
+                chargerVoltageV={state.chargerVoltageV}
+                chargerPilotCurrentA={state.chargerPilotCurrentA}
+                chargingAmps={state.chargingAmps}
+                ampMin={AMP_MIN}
+                ampMax={AMP_MAX}
+                onSetAmps={(a) => actions.patch({ chargingAmps: a })}
+                pending={carLink.pending}
+                onSlidingChange={setChargeSliding}
+                useMiles={false}
+                onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
+                // All three go through actions.patch, not a bespoke sender: the
+                // reconciler ALREADY maps charging -> chargeStart/chargeStop,
+                // chargeLimitPercent -> setChargeLimit and chargePortOpen ->
+                // openChargePort/closeChargePort. So they get the optimistic
+                // mirror, the rollback and the grace window for free, and there is
+                // no second code path to keep in step.
+                onStartStopCharging={(start) => actions.patch({ charging: start })}
+                  onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
+                />
+            </View>
           ) : null}
 
           {state.awake && mediaShowing && media ? (
@@ -660,6 +662,12 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+  },
+  // The card sits at CHARGE_CARD_SCREEN_INSET from the SCREEN edge, which is not
+  // the 16 the other rows use — so it pulls back out of `menu`'s padding. Stated
+  // here rather than inside ChargeCard, which must not know this screen exists.
+  chargeCardWrap: {
+    marginHorizontal: CHARGE_CARD_SCREEN_INSET - 16,
   },
   menu: {
     paddingHorizontal: 16,

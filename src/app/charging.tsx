@@ -2,25 +2,34 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
-import { AMP_MAX, AMP_MIN, LIMIT_MAX, LIMIT_MIN } from '@/state/fleet';
+import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { useVehicle } from '@/state/VehicleProvider';
-import { ChargeLimitSlider } from '@/components/ChargeLimitSlider';
-import { AmpStepper } from '@/components/AmpStepper';
+import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
 
 
-// Charging screen — RN build of the Tesla Charging page. Full opaque page (no car behind, matching the app):
-// charge-limit slider + current stepper + charge-port control, then quick links. Payment/stats/badges/history
-// rows are intentionally omitted (no billing in an air-gapped build).
+// Charging screen — RN build of the Tesla Charging page. Full opaque page (no car
+// behind, matching the app), then quick links. Payment/stats/badges/history rows
+// are intentionally omitted (no billing in an air-gapped build).
+//
+// THE PANEL IS THE HOME PANEL. Ivan: "on the tesla app the Charging tab, isnt
+// that panel there the same as the one on the home screen?" It is —
+// VehicleChargingHomeScreen @8780606 renders `<VehicleChargeRow />` with NO
+// props at all, key 'vehicle_charge_row', the very same component the home
+// screen's dynamic row list renders. One component, two mount points.
+//
+// We had a SECOND implementation here: its own limit label, its own divider, its
+// own single port button. Sharing ChargeLimitSlider and AmpStepper hid how far
+// the two had drifted — the controls matched while the panel around them did
+// not. None of the recovered behaviour reached this screen: no charging-state
+// text, no live kW/current/voltage row, no Start/Stop button, no Unlock Charge
+// Port, no amp-hiding on DC, and none of the recovered spacing.
 export default function ChargingScreen() {
   const router = useRouter();
   const [state, actions] = useVehicle();
 
-  const chargeLimit = state.chargeLimitPercent;
-  const amps = state.chargingAmps;
   // The slider's PanResponder is built ONCE (useRef), so it would capture the first render's
   // `actions` — and `actions` is rebuilt on every state change. Route the drag through a ref so it
   // always calls the current one. Kept fresh in an effect (not during render); the ref is only ever
@@ -31,26 +40,11 @@ export default function ChargingScreen() {
   }, [actions]);
   // While dragging the slider, freeze the page ScrollView so the drag adjusts the value instead of scrolling.
   const [sliding, setSliding] = useState(false);
-  // Label follows the finger; the command goes on release only (their
-  // onSliding / onSlidingComplete split).
-  const [liveLimit, setLiveLimit] = useState<number | null>(null);
-  // Green fill = the CURRENT battery level; the draggable thumb = the charge limit (they're independent, like
-  // the Tesla app — the fill is where the battery is now, the handle is where charging will stop).
-
-
-
-  // Charge port: closed → "Open"; open & idle → "Close"; open & charging → "Unlock" (releases the latch).
-  // Mirrors the `charging` control action's port logic.
-  const portOpen = state.chargePortOpen;
-  const portLabel = portOpen
-    ? state.charging
-      ? 'Unlock Charge Port'
-      : 'Close Charge Port'
-    : 'Open Charge Port';
-  const togglePort = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    actions.patch(portOpen ? { chargePortOpen: false, charging: false } : { chargePortOpen: true });
-  };
+  // The port button's label used to be decided here — open/close/unlock keyed on
+  // `charging`. ChargeCard now owns it, and keys the Unlock variant on the CABLE
+  // rather than on charging, which is what ControlButtons actually does: the
+  // plugged-in branch renders UnlockChargePortButton whether or not current is
+  // flowing.
 
   return (
     <View style={styles.root}>
@@ -72,38 +66,39 @@ export default function ChargingScreen() {
           showsVerticalScrollIndicator={false}
           scrollEnabled={!sliding}
         >
-          <View style={styles.card}>
-            <Text style={styles.limitLabel}>Charge limit: {liveLimit ?? chargeLimit}%</Text>
-
-            {/* Extracted to ChargeLimitSlider so the home charge panel uses the
-                SAME control. `surfaceColor` is the card behind it — the detent
-                breaks are punched in that colour. */}
-            <ChargeLimitSlider
-              batteryPercent={state.batteryLevel}
-              limitPercent={chargeLimit}
-              min={LIMIT_MIN}
-              max={LIMIT_MAX}
-                  onChange={setLiveLimit}
-                  onCommit={(v) => {
-                    setLiveLimit(null);
-                    actions.setChargeLimit(v);
-                  }}
+          {/* The SAME panel as Home. Not styled here: the card brings its own
+              recovered geometry, and this screen only positions it. */}
+          <View style={styles.chargeCardWrap}>
+            <ChargeCard
+              batteryLevel={state.batteryLevel}
+              rangeMiles={state.rangeMiles}
+              chargeLimitPercent={state.chargeLimitPercent}
+              chargingState={state.chargingState}
+              charging={state.charging}
+              chargePortOpen={state.chargePortOpen}
+              cableAttached={state.cableAttached}
+              minutesToChargeLimit={state.minutesToChargeLimit}
+              chargerPowerKw={state.chargerPowerKw}
+              chargeRateMph={state.chargeRateMph}
+              energyAddedKwh={state.energyAddedKwh}
+              fastCharging={state.fastCharging}
+              chargerActualCurrentA={state.chargerActualCurrentA}
+              chargerVoltageV={state.chargerVoltageV}
+              chargerPilotCurrentA={state.chargerPilotCurrentA}
+              chargingAmps={state.chargingAmps}
+              ampMin={AMP_MIN}
+              ampMax={AMP_MAX}
+              useMiles={false}
               onSlidingChange={setSliding}
+              // Same four callbacks as Home, through actions.patch for the same
+              // reason: the reconciler already maps each of these keys to its
+              // command, so they inherit the optimistic mirror, the rollback and
+              // the grace window instead of needing a second code path.
+              onSetChargeLimit={(pct) => actions.patch({ chargeLimitPercent: pct })}
+              onSetAmps={(a) => actions.patch({ chargingAmps: a })}
+              onStartStopCharging={(start) => actions.patch({ charging: start })}
+              onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
             />
-
-            <AmpStepper
-              amps={amps}
-              min={AMP_MIN}
-              max={AMP_MAX}
-              onChange={() => {}}
-              onCommit={actions.setChargingAmps}
-            />
-
-            <View style={styles.divider} />
-
-            <Pressable style={styles.portBtn} onPress={togglePort}>
-              <Text style={styles.portText}>{portLabel}</Text>
-            </Pressable>
           </View>
 
           <View style={styles.list}>
@@ -191,16 +186,11 @@ const styles = StyleSheet.create({
     paddingBottom: 60,
     gap: 20,
   },
-  card: {
-    backgroundColor: '#1F1F22',
-    borderRadius: 18,
-    padding: 18,
-  },
-  limitLabel: {
-    fontSize: 19,
-    fontWeight: '700',
-    color: 'white',
-    marginBottom: 4,
+  // This screen's ScrollView pads 16; the card belongs at
+  // CHARGE_CARD_SCREEN_INSET from the screen edge, so it pulls back out. Stated
+  // here, not inside ChargeCard — the card must not know either screen exists.
+  chargeCardWrap: {
+    marginHorizontal: CHARGE_CARD_SCREEN_INSET - 16,
   },
 
 
@@ -221,21 +211,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: 'white',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginTop: 18,
-  },
-  portBtn: {
-    alignItems: 'center',
-    paddingTop: 18,
-    paddingBottom: 2,
-  },
-  portText: {
-    fontSize: 17,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.55)',
   },
   list: {
     gap: 4,

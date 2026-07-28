@@ -76,10 +76,19 @@ import { AmpStepper } from './AmpStepper';
 // from the screen edge, not the 16 the surrounding menu uses.
 const GUTTER = 10;
 const PANEL_RADIUS = 0.5 * GUTTER;
-// Specifications.homeScreenGutter(20) - homeScreenBoxGutter(10).
-const CARD_INSET = 10;
-// HomeScreen's `menu` paddingHorizontal, which the card has to undo.
-const MENU_PADDING = 16;
+/**
+ * Where the card sits from the SCREEN edge:
+ * Specifications.homeScreenGutter(20) - homeScreenBoxGutter(10).
+ *
+ * The card applies no horizontal margin of its own. It used to undo a
+ * hardcoded `MENU_PADDING = 16`, which worked only because HomeScreen's menu
+ * happened to pad 16 — and the charging screen happens to pad 16 too, so the
+ * bug would have hidden itself. A component silently cancelling one specific
+ * parent's padding is a trap; each screen now offsets it explicitly against its
+ * own padding, and a screen that changes its padding gets a visible mismatch
+ * rather than a silent one.
+ */
+export const CHARGE_CARD_SCREEN_INSET = 10;
 const PANEL_BG = '#222324';
 const TEXT = '#F3F3F3';
 const TEXT_LIGHT = '#8A8B8B';
@@ -366,9 +375,6 @@ const styles = StyleSheet.create({
     backgroundColor: PANEL_BG,
     borderRadius: PANEL_RADIUS,
     marginBottom: GUTTER,
-    // container.marginHorizontal = homeScreenGutter - homeScreenBoxGutter = 10.
-    // HomeScreen's menu pads 16, so the card pulls back out to land at 10.
-    marginHorizontal: CARD_INSET - MENU_PADDING,
     minHeight: 8 * GUTTER,
     paddingTop: 1.5 * GUTTER,
     paddingBottom: 0,
