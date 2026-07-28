@@ -22,6 +22,30 @@ import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 // read for the same field is suppressed. Matches telemetry.ts's closure grace.
 export const GRACE_MS = 30_000;
 
+// How long the optimistic value stays protected AFTER its command settles.
+//
+// Measured on-car 2026-07-28, with a working log at last:
+//
+//   cmd settle  {openTrunk, ms:132, ok}
+//   +30ms  push vcsec {closures:{}}                 <- "all closed", TRANSIENT
+//   +60ms  push vcsec {... rearTrunk:"open" ...}    <- the truth
+//
+// The car emits a stale all-closed frame ~30ms after the command settles and the
+// real one ~90ms after. Dropping protection AT settle let that transient land and
+// flipped the trunk closed->open in front of the user.
+//
+// So the window has to outlive the transient, not the command. 1.5s is ~15x the
+// measured gap — comfortably past it, and short enough that a genuinely wrong
+// optimistic value (the double-tap that freezes the trunk half-open) corrects in
+// about a second, which is what Ivan measured the official app doing.
+//
+// This is what makes GRACE_MS a backstop for a command that never settles at all,
+// rather than the actual policy. The official app gets the same effect for free:
+// it drops the optimistic entry on command success, but its cloud round-trip is
+// slower than the car's latch report, so the transient has always passed by then.
+// Ours settles in 132ms, faster than the car can tell the truth.
+export const SETTLE_GRACE_MS = 1_500;
+
 // releaseIntent drops the given keys' protection outright.
 //
 // Called when a command SETTLES — every terminal path, ok or failed. The

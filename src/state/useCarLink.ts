@@ -59,7 +59,7 @@ import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
 import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from '@/ble/vcsecPush';
-import { filterPatchUnderIntent, releaseIntent, GRACE_MS } from '@/ble/intentGrace';
+import { filterPatchUnderIntent, releaseIntent, GRACE_MS, SETTLE_GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
 import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
@@ -901,6 +901,21 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     releaseIntent(intentRef.current, keys);
   }, []);
 
+  // On settle we SHORTEN the window rather than dropping it outright. The car
+  // emits a stale all-closed frame ~30ms after a closure command settles and the
+  // real one ~90ms after (measured, see SETTLE_GRACE_MS), so dropping at settle
+  // let the transient through and flickered the UI. Shortening keeps the
+  // transient out and still lets the truth win about a second later.
+  const shortenIntent = useCallback((keys?: readonly VehicleStateKey[]) => {
+    if (!keys || !keys.length) return;
+    const expiry = Date.now() + SETTLE_GRACE_MS;
+    for (const key of keys) {
+      // Never EXTEND: a key whose window is already shorter keeps it.
+      const cur = intentRef.current.get(key);
+      if (cur === undefined || cur > expiry) intentRef.current.set(key, expiry);
+    }
+  }, []);
+
   const runDispatch = useCallback(
     (
       cmd: CarCommand,
@@ -1029,9 +1044,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           // a backgrounded command used to have its transport torn out from
           // under it and never settle).
           clearPending();
-          // The car has answered, so it is authoritative again: drop the
-          // optimistic protection instead of letting it run the full GRACE_MS.
-          if (!superseded) dropIntent(affectedKeys);
+          // The car has answered, so bound the protection to the transient
+          // window rather than letting it run the full GRACE_MS.
+          if (!superseded) shortenIntent(affectedKeys);
           settleInFlight();
           // NO verify-read here. Firing a tick the moment the command settled
           // made the trunk visibly flicker open -> closed -> open: our command
@@ -1052,7 +1067,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         }
       })();
     },
-    [getGateway, settleInFlight, stampIntent, dropIntent],
+    [getGateway, settleInFlight, stampIntent, shortenIntent],
   );
 
   // ── C2: rapid-input coalescing ──────────────────────────────────────────

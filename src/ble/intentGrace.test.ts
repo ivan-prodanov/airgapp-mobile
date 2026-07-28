@@ -9,7 +9,7 @@ import { initialVehicleState } from '../types/vehicleTypes';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { filterPatchUnderIntent, releaseIntent, GRACE_MS } from './intentGrace';
+import { filterPatchUnderIntent, releaseIntent, GRACE_MS, SETTLE_GRACE_MS } from './intentGrace';
 import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 
 test('GRACE_MS is 30s', () => {
@@ -183,4 +183,52 @@ test('releasing an absent key is a no-op, not a throw', () => {
   const intent = new Map<VehicleStateKey, number>();
   releaseIntent(intent, ['trunkOpen', 'locked']);
   assert.equal(intent.size, 0);
+});
+
+// ── the measured on-car sequence ────────────────────────────────────────────
+//
+// Replays what the log actually showed for "tap Open Trunk", which is the case
+// that flickered:
+//
+//   cmd settle {openTrunk, ms:132, ok}
+//   +30ms  push {closures:{}}              -> all closed  (TRANSIENT, stale)
+//   +60ms  push {rearTrunk:"open"}         -> the truth
+test('the transient all-closed frame is suppressed; the truth releases', () => {
+  const intent = new Map<VehicleStateKey, number>();
+  const optimistic = { trunkOpen: true }; // user tapped Open
+
+  // Dispatch stamps the long window; settle shortens it to +SETTLE_GRACE_MS.
+  const settledAt = 1_000;
+  intent.set('trunkOpen', settledAt + SETTLE_GRACE_MS);
+
+  // +30ms — the stale "all closed" push. Must NOT reach the UI.
+  const transient = filterPatchUnderIntent({ trunkOpen: false }, intent, settledAt + 30, optimistic);
+  assert.deepEqual(transient, {}, 'stale frame suppressed — this was the flicker');
+
+  // +90ms — the real "open" push AGREES, so confirm-and-release lets it through
+  // and drops the window, leaving later changes unprotected as they should be.
+  const truth = filterPatchUnderIntent({ trunkOpen: true }, intent, settledAt + 90, optimistic);
+  assert.deepEqual(truth, { trunkOpen: true });
+  assert.equal(intent.has('trunkOpen'), false, 'confirmed, so released immediately');
+});
+
+test('a wrong optimistic value corrects about a second after settle', () => {
+  // The double-tap: optimistic CLOSED, but the trunk froze half-open so the car
+  // keeps saying open. Nothing ever confirms, so the settle window is what
+  // bounds it — ~1.5s, not the 30s backstop.
+  const intent = new Map<VehicleStateKey, number>();
+  const optimistic = { trunkOpen: false };
+  const settledAt = 1_000;
+  intent.set('trunkOpen', settledAt + SETTLE_GRACE_MS);
+
+  const during = filterPatchUnderIntent({ trunkOpen: true }, intent, settledAt + 500, optimistic);
+  assert.deepEqual(during, {}, 'still protected while the transient could arrive');
+
+  const after = filterPatchUnderIntent(
+    { trunkOpen: true },
+    intent,
+    settledAt + SETTLE_GRACE_MS + 1,
+    optimistic,
+  );
+  assert.deepEqual(after, { trunkOpen: true }, 'car wins ~1.5s after settle, not 30s');
 });
