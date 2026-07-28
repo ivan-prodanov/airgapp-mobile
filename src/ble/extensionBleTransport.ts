@@ -28,10 +28,18 @@ import { outgoingCorrelators, frameAnswersRequest } from './bleCorrelation';
 import { base64ToBytes, bytesToBase64 } from './bytes';
 import type { CarTransport } from './types';
 
-// A cold scan+connect. The app budgets 20s for the same thing; the extension is
-// on a tighter leash because the share sheet is waiting, and the arbiter has
-// another arm to try.
-const CONNECT_TIMEOUT_MS = 12_000;
+// A cold scan+connect.
+//
+// 6s, not the app's 20s, and not the 12s this shipped with. Measured on-car
+// 2026-07-28: a COLD connect (app force-closed, nothing holding the link) reaches
+// the car in ~1s. So this is already 6x the observed cost, and every second
+// beyond it is spent on a car that is not there — time the Pi arm needs.
+//
+// This number is half of a budget, not a preference: BLE's scan plus the Pi's
+// openSession must both fit inside the share sheet's overall deadline, or a share
+// out of BLE range can only ever end in a timeout. See PiTransport.openTimeout
+// and ShareViewController.sendDeadline — change one, check the other two.
+const CONNECT_TIMEOUT_MS = 6_000;
 const POLL_MS = 20;
 
 interface BleHost {

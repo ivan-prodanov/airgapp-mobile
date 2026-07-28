@@ -12,10 +12,17 @@ import Foundation
 // They are a contract with the Pi, not preferences.
 public final class PiTransport: EngineTransport {
   // Opening a session is a real Pi-side scan+connect and can legitimately take
-  // 8-15s on a cold radio. The caller is responsible for the overall deadline —
-  // Tesla's extension shows a spinner and a bounded timeout rather than failing
-  // fast, and a slow send is a spinner, not an error.
-  private static let openTimeout: TimeInterval = 45
+  // 8-15s on a cold radio.
+  //
+  // 20s, NOT the 45s in transport.ts. That number is right for the app, which has
+  // no share sheet waiting on it; here it was longer than the extension's ENTIRE
+  // deadline, so out of BLE range the Pi arm started with ~13s left, asked for 45,
+  // and the sheet timed out before it could answer. Measured Pi sends complete in
+  // 2-4s, so this is still 5x.
+  //
+  // Part of a budget: BLE's scan (6s) + this must fit inside
+  // ShareViewController.sendDeadline (30s). Change one, check the other two.
+  private static let openTimeout: TimeInterval = 20
   private static let exchangeBuffer: TimeInterval = 5
   private static let defaultTimeout: TimeInterval = 15
 

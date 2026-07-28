@@ -163,7 +163,10 @@ class ShareViewController: UIViewController {
     let deadline = DispatchWorkItem { [weak self] in
       guard !settled else { return }
       settled = true
-      ShareOutboxStore.trace("send: TIMED OUT after \(Int(Self.sendDeadline))s")
+      // Name the arm that was still running: "timed out" on its own cannot tell
+      // a car that is not there from a Pi that is not answering.
+      let stalled = self?.stageLabel.text ?? ""
+      ShareOutboxStore.trace("send: TIMED OUT after \(Int(Self.sendDeadline))s during \(stalled)")
       self?.showTerminal("Timed out", "Try sharing again")
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.sendDeadline, execute: deadline)
@@ -203,7 +206,12 @@ class ShareViewController: UIViewController {
     }
   }
 
-  private static let sendDeadline: TimeInterval = 25
+  // The whole-sheet budget. It must EXCEED the sum of the arms it will walk, or
+  // the later arms are decorative: at 25s, with BLE burning 12s and the Pi asking
+  // for 45s, a share out of BLE range could only ever end in a timeout — the Pi
+  // was never given long enough to answer. 6s (BLE) + 20s (Pi) = 26s, so 30s
+  // leaves margin for resolution and the handshake.
+  private static let sendDeadline: TimeInterval = 30
 
   // Plain words for each arm. "Pi" is what Ivan calls the box; "Bluetooth" is
   // what the phone calls the radio. Neither is jargon to the person reading it.
