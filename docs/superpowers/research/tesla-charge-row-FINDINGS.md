@@ -144,3 +144,82 @@ Commands we already build: `chargingSetLimitAction`, `startChargingAction`, `sto
 **Not applicable to us:** powershare / discharge limit (V2H), Semi, supercharger session/billing,
 report-issue. Those are a large fraction of `ChargeRow`'s branches and should be omitted rather than
 stubbed.
+
+
+---
+
+## 9. The panel's ACTUAL StyleSheet — read, not measured (2026-07-28)
+
+Ivan, on the previous pass: *"you didnt copy it, you invented it on your own."* Correct — that
+pass was pixel-estimates off a screenshot pair. These are read out of `ChargeRow`'s and
+`VehicleChargeAmps`' own `StyleSheet.create` calls. `Gutter = 10`.
+
+### ChargeRow — `StyleSheet.create` @4158978
+
+| key | value |
+|---|---|
+| `container` | `marginBottom: Gutter`, `marginHorizontal: homeScreenGutter - homeScreenBoxGutter`, `minHeight: 8*Gutter`, `paddingTop: 1.5*Gutter` |
+| `containerNonCT` | `backgroundColor: Themes[DARK].secondaryBackgroundColor`, `borderRadius: Gutter*0.5`, `opacity: 0.95` |
+| `contentsContainer` | `flexDirection: 'column'`, `flexGrow: 1` |
+| `chargeTextContainer` | `marginHorizontal: 0.5*Gutter` |
+| `chargeRateText(x)` | `flexDirection:'row'`, `marginTop: 0.5*Gutter`, `marginBottom: x ? Gutter : 0` |
+| `sliderContainer` | `alignSelf:'flex-start'`, `height: 3*Gutter`, `marginHorizontal: 1.5*Gutter` |
+| `targetSlider` | `overflow:'visible'`, `width:'100%'` |
+| `ampsContainer` | `marginHorizontal: 1.5*Gutter + 0.5*Gutter`, `marginTop: 1.5*Gutter` |
+| `bottomCardMargin` | `marginBottom: 2.5*Gutter` — the View that WRAPS the amps |
+| `controlsDivider` | `height: 1`, `backgroundColor: Themes[DARK].backgroundColor` |
+| `controlButtonContainer` | row, `justifyContent:'space-evenly'`, `alignItems:'center'`, `width:'100%'` |
+| `button` | `flex: 1`, `opacity: 0.9` |
+| `chargeButton` | `minHeight: 46`, `paddingVertical: 13` |
+| `chargeButtonText` | `textAlign: 'center'` — font comes from the Button, see below |
+| `buttonDivider` | `width: 1`, `height: '100%'`, `backgroundColor: Themes[DARK].backgroundColor` |
+| `disabledButtonText` | `opacity: 0.5` |
+| `emphasizedChargeLimits` | `fontSize: 16`, `lineHeight: 20` |
+
+**Two structural facts, not numbers:**
+
+1. **Both dividers are painted in the PAGE background colour**, `Themes[AppTheme.DARK].backgroundColor`
+   — which is why Ivan read the divider as *"transparent"* while ours looked *"whiteish/grayish"*. Ours
+   was `rgba(255,255,255,0.12)`: LIGHTER than the card it sits on, the exact opposite of the intent.
+   `buttonDivider` is **vertical** (1×100%), between the two buttons — we had no such element.
+
+2. **The horizontal insets are not uniform.** From the card edge: text **5**, slider **15**, amps **20**,
+   buttons **0**. Ours used one `paddingHorizontal: 18` for everything, which is why no row lined up.
+
+### `VehicleChargeAmps` — its own module, `StyleSheet.create` @4168306
+
+| key | value |
+|---|---|
+| `container` | row, `alignItems:'center'`, `justifyContent:'space-between'`, `height: 4.5*Gutter`, `position:'relative'` |
+| `currentControlsContainer` | `backgroundColor: Gray.dark`, `borderRadius: Gutter*0.5` |
+| `currentAdjustmentArrows` | `alignItems:'center'`, `justifyContent:'center'`, `zIndex: 100` |
+| `currentTextContainer` | `position:'absolute'`, `left: 0`, `right: 0`, row, `justifyContent:'center'` |
+| `currentText` | `getFontStyle({ type: 'Medium', fontSize: 15 })` |
+| `currentTextInactive` | `opacity: 0.3` |
+
+The chevrons are **space-between with ZERO horizontal padding** — they sit at the bar's edges. Ivan:
+*"amperage < > button placement seem more inward on our side."* And the value is **15 Medium**, not the
+16/600 we had. The value is absolutely centred across the full bar, so it cannot shift when a chevron
+is hidden at a bound — their design gets for free what our "preserve the slot" trick was buying.
+
+### Button typography — `getButtonFontStyle` @1340624
+
+```
+ButtonSize.SMALL -> TextCategory.BodyLabel      // 14 / 20 / 0.1
+```
+
+Full size map (`getButtonSizeStyle` @1340517): `SMALL = {minWidth:32, minHeight:32,
+paddingHorizontal:12, paddingVertical:8, textMarginHorizontal:8, icon 16}`. Sizes PILL and
+MEDIUMLARGE map to `CaptionLabel`; every other size maps to `BodyLabel`.
+
+The charge-port button is `<Button appearance={GHOST} size={SMALL} textStyle={[color(textColorLight),
+chargeButtonText]} style={[button, chargeButton]}>` — so **14pt**, dim, at 0.9 opacity. We had 17,
+then 16, both invented.
+
+### Method note
+
+Registers are reused heavily across a module, so `grep 'r12 = '` gives the wrong value: the
+assignments inside nested functions belong to a different frame. Match on the **module-closure indent
+level** (12 spaces here) and take the last assignment before the `StyleSheet.create`. That is how
+`r16=1`, `r12=1.5`, `r17=0.5`, `r10=1.5*Gutter`, `r21=0.5*Gutter` resolve — and why the naive read
+gave `paddingTop: 26*Gutter = 260`, which is absurd on its face and was the tell.

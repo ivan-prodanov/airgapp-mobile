@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
+import { TeslaFonts } from '@/constants/fonts';
+
 // AmpStepper — the charging-current control, lifted out of app/charging.tsx so
 // the home charge panel uses the SAME one. Same reasoning as ChargeLimitSlider:
 // ours, polished, not a second control that drifts.
@@ -27,7 +29,8 @@ const stepTick = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).ca
 const REPEAT_DELAY_MS = 450;
 const REPEAT_RATE_MS = 90;
 
-const CHEVRON_SLOT = 30;
+const CHEVRON_SLOT = 44;
+const GUTTER = 10;
 
 export interface AmpStepperProps {
   amps: number;
@@ -50,8 +53,14 @@ export function AmpStepper({ amps, min, max, onChange, onCommit }: AmpStepperPro
   // one command at the end.
   const [live, setLive] = useState<number | null>(null);
   const shown = live ?? amps;
+  // Synced in an effect, not during render. `step` reads this synchronously
+  // while a hold repeats, so it needs a ref — but writing it inline was a
+  // render-phase ref mutation (react-hooks/refs). Committing it after render is
+  // equivalent here: a press can only arrive after the commit that changed it.
   const shownRef = useRef(shown);
-  shownRef.current = shown;
+  useEffect(() => {
+    shownRef.current = shown;
+  }, [shown]);
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clear = () => {
@@ -95,7 +104,9 @@ export function AmpStepper({ amps, min, max, onChange, onCommit }: AmpStepperPro
   return (
     <View style={styles.bar}>
       <Chevron dir="left" hidden={shown <= min} onPressIn={() => press(-1)} onRelease={release} />
-      <Text style={styles.value}>{shown} A</Text>
+      <View style={styles.valueWrap} pointerEvents="none">
+        <Text style={styles.value}>{shown} A</Text>
+      </View>
       <Chevron dir="right" hidden={shown >= max} onPressIn={() => press(1)} onRelease={release} />
     </View>
   );
@@ -131,27 +142,46 @@ function Chevron({
 }
 
 const styles = StyleSheet.create({
-  // Measured off the reference (~3.06 px/pt on that crop): the bar is ~136px
-  // tall and its corner is ~24px, i.e. 44pt and 8pt. Ours was 56 and 12, which
-  // is most of the "takes less space".
+  // VehicleChargeAmps' own StyleSheet, read rather than measured:
+  //   container                row, alignItems center, justifyContent space-between,
+  //                            height 4.5*Gutter, position relative
+  //   currentControlsContainer bg Gray.dark, borderRadius Gutter*0.5
+  //   currentAdjustmentArrows  alignItems center, justifyContent center, zIndex 100
+  //   currentTextContainer     position absolute, left 0, right 0, row, center
+  //   currentText              getFontStyle({type:'Medium', fontSize:15})
+  //   currentTextInactive      opacity 0.3
+  //
+  // The two corrections Ivan called: the chevrons are NOT inset — the row is
+  // space-between with ZERO horizontal padding, so they sit at the bar's edges
+  // (I had paddingHorizontal 20, then 8). And the value is 15 Medium, not 16/600.
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    position: 'relative',
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    height: 44,
+    borderRadius: 0.5 * GUTTER,
+    height: 4.5 * GUTTER,
   },
   slot: {
     width: CHEVRON_SLOT,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 100,
+  },
+  // currentTextContainer — absolutely centred across the FULL bar, so the value
+  // stays dead-centre no matter which chevrons are present. Their design does
+  // not need my "keep the slot to stop the number jumping" trick; it cannot jump.
+  valueWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   value: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '600',
+    fontFamily: TeslaFonts.medium,
+    fontSize: 15,
     color: 'white',
   },
 });

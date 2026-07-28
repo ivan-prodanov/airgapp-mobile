@@ -37,11 +37,37 @@ import { AmpStepper } from './AmpStepper';
 // (dischargeLimit, StopRestartPowershareButton), Semi, supercharger session and
 // billing, ReportIssueButton. None of it applies to this car and none of it is
 // reachable over BLE, so a placeholder would be a lie about a capability.
+// Every number below is READ OUT OF ChargeRow's own StyleSheet, not measured off
+// a screenshot. Ivan: "you didnt copy it, you invented it on your own" — he was
+// right, the previous pass was pixel-estimates wearing a recovery's clothes.
+//
+//   container              marginBottom Gutter, paddingTop 1.5*Gutter, minHeight 8*Gutter
+//   containerNonCT         bg Themes[DARK].secondaryBackgroundColor, radius Gutter*0.5, opacity .95
+//   chargeTextContainer    marginHorizontal 0.5*Gutter
+//   chargeRateText(x)      row, marginTop 0.5*Gutter, marginBottom x ? Gutter : 0
+//   sliderContainer        alignSelf flex-start, height 3*Gutter, marginHorizontal 1.5*Gutter
+//   targetSlider           overflow visible, width 100%
+//   ampsContainer          marginHorizontal 1.5*Gutter + 0.5*Gutter, marginTop 1.5*Gutter
+//   bottomCardMargin       marginBottom 2.5*Gutter          <- wraps the amps
+//   controlsDivider        height 1, bg Themes[DARK].backgroundColor
+//   controlButtonContainer row, space-evenly, alignItems center, width 100%
+//   button                 flex 1, opacity 0.9
+//   chargeButton           minHeight 46, paddingVertical 13
+//   chargeButtonText       textAlign center   (font = Button SMALL -> BodyLabel 14/20/.1)
+//   buttonDivider          width 1, height 100%, bg Themes[DARK].backgroundColor
+//
+// Note the horizontal insets are NOT uniform — text 5, slider 15, amps 20,
+// buttons 0 from the card edge. Ours used a single paddingHorizontal 18 for
+// everything, which is why nothing lined up. The card now has no horizontal
+// padding and each child carries its own, exactly as theirs does.
 const GUTTER = 10;
 const PANEL_RADIUS = 0.5 * GUTTER;
 const PANEL_BG = '#222324';
 const TEXT = '#F3F3F3';
 const TEXT_LIGHT = '#8A8B8B';
+// The page behind the card. The divider is drawn in it so the row reads as
+// separated rather than ruled — the same trick as MediaCard's 1pt gaps.
+const PAGE_BG = '#000000';
 
 // Their slider is `sliderMax` + `sliderSnapPoints`. The car supplies the real
 // bounds (charge_limit_soc_min/max/std); these are the fallbacks for a car that
@@ -115,7 +141,8 @@ export function ChargeCard({
 
           Type comes from app/charging.tsx's own limitLabel (19/700), so the two
           screens read the same. */}
-      <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
+      <View style={styles.textBlock}>
+        <Text style={styles.limitLabel}>Charge limit: {Math.round(liveLimit ?? chargeLimitPercent)}%</Text>
 
       {/* Recovered: `vehicle_charge_screen_range_added` =
           "{{range}} added during last charging session", filled by
@@ -131,11 +158,12 @@ export function ChargeCard({
 
           Gate is non-nil, matching their isSomething. My earlier `> 0` would have
           hidden a legitimately-reported zero. */}
-      {energyAddedKwh != null ? (
-        <Text style={styles.statusText} numberOfLines={1}>
-          {Math.round(energyAddedKwh)} kWh added during last charging session
-        </Text>
-      ) : null}
+        {energyAddedKwh != null ? (
+          <Text style={styles.statusText} numberOfLines={1}>
+            {Math.round(energyAddedKwh)} kWh added during last charging session
+          </Text>
+        ) : null}
+      </View>
 
       {/* sliderContainer + targetSlider { overflow:'visible', width:'100%' }.
           Their slider takes usablePercentageCharged AND nominalPercentageCharged
@@ -171,17 +199,17 @@ export function ChargeCard({
           shows it, and that is right — the charge current is a SETTING for the
           next session, not an action on the current one. My "the car rejects it
           otherwise" was reasoning about a command, not about the control. */}
-      {/* Extra air beneath it: measured ~23pt from the bar's bottom edge to the
-          rule on the reference, against the card's 14pt rhythm. */}
+      {/* bottomCardMargin (25) wraps ampsContainer (marginTop 15, inset 20). */}
       <View style={styles.ampWrap}>
-        <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
+        <View style={styles.ampsContainer}>
+          <AmpStepper amps={chargingAmps} min={ampMin} max={ampMax} onChange={() => {}} onCommit={onSetAmps} />
+        </View>
       </View>
 
-      {/* The divider is the button row's TOP BORDER, not a sibling. As a
-          sibling the card's `gap` put 10pt above AND below a 1pt line, which is
-          20pt of air theirs does not have — most of "Open Charge Port takes more
-          space". Their controlsDivider is still {height:1, width:'100%'};
-          expressing it as a border just stops the flex gap from padding it. */}
+      {/* controlsDivider is a real sibling View in theirs. It was safe to fold
+          into a border only while the card had a uniform `gap`; the card now
+          uses per-child margins, so the sibling form is both faithful and free. */}
+      <View style={styles.controlsDivider} />
       <View style={styles.controls}>
         {/* HIDDEN, not disabled, when there is no cable — start/stop is not a
             thing you can do to an unplugged car, and their ControlButtons omits
@@ -194,6 +222,8 @@ export function ChargeCard({
             onPress={() => onStartStopCharging(!charging)}
           />
         ) : null}
+        {/* buttonDivider — only between two buttons, never dangling beside one. */}
+        {cableAttached && !(chargePortOpen && cableAttached) ? <View style={styles.buttonDivider} /> : null}
         {/* Same rule: with the cable latched the port cannot close, so the
             control goes rather than sitting there greyed. */}
         {chargePortOpen && cableAttached ? null : (
@@ -235,52 +265,64 @@ function ChargeButton({
 }
 
 const styles = StyleSheet.create({
+  // container + containerNonCT.
   card: {
     backgroundColor: PANEL_BG,
     borderRadius: PANEL_RADIUS,
-    marginBottom: 8,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    // Zero: the button row's own 44pt height is the bottom space, exactly as in
-    // theirs where the rule sits 44pt above the card's bottom edge.
+    marginBottom: GUTTER,
+    minHeight: 8 * GUTTER,
+    paddingTop: 1.5 * GUTTER,
     paddingBottom: 0,
-    // Explicit rhythm instead of space-between. space-between on a fixed box is
-    // what produced the dead air between the limit label and the slider.
-    gap: 14,
+    opacity: 0.95,
   },
-  // TextCategory.BodyLabel, the same 14/20/0.1 the rest of the recovered UI uses.
+  // sliderContainer. The height is FIXED at 3*Gutter and targetSlider is
+  // overflow:'visible' inside it — which is how their thumb can grow past the
+  // track without the row reflowing. This is the piece I had been guessing at.
   sliderContainer: {
-    alignSelf: 'stretch',
-    marginVertical: 2,
+    height: 3 * GUTTER,
+    marginHorizontal: 1.5 * GUTTER,
   },
-
-
-
-
+  // chargeTextContainer.
+  textBlock: {
+    marginHorizontal: 0.5 * GUTTER,
+  },
+  // chargeRateText(hasValue) — marginTop 0.5*Gutter, marginBottom Gutter.
   statusText: {
+    marginTop: 0.5 * GUTTER,
+    marginBottom: GUTTER,
     fontFamily: TeslaFonts.medium,
     fontSize: 12,
     lineHeight: 16,
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
   },
-  // controlButtonContainer — space-evenly, with controlsDivider as its top
-  // border. Negative horizontal margin so the rule spans the card edge to edge
-  // like theirs, rather than stopping at the card's 18pt text padding.
+  // controlsDivider — a real 1pt View painted in Themes[DARK].backgroundColor,
+  // i.e. the PAGE colour, which is why Ivan read it as transparent. Ours was
+  // rgba(255,255,255,0.12): LIGHTER than the card it sat on, the exact opposite.
+  controlsDivider: {
+    height: 1,
+    backgroundColor: PAGE_BG,
+  },
+  // buttonDivider — the same page colour, but VERTICAL, separating the two
+  // buttons. I had no such thing.
+  buttonDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: PAGE_BG,
+  },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-evenly',
-    marginHorizontal: -18,
-    paddingHorizontal: 18,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.12)',
+    width: '100%',
   },
-  limitRow: {
-    flexDirection: 'row',
-  },
+  // bottomCardMargin wraps the amps; ampsContainer is the amps' own inset.
   ampWrap: {
-    marginBottom: 9,
+    marginBottom: 2.5 * GUTTER,
+  },
+  ampsContainer: {
+    marginTop: 1.5 * GUTTER,
+    marginHorizontal: 1.5 * GUTTER + 0.5 * GUTTER,
   },
   limitLabel: {
     fontFamily: TeslaFonts.medium,
@@ -296,18 +338,25 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
   },
+  // button {flex:1, opacity:0.9} + chargeButton {minHeight:46, paddingVertical:13}.
   controlButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    height: 44,
+    minHeight: 46,
+    paddingVertical: 13,
+    opacity: 0.9,
   },
+  // ButtonSize.SMALL resolves to TextCategory.BodyLabel via getButtonFontStyle —
+  // 14/20/0.1, NOT the 16 (and before that 17) I had. That is Ivan's "the text
+  // size differs". Colour is textColorLight, from the GHOST appearance.
   controlLabel: {
-    fontSize: 17,
-    fontWeight: '600',
-    // Dim, not white — theirs reads as a secondary action.
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    textAlign: 'center',
     color: TEXT_LIGHT,
   },
 });
