@@ -17,11 +17,22 @@ DynamicRowTypes = { ChargingAlerts, Charging, MediaControl, Referral,
 `Charging` and `MediaControl` are entries in the SAME dynamic-row list below the favourites row.
 Order in the home screen's own height accumulator (@4561973–4562013):
 
-| row | height |
+| row | accumulated offset |
 |---|---|
-| `ChargingAlerts` | 30 × Gutter = **300** |
-| `Charging` | 30 × Gutter = **300** |
-| `MediaControl` | 14 × Gutter = **140** |
+| `ChargingAlerts` | 30 × Gutter = 300 |
+| `Charging` | 30 × Gutter = 300 |
+| `MediaControl` | 14 × Gutter = 140 |
+
+> ⚠️ **CORRECTED 2026-07-28. These are NOT row heights.** They are accumulated
+> scroll offsets: a few lines below, the running total feeds
+> `interpolate({inputRange: [...]})`. I read them as fixed heights and hardcoded
+> the charge panel to 300pt. Measured against the real app (~3 px/pt on Ivan's
+> side-by-side) **their charge panel is ~226pt and content-sized** — which it has
+> to be, since a state with no Start button is shorter than one with it.
+>
+> The `MediaControl` 14 × Gutter = 140 coincidentally equals the media card's two
+> recovered 70pt panels, which made the misreading look independently confirmed.
+> A number agreeing with something true is not evidence that you read it right.
 
 `Gutter` is 10. **The MediaControl 140 independently confirms the media card's two 70pt panels** —
 recovered separately in `tesla-tpms-markers-FINDINGS.md`'s sibling work and now cross-checked from

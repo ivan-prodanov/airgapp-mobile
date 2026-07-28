@@ -10,14 +10,21 @@ import { AmpStepper } from './AmpStepper';
 //
 // Recovered, see docs/superpowers/research/tesla-charge-row-FINDINGS.md. It is
 // `DynamicRowTypes.Charging`, a SIBLING of `MediaControl` in the same row list
-// below favourites:
+// below favourites.
 //
-//     ChargingAlerts   30 * Gutter = 300
-//     Charging         30 * Gutter = 300      <- this
-//     MediaControl     14 * Gutter = 140      <- the media card, two 70pt panels
+// ⚠️ IT IS NOT FIXED-HEIGHT. I previously read these out of the home screen —
 //
-// The 140 is a useful cross-check: it independently confirms the media card's
-// two-panel structure from a second place in their code.
+//     ChargingAlerts   30 * Gutter    Charging  30 * Gutter    MediaControl  14 * Gutter
+//
+// — and hardcoded 300. Those numbers are real but they are ACCUMULATED SCROLL
+// OFFSETS: they feed `interpolate({inputRange: [...]})` a few lines later, not
+// any view's height. The MediaControl 14*Gutter = 140 happening to equal the
+// media card's two 70pt panels made the misreading look corroborated.
+//
+// Measured off Ivan's side-by-side (both ~3 px/pt): THEIRS IS ~226pt, ours was
+// 305. Their panel sizes to its CONTENT — which it must, since a state with no
+// Start button is shorter than one with it. Hence no fixed height here, and no
+// space-between: the empty gaps in ours were a fixed box distributing slack.
 //
 // Chain: dynamic-row switch -> VehicleChargeRow (container) -> ChargeRow
 // (presentational). The conditional logic is `chargeRowStateSelector`, which
@@ -31,7 +38,6 @@ import { AmpStepper } from './AmpStepper';
 // billing, ReportIssueButton. None of it applies to this car and none of it is
 // reachable over BLE, so a placeholder would be a lie about a capability.
 const GUTTER = 10;
-const PANEL_H = 30 * GUTTER; // 300 — their `Charging` row height
 const PANEL_RADIUS = 0.5 * GUTTER;
 const PANEL_BG = '#222324';
 const TEXT = '#F3F3F3';
@@ -216,13 +222,17 @@ function ChargeButton({
 
 const styles = StyleSheet.create({
   card: {
-    height: PANEL_H,
     backgroundColor: PANEL_BG,
     borderRadius: PANEL_RADIUS,
     marginBottom: 8,
     paddingHorizontal: 18,
-    paddingVertical: 18,
-    justifyContent: 'space-between',
+    paddingTop: 18,
+    // The button row supplies its own bottom space via its 44pt height, so the
+    // card's own bottom padding is smaller than its top.
+    paddingBottom: 4,
+    // Explicit rhythm instead of space-between. space-between on a fixed box is
+    // what produced the dead air between the limit label and the slider.
+    gap: 10,
   },
   // TextCategory.BodyLabel, the same 14/20/0.1 the rest of the recovered UI uses.
   sliderContainer: {
