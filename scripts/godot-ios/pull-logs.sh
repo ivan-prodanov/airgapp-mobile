@@ -64,10 +64,22 @@ sqlite3 -noheader -separator '|' "$OUT" \
 # seq is a monotonic INTEGER PRIMARY KEY, so ordering by seq and by time must
 # agree. If they don't, the db/-wal pair was inconsistent and EVERY row is
 # suspect — re-pull rather than reading the output above.
+# ⚠️ This check used to compare seq-order against time-order across the WHOLE
+# table and flag any mismatch. That is a guaranteed FALSE POSITIVE: `seq` is an
+# INTEGER PRIMARY KEY that restarts at 0 when the app trims the capped file, so a
+# db holding two eras always "fails" — 6392 of 6392 rows, every single pull.
+#
+# It cost most of a day. The rows are DISPLAYED in `t` order and were correct all
+# along, but the banner said DO NOT TRUST and so good evidence was thrown away
+# twice, and the tool blamed for a live-copy race it never had.
+#
+# What the check is actually for is a TORN db/-wal pair, which shows up as seq
+# jumping backwards repeatedly among rows that are adjacent in time. One backward
+# step is just the reset boundary, so allow it; more than that is a real tear.
 BAD=$(sqlite3 "$OUT" "
-  WITH a AS (SELECT seq, t, ROW_NUMBER() OVER (ORDER BY seq) rs,
-                            ROW_NUMBER() OVER (ORDER BY t, seq) rt FROM log)
-  SELECT COUNT(*) FROM a WHERE rs != rt;" 2>/dev/null || echo "?")
+  WITH r AS (SELECT seq, t FROM log ORDER BY t DESC LIMIT 300),
+       a AS (SELECT seq, LAG(seq) OVER (ORDER BY t) ps FROM r)
+  SELECT MAX(0, COUNT(*) - 1) FROM a WHERE ps IS NOT NULL AND seq < ps;" 2>/dev/null || echo "?")
 if [ "$BAD" != "0" ]; then
   echo
   echo "⚠️  INTEGRITY CHECK FAILED — $BAD rows out of seq/time order."
