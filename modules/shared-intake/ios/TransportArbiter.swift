@@ -8,17 +8,27 @@ import Foundation
 // question then becomes "what order", which is a much smaller question than "which
 // one", and a dead arm costs a failover rather than a lost share.
 //
-// ── The order ──
+// ── The order: BLE, then the Pi. Always. ──
 //
-// BLE-first matches the app, so there is one less divergence between the two
-// processes. But the presence gate inverts it while the car is in passive-entry
-// range, and that is the common case for this feature: the whole scenario is
-// getting into the car, opening Maps, and sharing. So in practice the Pi runs and
-// the BLE arm is the no-cellular / Pi-down fallback rather than the fast path.
+// This is the design, not a default someone forgot to make configurable.
 //
-// That is deliberate, not an accident of ordering. Reaching for the BLE radio
-// while standing next to the car means contending with the link the app holds for
-// passive entry, for a send the Pi can do without touching the radio at all.
+// It was originally gated on presence — prefer the Pi while the car is in
+// passive-entry range — to avoid contending for the radio the app holds. That
+// premise did not survive measurement. Cross-process central contention is not a
+// hazard (one ACL link, owned by bluetoothd), and the numbers came out the other
+// way round:
+//
+//   BLE   ~1s end to end, warm AND cold (cold = app force-closed, no link held)
+//   Pi    2-4s end to end
+//   BLE absent-car verdict in 3s, before the Pi arm even starts
+//
+// So BLE is both the faster path and the one that works with no network at all,
+// and the cost of trying it first when the car is NOT nearby is three seconds.
+// It also matches the app's own order, which is one less way for the two
+// processes to behave differently.
+//
+// The Pi's job is the case BLE cannot serve: the car out of Bluetooth range
+// entirely. That is a fallback, and fallbacks go second.
 public final class TransportArbiter {
   public struct Arm {
     public let name: String
@@ -50,24 +60,10 @@ public final class TransportArbiter {
     self.arms = arms
   }
 
-  // TEMPORARY: force BLE first regardless of presence.
-  //
-  // Set 2026-07-28 at Ivan's request so the BLE arm actually gets exercised in
-  // the field — with the gate on, the common case (in range) always chose the Pi
-  // and the BLE path would have shipped essentially untested.
-  //
-  // Safe enough to leave on for now: cross-process central contention is not the
-  // hazard it looked like (one ACL link, owned by bluetoothd), and BLE is the
-  // faster arm on a warm link. Revert to the gate once BLE has real field time —
-  // the Pi is the arm that works when the car is NOT nearby, and BLE-first costs
-  // a scan timeout in that case.
-  public static let forceBleFirst = true
-
-  // Build the ordered arm list for the current presence reading.
-  public static func order(inRange: Bool, pi: Arm?, ble: Arm?) -> [Arm] {
-    if forceBleFirst { return [ble, pi].compactMap { $0 } }
-    let ordered = inRange ? [pi, ble] : [ble, pi]
-    return ordered.compactMap { $0 }
+  // The arms, in the order they are tried. Absent arms drop out — an unenrolled
+  // Pi is not an error, it is one fewer thing to try.
+  public static func order(pi: Arm?, ble: Arm?) -> [Arm] {
+    [ble, pi].compactMap { $0 }
   }
 
   // Walk the arms until one produces a VERDICT from the car.

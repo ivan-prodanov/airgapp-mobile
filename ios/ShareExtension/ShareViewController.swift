@@ -134,10 +134,13 @@ class ShareViewController: UIViewController {
       return showTerminal("Error", "Open airgapp once to finish setup")
     }
 
+    // Presence no longer chooses anything — BLE is always first, by design (see
+    // TransportArbiter). It is still READ and traced, because it is what
+    // distinguishes a warm measurement from a cold one: "BLE took 1s" means very
+    // different things with the app holding a link and with it force-closed, and
+    // not being able to tell them apart is how a warm number gets reported as a
+    // cold one.
     let presence = CarPresence.read()
-    // Stale or absent presence reads as IN RANGE — see CarPresence. Being wrong
-    // that way costs a Pi attempt; being wrong the other way takes the BLE radio
-    // while standing next to the car.
     let pi = SharedSecrets.piConfig().map { cfg in
       // 22s: a cold Pi-side scan legitimately takes 8-15s.
       TransportArbiter.Arm(name: "pi", capMs: 22_000) {
@@ -155,8 +158,8 @@ class ShareViewController: UIViewController {
       // called on the BLE arm, so it is a stub rather than a real path.
       return (AirgappEngine(transport: UnusedTransport(), blePipe: pipe), "ble")
     }
-    let arms = TransportArbiter.order(inRange: presence.treatAsInRange, pi: pi, ble: ble)
-    ShareTrace.trace("send: presence linkUp=\(presence.linkUp) stale=\(presence.stale) bleFirst=\(TransportArbiter.forceBleFirst) → arms=[\(arms.map { $0.name }.joined(separator: ","))]")
+    let arms = TransportArbiter.order(pi: pi, ble: ble)
+    ShareTrace.trace("send: presence linkUp=\(presence.linkUp) stale=\(presence.stale) → arms=[\(arms.map { $0.name }.joined(separator: ","))]")
 
     let label = r.name ?? r.address
     let arbiter = TransportArbiter(arms: arms)
