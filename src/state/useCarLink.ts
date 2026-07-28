@@ -1019,7 +1019,20 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       return (async () => {
         try {
           const outcome = await gw.runCommand(cmd, signal ? { signal } : undefined);
-          logi('cmd', 'settle', { type: cmd.type, ms: Date.now() - t0, outcome: outcome.ok ? 'ok' : outcome.kind });
+          logi('cmd', 'settle', {
+            type: cmd.type,
+            ms: Date.now() - t0,
+            outcome: outcome.ok ? 'ok' : outcome.kind,
+            // DIAGNOSTIC: on failure, carry the developer message (which embeds the fault code+name,
+            // e.g. "[parental] fault 9 (INVALID_COMMAND)") + the car's own reason, so a pull-logs shows
+            // WHY, not just the kind. Remove once the parental-reject cause is pinned.
+            ...(outcome.ok
+              ? {}
+              : {
+                  detail: outcome.message,
+                  ...('reason' in outcome && outcome.reason ? { reason: outcome.reason } : {}),
+                }),
+          });
           if (outcome.ok) {
             // Light confirmation — matches the app's impact/selection-only
             // haptic vocabulary (no notification feedback).

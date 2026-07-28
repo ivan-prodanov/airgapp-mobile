@@ -224,7 +224,13 @@ export function ClimateScreen({ state, actions }: Props) {
             <Pressable hitSlop={16} onPress={() => adjustTemp(-0.5)}>
               <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
             </Pressable>
-            <Text style={styles.temp}>{formatTemp(state.targetTempC)}</Text>
+            {/* BRIGHT when climate is on, DIM when off — visible across Ivan's
+                first two screenshots, which differ only by the AC state: the
+                whole setpoint block (power glyph, its label, the number) tracks
+                climateOn. The chevrons stay dim in both. */}
+            <Text style={[styles.temp, state.climateOn ? styles.tempOn : styles.tempOff]}>
+              {formatTemp(state.targetTempC)}
+            </Text>
             <Pressable hitSlop={16} onPress={() => adjustTemp(0.5)}>
               <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.5)" size={24} weight="medium" />
             </Pressable>
@@ -330,7 +336,12 @@ function Quick({
 }) {
   return (
     <Pressable style={styles.quick} onPress={onPress}>
-      <SymbolView name={symbol} tintColor={active ? '#4ea1ff' : 'rgba(255,255,255,0.92)'} size={29} />
+      {/* INVERTED from what we had. Ours went BLUE when active and near-white
+          when idle; across Ivan's off/on pair the glyph and its label are DIM
+          when the state is off and WHITE when on. No blue anywhere in this row —
+          blue is reserved for an engaged card (Defrost), which is the one place
+          it appears in all four screenshots. */}
+      <SymbolView name={symbol} tintColor={active ? TEXT_BRIGHT : TEXT_DIM} size={29} />
       <Text style={[styles.quickLabel, active && styles.quickLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -348,8 +359,15 @@ function Row({
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.row, active && styles.rowActive]} onPress={onPress}>
-      <SymbolView name={symbol} tintColor={active ? 'black' : 'rgba(255,255,255,0.9)'} size={24} />
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        active && styles.rowActive,
+        pressed && { opacity: PRESS_OPACITY },
+      ]}
+      onPress={onPress}
+    >
+      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={24} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -370,10 +388,15 @@ function GroupRow({
 }) {
   return (
     <Pressable
-      style={[styles.groupRow, divider && styles.groupRowDivider, active && styles.rowActive]}
+      style={({ pressed }) => [
+        styles.groupRow,
+        divider && styles.groupRowDivider,
+        active && styles.rowActive,
+        pressed && { opacity: PRESS_OPACITY },
+      ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? 'black' : 'rgba(255,255,255,0.9)'} size={24} />
+      <SymbolView name={symbol} tintColor={active ? '#FFFFFF' : TEXT_DIM} size={24} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -414,6 +437,22 @@ function Segmented({
     </View>
   );
 }
+
+// Recovered from the dark theme block (main.decompiled.js ~1337960-1338060) and
+// the Colors table (~1338467), not sampled from a screenshot:
+//   Themes[DARK].borderColorWithOpacity = 'rgba(255, 255, 255, 0.1)'
+//   Themes[DARK].buttonActivePrimary    = Colors.buttonBlue = '#3368FF'
+//   Themes[DARK].textColorLight         = '#8A8B8B'
+//   Themes[DARK].textColor              = '#F3F3F3'
+const BORDER = 'rgba(255,255,255,0.1)';
+const ACTIVE_BLUE = '#3368FF';
+const TEXT_DIM = '#8A8B8B';
+const TEXT_BRIGHT = '#F3F3F3';
+const RADIUS = 14;
+// Their most common activeOpacity (two call sites). The pressed card in Ivan's
+// 4th screenshot dims noticeably but stays readable, which fits; I could not tie
+// it to THIS component, so it is the best-supported value rather than a proven one.
+const PRESS_OPACITY = 0.7;
 
 const styles = StyleSheet.create({
   root: {
@@ -484,10 +523,10 @@ const styles = StyleSheet.create({
   },
   quickLabel: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    color: TEXT_DIM,
   },
   quickLabelActive: {
-    color: '#4ea1ff',
+    color: TEXT_BRIGHT,
   },
   tempControl: {
     flexDirection: 'row',
@@ -497,34 +536,51 @@ const styles = StyleSheet.create({
   temp: {
     fontSize: 47,
     fontWeight: '300',
-    color: 'white',
     minWidth: 128,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
+  tempOn: {
+    color: TEXT_BRIGHT,
+  },
+  tempOff: {
+    color: TEXT_DIM,
+  },
+  // OUTLINED, not filled. Recovered colours, not eyedropped:
+  //   Themes[DARK].borderColorWithOpacity = 'rgba(255, 255, 255, 0.1)'
+  //   Themes[DARK].buttonActivePrimary    = Colors.buttonBlue = '#3368FF'
+  //   Themes[DARK].textColorLight         = '#8A8B8B'
+  //
+  // Ours was a filled rgba(255,255,255,0.06) card with WHITE labels and a WHITE
+  // active fill with BLACK text. Theirs is a transparent card with a 1px hairline
+  // border and DIM labels, going solid blue with white content when active.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
     paddingVertical: 15,
     paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
   },
   rowActive: {
-    backgroundColor: 'white',
+    backgroundColor: ACTIVE_BLUE,
+    borderColor: ACTIVE_BLUE,
   },
   rowText: {
     fontSize: 16,
-    color: 'white',
+    // Dim by default — the whole list reads as "available", not "on".
+    color: TEXT_DIM,
   },
   rowTextActive: {
-    color: 'black',
+    color: '#FFFFFF',
     fontWeight: '600',
   },
   group: {
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: BORDER,
     overflow: 'hidden',
   },
   groupRow: {
@@ -536,7 +592,7 @@ const styles = StyleSheet.create({
   },
   groupRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    borderBottomColor: BORDER,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
@@ -556,7 +612,7 @@ const styles = StyleSheet.create({
   sectionLabelMuted: {
     fontSize: 13,
     fontWeight: '400',
-    color: 'rgba(255,255,255,0.45)',
+    color: TEXT_DIM,
   },
   segmented: {
     flexDirection: 'row',
