@@ -328,8 +328,14 @@ const styles = StyleSheet.create({
     marginTop: 0.5 * GUTTER,
     marginBottom: GUTTER,
     fontFamily: TeslaFonts.medium,
-    fontSize: 12,
-    lineHeight: 16,
+    // BodyLabel, not CaptionLabel. The `statusText` style itself carries no
+    // fontSize — it comes from the Text's category, and all four of their
+    // statusText call sites (@4157150, @4157222, @4158084, @4158122) pass
+    // category={TextCategory.BodyLabel}. We had CaptionLabel 12/16, which is
+    // why ours read smaller. Same trap as the tyre labels: the size was in the
+    // call site, not the style.
+    fontSize: 14,
+    lineHeight: 20,
     letterSpacing: 0.1,
     color: TEXT_LIGHT,
   },
@@ -368,13 +374,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     letterSpacing: 0.1,
     color: TEXT,
-  },
-  ampLabel: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.1,
-    color: TEXT_LIGHT,
   },
   // button {flex:1, opacity:0.9} + chargeButton {minHeight:46, paddingVertical:13}.
   controlButton: {

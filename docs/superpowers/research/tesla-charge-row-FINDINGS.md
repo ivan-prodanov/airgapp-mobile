@@ -261,6 +261,11 @@ So every left edge resolves to the SAME value:
 1.5*Gutter}` — the piece that makes the texts line up with the slider rather than sitting 15 further
 left.
 
+**It carries no `fontSize`.** The size comes from the call site: all four `statusText` renders
+(@4157150, @4157222, @4158084, @4158122) pass `category={TextCategory.BodyLabel}`, i.e. **14/20/0.1**.
+We had CaptionLabel 12/16, so the kWh line read visibly smaller. This is the same trap as the tyre
+labels — the type was in the call site, not in the style that looked like it owned the type.
+
 ### The card's own inset
 
 ```
