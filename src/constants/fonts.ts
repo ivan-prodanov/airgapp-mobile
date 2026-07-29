@@ -29,6 +29,20 @@ export const TeslaFonts = {
   // The file was already in the repo, extracted with the others, and simply
   // never bundled.
   regular: 'UniversalSansText-Regular',
+  // WEIGHT 300. The climate setpoint ("20.0"). Ivan reported it as too bold
+  // THREE times; each time I re-derived it from the Typography ladder's 40/46
+  // display tier and re-confirmed "Medium". The ladder was never involved: the
+  // climate screen has its OWN `temperatureText` style (@5221355) that bypasses
+  // getFontStyle entirely --
+  //
+  //   { fontFamily: getUniversalSansFontFamily('Light'), fontSize: 40,
+  //     fontWeight: '300', lineHeight: 4*Gutter = 40, paddingTop: Gutter = 10 }
+  //
+  // A screen-local style, not a category. Reading the ladder harder was never
+  // going to find it, which is the lesson: when the user keeps reporting the
+  // same delta, the assumption to question is WHICH style object applies, not
+  // the value inside the one already being read.
+  light: 'UniversalSansText-Light',
   // The battery % (16px).
   //
   // Tesla's literal for it IS `fontWeight: 'bold'` (R5 §1a), but R5 §1b argued
@@ -50,5 +64,6 @@ export const TeslaFonts = {
 export const TESLA_FONT_MAP = {
   [TeslaFonts.medium]: require('@/assets/fonts/UniversalSans-Text-Medium-540.ttf'),
   [TeslaFonts.regular]: require('@/assets/fonts/UniversalSans-Text-Regular-430.ttf'),
+  [TeslaFonts.light]: require('@/assets/fonts/UniversalSans-Text-Light-230.ttf'),
   [TeslaFonts.bold]: require('@/assets/fonts/UniversalSans-Text-Bold-680.ttf'),
 };

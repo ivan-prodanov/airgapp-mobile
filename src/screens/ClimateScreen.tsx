@@ -222,17 +222,27 @@ export function ClimateScreen({ state, actions }: Props) {
           />
 
           <View style={styles.tempControl}>
-            <Pressable hitSlop={16} onPress={() => adjustTemp(-0.5)}>
+            <Pressable
+              style={[styles.arrow, styles.arrowDecrease]}
+              hitSlop={16}
+              onPress={() => adjustTemp(-0.5)}
+            >
               <SymbolView name="chevron.left" tintColor={TEXT_DIM} size={CHEVRON_SIZE} weight="medium" />
             </Pressable>
             {/* BRIGHT when climate is on, DIM when off — visible across Ivan's
                 first two screenshots, which differ only by the AC state: the
                 whole setpoint block (power glyph, its label, the number) tracks
                 climateOn. The chevrons stay dim in both. */}
-            <Text style={[styles.temp, state.climateOn ? styles.tempOn : styles.tempOff]}>
-              {formatTemp(state.targetTempC)}
-            </Text>
-            <Pressable hitSlop={16} onPress={() => adjustTemp(0.5)}>
+            <View style={styles.tempTextContainer}>
+              <Text style={[styles.temp, state.climateOn ? styles.tempOn : styles.tempOff]}>
+                {formatTemp(state.targetTempC)}
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.arrow, styles.arrowIncrease]}
+              hitSlop={16}
+              onPress={() => adjustTemp(0.5)}
+            >
               <SymbolView name="chevron.right" tintColor={TEXT_DIM} size={CHEVRON_SIZE} weight="medium" />
             </Pressable>
           </View>
@@ -251,6 +261,7 @@ export function ClimateScreen({ state, actions }: Props) {
           active={state.frontDefrostOn}
           onPress={toggleDefrost}
         />
+        <View style={styles.spacer} />
         <Row
           symbol="microbe"
           label="Bioweapon Defense Mode"
@@ -261,6 +272,7 @@ export function ClimateScreen({ state, actions }: Props) {
           }}
         />
 
+        <View style={styles.spacer} />
         <View style={styles.group}>
           <GroupRow
             symbol="tent"
@@ -283,7 +295,9 @@ export function ClimateScreen({ state, actions }: Props) {
           />
         </View>
 
+        <View style={styles.spacer} />
         <View style={styles.separator} />
+        <View style={styles.spacer} />
 
         <Section label="Cabin Overheat Protection">
           <Segmented
@@ -467,6 +481,9 @@ const FONT = TeslaFonts.medium;
 // "the temp text is certainly not as bold on the tesla app" — right, and the
 // cause was that we only ever bundled Medium.
 const FONT_REGULAR = TeslaFonts.regular;
+// The climate setpoint, and only it: `temperatureText` sets this family
+// directly rather than going through a TextCategory. See the note on `temp`.
+const FONT_LIGHT = TeslaFonts.light;
 // THE TOGGLE TOKENS, finally sourced (@1338100-1338110). The idle row is their
 // *Disabled* toggle set and the engaged row is the *Enabled* one — which is why
 // hunting "the inactive border" kept coming back transparent:
@@ -547,7 +564,12 @@ const ICON_SIZE = ROW_ICON;
 // their cards span x 66..855, ours spanned 37..884 — 29pt of margin against our
 // 16. That single number is most of "entire structure of the panel, margins":
 // our cards ran nearly edge to edge while theirs sit in a much narrower column.
-const CONTENT_INSET = 28;
+// bottomSection.paddingHorizontal (@5221154). Was 28, measured off a screenshot.
+const CONTENT_INSET = 30;
+// getSpacer(20) — the ONE gap value between every card block. Four calls in the
+// screen (@5223627, @5223880, @5224576, @5224588), which is exactly the four
+// gaps: Defrost|Bioweapon, Bioweapon|group, group|Divider, Divider|heading.
+const SPACER = 20;
 // Chevrons and the power/vent glyphs, measured the same way: theirs are ~17pt
 // and ~23pt against our 24 and 29. Both were noticeably oversized.
 const CHEVRON_SIZE = 18;
@@ -571,8 +593,11 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: CONTENT_INSET,
-    paddingTop: 10,
-    gap: 12,
+    // No paddingTop and no `gap`. Tesla spaces this stack element by element —
+    // bottomSection.paddingTop folded into climateTemps.marginTop, then
+    // climateControls.marginBottom 30, then getSpacer(20) between card blocks.
+    // A uniform gap cannot express that and was quietly overriding all of it.
+    paddingTop: 0,
     // findings §1e, verbatim. The sheet is FULLY OPAQUE `theme.backgroundColor`
     // (#161718) — no blur, no translucency — which is what hides the bottom of
     // the car. Corners are SQUARE (`bottomSheetBackgroundStyle: {borderRadius:0}`
@@ -593,8 +618,13 @@ const styles = StyleSheet.create({
   // (findings §4) — white at their 0.2 opacity is the closest faithful stand-in.
   handle: {
     alignSelf: 'center',
-    width: 50,
-    height: 5,
+    // `bottomSheetHandler` { height: 12 } (@5221181) with `handleIndicator`
+    // { marginTop: 2, width: 60 } (@5221261) over gorhom's default 4pt bar.
+    // Ours was 50x5 with its offset coming from the sheet's paddingTop.
+    width: 60,
+    height: 4,
+    marginTop: 2,
+    marginBottom: 6,
     borderRadius: 5,
     backgroundColor: '#FFFFFF',
     opacity: 0.2,
@@ -607,29 +637,39 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     letterSpacing: 0.1,
     color: TEXT_DIM,
-    marginTop: 6,
+    // `bottomSection.paddingTop` = Gutter = 10 (@5221163) plus
+    // `bottomTextSection.marginTop` = 1.5*Gutter = 15 (@5221199). The temps are
+    // the first child, so folding the container's paddingTop into this margin
+    // is exactly equivalent. 25 below the 12pt handle strip.
+    marginTop: 25,
   },
   // Cached-but-stale cabin temps fade, mirroring the Home battery row (§C3).
   climateTempsStale: {
     opacity: 0.5,
   },
-  // The power/vent row is WIDER than the card column. Measured on the pair:
-  // their power glyph centres ~48pt from the screen edge while their cards start
-  // at ~29pt — so the row breaks OUT of the content inset rather than nesting
-  // inside it. Ours sat at 28 + 8 = 36pt and read visibly pinched inward.
+  // `climateControls` (@5221211). Height 80 is what produces the air above and
+  // below the number — the 40pt text is centred in an 80pt row — and the 30pt
+  // marginBottom is the gap down to the Defrost card. Both were guessed before
+  // as paddingTop 8 / paddingBottom 24 / marginBottom 4.
   tempRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginHorizontal: -(CONTENT_INSET - 16),
-    paddingHorizontal: 0,
-    paddingTop: 8,
-    paddingBottom: 24,
-    marginBottom: 4,
+    width: '100%',
+    height: 80,
+    marginBottom: 30,
   },
+  // `controlsButton` (@5221244): { flexShrink: 1, marginHorizontal: -20,
+  // width: 80 }. The -20 is stored as 4294967276 — an unsigned wrap of a
+  // NEGATIVE margin, which is what pulls power and vent OUTSIDE the 30pt
+  // content inset. Glyph centre lands at 30 - 20 + 40 = 50pt from the screen
+  // edge; I had measured "~48pt" off Ivan's screenshot and hacked it with a
+  // -12 breakout on the row. Same intent, wrong mechanism and wrong number.
   quick: {
+    flexShrink: 1,
+    marginHorizontal: -20,
+    width: 80,
     alignItems: 'center',
-    width: 64,
     gap: 6,
   },
   quickLabel: {
@@ -643,29 +683,68 @@ const styles = StyleSheet.create({
   quickLabelActive: {
     color: TEXT_BRIGHT,
   },
+  // `temperatureControlsContainer` (@5221337). The gap between the number and
+  // each chevron is NOT a `gap` — it is built from four overlapping boxes, and
+  // that is why every symmetric `gap: N` guess looked wrong:
+  //
+  //   climateAdjustmentArrowDecrease  { paddingLeft: 10 }      (@5221202)
+  //   temperatureTextContainer        { marginLeft: -10,
+  //                                     paddingHorizontal: 10, zIndex: 1 }
+  //   climateAdjustmentArrowIncrease  { paddingRight: 10 }     (@5221205)
+  //
+  // The padding sits on the OUTER side of each chevron, so it widens the touch
+  // target away from the number rather than spacing it. On the left the text
+  // container's -10 margin cancels its own 10pt padding, so the '<' sits flush
+  // against the number's box; on the right the 10pt padding stands, so '>' is
+  // pushed out by 10. The asymmetry is real and deliberate — the arrows are
+  // zIndex 2 over a zIndex 1 text container, i.e. they are meant to overlap.
   tempControl: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 24,
+    paddingBottom: 10,
+    paddingHorizontal: 10,
   },
+  tempTextContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginLeft: -10,
+    paddingHorizontal: 10,
+    zIndex: 1,
+  },
+  arrow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  arrowDecrease: { paddingLeft: 10 },
+  arrowIncrease: { paddingRight: 10 },
   temp: {
-    // Ladder entry 40/46. Its tier reads {type:'Medium', fontWeight:'400'} and I
-    // took the '400' to mean the Regular face. It does not: `type` sets the
-    // fontFamily to UniversalSansText-Medium, and the foundry puts Medium in its
-    // own single-face family, so iOS CANNOT reach another cut through fontWeight
-    // and will not synthesize one. Their setpoint renders MEDIUM.
+    // THE ANSWER TO "temp text is bolder in our app", asked three times.
     //
-    // constants/fonts.ts documents this exact trap for the battery %, and I
-    // quoted that note in the commit that then did the opposite. Ivan saw it
-    // both ways: too bold on Medium, then "MUCH bolder than ours" on Regular.
-    // Medium is the answer; the earlier over-boldness was the SIZE (47) and the
-    // missing letterSpacing, both since fixed.
-    fontFamily: FONT,
+    // It was never the Typography ladder. I kept re-reading the 40/46 display
+    // tier, re-deriving "Medium", and re-shipping it — because I assumed the
+    // setpoint went through `getFontStyle` like everything else. It does not.
+    // The climate screen declares its own `temperatureText` (@5221355) and sets
+    // fontFamily directly:
+    //
+    //   { fontFamily: getUniversalSansFontFamily('Light'),  // = UniversalSansText-Light
+    //     fontSize: 40, fontWeight: '300',
+    //     lineHeight: 4*Gutter = 40, paddingTop: Gutter = 10 }
+    //
+    // Light — two cuts below the Medium we were rendering. `getFontStyle` is
+    // never called for it. The lesson for the next one of these: when the same
+    // delta is reported three times, stop re-reading the value and question
+    // WHICH style object applies.
+    //
+    // No minWidth: theirs is content-sized. It stays centred anyway because the
+    // power and vent buttons that flank it are both a fixed 80 wide, so
+    // space-between resolves symmetrically whatever the number's width.
+    fontFamily: FONT_LIGHT,
     fontSize: 40,
-    lineHeight: 46,
-    minWidth: 128,
+    fontWeight: '300',
+    lineHeight: 40,
+    paddingTop: 10,
     textAlign: 'center',
-    // The 40/46 tier's letterSpacing is 0. The 0.5 was ours.
     letterSpacing: 0,
   },
   tempOn: {
@@ -725,15 +804,31 @@ const styles = StyleSheet.create({
     gap: ROW_ICON_MARGIN + 10,
     paddingHorizontal: ROW_PADDING_H,
   },
+  // The Camp|Pet line is not a divider at all — it is Camp's OWN bottom border,
+  // which is why Ivan read it as "exactly the same as the border of the button".
+  // Their two rows are stacked Buttons (@5223897, @5224169):
+  //
+  //   Camp { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
+  //   Pet  { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: 0 }
+  //
+  // Pet zeroes its top border precisely so the two do not stack to 4. So the
+  // line is BORDER_WIDTH, in the border colour. Ours was hairlineWidth — 0.33pt
+  // on a 3x screen, six times thinner.
   groupRowDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: BORDER,
   },
+  // `<Divider />` (@5224584) — DividerComponent's base style is { height: 1,
+  // width: '100%' } (@1431090), themed `dividerColor` = #2D2E2F. A real 1pt
+  // line, not a hairline. Spacing above and below is getSpacer(20) on each
+  // side, so the rule carries no margin of its own.
   separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    marginVertical: 4,
-    marginHorizontal: 4,
+    height: 1,
+    backgroundColor: '#2D2E2F',
+    width: '100%',
+  },
+  spacer: {
+    height: SPACER,
   },
   section: {
     gap: 10,
