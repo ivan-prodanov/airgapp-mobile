@@ -844,16 +844,30 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginTop: 4,
   },
+  // The map overlay controls, from Tesla's `MapOverlayButton` theme
+  // (`NativeUIKitDarkTheme`, @1643346/@1643619):
+  //
+  //   size            baseSize * 8 = 40      (baseSize = 5)
+  //   borderRadius    theme.borderRadius = 5
+  //   backgroundColor colors.backgroundPrimary = #161616, at opacity 0.95
+  //   active          colors.primary = #3E6BE2
+  //
+  // Ivan: "less rounded and less transparent in Tesla". Both were us: radius 11
+  // is much rounder than their 5, and rgba(20,20,20,0.82) is a good deal more
+  // see-through than an opaque #161616 held at 0.95 — the map barely shows
+  // through theirs. 0.95 rather than 1.0 is their number, verbatim; the faint
+  // translucency is intentional.
   iconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
+    width: 40,
+    height: 40,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(20,20,20,0.82)',
+    backgroundColor: 'rgba(22,22,22,0.95)',
   },
   iconButtonActive: {
-    backgroundColor: '#3E6AE1',
+    // colors.primary. Ours was #3E6AE1, one digit off their #3E6BE2.
+    backgroundColor: '#3E6BE2',
   },
   agoPill: {
     flex: 1,
@@ -862,11 +876,13 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     justifyContent: 'center',
     gap: 7,
-    height: 38,
+    // Their `header` pill: same 40 tall, same radius 5, same #161616 @ 0.95 as
+    // the buttons it sits between, so the whole top row reads as one material.
+    height: 40,
     marginHorizontal: 10,
     paddingHorizontal: 16,
-    borderRadius: 11,
-    backgroundColor: 'rgba(20,20,20,0.82)',
+    borderRadius: 5,
+    backgroundColor: 'rgba(22,22,22,0.95)',
   },
   agoText: {
     fontSize: 16,
