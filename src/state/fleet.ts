@@ -288,7 +288,9 @@ function withSeat(state: VehicleViewState, seat: SeatPosition, next: SeatClimate
 }
 
 export function stepSeatClimateState(state: VehicleViewState, seat: SeatPosition): VehicleViewState {
-  return withSeat(state, seat, steppedSeat(state.seatClimateModes[seat], seatCapsFor(state, seat)));
+  return withClimateOn(
+    withSeat(state, seat, steppedSeat(state.seatClimateModes[seat], seatCapsFor(state, seat))),
+  );
 }
 
 export function setSeatClimateState(
@@ -296,7 +298,7 @@ export function setSeatClimateState(
   seat: SeatPosition,
   mode: SeatClimateModeName,
 ): VehicleViewState {
-  return withSeat(state, seat, chosenSeat(mode, seatCapsFor(state, seat)));
+  return withClimateOn(withSeat(state, seat, chosenSeat(mode, seatCapsFor(state, seat))));
 }
 
 // Steering wheel: same shape, but capped at level 2 and with no cooling.
@@ -312,7 +314,10 @@ function steppedWheel(current: SteeringWheelClimate, heatLevels: 0 | 1 | 2): Ste
 
 export function stepSteeringWheelClimateState(state: VehicleViewState): VehicleViewState {
   const caps = climateCapabilitiesFor(state.carModel).steeringWheel;
-  return { ...state, steeringWheelClimate: steppedWheel(state.steeringWheelClimate, caps.heatLevels) };
+  return withClimateOn({
+    ...state,
+    steeringWheelClimate: steppedWheel(state.steeringWheelClimate, caps.heatLevels),
+  });
 }
 
 export function setSteeringWheelClimateState(
@@ -326,7 +331,7 @@ export function setSteeringWheelClimateState(
       : mode === 'auto'
         ? { mode: 'auto', level: 0 }
         : { mode: 'off', level: 0 };
-  return { ...state, steeringWheelClimate: next };
+  return withClimateOn({ ...state, steeringWheelClimate: next });
 }
 
 // --- Setpoints: climate temperature, charge limit, charging current ------------------------------
@@ -373,9 +378,35 @@ export const clampSpeedLimitKmh = (kmh: number): number =>
   clamp(Math.round(kmh), SPEED_LIMIT_MIN_KMH, SPEED_LIMIT_MAX_KMH);
 export const speedLimitKmhToStoredMph = (kmh: number): number => kmhToMph(clampSpeedLimitKmh(kmh));
 
+// A "heater command" on a car whose climate is OFF turns the climate on FIRST.
+//
+// Ivan: "moving temp up/down in Tesla app activates climate if off, verify it.
+// Ours doesnt". Verified — it is not a UI nicety, it is in their command saga.
+// Every one of these controls dispatches through `sendVehicleHeaterCommand`
+// (@1196712), which carries the CURRENT `climateOn` in its payload, and
+// `sendVehicleHeaterCommandEffect` (@3972625) branches on it:
+//
+//     if (payload.climateOn) -> send the command alone
+//     else                   -> put(VehicleCommand.climateOn(true, ...)) FIRST,
+//                               then the command
+//
+// Three controls route through that wrapper, and only these three: the
+// temperature setter (@5221742), SeatHeaterControlButton (@3987248) and
+// SteeringWheelHeaterControlButton (@3988460). So the rule is not "any climate
+// control" — the toggles below (defrost, bioweapon, keeper) do NOT go through it.
+//
+// In our architecture this falls out for free: flipping `climateOn` in the same
+// transition makes diffToCommands emit `climateOn` — and it emits it BEFORE the
+// temp/seat/wheel rules, which is exactly their order.
+const withClimateOn = (state: VehicleViewState): VehicleViewState =>
+  state.climateOn ? state : { ...state, climateOn: true };
+
 export function setTargetTempState(state: VehicleViewState, tempC: number): VehicleViewState {
   // Round to the nearest half-degree BEFORE clamping so the dial can only ever land on a real detent.
-  return { ...state, targetTempC: clamp(Math.round(tempC * 2) / 2, LO_TEMP, HI_TEMP) };
+  return withClimateOn({
+    ...state,
+    targetTempC: clamp(Math.round(tempC * 2) / 2, LO_TEMP, HI_TEMP),
+  });
 }
 
 // Camp/Pet as the car models them: ONE value. Setting either implicitly clears

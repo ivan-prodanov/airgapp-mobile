@@ -6,6 +6,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import {
+  setTargetTempState,
+  stepSeatClimateState,
+  stepSteeringWheelClimateState,
+} from '../state/fleet';
 import { diffToCommands, revertFields, type ReconciledCommand } from './reconcile';
 import { initialVehicleState, type VehicleStateKey, type VehicleViewState } from '../types/vehicleTypes';
 
@@ -342,4 +347,64 @@ test('bioweapon manualOverride tracks the keeper mode it displaces', () => {
     at({ bioweaponOn: true, climateKeeper: 'pet' }),
   );
   assert.equal((over[0]?.cmd as { manualOverride: boolean }).manualOverride, true);
+});
+
+// ── A heater command on a cold car turns the climate on FIRST ────────────────
+//
+// Ivan: "moving temp up/down in Tesla app activates climate if off, verify it.
+// Ours doesnt". Verified in their command saga, not inferred from the UI:
+// `sendVehicleHeaterCommand` (@1196712) carries the CURRENT climateOn, and
+// `sendVehicleHeaterCommandEffect` (@3972856) branches on it —
+//
+//     if (payload.climateOn) -> the command alone
+//     else                   -> VehicleCommand.climateOn(true, …) FIRST
+//
+// Exactly three controls route through that wrapper: the temperature setter,
+// SeatHeaterControlButton and SteeringWheelHeaterControlButton. ORDER matters —
+// climate on, then the setting.
+test('temp/seat/wheel on a climate-off car emit climateOn FIRST', () => {
+  const off: VehicleViewState = { ...initialVehicleState, climateOn: false };
+
+  const temp = diffToCommands(off, setTargetTempState(off, 22));
+  assert.deepEqual(
+    temp.map((c) => c.cmd.type),
+    ['climateOn', 'setClimateTemp'],
+    'climateOn must be first — the car has to be on before it accepts a setpoint',
+  );
+
+  const seat = diffToCommands(off, stepSeatClimateState(off, 'frontLeft'));
+  assert.equal(seat[0]?.cmd.type, 'climateOn');
+
+  const wheel = diffToCommands(off, stepSteeringWheelClimateState(off));
+  assert.equal(wheel[0]?.cmd.type, 'climateOn');
+
+  // Already on: no redundant command, matching their `if (payload.climateOn)`.
+  const on: VehicleViewState = { ...initialVehicleState, climateOn: true };
+  assert.deepEqual(
+    diffToCommands(on, setTargetTempState(on, 22)).map((c) => c.cmd.type),
+    ['setClimateTemp'],
+  );
+});
+
+// The mirror rule, and a real regression caught on-car. Keeper and bioweapon set
+// climateOn optimistically for DISPLAY (their isClimateOn derives it from the
+// in-flight command, @1228092) but send only their own action. Ours emitted a
+// second, real climateOn command alongside — visible in the device log as
+// `dispatch climateOn` + `dispatch climateKeeper` from a single Camp tap, in two
+// different coalescer lanes.
+test('keeper/bioweapon imply climate-on WITHOUT emitting a climateOn command', () => {
+  const off: VehicleViewState = { ...initialVehicleState, climateOn: false };
+
+  const camp = diffToCommands(off, { ...off, climateKeeper: 'camp', climateOn: true });
+  assert.deepEqual(camp.map((c) => c.cmd.type), ['climateKeeper'], 'ONE command, as they send');
+  assert.deepEqual(camp[0]?.keys, ['climateKeeper', 'climateOn'], 'but it owns both fields');
+
+  const bio = diffToCommands(off, { ...off, bioweaponOn: true, climateOn: true });
+  assert.deepEqual(bio.map((c) => c.cmd.type), ['bioweaponMode']);
+
+  // A climateOn change NOT implied by either is still a real command.
+  assert.deepEqual(
+    diffToCommands(off, { ...off, climateOn: true }).map((c) => c.cmd.type),
+    ['climateOn'],
+  );
 });

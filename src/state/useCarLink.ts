@@ -1693,6 +1693,28 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
               elapsed: snap.mediaDetail?.elapsedSec ?? -1,
               dur: snap.mediaDetail?.durationSec ?? -1,
             });
+            // The climate slice, for the same reason the media line exists. Ivan
+            // reported "Camp Mode/Pet Mode doesnt work" and the log could show
+            // the command being ACCEPTED by the car (`settle outcome:ok`) but
+            // nothing about what the car reported back afterwards — so "the car
+            // ignored it" and "our read mis-parsed it" were indistinguishable,
+            // which is exactly the probe-can't-show-it failure the media note
+            // above is about.
+            //
+            // Same rules as that one: every value a primitive with a default, so
+            // the swallowing sink cannot silently drop the row.
+            logi('read', 'climate', {
+              has: !!snap.climate,
+              on: String(snap.climate?.isOn ?? 'unread'),
+              keeper: String(snap.climate?.keeper ?? 'unread'),
+              bio: String(snap.climate?.bioweaponOn ?? 'unread'),
+              cop: String(snap.climate?.cabinOverheatMode ?? 'unread'),
+              copTemp: String(snap.climate?.cabinOverheatTemp ?? 'unread'),
+              cooling: String(snap.climate?.copActivelyCooling ?? 'unread'),
+              inC: snap.climate?.insideTempC ?? -999,
+              outC: snap.climate?.outsideTempC ?? -999,
+              tgtC: snap.climate?.targetTempC ?? -999,
+            });
             if (stopped || paused) return;
             lastInfotainmentAtRef.current = Date.now();
             const infoPatch = filterPatchUnderIntent(

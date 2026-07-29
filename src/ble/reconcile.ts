@@ -229,7 +229,26 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   }
 
   // ── Climate ───────────────────────────────────────────────────────────────────
-  if (prev.climateOn !== next.climateOn) {
+  // climateOn is BOTH a command and an implied side effect, and the two must not
+  // be confused — they were, and it put a spurious second command on the wire.
+  //
+  // Their temp/seat/wheel path really does send a climateOn command first
+  // (@3972856). Their keeper and bioweapon paths send ONE action and nothing
+  // else — the power row flips because `isClimateOn` DERIVES from the in-flight
+  // command (@1228092), not because a second command went out.
+  //
+  // We store rather than derive, so those two set climateOn optimistically; that
+  // made this rule fire and emit a real climateOn alongside. Confirmed on-car in
+  // the device log: one Camp tap produced `dispatch climateOn` AND
+  // `dispatch climateKeeper` in the same tick, in two different coalescer lanes.
+  //
+  // So: skip the command when the flip is IMPLIED by a keeper/bioweapon enable
+  // in this same diff. Those commands already claim `climateOn` as a key, so the
+  // grace window and the failure-revert still cover it.
+  const impliedClimateOn =
+    (prev.climateKeeper !== next.climateKeeper && next.climateKeeper !== 'off') ||
+    (prev.bioweaponOn !== next.bioweaponOn && next.bioweaponOn);
+  if (prev.climateOn !== next.climateOn && !(impliedClimateOn && next.climateOn)) {
     emit({ type: next.climateOn ? 'climateOn' : 'climateOff' }, 'climateOn');
   }
   if (prev.targetTempC !== next.targetTempC) {
