@@ -8,7 +8,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
@@ -65,7 +64,6 @@ export function ClimateScreen({ state, actions }: Props) {
     now: Date.now(),
   }).stale;
   const { height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
 
   // Collapsed peek = how much of the panel shows at rest.
   //
@@ -199,7 +197,7 @@ export function ClimateScreen({ state, actions }: Props) {
 
       <Animated.View
         onLayout={onSheetLayout}
-        style={[styles.sheet, { paddingBottom: insets.bottom + 20, transform: [{ translateY }] }]}
+        style={[styles.sheet, { paddingBottom: SHEET_PADDING_BOTTOM, transform: [{ translateY }] }]}
         {...pan.panHandlers}
       >
         <View style={styles.handle} />
@@ -278,7 +276,7 @@ export function ClimateScreen({ state, actions }: Props) {
             symbol="tent"
             label="Camp Mode"
             active={state.campModeOn}
-            divider
+            first
             onPress={() => {
               tap();
               actions.toggle('campModeOn');
@@ -392,20 +390,20 @@ function GroupRow({
   symbol,
   label,
   active,
-  divider,
+  first,
   onPress,
 }: {
   symbol: SFSymbol;
   label: string;
   active: boolean;
-  divider?: boolean;
+  first?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       style={({ pressed }) => [
-        styles.groupRow,
-        divider && styles.groupRowDivider,
+        styles.row,
+        first ? styles.groupRowFirst : styles.groupRowSecond,
         active && styles.rowActive,
         pressed && { opacity: PRESS_OPACITY },
       ]}
@@ -570,6 +568,11 @@ const CONTENT_INSET = 30;
 // screen (@5223627, @5223880, @5224576, @5224588), which is exactly the four
 // gaps: Defrost|Bioweapon, Bioweapon|group, group|Divider, Divider|heading.
 const SPACER = 20;
+// bottomSection.paddingBottom = Specifications.bottomMapOffset = 40 (@1338652).
+// A flat 40 — NOT the safe-area inset plus a margin, which is what we had
+// (34 + 20 = 54, the largest single component of the sheet's 20pt overshoot).
+// 40 still clears the 34pt home indicator, so nothing is lost by matching them.
+const SHEET_PADDING_BOTTOM = 40;
 // Chevrons and the power/vent glyphs, measured the same way: theirs are ~17pt
 // and ~23pt against our 24 and 29. Both were noticeably oversized.
 const CHEVRON_SIZE = 18;
@@ -789,20 +792,12 @@ const styles = StyleSheet.create({
   rowTextActive: {
     color: TEXT_ON_ACTIVE,
   },
+  // No border and no fixed height: the group is just the two rows stacked, each
+  // a full 60pt bordered Button exactly as Tesla builds them. Wrapping them in a
+  // bordered container instead added the container's own 2+2 on top of the rows'
+  // 60+60 — 124 where theirs is 120, and 4 of the 20pt the sheet was too tall.
   group: {
-    borderRadius: RADIUS,
-    borderWidth: BORDER_WIDTH,
-    borderColor: BORDER,
-    overflow: 'hidden',
-  },
-  groupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
     width: '100%',
-    height: ROW_HEIGHT,
-    gap: ROW_ICON_MARGIN + 10,
-    paddingHorizontal: ROW_PADDING_H,
   },
   // The Camp|Pet line is not a divider at all — it is Camp's OWN bottom border,
   // which is why Ivan read it as "exactly the same as the border of the button".
@@ -814,9 +809,16 @@ const styles = StyleSheet.create({
   // Pet zeroes its top border precisely so the two do not stack to 4. So the
   // line is BORDER_WIDTH, in the border colour. Ours was hairlineWidth — 0.33pt
   // on a 3x screen, six times thinner.
-  groupRowDivider: {
-    borderBottomWidth: BORDER_WIDTH,
-    borderBottomColor: BORDER,
+  // Camp (@5223897) and Pet (@5224169), verbatim. Pet zeroing its top border is
+  // what stops the two 2pt borders stacking to 4 at the seam.
+  groupRowFirst: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  groupRowSecond: {
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderTopWidth: 0,
   },
   // `<Divider />` (@5224584) — DividerComponent's base style is { height: 1,
   // width: '100%' } (@1431090), themed `dividerColor` = #2D2E2F. A real 1pt
@@ -834,12 +836,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   sectionLabel: {
-    // Same 16/24 as the rows. It reads heavier only because it is BRIGHT.
+    // `titleText` { marginTop: 2, width: '100%' } (@5221434) with
+    // category=BodyLabel (@5224617) — the SAME 14/20 as every row label. It
+    // reads larger only because it is bright against their dim. We had 16/24
+    // with a 4pt left margin, both invented; the extra 4pt of line height was
+    // 2 of the 20pt the sheet was overshooting.
     fontFamily: FONT,
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     color: TEXT_BRIGHT,
-    marginLeft: 4,
+    marginTop: 2,
+    width: '100%',
   },
   sectionLabelMuted: {
     // CaptionLabel 12/16/0.1.
