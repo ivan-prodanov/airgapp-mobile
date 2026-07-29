@@ -98,18 +98,31 @@ test('climate: on/off, temp, bioweapon, overheat, camp, pet', () => {
   expect(s({ bioweaponOn: false }), s({ bioweaponOn: true }), [
     { cmd: { type: 'bioweaponMode', on: true }, keys: ['bioweaponOn'] },
   ]);
-  expect(s({ cabinOverheatMode: 'off' }), s({ cabinOverheatMode: 'on' }), [
-    { cmd: { type: 'cabinOverheat', on: true }, keys: ['cabinOverheatMode'] },
-  ]);
   expect(s({ cabinOverheatMode: 'on' }), s({ cabinOverheatMode: 'off' }), [
-    { cmd: { type: 'cabinOverheat', on: false }, keys: ['cabinOverheatMode'] },
+    { cmd: { type: 'cabinOverheat', on: false, fanOnly: false }, keys: ['cabinOverheatMode'] },
   ]);
-  // camp and pet are INDEPENDENT — each its own keeper command.
-  expect(s({ campModeOn: false }), s({ campModeOn: true }), [
-    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['campModeOn'] },
+  // No A/C is its OWN command. `fanOnly` used to be pinned false, so this arm
+  // encoded byte-identically to On and the selection snapped back a read later.
+  expect(s({ cabinOverheatMode: 'off' }), s({ cabinOverheatMode: 'noac' }), [
+    { cmd: { type: 'cabinOverheat', on: true, fanOnly: true }, keys: ['cabinOverheatMode'] },
   ]);
-  expect(s({ petModeOn: false }), s({ petModeOn: true }), [
-    { cmd: { type: 'climateKeeper', mode: 'dog' }, keys: ['petModeOn'] },
+  expect(s({ cabinOverheatMode: 'off' }), s({ cabinOverheatMode: 'on' }), [
+    { cmd: { type: 'cabinOverheat', on: true, fanOnly: false }, keys: ['cabinOverheatMode'] },
+  ]);
+
+  // ONE keeper field -> ONE command, and it claims the single key it owns.
+  expect(s({ climateKeeper: 'off' }), s({ climateKeeper: 'camp' }), [
+    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper'] },
+  ]);
+  // 'pet' is OUR name for the row; the action proto calls it Dog.
+  expect(s({ climateKeeper: 'off' }), s({ climateKeeper: 'pet' }), [
+    { cmd: { type: 'climateKeeper', mode: 'dog' }, keys: ['climateKeeper'] },
+  ]);
+  // Switching modes is a SINGLE command. As two booleans this transition emitted
+  // both `camp` and `off` in one tick — the off arriving second and cancelling
+  // the mode the user just picked.
+  expect(s({ climateKeeper: 'pet' }), s({ climateKeeper: 'camp' }), [
+    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper'] },
   ]);
 });
 

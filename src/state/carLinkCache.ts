@@ -1,4 +1,11 @@
-import type { CarLocation, MediaNowPlaying, TirePressures } from '@/types/vehicleTypes';
+import type {
+  CabinOverheatMode,
+  CabinOverheatTemp,
+  CarLocation,
+  ClimateKeeperMode,
+  MediaNowPlaying,
+  TirePressures,
+} from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
 
 // The linked car's last-known telemetry, cached across app launches.
@@ -32,6 +39,23 @@ export interface CarLinkCache {
   targetTempC: number | null;
   chargeLimitPercent: number | null;
   chargingAmps: number | null;
+  // The climate TOGGLES. Rendered from telemetry, so by this file's own rule
+  // they belong here — and they were missing, which is the tirePressures gap
+  // repeated a third time. Without them a cold start painted whatever
+  // initialVehicleState happened to say (Cabin Overheat Protection asserted
+  // "On, 40°C" on every launch) until a climate read landed, and if the car was
+  // asleep it asserted it indefinitely — undimmed, so it read as fact rather
+  // than as the last known value.
+  climateOn: boolean | null;
+  frontDefrostOn: boolean | null;
+  // Not rendered on its own — the Defrost row drives the pair and the reconciler
+  // diffs `front || rear`. Cached with its partner so a rehydrated front does
+  // not diff against a rear that reset to false.
+  rearDefrostOn: boolean | null;
+  bioweaponOn: boolean | null;
+  climateKeeper: ClimateKeeperMode | null;
+  cabinOverheatMode: CabinOverheatMode | null;
+  cabinOverheatTemp: CabinOverheatTemp | null;
   // The car's last known GPS. Persisted for the same reason as the rest: a cold
   // start should show what we knew, not a blank.
   //
@@ -90,6 +114,11 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 // a stale cache renders no line rather than a blank one.
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
+// Union fields are validated by MEMBERSHIP. `str()` would happily rehydrate a
+// corrupt "banana" into a field typed 'off' | 'noac' | 'on' and light a segment
+// that does not exist.
+const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
+  typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : null;
 
 export async function loadCarLinkCache(storage: AppStorage, vin: string): Promise<CarLinkCache | null> {
   const cached = await load<Partial<CarLinkCache> | null>(storage, carLinkCacheKey(vin), null);
@@ -106,6 +135,16 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     targetTempC: num(cached?.targetTempC),
     chargeLimitPercent: num(cached?.chargeLimitPercent),
     chargingAmps: num(cached?.chargingAmps),
+    // Validated by membership, not by typeof: a corrupt or older cache must not
+    // hand a bogus string to a union-typed field and light a segment that does
+    // not exist. Absent stays null — "not read yet", distinct from "off".
+    climateOn: bool(cached?.climateOn),
+    frontDefrostOn: bool(cached?.frontDefrostOn),
+    rearDefrostOn: bool(cached?.rearDefrostOn),
+    bioweaponOn: bool(cached?.bioweaponOn),
+    climateKeeper: oneOf(cached?.climateKeeper, ['off', 'on', 'camp', 'pet'] as const),
+    cabinOverheatMode: oneOf(cached?.cabinOverheatMode, ['off', 'noac', 'on'] as const),
+    cabinOverheatTemp: oneOf(cached?.cabinOverheatTemp, ['30', '35', '40'] as const),
     // Validated, not trusted: an older cache has no carLocation, and a corrupt
     // one must not put the map pin at 0,0.
     // Validated the same way as carLocation: an older cache has no tirePressures,

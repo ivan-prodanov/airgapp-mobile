@@ -9,6 +9,7 @@
 // Zero React/Expo/network imports, no hardware — pure TS.
 
 import type {
+  ClimateKeeperMode,
   CabinOverheatMode,
   CabinOverheatTemp,
   SeatClimateMode,
@@ -17,7 +18,7 @@ import type {
   VehicleViewState,
 } from '../types/vehicleTypes';
 import { initialVehicleState } from '../types/vehicleTypes';
-import { copMode, copTemp, keeperToToggles, resolveSeat, resolveSteeringWheel } from './climateStateMap';
+import { copMode, copTemp, keeperMode, resolveSeat, resolveSteeringWheel } from './climateStateMap';
 
 // ── Normalized types (Part 4 shape) ────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export interface InfotainmentSnapshot {
     rearDefrostOn: boolean | undefined;
     cabinOverheatMode: CabinOverheatMode | undefined;
     cabinOverheatTemp: CabinOverheatTemp | undefined;
-    keeper: { campModeOn: boolean; petModeOn: boolean } | undefined;
+    keeper: ClimateKeeperMode | undefined;
     steeringWheel: { mode: SteeringWheelClimateModeName; level: 0 | 1 | 2 } | undefined;
     seats: Partial<Record<SeatPosition, SeatClimateMode>> | undefined;
   };
@@ -378,7 +379,7 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       rearDefrostOn: typeof cl.isRearDefrosterOn === 'boolean' ? cl.isRearDefrosterOn : undefined,
       cabinOverheatMode: copMode(cl.cabinOverheatProtection),
       cabinOverheatTemp: copTemp(cl.copActivationTemperature),
-      keeper: keeperToToggles(cl.climateKeeperMode),
+      keeper: keeperMode(cl.climateKeeperMode),
       steeringWheel: resolveSteeringWheel(
         cl.autoSteeringWheelHeat,
         cl.steeringWheelHeatLevel,
@@ -708,10 +709,7 @@ export function infotainmentToPatch(
     if (c.rearDefrostOn !== undefined) patch.rearDefrostOn = c.rearDefrostOn;
     if (c.cabinOverheatMode !== undefined) patch.cabinOverheatMode = c.cabinOverheatMode;
     if (c.cabinOverheatTemp !== undefined) patch.cabinOverheatTemp = c.cabinOverheatTemp;
-    if (c.keeper !== undefined) {
-      patch.campModeOn = c.keeper.campModeOn;
-      patch.petModeOn = c.keeper.petModeOn;
-    }
+    if (c.keeper !== undefined) patch.climateKeeper = c.keeper;
     if (c.steeringWheel !== undefined) patch.steeringWheelClimate = c.steeringWheel;
     // MERGE onto current seats — the car omits positions it doesn't have, and we
     // must not blow away the ones it didn't mention. The caller passes prev via

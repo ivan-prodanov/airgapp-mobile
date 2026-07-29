@@ -29,8 +29,7 @@ test('climate/charging setpoints and comfort toggles never trigger a renderer up
   assert.equal(changed({ cabinOverheatMode: 'off' }), false);
   assert.equal(changed({ cabinOverheatTemp: '30' }), false);
   assert.equal(changed({ bioweaponOn: true }), false);
-  assert.equal(changed({ campModeOn: true }), false);
-  assert.equal(changed({ petModeOn: true }), false);
+  assert.equal(changed({ climateKeeper: 'camp' }), false);
   assert.equal(changed({ chargeLimitPercent: 100 }), false);
   assert.equal(changed({ chargingAmps: 5 }), false);
   // The car's GPS position drives the map pin only, never the 3D payload.
@@ -56,8 +55,7 @@ test('changing every setpoint at once is still not a visual change', () => {
       cabinOverheatMode: 'noac',
       cabinOverheatTemp: '35',
       bioweaponOn: true,
-      campModeOn: true,
-      petModeOn: true,
+      climateKeeper: 'camp',
       chargeLimitPercent: 55,
       chargingAmps: 9,
     }),

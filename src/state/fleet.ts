@@ -2,6 +2,7 @@ import {
   climateCapabilitiesFor,
   initialVehicleState,
   type CabinOverheatMode,
+  type ClimateKeeperMode,
   type CabinOverheatTemp,
   type CameraMode,
   type CarModel,
@@ -375,6 +376,16 @@ export const speedLimitKmhToStoredMph = (kmh: number): number => kmhToMph(clampS
 export function setTargetTempState(state: VehicleViewState, tempC: number): VehicleViewState {
   // Round to the nearest half-degree BEFORE clamping so the dial can only ever land on a real detent.
   return { ...state, targetTempC: clamp(Math.round(tempC * 2) / 2, LO_TEMP, HI_TEMP) };
+}
+
+// Camp/Pet as the car models them: ONE value. Setting either implicitly clears
+// the other, which is not a policy we invented — it is what the vehicle does,
+// and what Tesla's own screen warns about before it happens.
+export function setClimateKeeperState(
+  state: VehicleViewState,
+  mode: ClimateKeeperMode,
+): VehicleViewState {
+  return state.climateKeeper === mode ? state : { ...state, climateKeeper: mode };
 }
 
 export function setCabinOverheatModeState(

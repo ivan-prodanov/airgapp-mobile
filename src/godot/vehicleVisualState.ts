@@ -48,8 +48,7 @@ const IGNORED_KEYS = new Set<keyof VehicleViewState>([
   'cabinOverheatMode',
   'cabinOverheatTemp',
   'bioweaponOn',
-  'campModeOn',
-  'petModeOn',
+  'climateKeeper',
   'chargeLimitPercent',
   'chargingAmps',
   // Security & Drivers: PINs + protected-feature settings are pure sheet state, never on the 3D car.

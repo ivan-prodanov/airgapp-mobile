@@ -178,10 +178,27 @@ export function setClimateKeeperAction(mode: number): ActionPayload {
     bytes: encodeInfotainmentAction({ hvacClimateKeeperAction: { ClimateKeeperAction: m } }),
   };
 }
-export function setCabinOverheatAction(on: boolean): ActionPayload {
+// `fanOnly` is the "No A/C" arm of the three-way selector — the car cools with
+// the fan alone. It was pinned false, so No A/C sent bytes identical to On: the
+// car turned COP fully on, reported On, and the selection snapped back one read
+// later. We could READ the mode (copMode maps FanOnly=2 -> 'noac') but never set
+// it.
+//
+// Tesla's own mapping, from the climate screen's ToggleSelector onChange
+// (@5224697), is exactly the two independent predicates:
+//
+//   VehicleCommand.cabinOverheatProtection(
+//     on      = selected !== Off,
+//     fanOnly = selected === FanOnly)
+//
+// Proto field numbers confirmed against their deserializer (@849455): 1 = on,
+// 2 = fanOnly.
+export function setCabinOverheatAction(on: boolean, fanOnly: boolean): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
-    bytes: encodeInfotainmentAction({ setCabinOverheatProtectionAction: { on: !!on, fanOnly: false } }),
+    bytes: encodeInfotainmentAction({
+      setCabinOverheatProtectionAction: { on: !!on, fanOnly: !!fanOnly },
+    }),
   };
 }
 // setBioweaponModeAction — see deviation #1: the reference calls this

@@ -139,9 +139,18 @@ test('climate keeper / cabin overheat / bioweapon / steering wheel heater', () =
   const dog = decodeAction(setClimateKeeperAction(CLIMATE_KEEPER.DOG).bytes);
   assert.equal(dog.vehicleAction?.hvacClimateKeeperAction?.ClimateKeeperAction, CLIMATE_KEEPER.DOG);
 
-  const cop = decodeAction(setCabinOverheatAction(true).bytes);
+  // The three arms of the selector. `fanOnly` used to be pinned false, so
+  // "No A/C" encoded byte-identically to "On" — you could read the mode but
+  // never set it. Tesla's mapping (@5224697) is two independent predicates:
+  // on = selected !== Off, fanOnly = selected === FanOnly.
+  const cop = decodeAction(setCabinOverheatAction(true, false).bytes);
   assert.equal(cop.vehicleAction?.setCabinOverheatProtectionAction?.on, true);
   assert.equal(cop.vehicleAction?.setCabinOverheatProtectionAction?.fanOnly, false);
+
+  const copFanOnly = decodeAction(setCabinOverheatAction(true, true).bytes);
+  assert.equal(copFanOnly.vehicleAction?.setCabinOverheatProtectionAction?.on, true);
+  assert.equal(copFanOnly.vehicleAction?.setCabinOverheatProtectionAction?.fanOnly, true);
+  assert.notDeepEqual(cop, copFanOnly, 'No A/C must not encode the same as On');
 
   // setBioweaponModeAction — the corrected name for the reference's
   // misleadingly-named setKeepAccPowerAction (builds hvacBioweaponModeAction).

@@ -8,6 +8,7 @@
 
 import type {
   CabinOverheatMode,
+  ClimateKeeperMode,
   CabinOverheatTemp,
   SeatClimateMode,
   SteeringWheelClimateModeName,
@@ -88,10 +89,13 @@ function stwLevelFromName(v: unknown): number | undefined {
 
 // ClimateKeeperMode oneof {Unknown=1, Off=2, On=3, Dog=4, Party=5}.
 // ⚠️ `Party` is CAMP mode (the state proto's name for it); `Dog` is Pet.
-export function keeperToToggles(val: unknown): { campModeOn: boolean; petModeOn: boolean } | undefined {
+export function keeperMode(val: unknown): ClimateKeeperMode | undefined {
   const c = oneofCase(val);
   if (c === undefined) return undefined;
-  return { campModeOn: c === 'party', petModeOn: c === 'dog' };
+  if (c === 'party') return 'camp';
+  if (c === 'dog') return 'pet';
+  if (c === 'on') return 'on';
+  return 'off';
 }
 
 // CabinOverheatProtection_E {Off=0, On=1, FanOnly=2} → our 'off'|'on'|'noac'.

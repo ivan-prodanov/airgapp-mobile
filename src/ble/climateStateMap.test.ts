@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import {
   copMode,
   copTemp,
-  keeperToToggles,
+  keeperMode,
   resolveSeat,
   resolveSteeringWheel,
   seatLevel,
@@ -59,20 +59,25 @@ describe('resolveSteeringWheel — StwHeatLevel off=1 trap', () => {
   });
 });
 
-describe('keeperToToggles — Party=Camp, Dog=Pet', () => {
+describe('keeperMode — ONE value, because the car has one field', () => {
   it('Party → camp', () => {
-    assert.deepEqual(keeperToToggles({ Party: {} }), { campModeOn: true, petModeOn: false });
+    assert.equal(keeperMode({ Party: {} }), 'camp');
   });
   it('Dog → pet', () => {
-    assert.deepEqual(keeperToToggles('Dog'), { campModeOn: false, petModeOn: true });
+    assert.equal(keeperMode('Dog'), 'pet');
   });
-  it('Off/On/Unknown → both false', () => {
-    for (const c of [{ Off: {} }, { On: {} }, { Unknown: {} }]) {
-      assert.deepEqual(keeperToToggles(c), { campModeOn: false, petModeOn: false });
+  it('On → on — their plain "Keep Climate On", not Off', () => {
+    // Carried through so a car in Keep mode round-trips instead of reading back
+    // as Off and being "corrected" to Off by the next diff. Neither row lights.
+    assert.equal(keeperMode({ On: {} }), 'on');
+  });
+  it('Off/Unknown → off', () => {
+    for (const c of [{ Off: {} }, { Unknown: {} }]) {
+      assert.equal(keeperMode(c), 'off');
     }
   });
   it('absent → undefined (leave default)', () => {
-    assert.equal(keeperToToggles(undefined), undefined);
+    assert.equal(keeperMode(undefined), undefined);
   });
 });
 

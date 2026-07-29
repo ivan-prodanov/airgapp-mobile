@@ -496,8 +496,7 @@ test('climate: the full state reads back through infotainmentToPatch', () => {
   assert.equal(p.rearDefrostOn, false);
   assert.equal(p.cabinOverheatMode, 'noac');
   assert.equal(p.cabinOverheatTemp, '40');
-  assert.equal(p.campModeOn, true);
-  assert.equal(p.petModeOn, false);
+  assert.equal(p.climateKeeper, 'camp');
   assert.deepEqual(p.steeringWheelClimate, { mode: 'auto', level: 0 });
   assert.deepEqual(p.seatClimateModes?.frontLeft, { mode: 'heat', level: 2 });
   assert.deepEqual(p.seatClimateModes?.frontRight, { mode: 'cool', level: 1 });
@@ -511,7 +510,7 @@ test('climate: absent optional fields are OMITTED from the patch (proto3-optiona
   assert.equal(p.climateOn, false);
   assert.equal('targetTempC' in p, false);
   assert.equal('cabinOverheatMode' in p, false);
-  assert.equal('campModeOn' in p, false);
+  assert.equal('climateKeeper' in p, false);
   assert.equal('seatClimateModes' in p, false, 'no seat field reported -> do not touch the map');
   assert.equal('steeringWheelClimate' in p, false);
 });

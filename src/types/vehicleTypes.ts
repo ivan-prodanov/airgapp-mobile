@@ -50,6 +50,19 @@ export type SeatClimateModes = Record<SeatPosition, SeatClimateMode>;
 // STRING because it is a <Segmented> option key, not an arithmetic value (it is only ever compared
 // and rendered). Maps to CarServer ClimateState.cabin_overheat_protection / cop_activation_temp.
 export type CabinOverheatMode = 'off' | 'noac' | 'on';
+// ONE value, because the car has one field. `ClimateState.climateKeeperMode` is a
+// single enum {Unknown, Off, On, Dog, Party} — Camp and Pet are mutually
+// exclusive in the vehicle, and Tesla's own screen treats them that way (tapping
+// Camp while Pet runs prompts "Enabling Camp Mode will disable Pet Mode").
+//
+// We modelled them as two independent booleans, which made illegal states
+// representable and produced two real bugs: both rows could light at once, and
+// turning one OFF emitted an unconditional keeper=off that silently killed the
+// other on the car while our UI kept it lit.
+//
+// 'on' is their plain "Keep Climate On", carried so a car in that mode round-
+// trips instead of reading back as Off. Neither row lights for it.
+export type ClimateKeeperMode = 'off' | 'on' | 'camp' | 'pet';
 export type CabinOverheatTemp = '30' | '35' | '40';
 
 // The car's real position, from the infotainment read's locationState/driveState. heading is the
@@ -213,8 +226,7 @@ export interface VehicleViewState {
   bioweaponOn: boolean;
   // Camp and Pet mode are INDEPENDENT toggles in the sheet (either, both, or neither can be on),
   // so they are two booleans rather than one keeper enum.
-  campModeOn: boolean;
-  petModeOn: boolean;
+  climateKeeper: ClimateKeeperMode;
   // Charging setpoints. Limit is a percentage clamped to LIMIT_MIN..LIMIT_MAX; amps clamp to
   // AMP_MIN..AMP_MAX. Map to ChargeState.charge_limit_soc / charge_current_request.
   chargeLimitPercent: number;
@@ -310,11 +322,10 @@ export const initialVehicleState: VehicleViewState = {
   tirePressures: null,
   media: null,
   targetTempC: 19.5,
-  cabinOverheatMode: 'on',
+  cabinOverheatMode: 'off',
   cabinOverheatTemp: '40',
   bioweaponOn: false,
-  campModeOn: false,
-  petModeOn: false,
+  climateKeeper: 'off',
   chargeLimitPercent: 80,
   chargingState: null,
   minutesToChargeLimit: null,

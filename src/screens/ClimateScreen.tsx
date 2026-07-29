@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from 'react';
 import {
+  Alert,
   Animated,
   PanResponder,
   Pressable,
@@ -177,6 +178,57 @@ export function ClimateScreen({ state, actions }: Props) {
     });
   };
 
+  // Camp / Pet. Recovered from their onPress handlers (@5224040 camp, @5224322
+  // pet) rather than treated as two toggles, because the car has ONE keeper mode
+  // and the two rows are two faces of it.
+  //
+  //   tap Camp:  camp -> off
+  //              pet  -> confirm "Enabling Camp Mode will disable Pet Mode."
+  //              else -> camp
+  //
+  //   tap Pet:   pet  -> confirm "Please confirm to disable Pet Mode."  -> off
+  //              else -> pet          (NO prompt: replacing Camp is silent)
+  //
+  // The asymmetry is theirs and it is not arbitrary — every prompt guards Pet
+  // Mode specifically, the one whose whole job is keeping an animal alive in a
+  // closed car. Camp needs no confirmation to start or stop; Pet needs one to
+  // stop, and one to be displaced.
+  //
+  // Strings are the app's own (`alert_confirmation_title`,
+  // `alert_vehicle_control_camp_pet_mode_override_message`,
+  // `alert_vehicle_control_pet_mode_override_message`, `alert_cancel`,
+  // `button_yes`) from the English table @926615, and their Alert is
+  // `cancelable: false` — on iOS an Alert is modal anyway.
+  //
+  // NOT copied: their third branch calls actuateCPDAlert() when
+  // `requiresClimateKeeperCPDPrompt` (Child Presence Detection). That flag comes
+  // from the cloud vehicle config, which BLE does not carry — the same gap as
+  // supportsCabinOverheatProtection.
+  const confirm = (message: string, onYes: () => void) =>
+    Alert.alert('Are you sure?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Yes', onPress: onYes },
+    ]);
+
+  const onCampPress = () => {
+    tap();
+    if (state.climateKeeper === 'camp') return actions.setClimateKeeper('off');
+    if (state.climateKeeper === 'pet') {
+      return confirm('Enabling Camp Mode will disable Pet Mode.', () =>
+        actions.setClimateKeeper('camp'),
+      );
+    }
+    actions.setClimateKeeper('camp');
+  };
+
+  const onPetPress = () => {
+    tap();
+    if (state.climateKeeper === 'pet') {
+      return confirm('Please confirm to disable Pet Mode.', () => actions.setClimateKeeper('off'));
+    }
+    actions.setClimateKeeper('pet');
+  };
+
   // Defrost Car: (1) turn climate ON, (2) set temp to HI, (3) run front + rear defrost (harness G + H).
   const toggleDefrost = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -307,21 +359,15 @@ export function ClimateScreen({ state, actions }: Props) {
           <GroupRow
             symbol="tent"
             label="Camp Mode"
-            active={state.campModeOn}
+            active={state.climateKeeper === 'camp'}
             first
-            onPress={() => {
-              tap();
-              actions.toggle('campModeOn');
-            }}
+            onPress={onCampPress}
           />
           <GroupRow
             symbol="pawprint.fill"
             label="Pet Mode"
-            active={state.petModeOn}
-            onPress={() => {
-              tap();
-              actions.toggle('petModeOn');
-            }}
+            active={state.climateKeeper === 'pet'}
+            onPress={onPetPress}
           />
         </View>
 

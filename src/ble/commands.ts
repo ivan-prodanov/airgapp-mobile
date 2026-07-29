@@ -97,7 +97,7 @@ export type CarCommand =
   | { type: 'defrostOn' }
   | { type: 'defrostOff' }
   | { type: 'climateKeeper'; mode: 'off' | 'on' | 'dog' | 'camp' }
-  | { type: 'cabinOverheat'; on: boolean }
+  | { type: 'cabinOverheat'; on: boolean; fanOnly: boolean }
   | { type: 'setCopTemp'; level: 'low' | 'medium' | 'high' }
   | { type: 'seatHeater'; seat: 'FL' | 'FR' | 'RL' | 'RC' | 'RR'; level: 0 | 1 | 2 | 3 }
   | { type: 'seatCooler'; seat: 'FL' | 'FR'; level: 0 | 1 | 2 | 3 }
@@ -214,7 +214,7 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
     case 'climateKeeper':
       return fromPayload(setClimateKeeperAction(CLIMATE_KEEPER_MODE[cmd.mode]));
     case 'cabinOverheat':
-      return fromPayload(setCabinOverheatAction(cmd.on));
+      return fromPayload(setCabinOverheatAction(cmd.on, cmd.fanOnly));
     case 'setCopTemp':
       // See builders.ts's setCopTempAction doc comment: proto confirmed
       // present, added despite the brief's "do NOT add" — flagged in the

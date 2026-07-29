@@ -22,7 +22,12 @@
 
 import type { CarCommand } from './commands';
 import type { ParentalSetting } from './builders';
-import type { SeatPosition, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
+import type {
+  ClimateKeeperMode,
+  SeatPosition,
+  VehicleStateKey,
+  VehicleViewState,
+} from '../types/vehicleTypes';
 
 export interface ReconciledCommand {
   cmd: CarCommand;
@@ -61,6 +66,15 @@ const PARENTAL_SETTING_KEYS: ReadonlyArray<readonly [VehicleStateKey, ParentalSe
   ['parentalRequireSafety', 'safetyFeatures'],
   ['parentalCurfewNotify', 'curfew'],
 ];
+
+// Our state names the modes after the UI rows; the action proto names them after
+// the original features. Party IS Camp and Dog IS Pet — see climateStateMap.
+const KEEPER_CMD_MODE: Record<ClimateKeeperMode, 'off' | 'on' | 'dog' | 'camp'> = {
+  off: 'off',
+  on: 'on',
+  camp: 'camp',
+  pet: 'dog',
+};
 
 export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): ReconciledCommand[] {
   const out: ReconciledCommand[] = [];
@@ -198,7 +212,17 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
     emit({ type: 'bioweaponMode', on: next.bioweaponOn }, 'bioweaponOn');
   }
   if (prev.cabinOverheatMode !== next.cabinOverheatMode) {
-    emit({ type: 'cabinOverheat', on: next.cabinOverheatMode !== 'off' }, 'cabinOverheatMode');
+    // Two independent predicates, theirs verbatim (@5224697): `on` for anything
+    // that is not Off, `fanOnly` only for the middle option. Sending on alone
+    // made No A/C indistinguishable from On.
+    emit(
+      {
+        type: 'cabinOverheat',
+        on: next.cabinOverheatMode !== 'off',
+        fanOnly: next.cabinOverheatMode === 'noac',
+      },
+      'cabinOverheatMode',
+    );
   }
   // Cabin-overheat TEMP (30/35/40 -> COP low/med/high). Was UNMAPPED, so changing
   // the segmented temp did nothing. The Defrost button drives front+rear together
@@ -211,12 +235,13 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
     const on = next.frontDefrostOn || next.rearDefrostOn;
     emit({ type: on ? 'defrostOn' : 'defrostOff' }, 'frontDefrostOn', 'rearDefrostOn');
   }
-  // Camp and Pet are independent toggles that both map to climateKeeper.
-  if (prev.campModeOn !== next.campModeOn) {
-    emit({ type: 'climateKeeper', mode: next.campModeOn ? 'camp' : 'off' }, 'campModeOn');
-  }
-  if (prev.petModeOn !== next.petModeOn) {
-    emit({ type: 'climateKeeper', mode: next.petModeOn ? 'dog' : 'off' }, 'petModeOn');
+  // ONE command for ONE car field. Previously two blocks watched two booleans and
+  // could both fire in a single transition (camp on + pet off), sending `camp`
+  // and `off` in the same tick — the second undoing the first. And turning either
+  // one off emitted an unconditional `off`, which on the car also cancelled the
+  // other mode while our UI kept showing it.
+  if (prev.climateKeeper !== next.climateKeeper) {
+    emit({ type: 'climateKeeper', mode: KEEPER_CMD_MODE[next.climateKeeper] }, 'climateKeeper');
   }
 
   // ── Seat + steering-wheel heaters ──────────────────────────────────────────────

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   bindVehicleVin,
+  setClimateKeeperState,
   activeVehicle,
   addVehicle,
   AMP_MAX,
@@ -258,11 +259,16 @@ test('Model S/X: all three rear seats heated (incl. centre); Model X uses the yo
 // defaults, so a fresh car must still render exactly what the screens used to mount with.
 test('setpoint defaults match the screen-local useState values they replaced', () => {
   assert.equal(initialVehicleState.targetTempC, 19.5);
-  assert.equal(initialVehicleState.cabinOverheatMode, 'on');
+  // 'on' until 2026-07-29. It was a screen-local useState default that this test
+  // faithfully pinned — but it is a claim about the CAR, made before we have read
+  // the car, and it is rendered undimmed so it reads as fact. Tesla's own
+  // selector resolves ON and FANONLY explicitly and lands everything else,
+  // undefined included, on Off (@5224733). So Off is both the honest default and
+  // theirs.
+  assert.equal(initialVehicleState.cabinOverheatMode, 'off');
   assert.equal(initialVehicleState.cabinOverheatTemp, '40');
   assert.equal(initialVehicleState.bioweaponOn, false);
-  assert.equal(initialVehicleState.campModeOn, false);
-  assert.equal(initialVehicleState.petModeOn, false);
+  assert.equal(initialVehicleState.climateKeeper, 'off');
   assert.equal(initialVehicleState.chargeLimitPercent, 80);
   assert.equal(initialVehicleState.chargingAmps, AMP_MAX);
 });
@@ -297,16 +303,22 @@ test('setChargingAmpsState clamps to the 5–16 A stepper domain', () => {
 
 test('the comfort toggles flip via toggleState (the generic path the sheet rows use)', () => {
   let s = initialVehicleState;
-  for (const key of ['bioweaponOn', 'campModeOn', 'petModeOn'] as const) {
+  for (const key of ['bioweaponOn'] as const) {
     s = toggleState(s, key);
     assert.equal(s[key], true);
     s = toggleState(s, key);
     assert.equal(s[key], false);
   }
-  // Camp and Pet are INDEPENDENT (not one keeper enum): both can be on at once.
-  const both = toggleState(toggleState(initialVehicleState, 'campModeOn'), 'petModeOn');
-  assert.equal(both.campModeOn, true);
-  assert.equal(both.petModeOn, true);
+  // Camp and Pet are NOT independent, and this test used to assert that they
+  // were — "both can be on at once" was the defect written down as a guarantee.
+  // The car has ONE `climateKeeperMode`, so selecting either necessarily clears
+  // the other; Tesla's own screen prompts before doing it.
+  let k = setClimateKeeperState(initialVehicleState, 'camp');
+  assert.equal(k.climateKeeper, 'camp');
+  k = setClimateKeeperState(k, 'pet');
+  assert.equal(k.climateKeeper, 'pet', 'selecting Pet replaces Camp — it cannot add to it');
+  k = setClimateKeeperState(k, 'off');
+  assert.equal(k.climateKeeper, 'off');
 });
 
 test('setpoints are per-vehicle: editing the active car leaves the others alone', () => {

@@ -1,5 +1,6 @@
 import type {
   CabinOverheatMode,
+  ClimateKeeperMode,
   CabinOverheatTemp,
   CameraMode,
   SeatClimateModeName,
@@ -11,6 +12,7 @@ import type {
 import {
   patchState,
   setCabinOverheatModeState,
+  setClimateKeeperState,
   setCabinOverheatTempState,
   setCameraModeState,
   setChargeLimitState,
@@ -47,6 +49,7 @@ export interface VehicleActions {
   // (state.targetTempC + delta, a slider's pageX-derived percent) without pre-clamping.
   setTargetTemp: (tempC: number) => void;
   setCabinOverheatMode: (mode: CabinOverheatMode) => void;
+  setClimateKeeper: (mode: ClimateKeeperMode) => void;
   setCabinOverheatTemp: (temp: CabinOverheatTemp) => void;
   setChargeLimit: (percent: number) => void;
   setChargingAmps: (amps: number) => void;
@@ -77,6 +80,7 @@ export function buildVehicleActions(
     setSteeringWheelClimate: (mode) => apply((s) => setSteeringWheelClimateState(s, mode)),
     setTargetTemp: (tempC) => apply((s) => setTargetTempState(s, tempC)),
     setCabinOverheatMode: (mode) => apply((s) => setCabinOverheatModeState(s, mode)),
+    setClimateKeeper: (mode) => apply((s) => setClimateKeeperState(s, mode)),
     setCabinOverheatTemp: (temp) => apply((s) => setCabinOverheatTempState(s, temp)),
     setChargeLimit: (percent) => apply((s) => setChargeLimitState(s, percent)),
     setChargingAmps: (amps) => apply((s) => setChargingAmpsState(s, amps)),
