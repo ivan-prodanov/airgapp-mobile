@@ -73,18 +73,11 @@ const NOT_CACHED: Record<string, string> = {
   activeRoute: 'VOLATILE: a finished route rendered as active would misroute the user.',
 
   // ── GAP ───────────────────────────────────────────────────────────────────
-  locked: 'GAP: steady-state and rendered on Home; a cold start shows the initial default.',
-  sentryEnabled: 'GAP: steady-state, rendered on Controls.',
-  valetMode: 'GAP: steady-state, rendered on Security.',
-  speedLimitMode: 'GAP: steady-state, rendered on Security.',
-  cableAttached: 'GAP: steady-state, drives the charge panel.',
-  odometerMiles: 'GAP: monotonic — the single most cacheable value we have.',
-  seatClimateModes: 'GAP: rendered on the climate markers over the 3D car.',
-  steeringWheelClimate: 'GAP: rendered beside the seats.',
-  leftFrontWindowOpen: 'GAP: the four windows drive the Vent control state.',
-  rightFrontWindowOpen: 'GAP: see leftFrontWindowOpen.',
-  leftRearWindowOpen: 'GAP: see leftFrontWindowOpen.',
-  rightRearWindowOpen: 'GAP: see leftFrontWindowOpen.',
+  // (empty — the twelve entries that lived here are cached as of 2026-07-29.
+  // Kept as a section rather than deleted: the next telemetry field that is
+  // steady-state but not yet persisted belongs here, with a reason, not in the
+  // VOLATILE block above.)
+
 };
 
 test('every telemetry-written field is either cached or explicitly excused', () => {

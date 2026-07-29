@@ -221,6 +221,20 @@ export function ClimateScreen({ state, actions }: Props) {
     actions.setClimateKeeper('camp');
   };
 
+  // Bioweapon displaces a running keeper mode, and Tesla confirms before it does
+  // — the third member of the same guard-Pet-Mode family (@5223810). Only when
+  // ENABLING, and only when a keeper mode is actually running.
+  const onBioweaponPress = () => {
+    tap();
+    const on = !state.bioweaponOn;
+    if (on && state.climateKeeper !== 'off') {
+      return confirm('Enabling Bioweapon Defense Mode will disable Pet Mode.', () =>
+        actions.setBioweapon(true),
+      );
+    }
+    actions.setBioweapon(on);
+  };
+
   const onPetPress = () => {
     tap();
     if (state.climateKeeper === 'pet') {
@@ -348,10 +362,7 @@ export function ClimateScreen({ state, actions }: Props) {
           symbol="microbe"
           label="Bioweapon Defense Mode"
           active={state.bioweaponOn}
-          onPress={() => {
-            tap();
-            actions.toggle('bioweaponOn');
-          }}
+          onPress={onBioweaponPress}
         />
 
         <View style={styles.spacer} />

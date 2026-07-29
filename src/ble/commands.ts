@@ -125,7 +125,7 @@ export type CarCommand =
   | { type: 'speedLimit'; action: 'activate' | 'deactivate' | 'set' | 'clearPin'; mph?: number; pin?: string }
   | { type: 'homelink'; lat: number; lon: number }
   | { type: 'boombox'; sound: number }
-  | { type: 'bioweaponMode'; on: boolean }
+  | { type: 'bioweaponMode'; on: boolean; manualOverride: boolean }
   | { type: 'pinToDrive'; on: boolean; pin?: string }
   | { type: 'navigateTo'; lat: number; lon: number; label?: string; order?: 'REPLACE' | 'PREPEND' | 'APPEND' }
   | { type: 'navigateWaypoints'; coords: { lat: number; lon: number }[]; order: 'REPLACE' | 'PREPEND' | 'APPEND' }
@@ -260,7 +260,7 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
     case 'boombox':
       return fromPayload(boomboxAction(cmd.sound));
     case 'bioweaponMode':
-      return fromPayload(setBioweaponModeAction(cmd.on));
+      return fromPayload(setBioweaponModeAction(cmd.on, cmd.manualOverride));
     case 'pinToDrive':
       // Off sends an empty password and KEEPS the stored PIN; clearing it is `pinToDriveClearPin`.
       return fromPayload(

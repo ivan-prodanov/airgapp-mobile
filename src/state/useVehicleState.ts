@@ -12,6 +12,7 @@ import type {
 import {
   patchState,
   setCabinOverheatModeState,
+  setBioweaponState,
   setClimateKeeperState,
   setCabinOverheatTempState,
   setCameraModeState,
@@ -50,6 +51,7 @@ export interface VehicleActions {
   setTargetTemp: (tempC: number) => void;
   setCabinOverheatMode: (mode: CabinOverheatMode) => void;
   setClimateKeeper: (mode: ClimateKeeperMode) => void;
+  setBioweapon: (on: boolean) => void;
   setCabinOverheatTemp: (temp: CabinOverheatTemp) => void;
   setChargeLimit: (percent: number) => void;
   setChargingAmps: (amps: number) => void;
@@ -81,6 +83,7 @@ export function buildVehicleActions(
     setTargetTemp: (tempC) => apply((s) => setTargetTempState(s, tempC)),
     setCabinOverheatMode: (mode) => apply((s) => setCabinOverheatModeState(s, mode)),
     setClimateKeeper: (mode) => apply((s) => setClimateKeeperState(s, mode)),
+    setBioweapon: (on) => apply((s) => setBioweaponState(s, on)),
     setCabinOverheatTemp: (temp) => apply((s) => setCabinOverheatTempState(s, temp)),
     setChargeLimit: (percent) => apply((s) => setChargeLimitState(s, percent)),
     setChargingAmps: (amps) => apply((s) => setChargingAmpsState(s, amps)),

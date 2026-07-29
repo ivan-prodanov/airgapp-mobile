@@ -96,7 +96,12 @@ test('climate: on/off, temp, bioweapon, overheat, camp, pet', () => {
     { cmd: { type: 'setClimateTemp', celsius: 21 }, keys: ['targetTempC'] },
   ]);
   expect(s({ bioweaponOn: false }), s({ bioweaponOn: true }), [
-    { cmd: { type: 'bioweaponMode', on: true }, keys: ['bioweaponOn'] },
+    {
+      cmd: { type: 'bioweaponMode', on: true, manualOverride: false },
+      // Claims climateOn too: enabling bioweapon runs the HVAC, and Tesla's
+      // derived isClimateOn reports it while the command is in flight.
+      keys: ['bioweaponOn', 'climateOn'],
+    },
   ]);
   expect(s({ cabinOverheatMode: 'on' }), s({ cabinOverheatMode: 'off' }), [
     { cmd: { type: 'cabinOverheat', on: false, fanOnly: false }, keys: ['cabinOverheatMode'] },
@@ -111,18 +116,20 @@ test('climate: on/off, temp, bioweapon, overheat, camp, pet', () => {
   ]);
 
   // ONE keeper field -> ONE command, and it claims the single key it owns.
+  // Starting a keeper mode also claims climateOn — see the implied-climate-on
+  // test below.
   expect(s({ climateKeeper: 'off' }), s({ climateKeeper: 'camp' }), [
-    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper'] },
+    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper', 'climateOn'] },
   ]);
   // 'pet' is OUR name for the row; the action proto calls it Dog.
   expect(s({ climateKeeper: 'off' }), s({ climateKeeper: 'pet' }), [
-    { cmd: { type: 'climateKeeper', mode: 'dog' }, keys: ['climateKeeper'] },
+    { cmd: { type: 'climateKeeper', mode: 'dog' }, keys: ['climateKeeper', 'climateOn'] },
   ]);
   // Switching modes is a SINGLE command. As two booleans this transition emitted
   // both `camp` and `off` in one tick — the off arriving second and cancelling
   // the mode the user just picked.
   expect(s({ climateKeeper: 'pet' }), s({ climateKeeper: 'camp' }), [
-    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper'] },
+    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper', 'climateOn'] },
   ]);
 });
 
@@ -291,4 +298,48 @@ test('Parental activate/deactivate carry the PIN; sub-settings + mph map to thei
   expect(s({ parentalLimitSpeedMph: 85 }), s({ parentalLimitSpeedMph: 90 }), [
     { cmd: { type: 'parental', action: 'setSpeedLimit', mph: 90 }, keys: ['parentalLimitSpeedMph'] },
   ]);
+});
+
+// ── Implied climate-on (@1228092) ────────────────────────────────────────────
+//
+// Their isClimateOn is DERIVED from the car's state plus in-flight commands, and
+// four action types force it true while they settle. We store rather than derive,
+// so the equivalent is for those commands to claim `climateOn` as a field they
+// own — same visible behaviour, same lifetime, and a failure reverts it.
+//
+// The asymmetry is the load-bearing part: only `on: true` forces the answer. An
+// in-flight "off" falls through to the car, so switching a mode off must NOT
+// blink the power row off underneath a climate system running for another reason.
+test('enabling implies climate-on; disabling implies nothing', () => {
+  const base = initialVehicleState;
+  const at = (s: Partial<VehicleViewState>): VehicleViewState => ({ ...base, ...s });
+
+  const on = diffToCommands(at({ bioweaponOn: false }), at({ bioweaponOn: true }));
+  assert.deepEqual(on[0]?.keys, ['bioweaponOn', 'climateOn']);
+
+  const off = diffToCommands(at({ bioweaponOn: true }), at({ bioweaponOn: false }));
+  assert.deepEqual(off[0]?.keys, ['bioweaponOn'], 'turning OFF must not claim climateOn');
+
+  const camp = diffToCommands(at({ climateKeeper: 'off' }), at({ climateKeeper: 'camp' }));
+  assert.deepEqual(camp[0]?.keys, ['climateKeeper', 'climateOn']);
+
+  const keeperOff = diffToCommands(at({ climateKeeper: 'camp' }), at({ climateKeeper: 'off' }));
+  assert.deepEqual(keeperOff[0]?.keys, ['climateKeeper'], 'turning OFF must not claim climateOn');
+});
+
+// manualOverride is read off the state we transition FROM: "a keeper mode was
+// running and the user is displacing it". Pinned false before this, exactly like
+// cabin overheat's fanOnly.
+test('bioweapon manualOverride tracks the keeper mode it displaces', () => {
+  const base = initialVehicleState;
+  const at = (s: Partial<VehicleViewState>): VehicleViewState => ({ ...base, ...s });
+
+  const plain = diffToCommands(at({ bioweaponOn: false }), at({ bioweaponOn: true }));
+  assert.equal((plain[0]?.cmd as { manualOverride: boolean }).manualOverride, false);
+
+  const over = diffToCommands(
+    at({ bioweaponOn: false, climateKeeper: 'pet' }),
+    at({ bioweaponOn: true, climateKeeper: 'pet' }),
+  );
+  assert.equal((over[0]?.cmd as { manualOverride: boolean }).manualOverride, true);
 });

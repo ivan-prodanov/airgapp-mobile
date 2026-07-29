@@ -204,10 +204,21 @@ export function setCabinOverheatAction(on: boolean, fanOnly: boolean): ActionPay
 // setBioweaponModeAction — see deviation #1: the reference calls this
 // setKeepAccPowerAction, but it builds hvacBioweaponModeAction. Renamed to
 // its correct name; no "keep accessory power" proto exists.
-export function setBioweaponModeAction(on: boolean): ActionPayload {
+// `manualOverride` was pinned false — the same defect as cabin overheat's
+// `fanOnly`, a second proto field frozen to a constant. Tesla sets it from the
+// live keeper mode (@5223782):
+//
+//   VehicleCommand.bioweaponMode(on, climateKeeperMode !== OFF)
+//
+// It means "the user is knowingly overriding a running Camp/Pet mode", which is
+// why their UI confirms first: "Enabling Bioweapon Defense Mode will disable Pet
+// Mode."
+export function setBioweaponModeAction(on: boolean, manualOverride: boolean): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
-    bytes: encodeInfotainmentAction({ hvacBioweaponModeAction: { on: !!on, manualOverride: false } }),
+    bytes: encodeInfotainmentAction({
+      hvacBioweaponModeAction: { on: !!on, manualOverride: !!manualOverride },
+    }),
   };
 }
 // Steering-wheel heat is on/off ONLY — HvacSteeringWheelHeaterAction has a

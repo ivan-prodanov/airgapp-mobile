@@ -4,6 +4,8 @@ import type {
   CarLocation,
   ClimateKeeperMode,
   MediaNowPlaying,
+  SeatClimateModes,
+  SteeringWheelClimate,
   TirePressures,
 } from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
@@ -56,6 +58,29 @@ export interface CarLinkCache {
   climateKeeper: ClimateKeeperMode | null;
   cabinOverheatMode: CabinOverheatMode | null;
   cabinOverheatTemp: CabinOverheatTemp | null;
+  // The rest of the steady-state telemetry, closing the GAP list that
+  // carLinkCacheCoverage.test.ts made visible. Same rule as everything above:
+  // rendered from telemetry, so a cold start shows the last known value dimmed
+  // rather than the initial default presented as fact.
+  //
+  // What deliberately stays OUT is in that test's NOT_CACHED map: speed, gear,
+  // driving, powerKw, userPresent, centerDisplay, activeRoute. For those a cached
+  // value would be a lie rather than a stale truth — "45 mph" on a parked car is
+  // worse than nothing.
+  locked: boolean | null;
+  sentryEnabled: boolean | null;
+  valetMode: boolean | null;
+  speedLimitMode: boolean | null;
+  cableAttached: boolean | null;
+  // Monotonic — it cannot become wrong while the app is closed, only slightly
+  // out of date. The most cacheable value we have.
+  odometerMiles: number | null;
+  leftFrontWindowOpen: boolean | null;
+  rightFrontWindowOpen: boolean | null;
+  leftRearWindowOpen: boolean | null;
+  rightRearWindowOpen: boolean | null;
+  seatClimateModes: SeatClimateModes | null;
+  steeringWheelClimate: SteeringWheelClimate | null;
   // The car's last known GPS. Persisted for the same reason as the rest: a cold
   // start should show what we knew, not a blank.
   //
@@ -120,6 +145,43 @@ const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null)
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
   typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : null;
 
+const SEATS = [
+  'frontLeft',
+  'frontRight',
+  'rearLeft',
+  'rearMiddle',
+  'rearRight',
+  'thirdRowLeft',
+  'thirdRowRight',
+] as const;
+const lvl = (v: unknown, max: number): number => (typeof v === 'number' && v >= 0 && v <= max ? v : 0);
+
+// Whole-map or nothing: if the cached object is not an object we return null and
+// the store keeps its defaults. Within it, each seat is rebuilt from validated
+// parts, so one corrupt entry cannot take the rest of the map with it.
+function seatModes(v: unknown): SeatClimateModes | null {
+  if (!v || typeof v !== 'object') return null;
+  const src = v as Record<string, { mode?: unknown; level?: unknown } | undefined>;
+  const out = {} as SeatClimateModes;
+  for (const seat of SEATS) {
+    out[seat] = {
+      mode: oneOf(src[seat]?.mode, ['off', 'heat', 'cool', 'auto'] as const) ?? 'off',
+      level: lvl(src[seat]?.level, 3) as 0 | 1 | 2 | 3,
+    };
+  }
+  return out;
+}
+
+// Level tops out at 2 here, not 3 — the wheel has no third step and never cools.
+function wheelClimate(v: unknown): SteeringWheelClimate | null {
+  if (!v || typeof v !== 'object') return null;
+  const src = v as { mode?: unknown; level?: unknown };
+  return {
+    mode: oneOf(src.mode, ['off', 'heat', 'auto'] as const) ?? 'off',
+    level: lvl(src.level, 2) as 0 | 1 | 2,
+  };
+}
+
 export async function loadCarLinkCache(storage: AppStorage, vin: string): Promise<CarLinkCache | null> {
   const cached = await load<Partial<CarLinkCache> | null>(storage, carLinkCacheKey(vin), null);
   const at = num(cached?.lastVehicleDataAt);
@@ -145,6 +207,21 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     climateKeeper: oneOf(cached?.climateKeeper, ['off', 'on', 'camp', 'pet'] as const),
     cabinOverheatMode: oneOf(cached?.cabinOverheatMode, ['off', 'noac', 'on'] as const),
     cabinOverheatTemp: oneOf(cached?.cabinOverheatTemp, ['30', '35', '40'] as const),
+    locked: bool(cached?.locked),
+    sentryEnabled: bool(cached?.sentryEnabled),
+    valetMode: bool(cached?.valetMode),
+    speedLimitMode: bool(cached?.speedLimitMode),
+    cableAttached: bool(cached?.cableAttached),
+    odometerMiles: num(cached?.odometerMiles),
+    leftFrontWindowOpen: bool(cached?.leftFrontWindowOpen),
+    rightFrontWindowOpen: bool(cached?.rightFrontWindowOpen),
+    leftRearWindowOpen: bool(cached?.leftRearWindowOpen),
+    rightRearWindowOpen: bool(cached?.rightRearWindowOpen),
+    // Rebuilt seat by seat. A partial or corrupt map must not reach the markers
+    // over the 3D car, and a missing seat must come back as its default rather
+    // than as undefined — the overlay indexes every position unconditionally.
+    seatClimateModes: seatModes(cached?.seatClimateModes),
+    steeringWheelClimate: wheelClimate(cached?.steeringWheelClimate),
     // Validated, not trusted: an older cache has no carLocation, and a corrupt
     // one must not put the map pin at 0,0.
     // Validated the same way as carLocation: an older cache has no tirePressures,

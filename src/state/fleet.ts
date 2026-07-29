@@ -385,7 +385,20 @@ export function setClimateKeeperState(
   state: VehicleViewState,
   mode: ClimateKeeperMode,
 ): VehicleViewState {
-  return state.climateKeeper === mode ? state : { ...state, climateKeeper: mode };
+  if (state.climateKeeper === mode) return state;
+  // Starting a keeper mode runs the HVAC, and their derived `isClimateOn`
+  // reports it the instant the command is in flight rather than waiting for the
+  // car (@1228092). Turning one OFF does NOT force the power row off — their
+  // "off" arm falls through to the car's own state, because climate may well be
+  // running for another reason.
+  return { ...state, climateKeeper: mode, ...(mode !== 'off' ? { climateOn: true } : null) };
+}
+
+// Bioweapon Defense Mode. Same implied climate-on, and the same one-directional
+// rule: on implies on, off implies nothing.
+export function setBioweaponState(state: VehicleViewState, on: boolean): VehicleViewState {
+  if (state.bioweaponOn === on) return state;
+  return { ...state, bioweaponOn: on, ...(on ? { climateOn: true } : null) };
 }
 
 export function setCabinOverheatModeState(

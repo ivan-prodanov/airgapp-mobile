@@ -67,6 +67,33 @@ const PARENTAL_SETTING_KEYS: ReadonlyArray<readonly [VehicleStateKey, ParentalSe
   ['parentalCurfewNotify', 'curfew'],
 ];
 
+// CLIMATE_ON_IMPLIED — why several commands below also claim `climateOn`.
+//
+// Ivan: "check how each of the items on the Climate turn the Climate on (I
+// think), our app i dont think it does it (optimistically)". He was right, and
+// Tesla does it in a way worth copying exactly.
+//
+// Their `isClimateOn` (@1228092) is not a stored flag — it is DERIVED from the
+// car's climate state plus the commands currently in flight:
+//
+//   const HVAC = [HVACAUTOACTION, HVACSETPRECONDITIONINGMAXACTION,
+//                 HVACCLIMATEKEEPERACTION, HVACBIOWEAPONMODEACTION]
+//   cmd = newest ongoing command whose action is in HVAC
+//     auto / preconditioning-max / bioweapon, on === true -> true
+//     climate keeper, isClimateKeeperOn(mode)             -> that boolean
+//     otherwise -> climateState.isClimateOn || climateState.isPreconditioning
+//
+// Note the asymmetry, which is the part that makes it usable: only an `on: true`
+// command FORCES the answer. An in-flight "off" falls through to the car, so
+// turning bioweapon off does not blink the power row off underneath a climate
+// system that is still running for another reason.
+//
+// We store rather than derive, so the equivalent is to let those commands claim
+// `climateOn` as a field they own: the optimistic value shows immediately, the
+// intent-grace window holds it until the car reports, and a command failure
+// reverts it with the rest of that command's fields. That is the same lifetime
+// their `ongoingCommands` membership gives them, expressed in our model.
+//
 // Our state names the modes after the UI rows; the action proto names them after
 // the original features. Party IS Camp and Dog IS Pet — see climateStateMap.
 const KEEPER_CMD_MODE: Record<ClimateKeeperMode, 'off' | 'on' | 'dog' | 'camp'> = {
@@ -209,7 +236,20 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
     emit({ type: 'setClimateTemp', celsius: next.targetTempC }, 'targetTempC');
   }
   if (prev.bioweaponOn !== next.bioweaponOn) {
-    emit({ type: 'bioweaponMode', on: next.bioweaponOn }, 'bioweaponOn');
+    // manualOverride = "a keeper mode is running and the user is displacing it",
+    // read off the state we are transitioning FROM. Theirs: @5223782.
+    emit(
+      {
+        type: 'bioweaponMode',
+        on: next.bioweaponOn,
+        manualOverride: prev.climateKeeper !== 'off',
+      },
+      'bioweaponOn',
+      // Enabling bioweapon turns the HVAC on, and their `isClimateOn` reports it
+      // the moment the command is in flight — so this command owns climateOn too
+      // while it settles. See CLIMATE_ON_IMPLIED below.
+      ...(next.bioweaponOn ? (['climateOn'] as const) : []),
+    );
   }
   if (prev.cabinOverheatMode !== next.cabinOverheatMode) {
     // Two independent predicates, theirs verbatim (@5224697): `on` for anything
@@ -241,7 +281,11 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   // one off emitted an unconditional `off`, which on the car also cancelled the
   // other mode while our UI kept showing it.
   if (prev.climateKeeper !== next.climateKeeper) {
-    emit({ type: 'climateKeeper', mode: KEEPER_CMD_MODE[next.climateKeeper] }, 'climateKeeper');
+    emit(
+      { type: 'climateKeeper', mode: KEEPER_CMD_MODE[next.climateKeeper] },
+      'climateKeeper',
+      ...(next.climateKeeper !== 'off' ? (['climateOn'] as const) : []),
+    );
   }
 
   // ── Seat + steering-wheel heaters ──────────────────────────────────────────────

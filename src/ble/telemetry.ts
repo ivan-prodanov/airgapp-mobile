@@ -83,6 +83,7 @@ export interface InfotainmentSnapshot {
     cabinOverheatMode: CabinOverheatMode | undefined;
     cabinOverheatTemp: CabinOverheatTemp | undefined;
     keeper: ClimateKeeperMode | undefined;
+    bioweaponOn: boolean | undefined;
     steeringWheel: { mode: SteeringWheelClimateModeName; level: 0 | 1 | 2 } | undefined;
     seats: Partial<Record<SeatPosition, SeatClimateMode>> | undefined;
   };
@@ -374,12 +375,22 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       insideTempC: num(cl.insideTempCelsius),
       outsideTempC: num(cl.outsideTempCelsius),
       targetTempC: num(cl.driverTempSetting),
-      isOn: cl.isClimateOn === true,
+      // `isClimateOn || isPreconditioning`, both arms — Tesla's own fallback
+      // (@1228557). A car that is preconditioning IS running its climate; reading
+      // only the first flag showed the system off while it was demonstrably
+      // heating the cabin.
+      isOn: cl.isClimateOn === true || cl.isPreconditioning === true,
       frontDefrostOn: typeof cl.isFrontDefrosterOn === 'boolean' ? cl.isFrontDefrosterOn : undefined,
       rearDefrostOn: typeof cl.isRearDefrosterOn === 'boolean' ? cl.isRearDefrosterOn : undefined,
       cabinOverheatMode: copMode(cl.cabinOverheatProtection),
       cabinOverheatTemp: copTemp(cl.copActivationTemperature),
       keeper: keeperMode(cl.climateKeeperMode),
+      // Bioweapon was WRITE-ONLY: we sent the command and then believed our own
+      // optimistic value forever, because nothing ever read it back. The field
+      // was on the proto the whole time. Tesla reads it (their view-model's
+      // `bioWeaponMode`, @5221469) and lights the row from the car, not from the
+      // last tap.
+      bioweaponOn: typeof cl.bioweaponModeOn === 'boolean' ? cl.bioweaponModeOn : undefined,
       steeringWheel: resolveSteeringWheel(
         cl.autoSteeringWheelHeat,
         cl.steeringWheelHeatLevel,
@@ -710,6 +721,7 @@ export function infotainmentToPatch(
     if (c.cabinOverheatMode !== undefined) patch.cabinOverheatMode = c.cabinOverheatMode;
     if (c.cabinOverheatTemp !== undefined) patch.cabinOverheatTemp = c.cabinOverheatTemp;
     if (c.keeper !== undefined) patch.climateKeeper = c.keeper;
+    if (c.bioweaponOn !== undefined) patch.bioweaponOn = c.bioweaponOn;
     if (c.steeringWheel !== undefined) patch.steeringWheelClimate = c.steeringWheel;
     // MERGE onto current seats — the car omits positions it doesn't have, and we
     // must not blow away the ones it didn't mention. The caller passes prev via
