@@ -239,14 +239,34 @@ export function ClimateScreen({ state, actions }: Props) {
                 whole setpoint block (power glyph, its label, the number) tracks
                 climateOn. The chevrons stay dim in both. */}
             <View style={styles.tempTextContainer}>
+              {/* An INVISIBLE degree, always rendered. It is not decoration: it
+                  occupies exactly the width of the real one on the right, so the
+                  number sits optically centred in the container instead of being
+                  shoved left by its own suffix. Tesla renders three children
+                  here (@5223196) and this is the first of them. Ivan saw both
+                  halves of its absence at once — "our < and > are much closer to
+                  the temp text" and "our temp is more to the left". One missing
+                  element, two symptoms.
+
+                  It is rendered unconditionally, exactly as theirs is, so LO and
+                  HI occupy the same width as a numeric setpoint and the block
+                  does not jump when you drive the dial to either end. */}
+              <Text style={[styles.tempDegree, styles.tempDegreeGhost]}>°</Text>
               <Text style={[styles.temp, state.climateOn ? styles.tempOn : styles.tempOff]}>
                 {formatTemp(state.targetTempC)}
               </Text>
-              {hasDegree(state.targetTempC) ? (
-                <Text style={[styles.tempDegree, state.climateOn ? styles.tempOn : styles.tempOff]}>
-                  °
-                </Text>
-              ) : null}
+              <Text
+                style={[
+                  styles.tempDegree,
+                  hasDegree(state.targetTempC)
+                    ? state.climateOn
+                      ? styles.tempOn
+                      : styles.tempOff
+                    : styles.tempDegreeGhost,
+                ]}
+              >
+                °
+              </Text>
             </View>
             <Pressable
               style={[styles.arrow, styles.arrowIncrease]}
@@ -773,17 +793,24 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     lineHeight: 40,
     paddingTop: 10,
-    textAlign: 'center',
     letterSpacing: 0,
   },
   tempDegree: {
     // `temperatureDegreeText` (@5221345): getFontStyle({ type: 'Medium',
     // fontSize: 30, lineHeight: 4*Gutter = 40 }). Medium, and ten points
     // smaller than the digits it sits beside.
+    // NO paddingTop. `temperatureText` carries paddingTop: Gutter = 10 and the
+    // degree carries none, and that 10pt difference is the whole superscript
+    // effect: the container stretches both Texts to the same height, so the
+    // degree's line box sits 10pt higher than the number's. I had copied the
+    // padding onto both, which levelled them and killed the raise.
     fontFamily: FONT,
     fontSize: 30,
     lineHeight: 40,
-    paddingTop: 10,
+  },
+  // The left-hand spacer copy, and the right-hand one at LO/HI.
+  tempDegreeGhost: {
+    color: 'transparent',
   },
   tempOn: {
     color: TEXT_BRIGHT,
