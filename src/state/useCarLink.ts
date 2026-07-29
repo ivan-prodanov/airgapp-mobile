@@ -1693,28 +1693,6 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
               elapsed: snap.mediaDetail?.elapsedSec ?? -1,
               dur: snap.mediaDetail?.durationSec ?? -1,
             });
-            // The climate slice, for the same reason the media line exists. Ivan
-            // reported "Camp Mode/Pet Mode doesnt work" and the log could show
-            // the command being ACCEPTED by the car (`settle outcome:ok`) but
-            // nothing about what the car reported back afterwards — so "the car
-            // ignored it" and "our read mis-parsed it" were indistinguishable,
-            // which is exactly the probe-can't-show-it failure the media note
-            // above is about.
-            //
-            // Same rules as that one: every value a primitive with a default, so
-            // the swallowing sink cannot silently drop the row.
-            logi('read', 'climate', {
-              has: !!snap.climate,
-              on: String(snap.climate?.isOn ?? 'unread'),
-              keeper: String(snap.climate?.keeper ?? 'unread'),
-              bio: String(snap.climate?.bioweaponOn ?? 'unread'),
-              cop: String(snap.climate?.cabinOverheatMode ?? 'unread'),
-              copTemp: String(snap.climate?.cabinOverheatTemp ?? 'unread'),
-              cooling: String(snap.climate?.copActivelyCooling ?? 'unread'),
-              inC: snap.climate?.insideTempC ?? -999,
-              outC: snap.climate?.outsideTempC ?? -999,
-              tgtC: snap.climate?.targetTempC ?? -999,
-            });
             if (stopped || paused) return;
             lastInfotainmentAtRef.current = Date.now();
             const infoPatch = filterPatchUnderIntent(
@@ -1828,12 +1806,39 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // car — speed is 0 and gear is P, so nothing on screen moves — and
         // "did it work?" would come down to trusting the code.
         logi('poll', 'focused', { states: states.join(','), mode: active.cameraMode, ms: Date.now() - t0 });
+        const rawPatch = infotainmentToPatch(snap);
         const focusPatch = filterPatchUnderIntent(
-          infotainmentToPatch(snap),
+          rawPatch,
           intentRef.current,
           Date.now(),
           getActiveStateRef.current(),
         );
+        // The climate slice, on the path that ACTUALLY runs while the climate
+        // screen is open. The first cut of this line went in the slow
+        // `awakeSync` full-poll branch, which is gated on a 20s timer, so it
+        // never fired once during a whole session on that screen — a probe that
+        // could not show it did the thing, again, this time by being in the
+        // wrong branch rather than by being dropped.
+        //
+        // Logs BOTH sides of the intent filter, which is the distinction Ivan's
+        // "I clicked camp mode and it reverted" needs: `keeper` is what the CAR
+        // said, `kept` is whether that survived into the applied patch. Car says
+        // off -> the car refused or has not applied it yet. Car says camp but
+        // kept=false -> we suppressed our own correct read. Those two need
+        // opposite fixes and were indistinguishable before.
+        if (states.includes('climate' as InfotainmentStateKey)) {
+          logi('read', 'climate', {
+            has: !!snap.climate,
+            keeper: String(snap.climate?.keeper ?? 'unread'),
+            on: String(snap.climate?.isOn ?? 'unread'),
+            bio: String(snap.climate?.bioweaponOn ?? 'unread'),
+            cop: String(snap.climate?.cabinOverheatMode ?? 'unread'),
+            inC: snap.climate?.insideTempC ?? -999,
+            kept: 'climateKeeper' in focusPatch,
+            keptVal: String((focusPatch as { climateKeeper?: string }).climateKeeper ?? 'n/a'),
+            rawHad: 'climateKeeper' in rawPatch,
+          });
+        }
         if (Object.keys(focusPatch).length) {
           applyTelemetryRef.current(focusPatch);
           cacheInfotainment(focusPatch);

@@ -67,7 +67,7 @@ import {
   type InfotainmentSnapshot,
 } from "./telemetry";
 import type { Domain, DeviceKeys, PiTransport } from "./types";
-import { logw } from "../services/logbus";
+import { logi, logw } from "../services/logbus";
 
 // Re-export the attempt cap under this module's name (it lives with the other
 // protocol primitives in session.ts; the reference kept it on the airgap.*
@@ -490,6 +490,22 @@ export function createCarGateway({
           const carStatus = parseCarActionStatus(result.decryptedPayload);
           if (carStatus && !carStatus.ok) {
             logw("gateway", "car rejected command", { label, reason: carStatus.reason });
+          } else {
+            // The car's verdict when it is NOT a rejection, which until now was
+            // thrown away — and that gap is exactly what stalled the Camp Mode
+            // diagnosis: the command reached the car, the car said OK, the mode
+            // did not stick, and there was no line anywhere saying what the car
+            // actually replied.
+            //
+            // `null` is "no information", NOT success (see carActionStatus), so
+            // the two are logged distinctly. A reason attached to an OK is worth
+            // seeing too — the car does sometimes explain itself while agreeing.
+            logi("gateway", "car verdict", {
+              label,
+              status: carStatus ? "ok" : "none",
+              reason: carStatus?.reason ?? "",
+              bytes: result.decryptedPayload?.length ?? 0,
+            });
           }
           // Only NAVIGATION is failed on the car's verdict for now. Other commands
           // may be returning ERROR today in ways the app tolerates silently, and
