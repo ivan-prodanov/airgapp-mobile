@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
@@ -117,6 +117,7 @@ export default function Index() {
 
   // iOS-style left-edge swipe-back: a rightward swipe from the left edge returns to Home (parked),
   // available on climate & controls (like the system back gesture). A narrow strip catches the start.
+  const insets = useSafeAreaInsets();
   const goBack = useRef(() => actions.setCameraMode('PARKED'));
   goBack.current = () => actions.setCameraMode('PARKED');
   const edgeBack = useRef(
@@ -192,11 +193,45 @@ export default function Index() {
             {/* The back chevron + "Controls" title are part of the pushed CARD,
                 so they fade with it. They used to live outside the canvas and
                 appeared/vanished instantly while everything else faded. */}
+            {/* Their `HeaderButton` (@1871461), which the climate screen mounts
+                as <HeaderButton name="back" iconSize={LARGE} hideBackgroundView=
+                {isCybertruck} /> (@5222652). Its box comes from `headerView`
+                (@1871606):
+
+                  { minWidth: 36, minHeight: 36, alignItems: 'center',
+                    justifyContent: 'center', zIndex: 100,
+                    borderRadius: Specifications.borderRadius = 5,
+                    backgroundColor: hideBackgroundView ? transparent
+                                                        : theme.secondaryBackgroundColor }
+
+                so on a non-Cybertruck the background IS drawn, opaque #222324 —
+                not the translucent grey we had. onPress fires lightHaptic()
+                before navigating; ours had none.
+
+                POSITION is per-screen, not shared: climate declares its own
+                `backButtonContainer` { top: 6*Gutter = 60 } — measured from the
+                SCREEN, which is why this now sits OUTSIDE the SafeAreaView — and
+                `backButton` { marginLeft: 2*Gutter = 20 }. Six other screens
+                declare their own offsets, so Controls keeps the safe-area
+                placement it already had, where it lines up with its title. Only
+                climate's is recovered; I have not read Controls'. */}
+            <Pressable
+              style={[
+                styles.backButton,
+                renderedPush === 'climate'
+                  ? styles.backButtonClimate
+                  : { top: insets.top + 4, left: 12 },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                actions.setCameraMode('PARKED');
+              }}
+            >
+              <SymbolView name="chevron.left" tintColor="#FFFFFF" size={22} weight="medium" />
+            </Pressable>
+
             <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
               <View style={styles.topBarRow}>
-                <Pressable style={styles.backButton} onPress={() => actions.setCameraMode('PARKED')}>
-                  <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
-                </Pressable>
                 {renderedPush === 'controls' ? (
                   <View style={styles.titleStack}>
                     <Text style={styles.title}>Controls</Text>
@@ -321,15 +356,26 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
   },
+  // `headerView` verbatim. 44/14/translucent were all ours: theirs is a 36pt
+  // square at the same radius 5 every other control on this screen uses, filled
+  // with the opaque theme surface. The SF chevron stays 22 — their icon is
+  // IconSize.LARGE (36) but their glyph carries its own padding inside that box
+  // while SF Symbols draw to the edge, so copying the number would produce a
+  // chevron the full width of the button. Same call as the setpoint arrows:
+  // match the box, leave the glyph to the deferred icon job.
   backButton: {
     position: 'absolute',
-    left: 0,
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    minWidth: 36,
+    minHeight: 36,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(50,50,50,0.6)',
+    backgroundColor: '#222324',
+    zIndex: 100,
+  },
+  backButtonClimate: {
+    top: 60,
+    left: 20,
   },
   title: {
     fontSize: 18,
