@@ -220,7 +220,7 @@ export default function Index() {
                 styles.backButton,
                 renderedPush === 'climate'
                   ? styles.backButtonClimate
-                  : { top: insets.top + 4, left: 12 },
+                  : [styles.backButtonControls, { top: insets.top + 4, left: 12 }],
               ]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -376,6 +376,21 @@ const styles = StyleSheet.create({
   backButtonClimate: {
     top: 60,
     left: 20,
+  },
+  // CONTROLS passes `hideBackgroundView: TRUE` — a literal, where climate passes
+  // isCybertruck (@4039963 vs @5222659). Through `headerView` (@1871606) that
+  // resolves the fill to Colors.transparent instead of
+  // theme.secondaryBackgroundColor, so their Controls back button is a BARE
+  // chevron with no plate behind it. Same component, same 36x36 box, same white
+  // icon, same light haptic — only the background differs, and it is the one
+  // thing that made ours look wrong here after the climate copy.
+  //
+  // Its placement is a `TopNavigation` bar rather than an absolute offset, which
+  // is why this keeps the safe-area position it already had: that is what a nav
+  // bar does, and it stays aligned with the centred "Controls" title exactly as
+  // theirs is (TopNavigationAlignment.CENTER).
+  backButtonControls: {
+    backgroundColor: 'transparent',
   },
   title: {
     fontSize: 18,
