@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
@@ -50,7 +51,15 @@ export default function ChargingScreen() {
     <View style={styles.root}>
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
-          <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
+          <Pressable
+            style={styles.back}
+            hitSlop={10}
+            onPress={() => {
+              // Their HeaderButton fires lightHaptic() before navigating; ours had none.
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              router.back();
+            }}
+          >
             <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
           </Pressable>
           <View style={styles.headerTitles}>
@@ -157,15 +166,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
   },
+  // The design system's `HeaderButton` / `headerView` (@1871461, @1871606), same
+  // as Home, Climate and Controls now use:
+  //
+  //   { minWidth: 36, minHeight: 36, alignItems: 'center',
+  //     justifyContent: 'center', zIndex: 100,
+  //     borderRadius: Specifications.borderRadius = 5,
+  //     backgroundColor: hideBackgroundView ? transparent
+  //                                         : theme.secondaryBackgroundColor }
+  //
+  // NO PLATE here. Across the whole bundle `hideBackgroundView` is `true` at ten
+  // sites, computed at exactly one (climate), and `false` at exactly one —
+  // `TransparentHeaderBackButton`. That split is the rule: a button FLOATING over
+  // content gets the plate for contrast, one sitting in a SOLID bar does not.
+  // This screen is a solid #161618 header, so it is the Controls case.
+  //
+  // 44 / radius 14 / rgba(60,60,60,0.5) were all ours.
   back: {
     position: 'absolute',
     left: 6,
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    minWidth: 36,
+    minHeight: 36,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(60,60,60,0.5)',
+    backgroundColor: 'transparent',
+    zIndex: 100,
   },
   headerTitles: {
     alignItems: 'center',
