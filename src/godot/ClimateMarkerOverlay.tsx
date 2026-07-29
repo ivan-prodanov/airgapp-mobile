@@ -316,6 +316,10 @@ function Control({
   // the "Auto" label carry the meaning — that was the old behaviour, now confined
   // to the case it was actually right for.
   const lit = mode === 'auto' && !autoActivity ? waves : level;
+  // The "Auto" LABEL keeps its own colour whatever auto is doing. Only the glyph
+  // reports the activity — the word underneath names the MODE, and the mode has
+  // not changed just because the car started cooling.
+  const autoLabelColor = AUTO_WAVE;
   // Steering wheel turns the S-line colour as long as ≥1 wave is actually lit red (heat, level ≥ 1).
   const wheelColor = mode === 'heat' && lit >= 1 ? color : WHEEL_GREY;
   const isWheel = marker === 'steeringWheel';
@@ -352,7 +356,9 @@ function Control({
           // (it greys out when off), the seats' is `color` (the wave tint). They
           // resolve differently, so the label must pick the matching one rather
           // than share a hardcoded white.
-          <Text style={[styles.autoLabel, { color: isWheel ? wheelColor : color }]}>Auto</Text>
+          <Text style={[styles.autoLabel, { color: isWheel ? wheelColor : autoLabelColor }]}>
+            Auto
+          </Text>
         ) : null}
       </View>
     </Pressable>
