@@ -30,7 +30,14 @@ interface Props {
 
 // The dial domain (LO, 15.5, 16.0 … 27.5, HI in 0.5° steps) now lives with the setpoint state in
 // fleet.ts, which clamps to it; the bounds double as the LO/HI sentinels this formatter renders.
-const formatTemp = (v: number) => (v <= LO_TEMP ? 'LO' : v >= HI_TEMP ? 'HI' : `${v.toFixed(1)}°`);
+// The degree sign is NOT part of the number. Tesla renders two sibling Texts
+// inside `temperatureTextContainer` (@5223200): the value in `temperatureText`
+// (Light 40/40) and '\u00b0' on its own in `temperatureDegreeText` — a DIFFERENT
+// face and size, Medium 30 on the same 40 line box. Baking the degree into the
+// number string rendered it Light 40 like the digits, which is what made it look
+// wrong. LO and HI carry no degree sign.
+const formatTemp = (v: number) => (v <= LO_TEMP ? 'LO' : v >= HI_TEMP ? 'HI' : v.toFixed(1));
+const hasDegree = (v: number) => v > LO_TEMP && v < HI_TEMP;
 // Rubber-band overscroll past the snap bounds — copied from the Tesla app, which uses
 // @gorhom/bottom-sheet's overDrag: you can pull slightly past expanded/collapsed against a
 // √-diminishing resistance, then it springs back on release. `expanded` = top (smaller Y),
@@ -235,6 +242,11 @@ export function ClimateScreen({ state, actions }: Props) {
               <Text style={[styles.temp, state.climateOn ? styles.tempOn : styles.tempOff]}>
                 {formatTemp(state.targetTempC)}
               </Text>
+              {hasDegree(state.targetTempC) ? (
+                <Text style={[styles.tempDegree, state.climateOn ? styles.tempOn : styles.tempOff]}>
+                  °
+                </Text>
+              ) : null}
             </View>
             <Pressable
               style={[styles.arrow, styles.arrowIncrease]}
@@ -633,11 +645,15 @@ const styles = StyleSheet.create({
     opacity: 0.2,
   },
   climateTemps: {
-    // BodyLabel 14/20/0.1 — "Interior 37°C · Exterior 30°C".
+    // CaptionLabel 12/16/0.1, NOT BodyLabel. The category is branched on the
+    // Cybertruck theme (@5223035): CYBERTRUCK gets BodyLabel, everything else —
+    // including this car — gets CaptionLabel. I had read the BodyLabel arm.
+    // Worth 4pt of sheet height, which is the whole of the "tiny bit" left over
+    // after the 20pt fix: their sheet is 606, ours was 610.
     textAlign: 'center',
     fontFamily: FONT,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 16,
     letterSpacing: 0.1,
     color: TEXT_DIM,
     // `bottomSection.paddingTop` = Gutter = 10 (@5221163) plus
@@ -718,6 +734,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
+    // Their chevron is <Icon name={IconName.back} size={IconSize.LARGE} /> and
+    // largeIconSize = 36 (@1338690). THIRTY-SIX, against our 18 — and since the
+    // icon carries no margin of its own, that box IS the gap Ivan is asking
+    // about. The visible chevron is small inside a large square; the air around
+    // it is what separates it from the number. Doubling our glyph would not
+    // reproduce that (SF Symbols draw to the edge of their box, their icon font
+    // does not), so the box is 36 and the SF chevron stays its own size,
+    // centred. Layout matches; the glyph itself is the deferred job.
+    width: 36,
+    height: 36,
   },
   arrowDecrease: { paddingLeft: 10 },
   arrowIncrease: { paddingRight: 10 },
@@ -749,6 +775,15 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     textAlign: 'center',
     letterSpacing: 0,
+  },
+  tempDegree: {
+    // `temperatureDegreeText` (@5221345): getFontStyle({ type: 'Medium',
+    // fontSize: 30, lineHeight: 4*Gutter = 40 }). Medium, and ten points
+    // smaller than the digits it sits beside.
+    fontFamily: FONT,
+    fontSize: 30,
+    lineHeight: 40,
+    paddingTop: 10,
   },
   tempOn: {
     color: TEXT_BRIGHT,
