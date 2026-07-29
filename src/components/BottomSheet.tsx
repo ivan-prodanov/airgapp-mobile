@@ -230,7 +230,7 @@ export const BottomSheet = forwardRef<BottomSheetHandle, Props>(function BottomS
   return (
     <Animated.View style={[styles.sheet, { height: SHEET_H, transform: [{ translateY }] }]}>
       {/* Grabber made invisible (and non-draggable) while locked, so the frozen sheet doesn't invite a drag —
-          but it still occupies its 5px so the content below doesn't shift when toggling Edit. */}
+          but it still occupies its 4px so the content below doesn't shift when toggling Edit. */}
       <View style={styles.handleWrap} {...(locked ? {} : handlePan.panHandlers)}>
         <View style={[styles.handle, locked && styles.handleHidden]} />
       </View>
@@ -253,7 +253,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 16,
   },
-  handleWrap: { alignItems: 'center', paddingTop: 8, paddingBottom: 12 },
-  handle: { width: 38, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.28)' },
+  // The location sheet shares Tesla's Climate grabber: the FlippableSheetHandle shared component
+  // (used by both the Climate and Location modules — FlippedSheetHandle @1333626 sits among
+  // LocationSwitchDropdownListItem/selectedLocationType) → `styles.indicator` 100x4 radius 4,
+  // backgroundColor colors.backgroundTertiary = #2D2D2D, in a `container` padded 10.
+  handleWrap: { alignItems: 'center', paddingTop: 10, paddingBottom: 10 },
+  handle: { width: 100, height: 4, borderRadius: 4, backgroundColor: '#2D2D2D' },
   handleHidden: { opacity: 0 },
 });
