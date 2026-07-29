@@ -330,7 +330,7 @@ export function ClimateScreen({ state, actions }: Props) {
             active={state.climateOn}
             onPress={() => {
               tap();
-              actions.toggle('climateOn');
+              actions.setClimateOn(!state.climateOn);
             }}
           />
 

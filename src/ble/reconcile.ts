@@ -327,7 +327,17 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   // ── Seat + steering-wheel heaters ──────────────────────────────────────────────
   // seatClimateModes is a single state key, so every seat change reverts through
   // it. That's correct: the whole map is applied as one optimistic object.
+  // …UNLESS the seats went off because the CLIMATE went off. Their seat state is
+  // derived (@1235392): while an HVAC-off command is in flight every seat reads
+  // off, and no per-seat command is ever sent — one climateOff or one keeper-off
+  // does the whole thing. We clear the map optimistically to match, so the map
+  // change here is a CONSEQUENCE, not an instruction, and emitting from it would
+  // put up to five extra commands on the wire behind the one the user asked for.
+  //
+  // Same distinction as climateOn above: implied side effect vs command.
+  const seatsClearedByClimateOff = prev.climateOn && !next.climateOn;
   for (const pos of Object.keys(SEAT_CMD_ID) as SeatPosition[]) {
+    if (seatsClearedByClimateOff) break;
     const seat = SEAT_CMD_ID[pos]!;
     const p = prev.seatClimateModes[pos];
     const n = next.seatClimateModes[pos];

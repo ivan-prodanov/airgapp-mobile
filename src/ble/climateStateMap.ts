@@ -55,7 +55,15 @@ export function resolveSeat(
   const c = seatLevel(cool);
   const a = typeof auto === 'boolean' ? auto : undefined;
   if (h === undefined && c === undefined && a === undefined) return undefined;
-  if (a === true) return { mode: 'auto', level: 0 };
+  if (a === true) {
+    // Auto does not mean "no level" — the car keeps reporting the real heater and
+    // cooler levels while auto drives them, and Tesla renders the corresponding
+    // icon at that level (@3987850): cooling wins when its level is above off,
+    // otherwise heating. Keeping both here is what lets the marker show which.
+    if (c !== undefined && c > 0) return { mode: 'auto', level: c, autoActivity: 'cool' };
+    if (h !== undefined && h > 0) return { mode: 'auto', level: h, autoActivity: 'heat' };
+    return { mode: 'auto', level: 0, autoActivity: null };
+  }
   if (c !== undefined && c > 0) return { mode: 'cool', level: c };
   if (h !== undefined && h > 0) return { mode: 'heat', level: h };
   return { mode: 'off', level: 0 };

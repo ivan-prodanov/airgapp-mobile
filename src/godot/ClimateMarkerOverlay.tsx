@@ -198,6 +198,7 @@ export function ClimateMarkerOverlay({ state, actions }: Props) {
         waves={Math.max(cap.heatLevels, cap.coolLevels)}
         mode={sc.mode}
         level={sc.level}
+        autoActivity={sc.autoActivity}
         onPress={() => onIcon(seat)}
       />,
     );
@@ -286,6 +287,7 @@ function Control({
   waves,
   mode,
   level,
+  autoActivity,
   wheelType = 'round',
   onPress,
 }: {
@@ -295,13 +297,25 @@ function Control({
   waves: number;
   mode: SeatClimateModeName;
   level: number;
+  autoActivity?: 'heat' | 'cool' | null;
   wheelType?: SteeringWheelType;
   onPress: () => void;
 }) {
   const point = anchorToPoint(anchor, pixelRatio, CLIMATE_MARKER_CALIBRATION[marker] ?? { dx: 0, dy: 0 });
-  const color = mode === 'heat' ? HEAT : mode === 'cool' ? COOL : mode === 'auto' ? AUTO_WAVE : DIM;
-  // Auto has no level ramp; light every wave so the glyph reads as "on" with the Auto label below.
-  const lit = mode === 'auto' ? waves : level;
+  // AUTO IS NOT ONE COLOUR. Their `getSeatClimateIcon` (@3987850) picks the
+  // cooling icon when the live cooling level is above off while in auto, and the
+  // heating icon at the live heater level otherwise — so the glyph says which way
+  // auto is currently working. We drew AUTO_WAVE grey for every auto seat, which
+  // is why a seat cooling under auto looked identical to one doing nothing.
+  //
+  // Idle auto keeps the grey: auto is engaged but the car is not driving the seat.
+  const effective = mode === 'auto' ? (autoActivity ?? null) : mode;
+  const color =
+    effective === 'heat' ? HEAT : effective === 'cool' ? COOL : mode === 'auto' ? AUTO_WAVE : DIM;
+  // With no activity there is no level ramp to show, so light every wave and let
+  // the "Auto" label carry the meaning — that was the old behaviour, now confined
+  // to the case it was actually right for.
+  const lit = mode === 'auto' && !autoActivity ? waves : level;
   // Steering wheel turns the S-line colour as long as ≥1 wave is actually lit red (heat, level ≥ 1).
   const wheelColor = mode === 'heat' && lit >= 1 ? color : WHEEL_GREY;
   const isWheel = marker === 'steeringWheel';

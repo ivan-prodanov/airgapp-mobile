@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   bindVehicleVin,
   setClimateKeeperState,
+  setClimateOnState,
   activeVehicle,
   addVehicle,
   AMP_MAX,
@@ -385,4 +386,59 @@ test('speed-limit km/h stepping round-trips exactly (no 116→114 skip)', () => 
   // Conversion sanity.
   assert.ok(Math.abs(kmhToMph(193) - 120) < 0.5, '193 km/h ≈ 120 mph');
   assert.ok(Math.abs(mphToKmh(50) - 80) < 1, '50 mph ≈ 80 km/h');
+});
+
+// ── Switching the climate off takes the seats with it ────────────────────────
+//
+// Ivan: "the cooling seats also turn off in tesla app but ours are kept until the
+// refresh... I suspect not only cooling but generally any type of seat heat/cold
+// is deactivated". Both true, and it is ONE rule of theirs, not a per-seat one:
+// `getSeatClimateState` (@1235392) returns false for EVERY seat while
+// `hasSeatAndHvacOffCommand` (@1234366) holds, which it does when the newest
+// in-flight HVAC command is HvacAutoAction powerOn=false or ClimateKeeper OFF.
+test('climate off clears every seat — heat, cool and auto alike', () => {
+  const on: VehicleViewState = {
+    ...initialVehicleState,
+    climateOn: true,
+    seatClimateModes: {
+      ...initialVehicleState.seatClimateModes,
+      frontLeft: { mode: 'cool', level: 3 },
+      frontRight: { mode: 'heat', level: 2 },
+      rearLeft: { mode: 'auto', level: 2, autoActivity: 'cool' },
+    },
+  };
+
+  const off = setClimateOnState(on, false);
+  assert.equal(off.climateOn, false);
+  for (const seat of ['frontLeft', 'frontRight', 'rearLeft'] as const) {
+    assert.deepEqual(off.seatClimateModes[seat], { mode: 'off', level: 0 }, seat);
+  }
+
+  // Turning the climate ON must NOT invent seat activity — only the off
+  // direction clears, matching their one-way short-circuit.
+  const backOn = setClimateOnState(off, true);
+  assert.deepEqual(backOn.seatClimateModes, off.seatClimateModes);
+});
+
+test('switching a keeper mode off clears the seats the same way', () => {
+  // The route Ivan actually hit: Camp Mode off. It drives climateOn false, and
+  // the seats have to follow through the same rule rather than lingering until
+  // the next read.
+  const camp: VehicleViewState = {
+    ...initialVehicleState,
+    climateOn: true,
+    climateKeeper: 'camp',
+    seatClimateModes: {
+      ...initialVehicleState.seatClimateModes,
+      frontLeft: { mode: 'cool', level: 2 },
+    },
+  };
+  const off = setClimateKeeperState(camp, 'off');
+  assert.equal(off.climateOn, false);
+  assert.deepEqual(off.seatClimateModes.frontLeft, { mode: 'off', level: 0 });
+
+  // Starting a mode leaves the seats to the car.
+  const started = setClimateKeeperState(initialVehicleState, 'camp');
+  assert.equal(started.climateOn, true);
+  assert.deepEqual(started.seatClimateModes, initialVehicleState.seatClimateModes);
 });

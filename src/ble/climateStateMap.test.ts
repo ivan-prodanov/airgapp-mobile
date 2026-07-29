@@ -23,8 +23,16 @@ describe('resolveSeat — precedence auto > cool > heat > off', () => {
   it('returns undefined when the car reported nothing (leave the default)', () => {
     assert.equal(resolveSeat(undefined, undefined, undefined), undefined);
   });
-  it('auto beats everything', () => {
-    assert.deepEqual(resolveSeat(3, 2, true), { mode: 'auto', level: 0 });
+  it('auto keeps the live level and says which way it is working', () => {
+    // Auto used to collapse to { mode: 'auto', level: 0 }, throwing away what the
+    // car was actually doing — so a seat COOLING under auto drew the same grey
+    // glyph as one sitting idle. Their getSeatClimateIcon (@3987850) picks the
+    // cooling icon while cooling is above off, else the heating icon at the live
+    // heater level, so both levels have to survive the read.
+    assert.deepEqual(resolveSeat(3, 2, true), { mode: 'auto', level: 2, autoActivity: 'cool' });
+    assert.deepEqual(resolveSeat(3, 0, true), { mode: 'auto', level: 3, autoActivity: 'heat' });
+    // Auto engaged but the car is driving neither: no ramp, no colour.
+    assert.deepEqual(resolveSeat(0, 0, true), { mode: 'auto', level: 0, autoActivity: null });
   });
   it('cool beats heat', () => {
     assert.deepEqual(resolveSeat(3, 2, false), { mode: 'cool', level: 2 });

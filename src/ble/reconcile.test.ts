@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  setClimateOnState,
   setTargetTempState,
   stepSeatClimateState,
   stepSteeringWheelClimateState,
@@ -415,5 +416,39 @@ test('keeper/bioweapon imply climate-on WITHOUT emitting a climateOn command', (
   assert.deepEqual(
     diffToCommands(off, { ...off, climateOn: true }).map((c) => c.cmd.type),
     ['climateOn'],
+  );
+});
+
+// Clearing the seats when the climate goes off is a CONSEQUENCE, not an
+// instruction. Their seat state is derived (@1235392) — no per-seat command is
+// ever sent for it, one climateOff or keeper-off does the whole thing. Emitting
+// from our optimistic clear would put up to five extra commands on the wire
+// behind the one the user actually asked for.
+test('climate off does not fan out into per-seat commands', () => {
+  const hot: VehicleViewState = {
+    ...initialVehicleState,
+    climateOn: true,
+    seatClimateModes: {
+      ...initialVehicleState.seatClimateModes,
+      frontLeft: { mode: 'cool', level: 3 },
+      frontRight: { mode: 'heat', level: 2 },
+    },
+  };
+  const off = setClimateOnState(hot, false);
+  assert.deepEqual(
+    diffToCommands(hot, off).map((c) => c.cmd.type),
+    ['climateOff'],
+    'ONE command, as they send',
+  );
+
+  // A seat the USER changes still emits — the suppression is only for the
+  // climate-off consequence.
+  const seatEdit: VehicleViewState = {
+    ...hot,
+    seatClimateModes: { ...hot.seatClimateModes, frontLeft: { mode: 'heat', level: 1 } },
+  };
+  assert.deepEqual(
+    diffToCommands(hot, seatEdit).map((c) => c.cmd.type),
+    ['seatHeater'],
   );
 });

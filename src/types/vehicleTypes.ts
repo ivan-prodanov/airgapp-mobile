@@ -35,6 +35,15 @@ export type SteeringWheelClimateModeName = 'off' | 'heat' | 'auto';
 export interface SeatClimateMode {
   mode: SeatClimateModeName;
   level: 0 | 1 | 2 | 3;
+  // What AUTO is actually doing right now. Their `getSeatClimateIcon` (@3987850)
+  // does not draw a generic "auto" glyph — while the seat is in auto it picks
+  // the COOLING icon when the live cooling level is above off, and otherwise the
+  // HEATING icon at the live heater level. So the car keeps reporting real
+  // levels underneath auto, and the app shows which way it is working.
+  //
+  // We collapsed auto to { mode: 'auto', level: 0 } and drew one grey glyph for
+  // every case, losing that. Null means auto is engaged but idle.
+  autoActivity?: 'heat' | 'cool' | null;
 }
 
 // The steering-wheel heater mirrors the seats but tops out at level 2 (the real app's 2-1-off ramp)

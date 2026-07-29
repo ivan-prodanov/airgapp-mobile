@@ -3,6 +3,7 @@ import {
   initialVehicleState,
   type CabinOverheatMode,
   type ClimateKeeperMode,
+  type SeatClimateModes,
   type CabinOverheatTemp,
   type CameraMode,
   type CarModel,
@@ -409,6 +410,45 @@ export function setTargetTempState(state: VehicleViewState, tempC: number): Vehi
   });
 }
 
+// EVERY seat reads OFF the moment an HVAC-off command is in flight.
+//
+// Ivan: "the cooling seats also turn off in tesla app but ours are kept until
+// the refresh... I suspect not only cooling but generally any type of seat
+// heat/cold is deactivated". Right on both counts, and it is a single rule of
+// theirs rather than a per-seat one.
+//
+// `getSeatClimateState` (@1235392) short-circuits to FALSE — for every seat,
+// heat, cool and auto alike — when `hasSeatAndHvacOffCommand` (@1234366) is
+// true, which it is when the newest in-flight HVAC command is either:
+//
+//     HvacAutoAction.powerOn === false          (climate off)
+//     HvacClimateKeeperAction === OFF           (Camp/Pet/Keep off)
+//
+// So it is not the seats being commanded off — it is the UI refusing to show a
+// seat as active while the thing that powers it is being switched off. We store
+// rather than derive, so the equivalent is to clear the map in the same
+// transition; the car's next read restores anything that survived.
+const SEATS_OFF: SeatClimateModes = {
+  frontLeft: { mode: 'off', level: 0 },
+  frontRight: { mode: 'off', level: 0 },
+  rearLeft: { mode: 'off', level: 0 },
+  rearMiddle: { mode: 'off', level: 0 },
+  rearRight: { mode: 'off', level: 0 },
+  thirdRowLeft: { mode: 'off', level: 0 },
+  thirdRowRight: { mode: 'off', level: 0 },
+};
+
+// Applied wherever the climate is switched off, by whatever route.
+const withSeatsCleared = (state: VehicleViewState): VehicleViewState =>
+  state.climateOn ? state : { ...state, seatClimateModes: SEATS_OFF };
+
+// The climate power button. Turning it OFF takes the seats with it, exactly as
+// their derived seat state does while the off command is in flight.
+export function setClimateOnState(state: VehicleViewState, on: boolean): VehicleViewState {
+  if (state.climateOn === on) return state;
+  return withSeatsCleared({ ...state, climateOn: on });
+}
+
 // Camp/Pet as the car models them: ONE value. Setting either implicitly clears
 // the other, which is not a policy we invented — it is what the vehicle does,
 // and what Tesla's own screen warns about before it happens.
@@ -428,7 +468,7 @@ export function setClimateKeeperState(
   // so switching Camp off drops the power row immediately instead of leaving the
   // climate lit until the next read. That is exactly what Ivan reported:
   // "In tesla app turning off camp mode directly turns off climate mode."
-  return { ...state, climateKeeper: mode, climateOn: mode !== 'off' };
+  return withSeatsCleared({ ...state, climateKeeper: mode, climateOn: mode !== 'off' });
 }
 
 // Bioweapon Defense Mode. Same implied climate-on, and the same one-directional
