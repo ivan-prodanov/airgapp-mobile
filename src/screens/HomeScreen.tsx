@@ -35,6 +35,7 @@ import { CONTENT_FADE_MS } from '@/godot/useContentFade';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import { PhoneKeyRecoveryCard } from '@/components/PhoneKeyRecoveryCard';
 import { recoveryView } from '@/ble/recoveryPresentation';
+import { climateDescriptionText } from '@/ble/climateDisplay';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -287,6 +288,22 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
     media?.remoteControlEnabled === true &&
     (media.playbackStatus === 1 || media.playbackStatus === 2 || !!media.title);
 
+  // The Home climate line. One cascade (@3887821), split across the row's status
+  // and subtitle slots at the call site.
+  const climateLine = climateDescriptionText({
+    climateOn: state.climateOn,
+    bioweaponOn: state.bioweaponOn,
+    climateKeeper: state.climateKeeper,
+    interiorTempC: state.interiorTempC,
+    openWindowCount: [
+      state.leftFrontWindowOpen,
+      state.rightFrontWindowOpen,
+      state.leftRearWindowOpen,
+      state.rightRearWindowOpen,
+    ].filter(Boolean).length,
+    copActivelyCooling: state.copActivelyCooling,
+  });
+
   // The refresh itself, with NO haptic. The pull-down adds one; the battery-%
   // tap must not, because their tap handler has none — it was only ever there
   // for crossing the pull threshold, and the % tap borrowed the whole function.
@@ -466,9 +483,17 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <NavRow
             symbol="fanblades.fill"
             title="Climate"
-            status={state.climateOn ? 'Active' : undefined}
-            subtitle={showNum(state.interiorTempC, (v) => `Interior ${Math.round(v)}°C`)}
-            subtitleDim={status.stale && state.interiorTempC != null}
+            // ONE cascade, theirs (@3887821), rendered through the two slots
+            // this row already has: their climate-ON arm reads as a status, their
+            // climate-OFF arm as a subtitle, and exactly one of them is ever
+            // non-null. See climateDescriptionText.
+            //
+            // Replaces `showNum(interiorTempC)`, which printed "Interior —" for
+            // an unknown temp where they print nothing at all, and which never
+            // showed the other four states.
+            status={state.climateOn ? (climateLine ?? undefined) : undefined}
+            subtitle={state.climateOn ? undefined : (climateLine ?? undefined)}
+            subtitleDim={status.stale && !state.climateOn && state.interiorTempC != null}
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
           <NavRow

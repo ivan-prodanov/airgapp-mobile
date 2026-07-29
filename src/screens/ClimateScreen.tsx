@@ -243,6 +243,11 @@ export function ClimateScreen({ state, actions }: Props) {
     actions.setClimateKeeper('pet');
   };
 
+  const tempParts = [
+    state.interiorTempC !== null ? `Interior ${Math.round(state.interiorTempC)}°C` : null,
+    state.exteriorTempC !== null ? `Exterior ${Math.round(state.exteriorTempC)}°C` : null,
+  ].filter((p): p is string => p !== null);
+
   // Defrost Car: (1) turn climate ON, (2) set temp to HI, (3) run front + rear defrost (harness G + H).
   const toggleDefrost = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -277,9 +282,26 @@ export function ClimateScreen({ state, actions }: Props) {
 
         {/* Interior + ambient temps (mock now; BLE ClimateState.inside_temp / outside_temp later) — like
             the official app, sits centred above the setpoint. */}
-        <Text style={[styles.climateTemps, tempsStale && styles.climateTempsStale]}>
-          {showNum(state.interiorTempC, (v) => `Interior ${Math.round(v)}°C`)} · {showNum(state.exteriorTempC, (v) => `Exterior ${Math.round(v)}°C`)}
-        </Text>
+        {/* Shown only when we actually have a temperature. Their gate, at
+            @5221853, is exactly:
+
+              tempInteriorText != null || tempExteriorText != null
+
+            and each text is null iff the value is absent from ClimateState —
+            no awake check and no staleness rule, even though
+            `isVehicleDataUnreliable` sits right beside it in the same
+            view-model. Purely "do we have the number".
+
+            We rendered the line unconditionally through showNum, which prints
+            an em-dash for an unknown value, so a car we had never read showed
+            "Interior — · Exterior —" where theirs shows nothing. Each half is
+            independent: one known temperature renders on its own rather than
+            dragging a dash along beside it. */}
+        {tempParts.length > 0 ? (
+          <Text style={[styles.climateTemps, tempsStale && styles.climateTempsStale]}>
+            {tempParts.join(' · ')}
+          </Text>
+        ) : null}
 
         <View style={styles.tempRow}>
           <Quick

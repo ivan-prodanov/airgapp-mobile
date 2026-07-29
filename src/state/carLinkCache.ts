@@ -56,6 +56,7 @@ export interface CarLinkCache {
   rearDefrostOn: boolean | null;
   bioweaponOn: boolean | null;
   climateKeeper: ClimateKeeperMode | null;
+  copActivelyCooling: boolean | null;
   cabinOverheatMode: CabinOverheatMode | null;
   cabinOverheatTemp: CabinOverheatTemp | null;
   // The rest of the steady-state telemetry, closing the GAP list that
@@ -205,6 +206,7 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     rearDefrostOn: bool(cached?.rearDefrostOn),
     bioweaponOn: bool(cached?.bioweaponOn),
     climateKeeper: oneOf(cached?.climateKeeper, ['off', 'on', 'camp', 'pet'] as const),
+    copActivelyCooling: bool(cached?.copActivelyCooling),
     cabinOverheatMode: oneOf(cached?.cabinOverheatMode, ['off', 'noac', 'on'] as const),
     cabinOverheatTemp: oneOf(cached?.cabinOverheatTemp, ['30', '35', '40'] as const),
     locked: bool(cached?.locked),

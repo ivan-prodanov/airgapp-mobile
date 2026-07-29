@@ -81,6 +81,7 @@ export interface InfotainmentSnapshot {
     frontDefrostOn: boolean | undefined;
     rearDefrostOn: boolean | undefined;
     cabinOverheatMode: CabinOverheatMode | undefined;
+    copActivelyCooling: boolean | undefined;
     cabinOverheatTemp: CabinOverheatTemp | undefined;
     keeper: ClimateKeeperMode | undefined;
     bioweaponOn: boolean | undefined;
@@ -383,6 +384,10 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       frontDefrostOn: typeof cl.isFrontDefrosterOn === 'boolean' ? cl.isFrontDefrosterOn : undefined,
       rearDefrostOn: typeof cl.isRearDefrosterOn === 'boolean' ? cl.isRearDefrosterOn : undefined,
       cabinOverheatMode: copMode(cl.cabinOverheatProtection),
+      copActivelyCooling:
+        typeof cl.cabinOverheatProtectionActivelyCooling === 'boolean'
+          ? cl.cabinOverheatProtectionActivelyCooling
+          : undefined,
       cabinOverheatTemp: copTemp(cl.copActivationTemperature),
       keeper: keeperMode(cl.climateKeeperMode),
       // Bioweapon was WRITE-ONLY: we sent the command and then believed our own
@@ -719,6 +724,7 @@ export function infotainmentToPatch(
     if (c.frontDefrostOn !== undefined) patch.frontDefrostOn = c.frontDefrostOn;
     if (c.rearDefrostOn !== undefined) patch.rearDefrostOn = c.rearDefrostOn;
     if (c.cabinOverheatMode !== undefined) patch.cabinOverheatMode = c.cabinOverheatMode;
+    if (c.copActivelyCooling !== undefined) patch.copActivelyCooling = c.copActivelyCooling;
     if (c.cabinOverheatTemp !== undefined) patch.cabinOverheatTemp = c.cabinOverheatTemp;
     if (c.keeper !== undefined) patch.climateKeeper = c.keeper;
     if (c.bioweaponOn !== undefined) patch.bioweaponOn = c.bioweaponOn;

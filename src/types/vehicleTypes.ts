@@ -221,6 +221,10 @@ export interface VehicleViewState {
   // Climate setpoint (°C), clamped to LO_TEMP..HI_TEMP in 0.5° steps — the bounds double as the
   // LO/HI sentinels. Maps to ClimateState.driver_temp_setting.
   targetTempC: number;
+  // Whether COP is ACTIVELY cooling right now, as opposed to merely armed. It is
+  // the last arm of the Home climate line (@3887821) and is its own proto field,
+  // separate from the mode.
+  copActivelyCooling: boolean;
   cabinOverheatMode: CabinOverheatMode;
   cabinOverheatTemp: CabinOverheatTemp;
   bioweaponOn: boolean;
@@ -322,6 +326,7 @@ export const initialVehicleState: VehicleViewState = {
   tirePressures: null,
   media: null,
   targetTempC: 19.5,
+  copActivelyCooling: false,
   cabinOverheatMode: 'off',
   cabinOverheatTemp: '40',
   bioweaponOn: false,
