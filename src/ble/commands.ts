@@ -35,6 +35,7 @@ import {
   setChargeLimitAction,
   setClimateKeeperAction,
   CLIMATE_KEEPER,
+  KEEPER_OVERRIDE,
   setCabinOverheatAction,
   setBioweaponModeAction,
   setSteeringWheelHeaterAction,
@@ -96,7 +97,7 @@ export type CarCommand =
   | { type: 'setClimateTemp'; celsius: number }
   | { type: 'defrostOn' }
   | { type: 'defrostOff' }
-  | { type: 'climateKeeper'; mode: 'off' | 'on' | 'dog' | 'camp' }
+  | { type: 'climateKeeper'; mode: 'off' | 'on' | 'dog' | 'camp'; cpdOverride?: boolean }
   | { type: 'cabinOverheat'; on: boolean; fanOnly: boolean }
   | { type: 'setCopTemp'; level: 'low' | 'medium' | 'high' }
   | { type: 'seatHeater'; seat: 'FL' | 'FR' | 'RL' | 'RC' | 'RR'; level: 0 | 1 | 2 | 3 }
@@ -212,7 +213,12 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
     case 'defrostOff':
       return fromPayload(defrostOffAction());
     case 'climateKeeper':
-      return fromPayload(setClimateKeeperAction(CLIMATE_KEEPER_MODE[cmd.mode]));
+      return fromPayload(
+        setClimateKeeperAction(
+          CLIMATE_KEEPER_MODE[cmd.mode],
+          cmd.cpdOverride ? [KEEPER_OVERRIDE.CPD] : [],
+        ),
+      );
     case 'cabinOverheat':
       return fromPayload(setCabinOverheatAction(cmd.on, cmd.fanOnly));
     case 'setCopTemp':

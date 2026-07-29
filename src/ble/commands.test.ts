@@ -16,6 +16,7 @@ import {
   RKE_ACTION,
   CLOSURE_MOVE,
   CLIMATE_KEEPER,
+  KEEPER_OVERRIDE,
   SEAT_COOLER_LEVEL,
   SEAT_COOLER_POS,
   COP_ACTIVATION_TEMP,
@@ -453,4 +454,46 @@ test('navigateTo carries the trip order (what makes APPEND-chaining work)', () =
   assert.equal(first.vehicleAction?.navigationGpsRequest?.order ?? 0, 0); // REPLACE = 0
   const next = decodeAction(buildCommand({ type: 'navigateTo', lat: 3, lon: 4, order: 'APPEND' }).bytes);
   assert.equal(next.vehicleAction?.navigationGpsRequest?.order, 2); // APPEND = 2
+});
+
+// ── The Camp/Pet fix: manualOverrideModeList (field 3) ───────────────────────
+//
+// "turn ON does not work turn OFF works" — the exact shape of a missing override
+// that is only needed to ENABLE. Everything else was already byte-identical to
+// Tesla's, verified tag by tag: Action.vehicleAction is field 2,
+// hvacClimateKeeperAction is field 44, the mode is field 1, and the enum is
+// {OFF:0, ON:1, DOG:2, CAMP:3} — all the same in both. The only difference left
+// on the wire was field 3, which our vendored proto revision does not have.
+//
+// Their serializer writes it with writePackedEnum(3, list) (@848914). Because
+// the generated type has no field 3, we hand-encode it through `$unknowns`,
+// which the generated encoder re-emits with writer.raw() — so this test pins the
+// BYTES rather than a decoded property, since there is no property to read back.
+test('climate keeper: the CPD override is field 3, packed', () => {
+  const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
+
+  // 12 05 | e202 02 | 0803
+  //  ^vehicleAction(2)  ^hvacClimateKeeperAction(44), len 2
+  //                      ^ClimateKeeperAction(1) = 3 (CAMP)
+  assert.equal(hex(setClimateKeeperAction(CLIMATE_KEEPER.CAMP).bytes), '1205e202020803');
+
+  // …plus 1a 01 01 = field 3, wire type 2 (packed), 1 byte, value 1 (CPD).
+  assert.equal(
+    hex(setClimateKeeperAction(CLIMATE_KEEPER.CAMP, [KEEPER_OVERRIDE.CPD]).bytes),
+    '1208e2020508031a0101',
+  );
+
+  // OFF is enum 0, which proto3 omits — an EMPTY action message. That is why
+  // turning a keeper mode off worked all along while turning one on did not.
+  assert.equal(hex(setClimateKeeperAction(CLIMATE_KEEPER.OFF).bytes), '1203e20200');
+
+  // The mode still decodes through our own proto with the extra field attached —
+  // an unknown field must not corrupt the fields we do model.
+  const camp = decodeAction(
+    setClimateKeeperAction(CLIMATE_KEEPER.CAMP, [KEEPER_OVERRIDE.CPD]).bytes,
+  );
+  assert.equal(
+    camp.vehicleAction?.hvacClimateKeeperAction?.ClimateKeeperAction,
+    CLIMATE_KEEPER.CAMP,
+  );
 });

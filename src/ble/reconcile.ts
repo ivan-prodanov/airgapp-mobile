@@ -301,7 +301,15 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   // other mode while our UI kept showing it.
   if (prev.climateKeeper !== next.climateKeeper) {
     emit(
-      { type: 'climateKeeper', mode: KEEPER_CMD_MODE[next.climateKeeper] },
+      {
+        type: 'climateKeeper',
+        mode: KEEPER_CMD_MODE[next.climateKeeper],
+        // ENABLING carries the Child-Left-Alone override; turning OFF does not,
+        // because nothing is being suppressed. That asymmetry is theirs, and it
+        // is the exact shape of the bug Ivan reported: "turn ON does not work
+        // turn OFF works".
+        cpdOverride: next.climateKeeper !== 'off',
+      },
       'climateKeeper',
       ...(next.climateKeeper !== 'off' ? (['climateOn'] as const) : []),
     );

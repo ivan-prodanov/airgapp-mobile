@@ -124,17 +124,17 @@ test('climate: on/off, temp, bioweapon, overheat, camp, pet', () => {
   // Starting a keeper mode also claims climateOn — see the implied-climate-on
   // test below.
   expect(s({ climateKeeper: 'off' }), s({ climateKeeper: 'camp' }), [
-    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper', 'climateOn'] },
+    { cmd: { type: 'climateKeeper', mode: 'camp', cpdOverride: true }, keys: ['climateKeeper', 'climateOn'] },
   ]);
   // 'pet' is OUR name for the row; the action proto calls it Dog.
   expect(s({ climateKeeper: 'off' }), s({ climateKeeper: 'pet' }), [
-    { cmd: { type: 'climateKeeper', mode: 'dog' }, keys: ['climateKeeper', 'climateOn'] },
+    { cmd: { type: 'climateKeeper', mode: 'dog', cpdOverride: true }, keys: ['climateKeeper', 'climateOn'] },
   ]);
   // Switching modes is a SINGLE command. As two booleans this transition emitted
   // both `camp` and `off` in one tick — the off arriving second and cancelling
   // the mode the user just picked.
   expect(s({ climateKeeper: 'pet' }), s({ climateKeeper: 'camp' }), [
-    { cmd: { type: 'climateKeeper', mode: 'camp' }, keys: ['climateKeeper', 'climateOn'] },
+    { cmd: { type: 'climateKeeper', mode: 'camp', cpdOverride: true }, keys: ['climateKeeper', 'climateOn'] },
   ]);
 });
 

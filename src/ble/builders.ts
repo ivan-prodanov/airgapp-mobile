@@ -170,12 +170,51 @@ export function setChargeLimitAction(percent: number): ActionPayload {
 
 export const CLIMATE_KEEPER = Object.freeze({ OFF: 0, ON: 1, DOG: 2, CAMP: 3 });
 
-export function setClimateKeeperAction(mode: number): ActionPayload {
+// HvacClimateKeeperAction.ManualOverrideMode_E in the CURRENT firmware's proto:
+// { SOC: 0, CPD: 1 }. CPD is Child Presence Detection — "Child Left Alone
+// Detection" in their UI.
+export const KEEPER_OVERRIDE = Object.freeze({ SOC: 0, CPD: 1 });
+
+// Our vendored car_server.proto is an OLDER REVISION of this message than the
+// car runs, and that is the whole bug behind "Camp Mode turn ON does not work,
+// turn OFF works".
+//
+//   ours    HvacClimateKeeperAction { 1: ClimateKeeperAction, 2: manualOverride bool }
+//   theirs  ... plus                 { 3: manualOverrideModeList, repeated enum, PACKED }
+//
+// Tesla's serializer writes it with writePackedEnum(3, list) (@848914), and
+// their camp/pet enable path sends [CPD] whenever the car's vehicle config sets
+// `cpd_disable_notification_required`. Turning a keeper mode OFF sends no
+// override — which is exactly why OFF appeared to work and ON did not: the car
+// accepts both (actionStatus OK) but refuses to ENGAGE a mode that suppresses
+// Child Left Alone Detection unless the override is present.
+//
+// Everything else was already byte-identical to theirs, verified tag by tag:
+// Action.vehicleAction is field 2, hvacClimateKeeperAction is field 44 in both,
+// the mode is field 1 in both, and the enum is {OFF:0, ON:1, DOG:2, CAMP:3} in
+// both. So the missing field was the only difference left on the wire.
+//
+// The generated type has no field 3, but its encoder re-emits `$unknowns` with
+// writer.raw(), so we hand-encode the one field rather than regenerate the whole
+// proto from a revision we do not have. Packed enum: tag (3<<3)|2 = 0x1a, then
+// the byte length, then one varint per value (every value here is < 128).
+const overrideModeList = (modes: readonly number[]): Uint8Array =>
+  new Uint8Array([0x1a, modes.length, ...modes]);
+
+export function setClimateKeeperAction(
+  mode: number,
+  overrides: readonly number[] = [],
+): ActionPayload {
   const m = Number(mode);
   if (![0, 1, 2, 3].includes(m)) throw new Error('climate keeper mode must be 0..3');
   return {
     domain: DOMAIN_INFOTAINMENT,
-    bytes: encodeInfotainmentAction({ hvacClimateKeeperAction: { ClimateKeeperAction: m } }),
+    bytes: encodeInfotainmentAction({
+      hvacClimateKeeperAction: {
+        ClimateKeeperAction: m,
+        ...(overrides.length ? { $unknowns: [overrideModeList(overrides)] } : {}),
+      },
+    }),
   };
 }
 // `fanOnly` is the "No A/C" arm of the three-way selector — the car cools with

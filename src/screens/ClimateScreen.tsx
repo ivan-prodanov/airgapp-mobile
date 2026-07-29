@@ -210,15 +210,35 @@ export function ClimateScreen({ state, actions }: Props) {
       { text: 'Yes', onPress: onYes },
     ]);
 
+  // The Child-Left-Alone override prompt — their `actuateCPDAlert` (@5222456).
+  // Enabling any keeper mode suppresses Child Presence Detection, and the car
+  // will not ENGAGE the mode unless the command carries the override, so the
+  // confirmation and the override travel together. Message and submessage are
+  // their strings, joined with a blank line exactly as they join them.
+  //
+  // Tesla shows this only when the car's vehicle config sets
+  // `cpd_disable_notification_required`. That flag lives in the cloud config and
+  // is on no BLE proto, so we cannot read it — and this car demonstrably needs
+  // the override, since the plain command is accepted and then ignored. So we
+  // always ask, which is what its own Tesla app does.
+  const confirmCpd = (onYes: () => void) =>
+    confirm(
+      'Child Left Alone Detection and its related safety features are unavailable while Climate Keeper, Pet Mode, or Camp Mode are enabled\n\n' +
+        'Child Left Alone Detection will automatically re-enable when Climate Keeper, Pet Mode, and Camp Mode are turned off.',
+      onYes,
+    );
+
   const onCampPress = () => {
     tap();
     if (state.climateKeeper === 'camp') return actions.setClimateKeeper('off');
     if (state.climateKeeper === 'pet') {
+      // Displacing Pet Mode asks TWICE, in this order, exactly as they chain it:
+      // the override warning, then the CPD warning (@5224040 -> actuateCPDAlert).
       return confirm('Enabling Camp Mode will disable Pet Mode.', () =>
-        actions.setClimateKeeper('camp'),
+        confirmCpd(() => actions.setClimateKeeper('camp')),
       );
     }
-    actions.setClimateKeeper('camp');
+    confirmCpd(() => actions.setClimateKeeper('camp'));
   };
 
   // Bioweapon displaces a running keeper mode, and Tesla confirms before it does
@@ -240,7 +260,7 @@ export function ClimateScreen({ state, actions }: Props) {
     if (state.climateKeeper === 'pet') {
       return confirm('Please confirm to disable Pet Mode.', () => actions.setClimateKeeper('off'));
     }
-    actions.setClimateKeeper('pet');
+    confirmCpd(() => actions.setClimateKeeper('pet'));
   };
 
   const tempParts = [
