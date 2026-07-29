@@ -417,12 +417,18 @@ export function setClimateKeeperState(
   mode: ClimateKeeperMode,
 ): VehicleViewState {
   if (state.climateKeeper === mode) return state;
-  // Starting a keeper mode runs the HVAC, and their derived `isClimateOn`
-  // reports it the instant the command is in flight rather than waiting for the
-  // car (@1228092). Turning one OFF does NOT force the power row off — their
-  // "off" arm falls through to the car's own state, because climate may well be
-  // running for another reason.
-  return { ...state, climateKeeper: mode, ...(mode !== 'off' ? { climateOn: true } : null) };
+  // BOTH directions, which I had half-right. Their `isClimateOn` (@1228092) has
+  // one arm per HVAC action, and the CLIMATE KEEPER arm is the only one that
+  // returns its answer DIRECTLY (@1228482):
+  //
+  //     return isClimateKeeperOn(command.getClimatekeeperaction())
+  //
+  // No fallback to the car. The bioweapon and preconditioning arms only force
+  // TRUE and otherwise fall through, but the keeper arm forces false as well —
+  // so switching Camp off drops the power row immediately instead of leaving the
+  // climate lit until the next read. That is exactly what Ivan reported:
+  // "In tesla app turning off camp mode directly turns off climate mode."
+  return { ...state, climateKeeper: mode, climateOn: mode !== 'off' };
 }
 
 // Bioweapon Defense Mode. Same implied climate-on, and the same one-directional

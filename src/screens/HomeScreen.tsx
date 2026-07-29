@@ -35,7 +35,12 @@ import { CONTENT_FADE_MS } from '@/godot/useContentFade';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
 import { PhoneKeyRecoveryCard } from '@/components/PhoneKeyRecoveryCard';
 import { recoveryView } from '@/ble/recoveryPresentation';
-import { climateDescriptionText } from '@/ble/climateDisplay';
+import {
+  climateDetailText,
+  climateStatusIcon,
+  climateStatusText,
+  type ClimateStatusIcon,
+} from '@/ble/climateDisplay';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -290,7 +295,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
 
   // The Home climate line. One cascade (@3887821), split across the row's status
   // and subtitle slots at the call site.
-  const climateLine = climateDescriptionText({
+  const climateInput = {
     climateOn: state.climateOn,
     bioweaponOn: state.bioweaponOn,
     climateKeeper: state.climateKeeper,
@@ -302,7 +307,10 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
       state.rightRearWindowOpen,
     ].filter(Boolean).length,
     copActivelyCooling: state.copActivelyCooling,
-  });
+  };
+  const climateStatus = climateStatusText(climateInput);
+  const climateDetail = climateDetailText(climateInput);
+  const climateIcon = climateStatusIcon(climateInput);
 
   // The refresh itself, with NO haptic. The pull-down adds one; the battery-%
   // tap must not, because their tap handler has none — it was only ever there
@@ -491,9 +499,12 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             // Replaces `showNum(interiorTempC)`, which printed "Interior —" for
             // an unknown temp where they print nothing at all, and which never
             // showed the other four states.
-            status={state.climateOn ? (climateLine ?? undefined) : undefined}
-            subtitle={state.climateOn ? undefined : (climateLine ?? undefined)}
-            subtitleDim={status.stale && !state.climateOn && state.interiorTempC != null}
+            // Their two sibling Texts (@3888124/@3888130), which this row already
+            // models: a BRIGHT status and a DIM detail joined by " · ".
+            status={climateStatus ?? undefined}
+            statusIcon={climateIcon}
+            subtitle={climateDetail ?? undefined}
+            subtitleDim={status.stale && state.interiorTempC != null}
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
           <NavRow
@@ -622,10 +633,18 @@ function QuickIcon({
   );
 }
 
+const CLIMATE_STATUS_SF: Record<ClimateStatusIcon, SFSymbol> = {
+  biohazard: 'microbe',
+  camp: 'tent.fill',
+  dog: 'pawprint.fill',
+  climate: 'fanblades.fill',
+};
+
 function NavRow({
   symbol,
   title,
   status,
+  statusIcon,
   subtitle,
   subtitleDim,
   onPress,
@@ -636,6 +655,10 @@ function NavRow({
   title: string;
   // Bold/bright leading word (e.g. Climate "Active"), like the official app; rendered before subtitle.
   status?: string;
+  // `getActiveClimateIcon` (@3888184): a small glyph BEFORE the status, naming
+  // the mode that is running. Tesla shows a tent beside "Active" for Camp Mode —
+  // the status word says the climate is on, the glyph says which mode.
+  statusIcon?: ClimateStatusIcon | null;
   subtitle?: string;
   // Dim just the subtitle value (e.g. a stale, cached temp) — mirrors the battery row's §C3 fade.
   subtitleDim?: boolean;
@@ -656,6 +679,17 @@ function NavRow({
         <Text style={styles.navTitle}>{title}</Text>
         {status || subtitle ? (
           <Text style={styles.navSubtitle} numberOfLines={1}>
+            {statusIcon ? (
+              <Text>
+                <SymbolView
+                  name={CLIMATE_STATUS_SF[statusIcon]}
+                  tintColor="#FFFFFF"
+                  size={14}
+                  style={styles.navStatusIcon}
+                />
+                {'  '}
+              </Text>
+            ) : null}
             {status ? <Text style={styles.navStatus}>{status}</Text> : null}
             {status && subtitle ? ' · ' : null}
             {subtitle ? <Text style={subtitleDim ? styles.navSubtitleDim : undefined}>{subtitle}</Text> : null}
@@ -785,6 +819,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.45)',
     marginTop: 2,
+  },
+  // The inline mode glyph. Their icon names are biohazard / camp / dog /
+  // climate; these are the nearest SF Symbols, same substitution as the climate
+  // rows themselves until the real glyph extraction happens.
+  navStatusIcon: {
+    width: 14,
+    height: 14,
   },
   navStatus: {
     fontWeight: '700',

@@ -328,8 +328,17 @@ test('enabling implies climate-on; disabling implies nothing', () => {
   const camp = diffToCommands(at({ climateKeeper: 'off' }), at({ climateKeeper: 'camp' }));
   assert.deepEqual(camp[0]?.keys, ['climateKeeper', 'climateOn']);
 
-  const keeperOff = diffToCommands(at({ climateKeeper: 'camp' }), at({ climateKeeper: 'off' }));
-  assert.deepEqual(keeperOff[0]?.keys, ['climateKeeper'], 'turning OFF must not claim climateOn');
+  // Keeper-off is the ONE case that also forces climateOn FALSE — their keeper
+  // arm returns isClimateKeeperOn(mode) directly with no fallback to the car
+  // (@1228482), which is why Tesla's power row drops the instant you switch Camp
+  // off while ours waited for the next read. Still ONE command, and it owns
+  // climateOn in this direction too so a failure can revert it.
+  const keeperOff = diffToCommands(
+    at({ climateKeeper: 'camp', climateOn: true }),
+    at({ climateKeeper: 'off', climateOn: false }),
+  );
+  assert.deepEqual(keeperOff.map((c) => c.cmd.type), ['climateKeeper']);
+  assert.deepEqual(keeperOff[0]?.keys, ['climateKeeper', 'climateOn']);
 });
 
 // manualOverride is read off the state we transition FROM: "a keeper mode was

@@ -33,33 +33,29 @@ export function showsOverheatActivationTemp(mode: CabinOverheatMode): boolean {
 }
 
 /**
- * The Home row's climate line — `getClimateDescriptionText` @3887821, verbatim.
+ * The Home row's climate line — `getClimateDescriptionText` @3887821.
  *
- * Ivan asked why the interior temperature is sometimes hidden. On the CLIMATE
- * screen the answer is simple presence (see below). On HOME it is not a
- * temperature field at all: it is one line produced by a priority cascade, and
- * the temperature is only its first fallback.
+ * I read this as a priority CASCADE the first time and it is not one: it is a
+ * bright STATUS plus a dim DETAIL LIST, rendered as two sibling Texts (@3888124,
+ * @3888130). Ivan's screenshot shows both at once — "Active · Interior 25°C" —
+ * which a cascade cannot produce, and which is why our row showed a status with
+ * no temperature.
  *
- *     if (climateOn)
- *       bioweapon        -> "Bioweapon Defense Mode"
- *       keeper !== off   -> "Keep On"
- *       otherwise        -> "Active"
- *     else
- *       interior temp    -> "Interior {temp}"
- *       any window open  -> "Window open" / "Windows open"
- *       COP cooling      -> "Cabin Overheat Protection"
- *       otherwise        -> nothing
+ *   status (bright, BodyLabel), only while climate is ON:
+ *     bioweapon              -> "Bioweapon Defense Mode"
+ *     keeper === ON          -> "Keep On"     <- ONLY the plain Keep Climate On
+ *     otherwise              -> "Active"      <- Camp and Pet land HERE
  *
- * So the temperature disappears whenever ANYTHING more specific is true — most
- * often simply because the climate is running, in which case the row says what
- * it is doing instead of how warm the cabin is. That is the "sometimes hidden"
- * he was seeing, and it is a deliberate hierarchy rather than a data gap.
+ *   detail (dim), always evaluated:
+ *     [ "Interior {temp}", "Window(s) open" ].filter(present).join(" · ")
+ *     prefixed with " · " when a status precedes it
  *
- * Ours showed `showNum(interiorTempC)`, which renders an em-dash for an unknown
- * value — so with no data we printed "Interior —" where they print nothing, and
- * we never showed the other four states at all.
+ *   plus, as its own element, "Cabin Overheat Protection" when actively cooling.
  *
- * Returns null for "render no line", which is a real outcome here, not an error.
+ * The second mistake was mapping any keeper mode to "Keep On". Their check is
+ * `climateKeeperMode === ClimateKeeperMode.ON` specifically (@3887847), so Camp
+ * and Pet report "Active" — exactly what Ivan's Tesla screenshot shows next to a
+ * tent glyph.
  */
 export interface ClimateDescriptionInput {
   climateOn: boolean;
@@ -70,18 +66,39 @@ export interface ClimateDescriptionInput {
   copActivelyCooling: boolean;
 }
 
-export function climateDescriptionText(s: ClimateDescriptionInput): string | null {
-  if (s.climateOn) {
-    if (s.bioweaponOn) return 'Bioweapon Defense Mode';
-    if (s.climateKeeper !== 'off') return 'Keep On';
-    return 'Active';
-  }
-  // `vehicle_climate_screen_interior_temp` is "Interior {{interior_temp}}" — the
-  // unit travels with the value, as it does everywhere else in their UI.
-  if (s.interiorTempC !== null) return `Interior ${Math.round(s.interiorTempC)}°C`;
+export function climateStatusText(s: ClimateDescriptionInput): string | null {
+  if (!s.climateOn) return null;
+  if (s.bioweaponOn) return 'Bioweapon Defense Mode';
+  if (s.climateKeeper === 'on') return 'Keep On';
+  return 'Active';
+}
+
+export function climateDetailText(s: ClimateDescriptionInput): string | null {
+  const parts: string[] = [];
+  // `vehicle_climate_screen_interior_temp` = "Interior {{interior_temp}}".
+  if (s.interiorTempC !== null) parts.push(`Interior ${Math.round(s.interiorTempC)}°C`);
   // Singular and plural are two separate keys of theirs, not a formatter.
-  if (s.openWindowCount > 1) return 'Windows open';
-  if (s.openWindowCount === 1) return 'Window open';
-  if (s.copActivelyCooling) return 'Cabin Overheat Protection';
+  if (s.openWindowCount === 1) parts.push('Window open');
+  else if (s.openWindowCount > 1) parts.push('Windows open');
+  if (!parts.length) return null;
+  return parts.join(' · ');
+}
+
+// Rendered as its own element, not folded into the detail list (@3888142).
+export function climateOverheatText(s: ClimateDescriptionInput): string | null {
+  return s.copActivelyCooling ? 'Cabin Overheat Protection' : null;
+}
+
+/**
+ * `getActiveClimateIcon` @3888184 — the glyph beside the status. Bioweapon is
+ * checked FIRST, before any keeper mode.
+ */
+export type ClimateStatusIcon = 'biohazard' | 'camp' | 'dog' | 'climate';
+
+export function climateStatusIcon(s: ClimateDescriptionInput): ClimateStatusIcon | null {
+  if (s.bioweaponOn) return 'biohazard';
+  if (s.climateKeeper === 'camp') return 'camp';
+  if (s.climateKeeper === 'pet') return 'dog';
+  if (s.climateKeeper === 'on') return 'climate';
   return null;
 }

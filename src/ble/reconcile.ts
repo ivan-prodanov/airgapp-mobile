@@ -245,10 +245,15 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   // So: skip the command when the flip is IMPLIED by a keeper/bioweapon enable
   // in this same diff. Those commands already claim `climateOn` as a key, so the
   // grace window and the failure-revert still cover it.
+  // A keeper change implies climateOn in BOTH directions (their keeper arm
+  // returns isClimateKeeperOn(mode) directly), so neither direction may emit a
+  // climateOn/climateOff command — Tesla sends one action either way. Bioweapon
+  // only implies the TRUE direction; turning it off says nothing about the
+  // climate, so that still emits a real command if the user's state changed.
   const impliedClimateOn =
-    (prev.climateKeeper !== next.climateKeeper && next.climateKeeper !== 'off') ||
+    prev.climateKeeper !== next.climateKeeper ||
     (prev.bioweaponOn !== next.bioweaponOn && next.bioweaponOn);
-  if (prev.climateOn !== next.climateOn && !(impliedClimateOn && next.climateOn)) {
+  if (prev.climateOn !== next.climateOn && !impliedClimateOn) {
     emit({ type: next.climateOn ? 'climateOn' : 'climateOff' }, 'climateOn');
   }
   if (prev.targetTempC !== next.targetTempC) {
@@ -311,7 +316,11 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
         cpdOverride: next.climateKeeper !== 'off',
       },
       'climateKeeper',
-      ...(next.climateKeeper !== 'off' ? (['climateOn'] as const) : []),
+      // BOTH directions, because the optimistic climateOn moves both ways now:
+      // on when a mode starts, off when one stops. Whatever this command changes,
+      // it must own — otherwise a failed keeper-off would leave the power row
+      // dark with nothing to revert it.
+      'climateOn',
     );
   }
 
