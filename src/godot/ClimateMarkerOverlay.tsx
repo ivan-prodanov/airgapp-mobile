@@ -7,6 +7,7 @@ import { useContentFade } from './useContentFade';
 import { anchorToPoint, CLIMATE_MARKER_CALIBRATION, markerAnchorPx } from './markerLayout';
 import { SEAT_WAVE_URI } from './seatWaveIcon';
 import { STEERING_WHEEL_URI, STEERING_YOKE_URI } from './steeringWheelIcon';
+import { TeslaFonts } from '../constants/fonts';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { MarkerName, MarkerPoint, VehicleMarkers } from '../types/markerTypes';
 import {
@@ -458,14 +459,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingTop: 2,
     fontSize: 11,
-    fontWeight: '600',
+    // Their typeface, not San Francisco Semibold. Every other label in the app
+    // already uses it; this one was left on the system font with a numeric
+    // weight, which reads as a different font next to the rest of the screen.
+    // No `fontWeight` — the weight is baked into the cut, and passing one risks
+    // a synthesized face (see constants/fonts.ts).
+    fontFamily: TeslaFonts.medium,
     // Colour is applied inline: "Auto" follows ITS OWN marker's colour, and the
     // seat and the steering wheel resolve to different ones (the wheel greys out
     // when off; the seats take the heat/cool tint). A hardcoded white made every
     // Auto label the same regardless of which marker it sat under.
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    // NO text shadow. Ivan spotted it as a difference and it turns out there is
+    // nothing to copy: their `SeatHeaterControlButton` (@3986555) contains no
+    // Text node at all — the word is part of the auto seat ICON asset, so there
+    // is no text style, and no shadow, anywhere in that control. Ours draws it as
+    // a real label because our glyph does not include it, so the faithful match
+    // is simply an unshadowed one.
   },
   menu: {
     position: 'absolute',
