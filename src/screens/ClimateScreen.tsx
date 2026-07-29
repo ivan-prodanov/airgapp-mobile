@@ -645,24 +645,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 20,
   },
-  // findings §1e: the real grabber is SheetHandle's own style — 50x5, radius 5,
-  // marginTop 10 (our paddingTop above supplies that), opacity 0.2, centred. The
-  // handleStyle/handleIndicatorStyle Climate passes are DEAD CODE: it also
-  // passes handleComponent=SheetHandle, which consumes no props.
-  // NOTE: the colour token (`colors.highlight`) was NOT resolved to a hex
-  // (findings §4) — white at their 0.2 opacity is the closest faithful stand-in.
+  // The Climate grabber, traced exactly (the earlier "SheetHandle 50x5" note was the WRONG component).
+  // The real one is VehicleClimateScreen → FlippableSheetHandle → `styles.indicator` (@1882826):
+  //   indicator: { alignSelf:'center', width:100, height:4, borderRadius:4, backgroundColor: colors.backgroundTertiary }
+  //   container: { padding:10 }   ← the 10pt above/below the bar
+  // `backgroundTertiary` in this module's DARK theme (@1882428) = #2D2D2D — darker than the #454546 I'd
+  // guessed, and MUCH wider (100, not 66). The `container` padding 10 becomes our marginTop/marginBottom 10;
+  // the 10 below then stacks with climateTemps.marginTop 25 for Tesla's 35pt bar→temps gap.
   handle: {
     alignSelf: 'center',
-    // `bottomSheetHandler` { height: 12 } (@5221181) with `handleIndicator`
-    // { marginTop: 2, width: 60 } (@5221261) over gorhom's default 4pt bar.
-    // Ours was 50x5 with its offset coming from the sheet's paddingTop.
-    width: 60,
+    width: 100,
     height: 4,
-    marginTop: 2,
-    marginBottom: 6,
-    borderRadius: 5,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.2,
+    borderRadius: 4,
+    marginTop: 10,
+    marginBottom: 10,
+    backgroundColor: '#2D2D2D',
   },
   climateTemps: {
     // CaptionLabel 12/16/0.1, NOT BodyLabel. The category is branched on the
@@ -677,10 +674,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     color: TEXT_DIM,
     // `bottomSection.paddingTop` = Gutter = 10 (@5221163) plus
-    // `bottomTextSection.marginTop` = 1.5*Gutter = 15 (@5221199). The temps are
-    // the first child, so folding the container's paddingTop into this margin
-    // is exactly equivalent. 25 below the 12pt handle strip.
-    marginTop: 25,
+    // `bottomTextSection.marginTop` = 1.5*Gutter = 15 (@5221199) → 25. The temps
+    // are the first child, so folding the container's paddingTop into this margin
+    // is equivalent.
+    // −16 (25→9): the correct 100x4 grabber made the handle strip 24pt (10+4+10)
+    // vs the old 17pt, and the extended sheet still measured tall. This is the
+    // first content below the handle, so trimming here shrinks the *extended*
+    // sheet while the pinned bottom keeps everything from the temps down at the
+    // same absolute Y (the handle + top edge drop to match Tesla's shorter sheet).
+    marginTop: 9,
   },
   // Cached-but-stale cabin temps fade, mirroring the Home battery row (§C3).
   climateTempsStale: {
