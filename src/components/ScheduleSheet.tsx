@@ -48,7 +48,7 @@ export function ScheduleSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel} />
-      <View style={[styles.sheet, { height: Math.min(height * 0.79, height - 60) }]}>
+      <View style={[styles.sheet, { height: Math.min(height * 0.84, height - 60) }]}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.divider} />
 
@@ -161,8 +161,9 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   title: {
-    fontSize: 18,
-    lineHeight: 24,
+    // Tesla's sheet title is the H5 tier (below H4=18) — 16, not 18.
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: '700',
     color: 'white',
     textAlign: 'center',
@@ -210,11 +211,9 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   createBtn: {
-    // Tesla's createScheduleButtonStyle: 85% width, centred, and shorter than
-    // our 56 — "a tad smaller".
+    // Full container width (edges aligned with the rows) — 85% read too narrow.
+    // Just shorter than our old 56.
     height: 50,
-    width: '85%',
-    alignSelf: 'center',
     // Tesla's design-system Specifications.borderRadius = 5, same as every other
     // control in the app. Ours was 14 — "much more rounded than Tesla".
     borderRadius: 5,
@@ -226,7 +225,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E2A4A',
   },
   createText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: 'white',
   },
@@ -240,12 +239,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   cancelText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#3368FF',
   },
   deleteText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FF453A',
   },
