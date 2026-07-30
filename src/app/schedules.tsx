@@ -159,9 +159,14 @@ export default function SchedulesScreen() {
           </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Set Schedules</Text>
-            <Pressable style={styles.locRow} hitSlop={8} onPress={() => setPickerOpen(true)}>
+            <Pressable style={styles.locRow} hitSlop={8} onPress={() => setPickerOpen((v) => !v)}>
               <Text style={styles.subtitle}>at {locLabel} </Text>
-              <SymbolView name="chevron.down" tintColor="rgba(255,255,255,0.5)" size={12} weight="semibold" />
+              <SymbolView
+                name={pickerOpen ? 'chevron.up' : 'chevron.down'}
+                tintColor="rgba(255,255,255,0.5)"
+                size={12}
+                weight="semibold"
+              />
             </Pressable>
           </View>
         </View>
@@ -223,7 +228,7 @@ export default function SchedulesScreen() {
       <LocationPickerSheet
         visible={pickerOpen}
         selected={locationKey}
-        currentLabel={currentLabel}
+        headerLabel={locLabel}
         onSelect={setLocationKey}
         onClose={() => setPickerOpen(false)}
       />
