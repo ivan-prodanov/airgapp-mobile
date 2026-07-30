@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 22,
+    paddingVertical: 26,
   },
   sectionText: {
     flex: 1,
@@ -352,9 +352,12 @@ const styles = StyleSheet.create({
   // carried by colour, in their own typeface.
   sectionTitle: {
     fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    letterSpacing: 0.1,
+    // Measured off Ivan's side-by-side: the title runs ~1.2x the subtitle width,
+    // so it is a step UP the ladder, not the same BodyLabel — display 16/24
+    // Medium. (My first pass read ScheduleItemRow, which is the schedule ROW; the
+    // section header is a separate, larger component.) Subtitle stays 14/20.
+    fontSize: 16,
+    lineHeight: 24,
     color: '#F3F3F3',
   },
   sectionSub: {
