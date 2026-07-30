@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     minWidth: 92,
     paddingVertical: 10,
     paddingHorizontal: 18,
-    borderRadius: 16,
+    borderRadius: 5,
     backgroundColor: '#3A3A3C',
     alignItems: 'center',
     justifyContent: 'center',
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   pillText: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '600',
     color: 'white',
     fontVariant: ['tabular-nums'],
@@ -120,6 +120,6 @@ const styles = StyleSheet.create({
   done: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#3E6AE1',
+    color: '#3368FF',
   },
 });

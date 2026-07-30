@@ -159,7 +159,8 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: '700',
     color: 'white',
     textAlign: 'center',
@@ -190,7 +191,8 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   rowLabel: {
-    fontSize: 19,
+    fontSize: 16,
+    lineHeight: 24,
     fontWeight: '600',
     color: 'white',
   },
@@ -203,8 +205,10 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   createBtn: {
-    height: 58,
-    borderRadius: 14,
+    height: 56,
+    // Tesla's design-system Specifications.borderRadius = 5, same as every other
+    // control in the app. Ours was 14 — "much more rounded than Tesla".
+    borderRadius: 5,
     backgroundColor: '#3368FF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -213,7 +217,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E2A4A',
   },
   createText: {
-    fontSize: 19,
+    fontSize: 16,
     fontWeight: '700',
     color: 'white',
   },
@@ -227,12 +231,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   cancelText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#3368FF',
   },
   deleteText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#FF453A',
   },

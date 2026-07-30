@@ -31,9 +31,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chip: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3A3A3C',
   },
   label: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
     color: 'white',
   },
