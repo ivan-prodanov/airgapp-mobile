@@ -13,6 +13,12 @@ import { Action, VCSECUnsignedMessage, decodeMessage } from './proto';
 import { DOMAIN_INFOTAINMENT, DOMAIN_VEHICLE_SECURITY, FLAG_ENCRYPT_RESPONSE_BIT } from './session';
 import { buildCommand, type CarCommand } from './commands';
 import {
+  addChargeScheduleAction,
+  addPreconditionScheduleAction,
+  removeChargeScheduleAction,
+  removePreconditionScheduleAction,
+  daysToBitmask,
+  hhmmToMinutes,
   RKE_ACTION,
   CLOSURE_MOVE,
   CLIMATE_KEEPER,
@@ -496,4 +502,72 @@ test('climate keeper: the CPD override is field 3, packed', () => {
     camp.vehicleAction?.hvacClimateKeeperAction?.ClimateKeeperAction,
     CLIMATE_KEEPER.CAMP,
   );
+});
+
+// ── Multi-schedule charge & precondition (REQUEST-15 Tier 5) ─────────────────
+//
+// Decoded back through OUR OWN generated proto — so this pins that the field
+// numbers, types and the VehicleAction oneof tags (add 97/99, remove 98/100)
+// all round-trip, not merely that some bytes came out. Layout is
+// common.ChargeSchedule / .PreconditionSchedule, confirmed against the
+// decompiled ec0/C15891e / C15909q adapters.
+test('schedule time + day helpers', () => {
+  assert.equal(hhmmToMinutes('00:00'), 0);
+  assert.equal(hhmmToMinutes('22:00'), 1320);
+  assert.equal(hhmmToMinutes('6:30'), 390);
+  assert.throws(() => hhmmToMinutes('24:00'));
+  assert.throws(() => hhmmToMinutes('nope'));
+  // 0=Mon..6=Sun; Mon+Wed+Fri = bits 0,2,4 = 0b010101 = 21.
+  assert.equal(daysToBitmask([0, 2, 4]), 21);
+  assert.equal(daysToBitmask([6]), 64); // Sun
+  assert.equal(daysToBitmask([]), 0);
+});
+
+test('addChargeSchedule round-trips through the CarServer.ChargeSchedule proto', () => {
+  const a = addChargeScheduleAction({
+    id: 1_722_000_000,
+    name: 'Home',
+    days: [0, 2, 4],
+    startEnabled: true,
+    startTime: '22:00',
+    endEnabled: true,
+    endTime: '06:00',
+    enabled: true,
+    latitude: 44.8,
+    longitude: 20.4,
+  });
+  const cs = decodeAction(a.bytes).vehicleAction?.addChargeScheduleAction;
+  assert.ok(cs, 'decoded as addChargeScheduleAction (oneof tag 97)');
+  assert.equal(Number(cs?.id), 1_722_000_000); // uint64 decodes as a protobuf Long
+  assert.equal(cs?.daysOfWeek, 21);
+  assert.equal(cs?.startTime, 1320);
+  assert.equal(cs?.endTime, 360);
+  assert.equal(cs?.startEnabled, true);
+  assert.equal(cs?.enabled, true);
+  // FLOAT lat/lon — allow the float32 rounding the wire type imposes.
+  assert.ok(Math.abs((cs?.latitude ?? 0) - 44.8) < 1e-4);
+});
+
+test('addPreconditionSchedule round-trips (tag 99, no start/end)', () => {
+  const a = addPreconditionScheduleAction({
+    id: 1_722_000_001,
+    days: [6],
+    preconditionTime: '07:15',
+    enabled: true,
+    latitude: 44.8,
+    longitude: 20.4,
+  });
+  const ps = decodeAction(a.bytes).vehicleAction?.addPreconditionScheduleAction;
+  assert.ok(ps, 'decoded as addPreconditionScheduleAction');
+  assert.equal(ps?.daysOfWeek, 64);
+  assert.equal(ps?.preconditionTime, 435);
+});
+
+test('schedule removes carry the creation-epoch id the car keys on', () => {
+  const rc = decodeAction(removeChargeScheduleAction(1_722_000_000).bytes).vehicleAction
+    ?.removeChargeScheduleAction;
+  assert.equal(Number(rc?.id), 1_722_000_000);
+  const rp = decodeAction(removePreconditionScheduleAction(1_722_000_001).bytes).vehicleAction
+    ?.removePreconditionScheduleAction;
+  assert.equal(Number(rp?.id), 1_722_000_001);
 });

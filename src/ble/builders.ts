@@ -684,6 +684,136 @@ export function setChargingAmpsAction(amps: number): ActionPayload {
   };
 }
 
+// --- Multi-schedule charge & precondition (the CURRENT, day-aware generation) ---
+//
+// Recovered for REQUEST-15 Tier 5. Our schedules UI already models recurring
+// multi-day schedules; the LEGACY ScheduledChargingAction {enabled, charging_time}
+// cannot carry days, so it would silently drop the day chips. These are the
+// modern messages the app itself uses.
+//
+// Message layout is NOT guessed — it is `common.ChargeSchedule` / `.PreconditionSchedule`
+// (proto/common.proto:55/69), which the decompiled `ec0/C15891e.java` /
+// `ec0/C15909q.java` adapters confirm field-for-field. They ride the VehicleAction
+// oneof: add 97/99, remove 98/100.
+//
+//   ChargeSchedule       { id, name, daysOfWeek, startEnabled, startTime,
+//                          endEnabled, endTime, oneTime, enabled, latitude, longitude }
+//   PreconditionSchedule { id, name, daysOfWeek, preconditionTime, oneTime,
+//                          enabled, latitude, longitude }
+//
+// `id` is a creation-epoch timestamp the car keys the schedule by — the SAME id
+// must come back to remove it. `startTime`/`endTime`/`preconditionTime` are
+// "24h in minutes" = minutes past local midnight (proto comment). lat/lon are the
+// schedule's location; offline we supply the user's home coords (RESPONSE-15
+// open-Q5: whether the car accepts user-supplied coords is unverified on-car).
+
+// 'HH:MM' (24h) -> minutes past midnight, the wire unit for every schedule time.
+export function hhmmToMinutes(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) throw new Error(`schedule time must be HH:MM, got ${JSON.stringify(hhmm)}`);
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) throw new Error(`schedule time out of range: ${hhmm}`);
+  return h * 60 + min;
+}
+
+// days_of_week is an INT32 bitmask. Our model indexes 0=Mon … 6=Sun, and we set
+// bit i for day i.
+//
+// ⚠ THE ONE UNVERIFIED ASSUMPTION in this whole path: the car's bit ORDER is not
+// in any artefact on disk (the DaysOfWeek enum was not recovered). This mapping
+// is Monday=bit0; if the car turns out Sunday-first, only this constant changes.
+// It is a single source of truth on purpose, and the reconcile/UI layer must not
+// re-derive it. Do NOT trust the car's ACK as proof it read the days correctly —
+// verify against the car's own schedule readback before trusting it.
+export const SCHEDULE_DAY_BIT = Object.freeze({ mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 });
+export function daysToBitmask(days: readonly number[]): number {
+  let mask = 0;
+  for (const d of days) {
+    if (d < 0 || d > 6) throw new Error(`day index out of range 0..6: ${d}`);
+    mask |= 1 << d;
+  }
+  return mask;
+}
+
+export interface ChargeScheduleInput {
+  id: number;
+  name?: string;
+  days: readonly number[];
+  startEnabled: boolean;
+  startTime: string; // 'HH:MM'
+  endEnabled: boolean;
+  endTime: string; // 'HH:MM'
+  enabled: boolean;
+  oneTime?: boolean;
+  latitude: number;
+  longitude: number;
+}
+
+export function addChargeScheduleAction(s: ChargeScheduleInput): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({
+      addChargeScheduleAction: {
+        id: s.id,
+        name: s.name ?? '',
+        daysOfWeek: daysToBitmask(s.days),
+        startEnabled: !!s.startEnabled,
+        startTime: hhmmToMinutes(s.startTime),
+        endEnabled: !!s.endEnabled,
+        endTime: hhmmToMinutes(s.endTime),
+        oneTime: !!s.oneTime,
+        enabled: !!s.enabled,
+        latitude: s.latitude,
+        longitude: s.longitude,
+      },
+    }),
+  };
+}
+
+export function removeChargeScheduleAction(id: number): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ removeChargeScheduleAction: { id } }),
+  };
+}
+
+export interface PreconditionScheduleInput {
+  id: number;
+  name?: string;
+  days: readonly number[];
+  preconditionTime: string; // 'HH:MM'
+  enabled: boolean;
+  oneTime?: boolean;
+  latitude: number;
+  longitude: number;
+}
+
+export function addPreconditionScheduleAction(s: PreconditionScheduleInput): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({
+      addPreconditionScheduleAction: {
+        id: s.id,
+        name: s.name ?? '',
+        daysOfWeek: daysToBitmask(s.days),
+        preconditionTime: hhmmToMinutes(s.preconditionTime),
+        oneTime: !!s.oneTime,
+        enabled: !!s.enabled,
+        latitude: s.latitude,
+        longitude: s.longitude,
+      },
+    }),
+  };
+}
+
+export function removePreconditionScheduleAction(id: number): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ removePreconditionScheduleAction: { id } }),
+  };
+}
+
 // Media transport — CarServer.MediaPlayAction (empty, toggles play/pause),
 // MediaNextTrack / MediaPreviousTrack (empty), via VehicleAction.mediaPlayAction
 // = 15 / mediaNextTrack = 19 / mediaPreviousTrack = 20. Confirmed.
