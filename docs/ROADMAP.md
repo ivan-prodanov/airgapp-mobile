@@ -91,6 +91,36 @@ Leaving it as the source icon is also a valid answer — it is what Tesla ships.
 
 ---
 
+## UI / icons — open (found 2026-07-31)
+
+Surfaced by Ivan while reviewing the home/controls/climate screens and the Tesla-icon pass.
+Not yet root-caused unless noted; the file named is where the work starts, not a diagnosis.
+
+1. **Home header fades too late on scroll.** Scrolling the Home screen while the music/battery pane
+   is shown fades out the vehicle name + info, but later than Tesla. The fade seems tied to the menu
+   list BELOW, when it should track the **favorites bar** — fade as the bar reaches the header.
+   *Hypothesis, unmeasured:* the fade's scroll threshold is anchored to the wrong element.
+   `HomeScreen.tsx`.
+
+2. **Favorites bar not persisted.** The customized favorites/controls bar is neither saved nor
+   loaded — a customization is lost on relaunch. Needs to write to the prefs store and hydrate on
+   mount. `CustomizeControlsSheet.tsx` + favorites state.
+
+3. **Controls screen charge-port uses the old icon.** The charge-port control on the Controls screen
+   still renders the pre-glyph icon instead of the Tesla glyph used elsewhere. `ControlsScreen.tsx`.
+
+4. **Low Power Mode is inert.** The control does nothing — wire it to its THREE states
+   (off / on / on-disabled). Assets already exist as `LOW_POWER_MODE.{off,on,onDisabled}` in
+   `nativePng.ts`; needs the state model + dispatch.
+
+5. **Climate fan doesn't spin on Home.** The climate fan glyph rotates only in the favorites bar,
+   not on the Home screen — should animate in both. `SpinningSymbol.tsx` and its Home call site.
+
+6. **Parental Control & Speed Limit Mode icons are wrong.** Both render the wrong glyph on the
+   Security screen. `security.tsx`.
+
+---
+
 ## Done 2026-07-28
 
 ### Share extension sends natively — DONE, confirmed 10/10
