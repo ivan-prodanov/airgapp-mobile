@@ -570,10 +570,22 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
   }
 
   const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+  // The schedule `id` is a 64-bit field, so protobufjs hands it back as a Long
+  // object (or a plain number when small) — `num()` alone drops the Long to
+  // undefined. Coerce via its string form (exact up to 2^53, and our carId is
+  // ~1.75e15, well under), so the readback shows the id the car actually kept.
+  const num64 = (v: unknown): number | undefined => {
+    if (typeof v === 'number') return v;
+    if (v && typeof (v as { toString?: unknown }).toString === 'function') {
+      const n = Number((v as { toString: () => string }).toString());
+      return Number.isFinite(n) ? n : undefined;
+    }
+    return undefined;
+  };
   const css = pick(vehicleData, root, 'chargeScheduleState');
   if (css && Array.isArray(css.chargeSchedules)) {
     snap.chargeSchedules = (css.chargeSchedules as Record<string, unknown>[]).map((r) => ({
-      id: num(r.id),
+      id: num64(r.id),
       daysOfWeek: num(r.daysOfWeek),
       startEnabled: bool(r.startEnabled),
       startTime: num(r.startTime),
@@ -588,7 +600,7 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
   const pss = pick(vehicleData, root, 'preconditioningScheduleState');
   if (pss && Array.isArray(pss.preconditionSchedules)) {
     snap.preconditionSchedules = (pss.preconditionSchedules as Record<string, unknown>[]).map((r) => ({
-      id: num(r.id),
+      id: num64(r.id),
       daysOfWeek: num(r.daysOfWeek),
       preconditionTime: num(r.preconditionTime),
       enabled: bool(r.enabled),
