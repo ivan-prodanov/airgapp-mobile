@@ -16,10 +16,11 @@ const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export interface PreconditionSchedule {
   id: string;
-  // The car keys its schedules by a uint64 creation-epoch id (common.PreconditionSchedule.id).
-  // We assign it once at creation and keep it for the life of the schedule, so an
-  // edit/toggle re-adds the SAME car schedule and a delete targets it. Distinct from
-  // the local string `id` (a per-launch uid the UI uses).
+  // The car's schedule key: epoch SECONDS at creation, exactly as the Tesla app
+  // assigns it (getInitialChargeSchedule -> setId(round(Date.now()/1000))). Kept
+  // for the life of the schedule, so edit/toggle re-add the SAME car schedule and
+  // delete targets it. Distinct from the local string `id` the UI uses. See
+  // nextCarId for why epoch seconds and not ms.
   carId: number;
   kind: 'precondition';
   time: string; // 'HH:MM' 24h
@@ -157,12 +158,21 @@ export function uid(): string {
   return `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-// carId is the car's schedule key (a uint64 creation-epoch). Wall-clock based so
-// it survives the per-launch counter reset that bites `uid()`, plus a session
-// nonce so two schedules created in the same millisecond can't collide.
-let carIdNonce = 0;
+// carId is the car's schedule key, generated EXACTLY as the Tesla app does in
+// getInitialChargeSchedule: `setId(Math.round(Date.now() / 1000))` — epoch
+// SECONDS, not ms.
+//
+// This is the fix for the readback bug. My first cut used Date.now() * 1000
+// (~1.75e15), which overflowed the car's id field and came back as ~2^64
+// garbage — I misread that as "the car reassigns the id". It doesn't: epoch
+// seconds (~1.75e9) is exactly why Tesla uses that scale — it stays in range and
+// round-trips verbatim, so remove/edit (keyed on this id) match the car's stored
+// schedule. `Math.max(last+1, …)` only guards the one case Tesla ignores: two
+// schedules created inside the same second.
+let lastCarId = 0;
 export function nextCarId(): number {
-  return Date.now() * 1000 + (carIdNonce++ % 1000);
+  lastCarId = Math.max(Math.round(Date.now() / 1000), lastCarId + 1);
+  return lastCarId;
 }
 
 // Backfill carId on schedules persisted before this field existed, so every
