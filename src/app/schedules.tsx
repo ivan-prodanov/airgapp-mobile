@@ -293,8 +293,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingTop: 6,
-    paddingBottom: 14,
+    paddingTop: 8,
+    paddingBottom: 18,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 12,
@@ -332,12 +332,14 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    // Lighter gray than the 0.1 we had — matches the paler line Tesla draws
+    // between sections and under the header.
+    borderTopColor: 'rgba(255,255,255,0.14)',
   },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 26,
+    paddingVertical: 24,
   },
   sectionText: {
     flex: 1,
