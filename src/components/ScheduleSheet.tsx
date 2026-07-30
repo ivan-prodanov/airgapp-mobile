@@ -48,7 +48,7 @@ export function ScheduleSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel} />
-      <View style={[styles.sheet, { height: Math.min(height * 0.84, height - 60) }]}>
+      <View style={[styles.sheet, { height: Math.min(height * 0.8, height - 60) }]}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.divider} />
 
@@ -208,7 +208,8 @@ const styles = StyleSheet.create({
   footer: {
     flex: 1,
     justifyContent: 'flex-end',
-    paddingBottom: 48,
+    // A bit more bottom padding lifts the Create/Cancel group slightly up.
+    paddingBottom: 60,
   },
   createBtn: {
     // Full container width (edges aligned with the rows) — 85% read too narrow.
