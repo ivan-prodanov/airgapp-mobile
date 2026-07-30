@@ -53,16 +53,21 @@ export function TimeField({
   useEffect(() => {
     if (open) {
       setRender(true);
-      Animated.timing(anim, {
+      // iOS presents these popovers with a SPRING (~0.5s, slight settle), not a
+      // linear/cubic timing — a spring is what makes it read as native. There is
+      // no timing to copy from Tesla's JS: the real app uses the native picker,
+      // so its animation is UIKit's, and this mirrors that feel.
+      Animated.spring(anim, {
         toValue: 1,
-        duration: 180,
-        easing: Easing.out(Easing.cubic),
+        stiffness: 170,
+        damping: 19,
+        mass: 1,
         useNativeDriver: true,
       }).start();
     } else {
       Animated.timing(anim, {
         toValue: 0,
-        duration: 140,
+        duration: 230,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }).start(({ finished }) => {
@@ -104,7 +109,7 @@ export function TimeField({
             {
               top,
               left,
-              opacity: anim,
+              opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
               // Grow OUT of the chip: scale from small → full, pivoting at the
               // card's top-right corner (which sits just under the chip) rather
               // than its centre. The translate sandwich moves that corner to the
