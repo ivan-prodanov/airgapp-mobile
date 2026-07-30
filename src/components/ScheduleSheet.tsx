@@ -155,7 +155,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#141414',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingHorizontal: 24,
+    // Tesla insets the content further than we did (24) — its rows carry a
+    // gutter and the buttons sit at 85% width. 30 matches that inward feel.
+    paddingHorizontal: 30,
     paddingTop: 20,
   },
   title: {
@@ -169,7 +171,7 @@ const styles = StyleSheet.create({
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    marginHorizontal: -24,
+    marginHorizontal: -30,
   },
   body: {
     paddingTop: 10,
@@ -191,8 +193,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   rowLabel: {
-    fontSize: 16,
-    lineHeight: 24,
+    // Tesla's row labels are the design-system `BodyLabel` tier (14/20, +0.1),
+    // not 16/24 — this is the "lower size" text.
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     fontWeight: '600',
     color: 'white',
   },
@@ -205,7 +210,11 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
   },
   createBtn: {
-    height: 56,
+    // Tesla's createScheduleButtonStyle: 85% width, centred, and shorter than
+    // our 56 — "a tad smaller".
+    height: 50,
+    width: '85%',
+    alignSelf: 'center',
     // Tesla's design-system Specifications.borderRadius = 5, same as every other
     // control in the app. Ours was 14 — "much more rounded than Tesla".
     borderRadius: 5,
@@ -217,7 +226,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E2A4A',
   },
   createText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: 'white',
   },
@@ -231,12 +240,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   cancelText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#3368FF',
   },
   deleteText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#FF453A',
   },
