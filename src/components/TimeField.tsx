@@ -40,8 +40,12 @@ export function TimeField({
       themeVariant="dark"
       accentColor="#3368FF"
       disabled={disabled}
-      // borderRadius set on the picker ITSELF (not a wrapper) — some RN versions
-      // apply it to the chip's container. overflow clips the chip's own pill ends.
+      // Tesla's OWN iOS style for this exact chip — `iosPreconditionTimePickerModal`
+      // (@1864012): { width: 120, height: 50, alignSelf: 'flex-end',
+      // marginRight: -8 }. No borderRadius, no clip — the trick is the FIXED
+      // 120x50 frame: at the compact chip's natural (small) size iOS 26 draws a
+      // capsule, but stretched to 50pt tall its fixed ~13pt corner reads as a
+      // rounded rectangle. That is why every radius/overflow attempt did nothing.
       style={[styles.picker, disabled && styles.disabled]}
       onChange={(_e: DateTimePickerEvent, d?: Date) => {
         if (d) onChange(fmt(d));
@@ -52,8 +56,10 @@ export function TimeField({
 
 const styles = StyleSheet.create({
   picker: {
-    borderRadius: 12,
-    overflow: 'hidden',
+    width: 120,
+    height: 50,
+    alignSelf: 'flex-end',
+    marginRight: -8,
   },
   disabled: {
     opacity: 0.4,
