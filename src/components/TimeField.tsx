@@ -32,36 +32,28 @@ export function TimeField({
   disabled?: boolean;
 }) {
   return (
-    <View style={[styles.clip, disabled && styles.disabled]}>
-      <DateTimePicker
-        value={toDate(value)}
-        mode="time"
-        display="compact"
-        minuteInterval={15}
-        themeVariant="dark"
-        accentColor="#3368FF"
-        disabled={disabled}
-        onChange={(_e: DateTimePickerEvent, d?: Date) => {
-          if (d) onChange(fmt(d));
-        }}
-      />
-    </View>
+    <DateTimePicker
+      value={toDate(value)}
+      mode="time"
+      display="compact"
+      minuteInterval={15}
+      themeVariant="dark"
+      accentColor="#3368FF"
+      disabled={disabled}
+      // borderRadius set on the picker ITSELF (not a wrapper) — some RN versions
+      // apply it to the chip's container. overflow clips the chip's own pill ends.
+      style={[styles.picker, disabled && styles.disabled]}
+      onChange={(_e: DateTimePickerEvent, d?: Date) => {
+        if (d) onChange(fmt(d));
+      }}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  clip: {
-    // A fixed box that hugs the "08:00" chip; the picker (whose frame is a touch
-    // larger) overflows and is clipped to radius 12, cutting the pill ends into
-    // rounded-rect corners like Tesla's. Sizes are the native chip's — if the
-    // digits ever clip, widen this.
-    width: 104,
-    height: 40,
+  picker: {
     borderRadius: 12,
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'flex-end',
   },
   disabled: {
     opacity: 0.4,
