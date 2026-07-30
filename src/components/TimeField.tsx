@@ -29,6 +29,7 @@ function toDate(value: string): Date {
 }
 
 const CARD_W = 240;
+const CARD_H = 200; // card wraps the 200pt wheel with no padding
 
 export function TimeField({
   value,
@@ -104,11 +105,17 @@ export function TimeField({
               top,
               left,
               opacity: anim,
-              // Grow from near the chip (top): scale up while sliding the last
-              // few points down into place.
+              // Grow OUT of the chip: scale from small → full, pivoting at the
+              // card's top-right corner (which sits just under the chip) rather
+              // than its centre. The translate sandwich moves that corner to the
+              // origin, scales, then moves it back — so the corner stays put and
+              // the popover expands/minimizes from it, like the native one.
               transform: [
-                { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) },
-                { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
+                { translateX: CARD_W / 2 },
+                { translateY: -CARD_H / 2 },
+                { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) },
+                { translateX: -CARD_W / 2 },
+                { translateY: CARD_H / 2 },
               ],
             },
           ]}
