@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -104,6 +104,18 @@ export default function SchedulesScreen() {
   useEffect(() => {
     void syncFromCar();
   }, [syncFromCar]);
+  // Pull-to-refresh, same gesture as Home. The spinner is the feedback (this list
+  // has no header BusyIcon), so unlike Home we do drive `refreshing` from the read.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setRefreshing(true);
+    try {
+      await syncFromCar();
+    } finally {
+      setRefreshing(false);
+    }
+  };
   // After a write, the car takes a moment; re-sync so the list reflects what the
   // car ended up with (adopts the car's real ids, drops anything it rejected).
   const resyncSoon = () => setTimeout(() => void syncFromCar(), 2500);
@@ -144,9 +156,6 @@ export default function SchedulesScreen() {
           <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
             <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
           </Pressable>
-          <Pressable style={styles.debugRead} hitSlop={8} onPress={syncFromCar}>
-            <SymbolView name="arrow.clockwise" tintColor="#3E6BE2" size={20} weight="semibold" />
-          </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Set Schedules</Text>
             <Pressable style={styles.locRow} hitSlop={8} onPress={() => setPickerOpen(true)}>
@@ -156,7 +165,17 @@ export default function SchedulesScreen() {
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="rgba(255,255,255,0.6)"
+            />
+          }
+        >
           <Section
             title="Precondition"
             subtitle="Set climate and preheat battery"
@@ -278,15 +297,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 12,
-  },
-  debugRead: {
-    position: 'absolute',
-    right: 12,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
   },
   back: {
     position: 'absolute',
