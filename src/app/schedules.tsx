@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -88,13 +88,33 @@ export default function SchedulesScreen() {
   };
   const openEdit = (draft: AnySchedule) => setEditing({ draft, mode: 'edit' });
 
-  // Diagnostic (REQUEST-15 T5): read back what the car actually stored, on open
-  // and shortly after any write, so pull-logs.sh shows it. Verifies the write
-  // path — storage/coords + the daysOfWeek the car holds. Remove once verified.
-  useEffect(() => {
-    void fleet.readSchedules();
-  }, [fleet]);
-  const readBackSoon = () => setTimeout(() => void fleet.readSchedules(), 2500);
+  // Diagnostic (REQUEST-15 T5): read what the car actually stored and show it in
+  // an Alert — the log pipeline was too fragile (foreground/background/WAL/awake
+  // all fighting). A deliberate button so it only reads when asked. Remove once
+  // the day-bit order is verified.
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const decodeBits = (mask?: number) =>
+    mask === undefined
+      ? '?'
+      : `${mask} = ${DAYS.filter((_, i) => (mask & (1 << i)) !== 0).join(',') || 'none'} (our order)`;
+  const mins = (m?: number) =>
+    m === undefined ? '?' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const readbackNow = async () => {
+    const r = await fleet.readSchedules();
+    if (!r.ok) {
+      Alert.alert('Car schedule readback', r.error ?? 'failed (car may be asleep — pull to refresh first)');
+      return;
+    }
+    const fmt = (label: string, list: typeof r.charge) =>
+      `${label} (${list.length}):\n` +
+      (list
+        .map(
+          (s) =>
+            `• id ${s.id}  days ${decodeBits(s.daysOfWeek)}  ${mins(s.startTime)}–${mins(s.endTime ?? s.preconditionTime)}  ${s.enabled ? 'on' : 'off'}`,
+        )
+        .join('\n') || '  (none)');
+    Alert.alert('Car schedule readback', `${fmt('Charge', r.charge)}\n\n${fmt('Precond', r.precond)}`);
+  };
 
   const carCoordLL = carCoord ? { latitude: carCoord.latitude, longitude: carCoord.longitude } : null;
 
@@ -105,14 +125,12 @@ export default function SchedulesScreen() {
     // position (the modern schedules are location-keyed). The local store is the
     // source of truth either way.
     fleet.sendSchedule(s, carCoordLL);
-    readBackSoon();
     setEditing(null);
   };
   const onDelete = () => {
     if (editing) {
       remove(editing.draft.kind, editing.draft.id);
       fleet.removeScheduleFromCar(editing.draft.kind, editing.draft.carId);
-      readBackSoon();
     }
     setEditing(null);
   };
@@ -130,6 +148,9 @@ export default function SchedulesScreen() {
         <View style={styles.header}>
           <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
             <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
+          </Pressable>
+          <Pressable style={styles.debugRead} hitSlop={8} onPress={readbackNow}>
+            <SymbolView name="arrow.down.doc" tintColor="#3E6BE2" size={20} weight="semibold" />
           </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Set Schedules</Text>
@@ -262,6 +283,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 12,
+  },
+  debugRead: {
+    position: 'absolute',
+    right: 12,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
   },
   back: {
     position: 'absolute',

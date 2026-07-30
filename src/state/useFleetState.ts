@@ -56,7 +56,7 @@ export interface Fleet {
   sendSchedule: (s: AnySchedule, coord: { latitude: number; longitude: number } | null) => void;
   removeScheduleFromCar: (kind: ScheduleKind, carId: number) => void;
   // Reads the car's stored schedules and logs them raw (write-path verification).
-  readSchedules: () => Promise<void>;
+  readSchedules: () => Promise<import('./useCarLink').ScheduleReadback>;
 }
 
 export function useFleetState(): {

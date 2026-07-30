@@ -57,7 +57,7 @@ import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
 import { foregroundBleLink } from '@/ble/foregroundBleLink';
 import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
-import { infotainmentToPatch, vcsecStatusToPatch } from '@/ble/telemetry';
+import { infotainmentToPatch, vcsecStatusToPatch, type RawSchedule } from '@/ble/telemetry';
 import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from '@/ble/vcsecPush';
 import { filterPatchUnderIntent, releaseIntent, GRACE_MS, SETTLE_GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
@@ -195,6 +195,13 @@ const EMPTY_PENDING: ReadonlySet<VehicleStateKey> = new Set();
 // plus refresh(), the one user-initiated action a screen can take against the
 // link itself. Commands still go through dispatch (CarLink), which is
 // deliberately NOT exposed here.
+export interface ScheduleReadback {
+  ok: boolean;
+  error?: string;
+  charge: RawSchedule[];
+  precond: RawSchedule[];
+}
+
 export interface CarLinkStatus {
   // A car is ENROLLED (enabled + config + device keys + a VIN to bind to).
   //
@@ -244,7 +251,7 @@ export interface CarLinkStatus {
   sendWithOutcome: (cmd: CarCommand) => Promise<CommandOutcome | null>;
   // Reads the car's stored charge/precondition schedules and logs them raw
   // (REQUEST-15 T5 write-path verification). No-op-logs on a demo/unlinked car.
-  readSchedules: () => Promise<void>;
+  readSchedules: () => Promise<ScheduleReadback>;
 
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
@@ -1149,11 +1156,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // schedule at all (coords accepted), the start/end minutes it kept, and the
   // daysOfWeek bitmask — plus any pre-existing official-app schedule, whose
   // bitmask is independent ground truth for the day-bit order.
-  const readSchedules = useCallback(async () => {
+  const readSchedules = useCallback(async (): Promise<ScheduleReadback> => {
     const gw = getGateway();
     if (!gw) {
       logi('read', 'schedules', { skip: 'no gateway (demo/unlinked)' });
-      return;
+      return { ok: false, error: 'no live car (demo/unlinked)', charge: [], precond: [] };
     }
     try {
       const snap = await gw.awakeSync({
@@ -1168,8 +1175,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         charge: JSON.stringify(charge),
         precond: JSON.stringify(precond),
       });
+      return { ok: true, charge, precond };
     } catch (e) {
-      logi('read', 'schedules', { error: e instanceof Error ? e.message : String(e) });
+      const error = e instanceof Error ? e.message : String(e);
+      logi('read', 'schedules', { error });
+      return { ok: false, error, charge: [], precond: [] };
     }
   }, [getGateway]);
 
