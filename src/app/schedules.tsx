@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -13,6 +13,7 @@ import { Toggle } from '@/components/Toggle';
 import { type LatLng } from '@/state/mockLocation';
 import {
   type AnySchedule,
+  carSchedulesToState,
   newCharging,
   newPrecondition,
   scheduleSubtitle,
@@ -40,7 +41,7 @@ type Editing = { draft: AnySchedule; mode: 'create' | 'edit' };
 export default function SchedulesScreen() {
   const router = useRouter();
   const fleet = useFleet();
-  const { schedules, savePrecondition, saveCharging, remove, setEnabled } = useSchedules();
+  const { schedules, setAll, savePrecondition, saveCharging, remove, setEnabled } = useSchedules();
 
   const [editing, setEditing] = useState<Editing | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -88,33 +89,24 @@ export default function SchedulesScreen() {
   };
   const openEdit = (draft: AnySchedule) => setEditing({ draft, mode: 'edit' });
 
-  // Diagnostic (REQUEST-15 T5): read what the car actually stored and show it in
-  // an Alert — the log pipeline was too fragile (foreground/background/WAL/awake
-  // all fighting). A deliberate button so it only reads when asked. Remove once
-  // the day-bit order is verified.
-  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const decodeBits = (mask?: number) =>
-    mask === undefined
-      ? '?'
-      : `${mask} = ${DAYS.filter((_, i) => (mask & (1 << i)) !== 0).join(',') || 'none'} (our order)`;
-  const mins = (m?: number) =>
-    m === undefined ? '?' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-  const readbackNow = async () => {
+  // THE CAR IS THE SOURCE OF TRUTH. The Tesla app shows the schedules the car
+  // actually holds, not a local list — so ours must too, or the two drift (delete
+  // on the car, our list still shows it). syncFromCar reads the car's schedules
+  // and REPLACES our list with them. Run on open and after every change; a live
+  // car only (a demo car keeps its local list untouched).
+  const syncFromCar = useCallback(async () => {
+    if (!fleet.readSchedules) return;
     const r = await fleet.readSchedules();
-    if (!r.ok) {
-      Alert.alert('Car schedule readback', r.error ?? 'failed (car may be asleep — pull to refresh first)');
-      return;
-    }
-    const fmt = (label: string, list: typeof r.charge) =>
-      `${label} (${list.length}):\n` +
-      (list
-        .map(
-          (s) =>
-            `• id ${s.id}  days ${decodeBits(s.daysOfWeek)}  ${mins(s.startTime)}–${mins(s.endTime ?? s.preconditionTime)}  ${s.enabled ? 'on' : 'off'}`,
-        )
-        .join('\n') || '  (none)');
-    Alert.alert('Car schedule readback', `${fmt('Charge', r.charge)}\n\n${fmt('Precond', r.precond)}`);
-  };
+    if (!r.ok) return; // asleep/unreachable — keep what we have rather than blanking it
+    setAll(carSchedulesToState(r.charge, r.precond));
+  }, [fleet, setAll]);
+
+  useEffect(() => {
+    void syncFromCar();
+  }, [syncFromCar]);
+  // After a write, the car takes a moment; re-sync so the list reflects what the
+  // car ended up with (adopts the car's real ids, drops anything it rejected).
+  const resyncSoon = () => setTimeout(() => void syncFromCar(), 2500);
 
   const carCoordLL = carCoord ? { latitude: carCoord.latitude, longitude: carCoord.longitude } : null;
 
@@ -125,12 +117,14 @@ export default function SchedulesScreen() {
     // position (the modern schedules are location-keyed). The local store is the
     // source of truth either way.
     fleet.sendSchedule(s, carCoordLL);
+    resyncSoon();
     setEditing(null);
   };
   const onDelete = () => {
     if (editing) {
       remove(editing.draft.kind, editing.draft.id);
       fleet.removeScheduleFromCar(editing.draft.kind, editing.draft.carId);
+      resyncSoon();
     }
     setEditing(null);
   };
@@ -140,6 +134,7 @@ export default function SchedulesScreen() {
     // Re-add with the flipped `enabled`; the car keys on carId, so this updates
     // the same schedule rather than creating a second one.
     fleet.sendSchedule({ ...s, enabled: !s.enabled }, carCoordLL);
+    resyncSoon();
   };
 
   return (
@@ -149,8 +144,8 @@ export default function SchedulesScreen() {
           <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
             <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
           </Pressable>
-          <Pressable style={styles.debugRead} hitSlop={8} onPress={readbackNow}>
-            <SymbolView name="arrow.down.doc" tintColor="#3E6BE2" size={20} weight="semibold" />
+          <Pressable style={styles.debugRead} hitSlop={8} onPress={syncFromCar}>
+            <SymbolView name="arrow.clockwise" tintColor="#3E6BE2" size={20} weight="semibold" />
           </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Set Schedules</Text>

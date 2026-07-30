@@ -51,6 +51,9 @@ export function useSchedules() {
 
   return {
     schedules: state,
+    // Replace the whole list — used to reconcile to the car's actual schedules
+    // (the car is the source of truth; see the Schedules screen's syncFromCar).
+    setAll: (next: SchedulesState) => apply(next),
     savePrecondition: (s: PreconditionSchedule) => apply(upsertPrecondition(state, s)),
     saveCharging: (s: ChargingSchedule) => apply(upsertCharging(state, s)),
     remove: (kind: ScheduleKind, id: string) => apply(removeSchedule(state, kind, id)),

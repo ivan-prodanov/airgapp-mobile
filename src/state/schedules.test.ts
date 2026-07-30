@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EMPTY_SCHEDULES,
+  carSchedulesToState,
+  carToChargingSchedule,
   chargeScheduleToInput,
   formatDays,
   isComplete,
@@ -115,4 +117,52 @@ test('withCarIds backfills schedules persisted before carId existed', () => {
   // An already-keyed schedule is left as-is.
   const keyed = withCarIds({ charging: [{ ...newCharging(), carId: 99 }], precondition: [] });
   assert.equal(keyed.charging[0].carId, 99);
+});
+
+// ── Car → local (the inverse; car is source of truth) ────────────────────────
+test('carToChargingSchedule decodes the car entry back to the local model', () => {
+  // What the car returns for a Wed 06:00-19:00 charge schedule.
+  const local = carToChargingSchedule({
+    id: 1785403856,
+    daysOfWeek: 4, // bit 2 = Wed under Mon=0
+    startEnabled: true,
+    startTime: 360, // 06:00
+    endEnabled: true,
+    endTime: 1140, // 19:00
+    enabled: true,
+    oneTime: false,
+  });
+  assert.equal(local.carId, 1785403856);
+  assert.equal(local.id, 'car_1785403856'); // stable across reads → row doesn't re-mount
+  assert.deepEqual(local.days, [2]);
+  assert.equal(local.startTime, '06:00');
+  assert.equal(local.endTime, '19:00');
+  assert.equal(local.repeatWeekly, true); // !oneTime
+  assert.equal(local.enabled, true);
+});
+
+test('a full round-trip local → wire input → car echo → local is stable', () => {
+  const original = { ...newCharging(), carId: 1785403856, days: [3], startTime: '22:00', endTime: '06:00', repeatWeekly: false };
+  const inp = chargeScheduleToInput(original, { latitude: 40, longitude: 25 });
+  // Simulate the car echoing the stored values back (days as the bitmask the
+  // builder encodes, times as minutes).
+  const back = carToChargingSchedule({
+    id: inp.id,
+    daysOfWeek: 1 << 3, // Thu
+    startEnabled: inp.startEnabled,
+    startTime: 22 * 60,
+    endEnabled: inp.endEnabled,
+    endTime: 6 * 60,
+    enabled: inp.enabled,
+    oneTime: inp.oneTime,
+  });
+  assert.equal(back.carId, original.carId);
+  assert.deepEqual(back.days, original.days);
+  assert.equal(back.startTime, original.startTime);
+  assert.equal(back.repeatWeekly, original.repeatWeekly);
+});
+
+test('carSchedulesToState — the car being EMPTY yields an empty list (the drift fix)', () => {
+  // Deleting on the car must clear our UI, not leave a phantom row.
+  assert.deepEqual(carSchedulesToState([], []), { charging: [], precondition: [] });
 });

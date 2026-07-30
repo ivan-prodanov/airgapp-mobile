@@ -226,3 +226,72 @@ export function preconditionScheduleToInput(
     longitude: coord.longitude,
   };
 }
+
+// ── Car wire → local model (the INVERSE — the car is the source of truth) ─────
+//
+// The Tesla app displays the schedules the CAR holds, not a local list. These
+// map a read-back entry to our display model so the screen can do the same:
+// the local string `id` is derived from carId (stable across reads, so the row
+// does not re-mount on every sync), days come from the bitmask, times from
+// minutes, repeatWeekly from !oneTime.
+export interface CarSchedule {
+  id: number | undefined;
+  daysOfWeek: number | undefined;
+  startEnabled?: boolean | undefined;
+  startTime?: number | undefined;
+  endEnabled?: boolean | undefined;
+  endTime?: number | undefined;
+  preconditionTime?: number | undefined;
+  enabled: boolean | undefined;
+  oneTime: boolean | undefined;
+}
+
+const minutesToHHMM = (m: number | undefined): string => {
+  const v = typeof m === 'number' && m >= 0 ? m : 0;
+  return `${String(Math.floor(v / 60) % 24).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
+};
+const bitmaskToDays = (mask: number | undefined): number[] => {
+  const m = typeof mask === 'number' ? mask : 0;
+  const days: number[] = [];
+  for (let i = 0; i < 7; i++) if ((m & (1 << i)) !== 0) days.push(i);
+  return days;
+};
+
+export function carToChargingSchedule(r: CarSchedule): ChargingSchedule {
+  const carId = typeof r.id === 'number' ? r.id : 0;
+  return {
+    id: `car_${carId}`,
+    carId,
+    kind: 'charging',
+    startEnabled: r.startEnabled ?? false,
+    startTime: minutesToHHMM(r.startTime),
+    endEnabled: r.endEnabled ?? false,
+    endTime: minutesToHHMM(r.endTime),
+    days: bitmaskToDays(r.daysOfWeek),
+    repeatWeekly: !r.oneTime,
+    enabled: r.enabled ?? true,
+  };
+}
+
+export function carToPreconditionSchedule(r: CarSchedule): PreconditionSchedule {
+  const carId = typeof r.id === 'number' ? r.id : 0;
+  return {
+    id: `car_${carId}`,
+    carId,
+    kind: 'precondition',
+    time: minutesToHHMM(r.preconditionTime),
+    days: bitmaskToDays(r.daysOfWeek),
+    repeatWeekly: !r.oneTime,
+    enabled: r.enabled ?? true,
+  };
+}
+
+export function carSchedulesToState(
+  charge: CarSchedule[],
+  precond: CarSchedule[],
+): SchedulesState {
+  return {
+    charging: charge.map(carToChargingSchedule),
+    precondition: precond.map(carToPreconditionSchedule),
+  };
+}
