@@ -48,7 +48,7 @@ export function ScheduleSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel} />
-      <View style={[styles.sheet, { height: Math.min(height * 0.82, height - 60) }]}>
+      <View style={[styles.sheet, { height: Math.min(height * 0.79, height - 60) }]}>
         <Text style={styles.title}>{title}</Text>
         <View style={styles.divider} />
 
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   createBtn: {
     height: 58,
     borderRadius: 14,
-    backgroundColor: '#3E6AE1',
+    backgroundColor: '#3368FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#3E6AE1',
+    color: '#3368FF',
   },
   deleteText: {
     fontSize: 18,
