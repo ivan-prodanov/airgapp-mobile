@@ -161,7 +161,7 @@ export default function SchedulesScreen() {
             <Text style={styles.title}>Set Schedules</Text>
             <Pressable style={styles.locRow} hitSlop={8} onPress={() => setPickerOpen(true)}>
               <Text style={styles.subtitle}>at {locLabel} </Text>
-              <SymbolView name="chevron.down" tintColor="rgba(255,255,255,0.5)" size={13} weight="semibold" />
+              <SymbolView name="chevron.down" tintColor="rgba(255,255,255,0.5)" size={12} weight="semibold" />
             </Pressable>
           </View>
         </View>
@@ -314,7 +314,10 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 21,
+    // TopNavigation title on the scheduling screen is TextCategory.H3
+    // (@1321194) = 20/24/0 (getFontStyle). Was 21.
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: '700',
     color: 'white',
   },
@@ -323,7 +326,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    // The nav subtitle is BodyLabel (@1797606) = 14/20/0.1, not 16.
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     color: 'rgba(255,255,255,0.55)',
   },
   scroll: {
@@ -332,9 +338,8 @@ const styles = StyleSheet.create({
   section: {
     paddingHorizontal: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
-    // Lighter gray than the 0.1 we had — matches the paler line Tesla draws
-    // between sections and under the header.
-    borderTopColor: 'rgba(255,255,255,0.14)',
+    // Tesla's exact dark-theme dividerColor (#2D2E2F), not an approximation.
+    borderTopColor: '#2D2E2F',
   },
   sectionHead: {
     flexDirection: 'row',
