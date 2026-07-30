@@ -5,11 +5,13 @@ import { StyleSheet, View } from 'react-native';
 // that turns blue and pops a small floating wheel when tapped, minutes in
 // 15-minute steps, no Cancel/Done. iOS draws the chip and the popover.
 //
-// iOS rounds the compact chip more than the rest of our controls (its default
-// corner is ~7 vs the app's design-system 5). It ignores a borderRadius set on
-// the picker itself, so the chip is CLIPPED to radius 5 by an overflow:hidden
-// wrapper hugging it — the standard way to control the native chip's corner. The
-// popover is a separate iOS layer, so clipping the wrapper never touches it.
+// iOS draws that chip as a PILL (corner ≈ half its height); Tesla's is a rounded
+// rectangle (~radius 12). The picker ignores a borderRadius set on it, and a
+// loose wrapper clips nothing because the native view has transparent margin
+// around the chip. So the wrapper is a FIXED box slightly smaller than the chip,
+// with the picker centred inside and overflow hidden — that bites into the pill's
+// rounded ends and leaves radius-12 corners. The popover is a separate iOS layer,
+// untouched by the clip.
 const pad2 = (n: number) => n.toString().padStart(2, '0');
 const fmt = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
@@ -49,10 +51,17 @@ export function TimeField({
 
 const styles = StyleSheet.create({
   clip: {
-    // Hug the chip and clip its corners to the design-system radius 5.
-    alignSelf: 'flex-end',
-    borderRadius: 5,
+    // A fixed box that hugs the "08:00" chip; the picker (whose frame is a touch
+    // larger) overflows and is clipped to radius 12, cutting the pill ends into
+    // rounded-rect corners like Tesla's. Sizes are the native chip's — if the
+    // digits ever clip, widen this.
+    width: 104,
+    height: 40,
+    borderRadius: 12,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-end',
   },
   disabled: {
     opacity: 0.4,
