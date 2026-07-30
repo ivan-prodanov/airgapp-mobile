@@ -61,6 +61,10 @@ export function TimeField({
         disabled={disabled}
         style={[styles.chip, disabled && styles.disabled]}
       >
+        {/* iOS's compact picker doesn't swap the fill when active — it lays a
+            translucent light highlight ON TOP of the same fill (the "effect on
+            top"). Replicating that gives the lighter pressed look + blue text. */}
+        {open ? <View style={styles.chipHighlight} pointerEvents="none" /> : null}
         <Text style={[styles.chipText, open && styles.chipTextOpen]}>{value}</Text>
       </Pressable>
 
@@ -91,10 +95,22 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 18,
     borderRadius: 12,
-    backgroundColor: '#48484A',
+    // Tesla's `pillBackgroundDarkMode` token — the chip keeps this fill in both
+    // states; only the value text tints blue when the wheel is open.
+    backgroundColor: '#2D2F34',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'flex-end',
+  },
+  // The active-state highlight iOS composites over the fill when the wheel opens.
+  chipHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 12,
+    backgroundColor: 'rgba(235,235,245,0.18)',
   },
   disabled: {
     opacity: 0.4,
