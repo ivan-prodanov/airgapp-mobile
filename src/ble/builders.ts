@@ -597,6 +597,26 @@ export function getTirePressureStateAction(): ActionPayload {
     bytes: encodeInfotainmentAction({ getVehicleData: { getTirePressureState: {} } }),
   };
 }
+// Schedule READBACK — the truth check for the write path. The car echoes the
+// daysOfWeek bitmask it stored, so this confirms (a) the schedule was STORED at
+// all (i.e. the car accepted the coordinates — the RESPONSE-15 open question the
+// ACK cannot answer) and (b) the start/end minutes round-tripped. It also lists
+// ANY pre-existing schedule the official app created, whose bitmask is
+// independent ground truth for the day-bit order.
+export function getChargeScheduleStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getChargeScheduleState: {} } }),
+  };
+}
+export function getPreconditioningScheduleStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getPreconditioningScheduleState: {} } }),
+  };
+}
 
 // getMediaStateAction / getMediaDetailStateAction — now playing.
 //

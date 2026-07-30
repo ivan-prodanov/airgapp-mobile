@@ -242,6 +242,9 @@ export interface CarLinkStatus {
   // car (demo/unlinked), which the caller must treat as "not sent" rather than
   // as a refusal.
   sendWithOutcome: (cmd: CarCommand) => Promise<CommandOutcome | null>;
+  // Reads the car's stored charge/precondition schedules and logs them raw
+  // (REQUEST-15 T5 write-path verification). No-op-logs on a demo/unlinked car.
+  readSchedules: () => Promise<void>;
 
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
@@ -1140,6 +1143,36 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     [stampIntent],
   );
 
+  // Schedule READBACK diagnostic (REQUEST-15 T5 verification). Reads the car's
+  // stored charge/precondition schedules and logs them raw, so `pull-logs.sh`
+  // shows exactly what the car holds after a write: whether it stored our
+  // schedule at all (coords accepted), the start/end minutes it kept, and the
+  // daysOfWeek bitmask — plus any pre-existing official-app schedule, whose
+  // bitmask is independent ground truth for the day-bit order.
+  const readSchedules = useCallback(async () => {
+    const gw = getGateway();
+    if (!gw) {
+      logi('read', 'schedules', { skip: 'no gateway (demo/unlinked)' });
+      return;
+    }
+    try {
+      const snap = await gw.awakeSync({
+        states: ['chargeSchedule', 'preconditionSchedule'],
+        priority: 'user',
+      });
+      const charge = snap.chargeSchedules ?? [];
+      const precond = snap.preconditionSchedules ?? [];
+      logi('read', 'schedules', {
+        nCharge: charge.length,
+        nPre: precond.length,
+        charge: JSON.stringify(charge),
+        precond: JSON.stringify(precond),
+      });
+    } catch (e) {
+      logi('read', 'schedules', { error: e instanceof Error ? e.message : String(e) });
+    }
+  }, [getGateway]);
+
   // NOTE: the DEDICATED passive-entry BLE link (a 2nd ble-plx central for passive
   // entry) was removed 2026-07-23 — it was disabled 2026-07-21 (two phone centrals
   // = fatal contention) and fully superseded by the native central below.
@@ -1934,7 +1967,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       dispatch,
       sendWithOutcome,
       refresh,
+      readSchedules,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, sendWithOutcome, refresh],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, sendWithOutcome, refresh, readSchedules],
   );
 }

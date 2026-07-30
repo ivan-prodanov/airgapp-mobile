@@ -45,6 +45,8 @@ import {
   getDriveStateAction,
   getLocationStateAction,
   getTirePressureStateAction,
+  getChargeScheduleStateAction,
+  getPreconditioningScheduleStateAction,
   getMediaStateAction,
   getMediaDetailStateAction,
 } from "./builders";
@@ -159,7 +161,9 @@ export type InfotainmentStateKey =
   | "location"
   | "tires"
   | "media"
-  | "mediaDetail";
+  | "mediaDetail"
+  | "chargeSchedule"
+  | "preconditionSchedule";
 
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
@@ -856,6 +860,8 @@ export function createCarGateway({
       tires: getTirePressureStateAction,
       media: getMediaStateAction,
       mediaDetail: getMediaDetailStateAction,
+      chargeSchedule: getChargeScheduleStateAction,
+      preconditionSchedule: getPreconditioningScheduleStateAction,
     };
     // Media joins the DEFAULT set (the 60s background sync + pull-to-refresh),
     // deliberately NOT the fast screen-keyed poll. Two more round trips per tick

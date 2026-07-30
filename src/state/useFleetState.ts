@@ -55,6 +55,8 @@ export interface Fleet {
   // location-keyed — see chargeScheduleToInput).
   sendSchedule: (s: AnySchedule, coord: { latitude: number; longitude: number } | null) => void;
   removeScheduleFromCar: (kind: ScheduleKind, carId: number) => void;
+  // Reads the car's stored schedules and logs them raw (write-path verification).
+  readSchedules: () => Promise<void>;
 }
 
 export function useFleetState(): {
@@ -313,6 +315,7 @@ export function useFleetState(): {
       sendMedia,
       sendSchedule,
       removeScheduleFromCar,
+      readSchedules: carLink.readSchedules,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),
@@ -323,7 +326,7 @@ export function useFleetState(): {
       nextVehicle: () => setFleet((f) => setActiveVehicle(f, nextVehicleId(f))),
       prevVehicle: () => setFleet((f) => setActiveVehicle(f, prevVehicleId(f))),
     }),
-    [fleet, current],
+    [fleet, current, sendNavigation, sendMedia, sendSchedule, removeScheduleFromCar, carLink.readSchedules],
   );
 
   const active = useMemo<[VehicleViewState, VehicleActions]>(
@@ -345,6 +348,7 @@ export function useFleetState(): {
       wakeInFlight: carLink.wakeInFlight,
       refresh: carLink.refresh,
       sendWithOutcome: carLink.sendWithOutcome,
+      readSchedules: carLink.readSchedules,
       pending: carLink.pending,
       // NOT narrowed by activeIsLive: a bond wedge is a property of the PHONE,
       // so it is equally true whichever car is on screen.

@@ -88,6 +88,14 @@ export default function SchedulesScreen() {
   };
   const openEdit = (draft: AnySchedule) => setEditing({ draft, mode: 'edit' });
 
+  // Diagnostic (REQUEST-15 T5): read back what the car actually stored, on open
+  // and shortly after any write, so pull-logs.sh shows it. Verifies the write
+  // path — storage/coords + the daysOfWeek the car holds. Remove once verified.
+  useEffect(() => {
+    void fleet.readSchedules();
+  }, [fleet]);
+  const readBackSoon = () => setTimeout(() => void fleet.readSchedules(), 2500);
+
   const carCoordLL = carCoord ? { latitude: carCoord.latitude, longitude: carCoord.longitude } : null;
 
   const onSave = (s: AnySchedule) => {
@@ -97,12 +105,14 @@ export default function SchedulesScreen() {
     // position (the modern schedules are location-keyed). The local store is the
     // source of truth either way.
     fleet.sendSchedule(s, carCoordLL);
+    readBackSoon();
     setEditing(null);
   };
   const onDelete = () => {
     if (editing) {
       remove(editing.draft.kind, editing.draft.id);
       fleet.removeScheduleFromCar(editing.draft.kind, editing.draft.carId);
+      readBackSoon();
     }
     setEditing(null);
   };

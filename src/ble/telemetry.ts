@@ -172,6 +172,25 @@ export interface InfotainmentSnapshot {
     valetMode?: boolean | undefined;
     speedLimitMode?: boolean | undefined;
   };
+  // Schedule readback — the raw entries the car holds, for the write-path truth
+  // check. Kept verbatim (daysOfWeek is the car's own bitmask; start/end are
+  // minutes) rather than mapped, so the diagnostic shows exactly what is stored.
+  chargeSchedules?: RawSchedule[];
+  preconditionSchedules?: RawSchedule[];
+}
+
+export interface RawSchedule {
+  id: number | undefined;
+  daysOfWeek: number | undefined;
+  startEnabled?: boolean | undefined;
+  startTime?: number | undefined;
+  endEnabled?: boolean | undefined;
+  endTime?: number | undefined;
+  preconditionTime?: number | undefined;
+  enabled: boolean | undefined;
+  oneTime: boolean | undefined;
+  latitude?: number | undefined;
+  longitude?: number | undefined;
 }
 
 // Grace window for optimistic closure intent (mirrors state.js CLOSURE_INTENT_GRACE_MS ~line 89).
@@ -548,6 +567,35 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       valetMode: typeof cls.valetMode === 'boolean' ? cls.valetMode : undefined,
       speedLimitMode: typeof cls.speedLimitMode === 'boolean' ? cls.speedLimitMode : undefined,
     };
+  }
+
+  const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+  const css = pick(vehicleData, root, 'chargeScheduleState');
+  if (css && Array.isArray(css.chargeSchedules)) {
+    snap.chargeSchedules = (css.chargeSchedules as Record<string, unknown>[]).map((r) => ({
+      id: num(r.id),
+      daysOfWeek: num(r.daysOfWeek),
+      startEnabled: bool(r.startEnabled),
+      startTime: num(r.startTime),
+      endEnabled: bool(r.endEnabled),
+      endTime: num(r.endTime),
+      enabled: bool(r.enabled),
+      oneTime: bool(r.oneTime),
+      latitude: num(r.latitude),
+      longitude: num(r.longitude),
+    }));
+  }
+  const pss = pick(vehicleData, root, 'preconditioningScheduleState');
+  if (pss && Array.isArray(pss.preconditionSchedules)) {
+    snap.preconditionSchedules = (pss.preconditionSchedules as Record<string, unknown>[]).map((r) => ({
+      id: num(r.id),
+      daysOfWeek: num(r.daysOfWeek),
+      preconditionTime: num(r.preconditionTime),
+      enabled: bool(r.enabled),
+      oneTime: bool(r.oneTime),
+      latitude: num(r.latitude),
+      longitude: num(r.longitude),
+    }));
   }
 
   return snap;
