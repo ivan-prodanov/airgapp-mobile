@@ -205,6 +205,21 @@ test('Defrost OFF emits defrostOff', () => {
   );
 });
 
+// Regression: Defrost-Car turns the AC on with it (toggleDefrost patches
+// climateOn:true). Max-Defrost runs the HVAC car-side, so — like keeper/bioweapon
+// — it must be ONE command that OWNS climateOn, NOT a defrostOn plus an orphaned
+// climateOn command. Offline, the orphan didn't revert and left the AC on.
+test('Defrost ON owns climateOn and emits NO separate climateOn (offline-revert bug)', () => {
+  const prev: VehicleViewState = { ...base, climateOn: false, frontDefrostOn: false, rearDefrostOn: false };
+  const next: VehicleViewState = { ...base, climateOn: true, frontDefrostOn: true, rearDefrostOn: true };
+  const cmds = diffToCommands(prev, next);
+  assert.equal(cmds.length, 1, 'exactly one command — no separate climateOn');
+  assert.deepEqual(cmds[0].cmd, { type: 'defrostOn' });
+  assert.deepEqual([...cmds[0].keys].sort(), ['climateOn', 'frontDefrostOn', 'rearDefrostOn']);
+  // The single command's rollback therefore reverts the AC too.
+  assert.equal(revertFields(next, prev, cmds[0].keys).climateOn, false);
+});
+
 test('Cabin overheat TEMP 30/35/40 -> setCopTemp low/medium/high (was UNMAPPED)', () => {
   for (const [temp, level] of [['30', 'low'], ['35', 'medium'], ['40', 'high']] as const) {
     const prev: VehicleViewState = { ...base, cabinOverheatTemp: '35' };

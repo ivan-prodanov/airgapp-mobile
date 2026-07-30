@@ -250,9 +250,19 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   // climateOn/climateOff command — Tesla sends one action either way. Bioweapon
   // only implies the TRUE direction; turning it off says nothing about the
   // climate, so that still emits a real command if the user's state changed.
+  // Defrost is Max-Preconditioning (hvacSetPreconditioningMaxAction), which turns
+  // the HVAC on BY ITSELF car-side — so enabling it implies climateOn exactly like
+  // keeper/bioweapon, and must NOT emit a second, separate climateOn command. That
+  // separate command was the bug: offline, the defrost command reverted but the
+  // orphaned climateOn did not, leaving the AC on. Only the ON direction implies
+  // it (turning defrost off says nothing about climate — same asymmetry as bioweapon).
+  const defrostTurnedOn =
+    (prev.frontDefrostOn !== next.frontDefrostOn || prev.rearDefrostOn !== next.rearDefrostOn) &&
+    (next.frontDefrostOn || next.rearDefrostOn);
   const impliedClimateOn =
     prev.climateKeeper !== next.climateKeeper ||
-    (prev.bioweaponOn !== next.bioweaponOn && next.bioweaponOn);
+    (prev.bioweaponOn !== next.bioweaponOn && next.bioweaponOn) ||
+    defrostTurnedOn;
   if (prev.climateOn !== next.climateOn && !impliedClimateOn) {
     emit({ type: next.climateOn ? 'climateOn' : 'climateOff' }, 'climateOn');
   }
@@ -297,7 +307,15 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   }
   if (prev.frontDefrostOn !== next.frontDefrostOn || prev.rearDefrostOn !== next.rearDefrostOn) {
     const on = next.frontDefrostOn || next.rearDefrostOn;
-    emit({ type: on ? 'defrostOn' : 'defrostOff' }, 'frontDefrostOn', 'rearDefrostOn');
+    emit(
+      { type: on ? 'defrostOn' : 'defrostOff' },
+      'frontDefrostOn',
+      'rearDefrostOn',
+      // Enabling Max-Defrost runs the HVAC, so this ONE command owns climateOn
+      // (like keeper/bioweapon) — a failed offline enable then reverts the AC too
+      // instead of orphaning it on. Turning off owns only the defrost pair.
+      ...(on ? (['climateOn'] as const) : []),
+    );
   }
   // ONE command for ONE car field. Previously two blocks watched two booleans and
   // could both fire in a single transition (camp on + pet off), sending `camp`
