@@ -11,6 +11,7 @@ import {
   setEnabled as setEnabledOp,
   upsertCharging,
   upsertPrecondition,
+  withCarIds,
   type ChargingSchedule,
   type PreconditionSchedule,
   type ScheduleKind,
@@ -33,8 +34,9 @@ export function useSchedules() {
     setLoaded(false);
     void load<SchedulesState>(appStorage, keyFor(vehicleId), EMPTY_SCHEDULES).then((s) => {
       if (cancelled) return;
-      // Tolerate an older/partial shape by falling back to empty arrays.
-      setState({ precondition: s.precondition ?? [], charging: s.charging ?? [] });
+      // Tolerate an older/partial shape by falling back to empty arrays, and
+      // backfill carId on schedules saved before that field existed.
+      setState(withCarIds({ precondition: s.precondition ?? [], charging: s.charging ?? [] }));
       setLoaded(true);
     });
     return () => {

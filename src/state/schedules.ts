@@ -6,6 +6,8 @@
 //  - Charging:     start-at and/or end-by times on chosen days.
 // Days are indexed 0=Mon … 6=Sun to match the on-screen "M T W T F S S" header order.
 
+import type { ChargeScheduleInput, PreconditionScheduleInput } from '@/ble/builders';
+
 export type ScheduleKind = 'precondition' | 'charging';
 
 export const DAY_CHIP_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // header row, Monday-first
@@ -14,6 +16,11 @@ const DAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export interface PreconditionSchedule {
   id: string;
+  // The car keys its schedules by a uint64 creation-epoch id (common.PreconditionSchedule.id).
+  // We assign it once at creation and keep it for the life of the schedule, so an
+  // edit/toggle re-adds the SAME car schedule and a delete targets it. Distinct from
+  // the local string `id` (a per-launch uid the UI uses).
+  carId: number;
   kind: 'precondition';
   time: string; // 'HH:MM' 24h
   days: number[]; // sorted, unique, 0=Mon … 6=Sun
@@ -23,6 +30,7 @@ export interface PreconditionSchedule {
 
 export interface ChargingSchedule {
   id: string;
+  carId: number; // see PreconditionSchedule.carId
   kind: 'charging';
   startEnabled: boolean;
   startTime: string; // 'HH:MM'
@@ -45,12 +53,21 @@ export const EMPTY_SCHEDULES: SchedulesState = { precondition: [], charging: [] 
 // Defaults for a freshly-opened "+" popup. Days start empty → the Create button is disabled until the
 // user picks at least one (matches the Charging screenshot, where Create is greyed with no day chosen).
 export function newPrecondition(): PreconditionSchedule {
-  return { id: uid(), kind: 'precondition', time: '08:00', days: [], repeatWeekly: true, enabled: true };
+  return {
+    id: uid(),
+    carId: nextCarId(),
+    kind: 'precondition',
+    time: '08:00',
+    days: [],
+    repeatWeekly: true,
+    enabled: true,
+  };
 }
 
 export function newCharging(): ChargingSchedule {
   return {
     id: uid(),
+    carId: nextCarId(),
     kind: 'charging',
     startEnabled: true,
     startTime: '22:00',
@@ -138,4 +155,64 @@ function upsert<T extends { id: string }>(list: T[], item: T): T[] {
 // randomness (this runs in the app, where Date.now/Math.random are available).
 export function uid(): string {
   return `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// carId is the car's schedule key (a uint64 creation-epoch). Wall-clock based so
+// it survives the per-launch counter reset that bites `uid()`, plus a session
+// nonce so two schedules created in the same millisecond can't collide.
+let carIdNonce = 0;
+export function nextCarId(): number {
+  return Date.now() * 1000 + (carIdNonce++ % 1000);
+}
+
+// Backfill carId on schedules persisted before this field existed, so every
+// schedule the store hands out can be pushed to / removed from the car.
+export function withCarIds(state: SchedulesState): SchedulesState {
+  const fix = <T extends { carId?: number }>(s: T): T =>
+    typeof s.carId === 'number' ? s : { ...s, carId: nextCarId() };
+  return {
+    precondition: state.precondition.map(fix),
+    charging: state.charging.map(fix),
+  };
+}
+
+// ── Local model → car wire input (pure, so it is unit-tested without a car) ───
+//
+// The car's modern schedules are location-keyed; offline we supply the car's own
+// last-known coordinates (RESPONSE-15 open-Q5 flags whether user coords are
+// accepted as UNVERIFIED — confirm against the car's schedule readback).
+// `repeatWeekly === false` maps to the car's `one_time` flag.
+export function chargeScheduleToInput(
+  s: ChargingSchedule,
+  coord: { latitude: number; longitude: number },
+): ChargeScheduleInput {
+  return {
+    id: s.carId,
+    name: '',
+    days: s.days,
+    startEnabled: s.startEnabled,
+    startTime: s.startTime,
+    endEnabled: s.endEnabled,
+    endTime: s.endTime,
+    enabled: s.enabled,
+    oneTime: !s.repeatWeekly,
+    latitude: coord.latitude,
+    longitude: coord.longitude,
+  };
+}
+
+export function preconditionScheduleToInput(
+  s: PreconditionSchedule,
+  coord: { latitude: number; longitude: number },
+): PreconditionScheduleInput {
+  return {
+    id: s.carId,
+    name: '',
+    days: s.days,
+    preconditionTime: s.time,
+    enabled: s.enabled,
+    oneTime: !s.repeatWeekly,
+    latitude: coord.latitude,
+    longitude: coord.longitude,
+  };
 }

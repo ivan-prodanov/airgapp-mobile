@@ -88,18 +88,30 @@ export default function SchedulesScreen() {
   };
   const openEdit = (draft: AnySchedule) => setEditing({ draft, mode: 'edit' });
 
+  const carCoordLL = carCoord ? { latitude: carCoord.latitude, longitude: carCoord.longitude } : null;
+
   const onSave = (s: AnySchedule) => {
     if (s.kind === 'precondition') savePrecondition(s);
     else saveCharging(s);
+    // Push to the car. One-shot: no-op for a demo car or with no known car
+    // position (the modern schedules are location-keyed). The local store is the
+    // source of truth either way.
+    fleet.sendSchedule(s, carCoordLL);
     setEditing(null);
   };
   const onDelete = () => {
-    if (editing) remove(editing.draft.kind, editing.draft.id);
+    if (editing) {
+      remove(editing.draft.kind, editing.draft.id);
+      fleet.removeScheduleFromCar(editing.draft.kind, editing.draft.carId);
+    }
     setEditing(null);
   };
   const onToggleRow = (s: AnySchedule) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => {});
     setEnabled(s.kind, s.id, !s.enabled);
+    // Re-add with the flipped `enabled`; the car keys on carId, so this updates
+    // the same schedule rather than creating a second one.
+    fleet.sendSchedule({ ...s, enabled: !s.enabled }, carCoordLL);
   };
 
   return (

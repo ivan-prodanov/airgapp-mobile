@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EMPTY_SCHEDULES,
+  chargeScheduleToInput,
   formatDays,
   isComplete,
   newCharging,
   newPrecondition,
+  preconditionScheduleToInput,
   removeSchedule,
   scheduleSubtitle,
   scheduleTitle,
@@ -13,6 +15,7 @@ import {
   toggleDay,
   upsertCharging,
   upsertPrecondition,
+  withCarIds,
 } from './schedules';
 
 test('formatDays summarizes day sets', () => {
@@ -71,4 +74,45 @@ test('upsert adds then replaces by id; remove + setEnabled work', () => {
   st = removeSchedule(st, 'precondition', 'a');
   assert.equal(st.precondition.length, 0);
   assert.equal(st.charging.length, 1); // unaffected
+});
+
+// ── Local model → car wire input (REQUEST-15 T5 wiring) ──────────────────────
+const HOME = { latitude: 44.8, longitude: 20.4 };
+
+test('newCharging / newPrecondition each get a distinct carId', () => {
+  const a = newCharging();
+  const b = newPrecondition();
+  assert.equal(typeof a.carId, 'number');
+  assert.notEqual(a.carId, b.carId, 'two schedules must not share the car key');
+});
+
+test('chargeScheduleToInput maps the local model onto the wire input', () => {
+  const s = { ...newCharging(), carId: 42, days: [0, 2], startTime: '22:30', repeatWeekly: false };
+  const inp = chargeScheduleToInput(s, HOME);
+  assert.equal(inp.id, 42); // the car keys on carId, NOT the local string id
+  assert.deepEqual(inp.days, [0, 2]);
+  assert.equal(inp.startTime, '22:30'); // still HH:MM; the builder converts to minutes
+  assert.equal(inp.oneTime, true, 'repeatWeekly:false -> one_time');
+  assert.equal(inp.latitude, 44.8);
+});
+
+test('preconditionScheduleToInput carries time + coords + one_time', () => {
+  const s = { ...newPrecondition(), carId: 7, time: '07:15', repeatWeekly: true };
+  const inp = preconditionScheduleToInput(s, HOME);
+  assert.equal(inp.id, 7);
+  assert.equal(inp.preconditionTime, '07:15');
+  assert.equal(inp.oneTime, false);
+});
+
+test('withCarIds backfills schedules persisted before carId existed', () => {
+  // Simulate an old cache row with no carId (cast through unknown).
+  const legacy = {
+    charging: [{ id: 'x', kind: 'charging', days: [1], startEnabled: true, startTime: '22:00', endEnabled: false, endTime: '06:00', repeatWeekly: true, enabled: true }],
+    precondition: [],
+  } as unknown as Parameters<typeof withCarIds>[0];
+  const fixed = withCarIds(legacy);
+  assert.equal(typeof fixed.charging[0].carId, 'number', 'a legacy schedule gets a car key');
+  // An already-keyed schedule is left as-is.
+  const keyed = withCarIds({ charging: [{ ...newCharging(), carId: 99 }], precondition: [] });
+  assert.equal(keyed.charging[0].carId, 99);
 });

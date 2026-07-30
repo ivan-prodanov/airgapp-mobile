@@ -88,6 +88,14 @@ const FEEDBACK: Record<CarCommand['type'], FeedbackClass> = {
   // ── Nav — no in-flight affordance on the button itself ─────────────────────
   navigateTo: 'optimistic',
   navigateWaypoints: 'optimistic',
+  // Schedules: the LOCAL store is the optimistic surface and it commits
+  // independently of the car. The car push is fire-and-forget — a car-side
+  // failure must not roll back the saved schedule the user is looking at; the
+  // next schedule readback reconciles truth.
+  addChargeSchedule: 'fire-and-forget',
+  removeChargeSchedule: 'fire-and-forget',
+  addPreconditionSchedule: 'fire-and-forget',
+  removePreconditionSchedule: 'fire-and-forget',
 };
 
 export function feedbackClass(type: CarCommand['type']): FeedbackClass {

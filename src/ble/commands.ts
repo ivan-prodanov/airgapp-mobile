@@ -16,6 +16,12 @@
 import { honkAction, type ActionPayload } from './session';
 import type { Domain } from './types';
 import {
+  addChargeScheduleAction,
+  removeChargeScheduleAction,
+  addPreconditionScheduleAction,
+  removePreconditionScheduleAction,
+  type ChargeScheduleInput,
+  type PreconditionScheduleInput,
   lockAction,
   unlockAction,
   wakeAction,
@@ -130,7 +136,13 @@ export type CarCommand =
   | { type: 'pinToDrive'; on: boolean; pin?: string }
   | { type: 'navigateTo'; lat: number; lon: number; label?: string; order?: 'REPLACE' | 'PREPEND' | 'APPEND' }
   | { type: 'navigateWaypoints'; coords: { lat: number; lon: number }[]; order: 'REPLACE' | 'PREPEND' | 'APPEND' }
-  | { type: 'media'; action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown' };
+  | { type: 'media'; action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown' }
+  // Day-aware charge/precondition schedules (REQUEST-15 T5). One-shots like
+  // navigation: no scalar-state counterpart, so they can't ride the reconciler.
+  | { type: 'addChargeSchedule'; sched: ChargeScheduleInput }
+  | { type: 'removeChargeSchedule'; id: number }
+  | { type: 'addPreconditionSchedule'; sched: PreconditionScheduleInput }
+  | { type: 'removePreconditionSchedule'; id: number };
 
 export interface BuiltCommand {
   domain: Domain;
@@ -331,6 +343,14 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
         default:
           throw new Error(`unsupported over BLE: media.${(cmd as { action: string }).action}`);
       }
+    case 'addChargeSchedule':
+      return fromPayload(addChargeScheduleAction(cmd.sched));
+    case 'removeChargeSchedule':
+      return fromPayload(removeChargeScheduleAction(cmd.id));
+    case 'addPreconditionSchedule':
+      return fromPayload(addPreconditionScheduleAction(cmd.sched));
+    case 'removePreconditionSchedule':
+      return fromPayload(removePreconditionScheduleAction(cmd.id));
     default: {
       const exhaustive: never = cmd;
       throw new Error(`unsupported over BLE: ${(exhaustive as { type: string }).type}`);

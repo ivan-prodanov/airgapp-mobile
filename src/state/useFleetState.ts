@@ -22,6 +22,12 @@ import {
 import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
 import { diffToCommands, revertFields } from '../ble/reconcile';
+import {
+  chargeScheduleToInput,
+  preconditionScheduleToInput,
+  type AnySchedule,
+  type ScheduleKind,
+} from './schedules';
 
 export interface Fleet {
   vehicles: Vehicle[];
@@ -41,6 +47,14 @@ export interface Fleet {
   // reason: play/pause/next/prev have no local-state counterpart the diff
   // reconciler could infer. The car owns the truth; we ask and re-read.
   sendMedia: (action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown') => void;
+  // Day-aware charge/precondition schedules. Same one-shot shape as the two
+  // above and for the same reason: a schedule LIST has no scalar-state
+  // counterpart the diff reconciler could infer. The local store stays the
+  // source of truth; these push the change to the car. No-op for a demo car,
+  // and for a save with no known car coordinates (the modern schedules are
+  // location-keyed — see chargeScheduleToInput).
+  sendSchedule: (s: AnySchedule, coord: { latitude: number; longitude: number } | null) => void;
+  removeScheduleFromCar: (kind: ScheduleKind, carId: number) => void;
 }
 
 export function useFleetState(): {
@@ -212,6 +226,37 @@ export function useFleetState(): {
     [activeIsLive, carLink],
   );
 
+  const sendSchedule = useCallback(
+    (s: AnySchedule, coord: { latitude: number; longitude: number } | null) => {
+      if (!activeIsLive) return;
+      // The modern schedules are location-keyed; with no known car position we
+      // can't build a faithful one, so we skip the push rather than send (0,0).
+      // The local store still saved it — the car just doesn't get it until we
+      // have a fix. (RESPONSE-15 open-Q5: user-supplied coords may be rejected;
+      // verify against the car's schedule readback.)
+      if (!coord) return;
+      const cmd =
+        s.kind === 'charging'
+          ? ({ type: 'addChargeSchedule', sched: chargeScheduleToInput(s, coord) } as const)
+          : ({ type: 'addPreconditionSchedule', sched: preconditionScheduleToInput(s, coord) } as const);
+      carLink.dispatch(cmd, () => {});
+    },
+    [activeIsLive, carLink],
+  );
+
+  const removeScheduleFromCar = useCallback(
+    (kind: ScheduleKind, carId: number) => {
+      if (!activeIsLive) return;
+      carLink.dispatch(
+        kind === 'charging'
+          ? { type: 'removeChargeSchedule', id: carId }
+          : { type: 'removePreconditionSchedule', id: carId },
+        () => {},
+      );
+    },
+    [activeIsLive, carLink],
+  );
+
   const sendMedia = useCallback(
     (action: 'toggle' | 'next' | 'prev' | 'volumeUp' | 'volumeDown') => {
       if (!activeIsLive) return;
@@ -266,6 +311,8 @@ export function useFleetState(): {
     () => ({
       sendNavigation,
       sendMedia,
+      sendSchedule,
+      removeScheduleFromCar,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),
