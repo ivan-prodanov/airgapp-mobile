@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     // A bit more bottom padding lifts the Create/Cancel group slightly up.
-    paddingBottom: 60,
+    paddingBottom: 54,
   },
   createBtn: {
     // Full container width (edges aligned with the rows) — 85% read too narrow.

@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     // ~34pt tall — ours was chunkier (pV9/pH18/minWidth92).
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     // Tesla's `pillBackgroundDarkMode` token — the chip keeps this fill in both
     // states; only the value text tints blue when the wheel is open.
     backgroundColor: '#2D2F34',
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: 'rgba(0,0,0,0.28)',
   },
   disabled: {
