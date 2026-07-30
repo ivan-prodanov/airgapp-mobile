@@ -91,9 +91,10 @@ export function TimeField({
 
 const styles = StyleSheet.create({
   chip: {
-    minWidth: 92,
-    paddingVertical: 9,
-    paddingHorizontal: 18,
+    // Sized to iOS's native compact picker (what Tesla uses): tight padding,
+    // ~34pt tall — ours was chunkier (pV9/pH18/minWidth92).
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 12,
     // Tesla's `pillBackgroundDarkMode` token — the chip keeps this fill in both
     // states; only the value text tints blue when the wheel is open.
@@ -116,14 +117,17 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   chipText: {
-    fontSize: 18,
-    fontWeight: '600',
+    // Native picker value text: 17pt, regular weight (ours was 18/600 — bigger,
+    // heavier than Tesla).
+    fontSize: 17,
+    fontWeight: '400',
     color: 'white',
     fontVariant: ['tabular-nums'],
   },
-  // Tesla tints the value blue while the wheel is open.
+  // Open: the value tints the iOS system blue (#0A84FF, dark mode) — the native
+  // picker's active tint, NOT Tesla's brand #3368FF which I'd wrongly hardcoded.
   chipTextOpen: {
-    color: '#3368FF',
+    color: '#0A84FF',
   },
   backdrop: {
     flex: 1,
