@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
+import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { ParentalControlsSheet } from '@/components/ParentalControlsSheet';
 import { PinSheet } from '@/components/PinSheet';
@@ -174,16 +175,16 @@ export default function SecurityScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <NavRow symbol="camera.fill" title="Dashcam Viewer" subtitle="View saved clips" disabled />
+          <NavRow symbol="dashcam-filled" title="Dashcam Viewer" subtitle="View saved clips" disabled />
           <ToggleRow
-            symbol="record.circle.fill"
+            symbol="target-filled"
             title="Sentry Mode"
             subtitle="Enable to view live camera"
             value={state.sentryEnabled}
             onToggle={() => toggle('sentryEnabled')}
           />
           <ToggleRow
-            symbol="key.fill"
+            symbol="valet"
             title="Valet Mode"
             subtitle="Limit vehicle access"
             value={state.valetMode}
@@ -192,7 +193,7 @@ export default function SecurityScreen() {
             onClearPin={() => requestClearPin('valetMode')}
           />
           <ToggleRow
-            symbol="figure.and.child.holdinghands"
+            symbol="child-lock-filled"
             title="Parental Controls"
             subtitle="Turn on a full suite of safety features including speed limit mode, chill acceleration, and more..."
             value={state.parentalControls}
@@ -204,7 +205,7 @@ export default function SecurityScreen() {
             gateSubtitle={phoneKeyMissing ? 'Please set up Phone Key' : undefined}
           />
           <ToggleRow
-            symbol="speedometer"
+            symbol="speedometer-filled"
             title="Speed Limit Mode"
             subtitle="Limit top speed"
             value={state.speedLimitMode}
@@ -215,7 +216,7 @@ export default function SecurityScreen() {
             disabled={gatedSpeedLimit}
           />
           <ToggleRow
-            symbol="checkmark.shield.fill"
+            symbol="security-filled"
             title="PIN to Drive"
             subtitle="Require PIN entry to drive vehicle"
             value={state.pinToDrive}
@@ -261,7 +262,7 @@ function NavRow({
   onPress,
   disabled,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   title: string;
   subtitle: string;
   onPress?: () => void;
@@ -270,7 +271,7 @@ function NavRow({
   return (
     <Pressable style={[styles.row, disabled && styles.rowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={styles.iconCol}>
-        <SymbolView name={symbol} tintColor="rgba(255,255,255,0.9)" size={26} />
+        <TeslaIcon name={symbol} color="rgba(255,255,255,0.9)" size={26} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -293,7 +294,7 @@ function ToggleRow({
   disabled,
   gateSubtitle,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   title: string;
   subtitle: string;
   value: boolean;
@@ -315,7 +316,7 @@ function ToggleRow({
   return (
     <View style={[styles.row, disabled && styles.rowDisabled]}>
       <View style={styles.iconCol}>
-        <SymbolView name={symbol} tintColor="rgba(255,255,255,0.9)" size={26} />
+        <TeslaIcon name={symbol} color="rgba(255,255,255,0.9)" size={26} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>

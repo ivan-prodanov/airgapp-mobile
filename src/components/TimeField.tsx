@@ -1,17 +1,21 @@
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type LayoutRectangle,
+} from 'react-native';
 
-// The NATIVE iOS compact time picker — exactly what the Tesla app uses: a chip
-// that turns blue and pops a small floating wheel when tapped, minutes in
-// 15-minute steps, no Cancel/Done. iOS draws the chip and the popover.
-//
-// iOS draws that chip as a PILL (corner ≈ half its height); Tesla's is a rounded
-// rectangle (~radius 12). The picker ignores a borderRadius set on it, and a
-// loose wrapper clips nothing because the native view has transparent margin
-// around the chip. So the wrapper is a FIXED box slightly smaller than the chip,
-// with the picker centred inside and overflow hidden — that bites into the pill's
-// rounded ends and leaves radius-12 corners. The popover is a separate iOS layer,
-// untouched by the clip.
+// Tesla's time field is a CUSTOM chip, not the native compact picker. On iOS 26
+// the native `display="compact"` chip is an uncontrollable capsule (pill) — RN
+// ignores width/height/borderRadius on it, which is why every attempt to square
+// it did nothing. So, like Tesla, we draw our own rounded-rect chip and open a
+// native wheel when it is tapped: the chip is fully ours to style, the wheel is
+// still the OS component.
 const pad2 = (n: number) => n.toString().padStart(2, '0');
 const fmt = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
@@ -22,6 +26,8 @@ function toDate(value: string): Date {
   return d;
 }
 
+const CARD_W = 240;
+
 export function TimeField({
   value,
   onChange,
@@ -31,37 +37,94 @@ export function TimeField({
   onChange: (time: string) => void;
   disabled?: boolean;
 }) {
+  const { width: screenW } = useWindowDimensions();
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<LayoutRectangle | null>(null);
+  const chipRef = useRef<View>(null);
+
+  const openPicker = () =>
+    chipRef.current?.measureInWindow((x, y, w, h) => {
+      setAnchor({ x, y, width: w, height: h });
+      setOpen(true);
+    });
+
+  const left = anchor
+    ? Math.min(Math.max(anchor.x + anchor.width - CARD_W, 8), screenW - CARD_W - 8)
+    : 8;
+  const top = anchor ? anchor.y + anchor.height + 6 : 120;
+
   return (
-    <DateTimePicker
-      value={toDate(value)}
-      mode="time"
-      display="compact"
-      minuteInterval={15}
-      themeVariant="dark"
-      accentColor="#3368FF"
-      disabled={disabled}
-      // Tesla's OWN iOS style for this exact chip — `iosPreconditionTimePickerModal`
-      // (@1864012): { width: 120, height: 50, alignSelf: 'flex-end',
-      // marginRight: -8 }. No borderRadius, no clip — the trick is the FIXED
-      // 120x50 frame: at the compact chip's natural (small) size iOS 26 draws a
-      // capsule, but stretched to 50pt tall its fixed ~13pt corner reads as a
-      // rounded rectangle. That is why every radius/overflow attempt did nothing.
-      style={[styles.picker, disabled && styles.disabled]}
-      onChange={(_e: DateTimePickerEvent, d?: Date) => {
-        if (d) onChange(fmt(d));
-      }}
-    />
+    <>
+      <Pressable
+        ref={chipRef}
+        onPress={openPicker}
+        disabled={disabled}
+        style={[styles.chip, disabled && styles.disabled]}
+      >
+        <Text style={[styles.chipText, open && styles.chipTextOpen]}>{value}</Text>
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
+        <View style={[styles.card, { top, left }]}>
+          <DateTimePicker
+            value={toDate(value)}
+            mode="time"
+            display="spinner"
+            minuteInterval={15}
+            themeVariant="dark"
+            textColor="white"
+            style={styles.wheel}
+            onChange={(_e: DateTimePickerEvent, d?: Date) => {
+              if (d) onChange(fmt(d));
+            }}
+          />
+        </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  picker: {
-    width: 120,
-    height: 50,
+  chip: {
+    minWidth: 92,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    backgroundColor: '#48484A',
+    alignItems: 'center',
+    justifyContent: 'center',
     alignSelf: 'flex-end',
-    marginRight: -8,
   },
   disabled: {
     opacity: 0.4,
+  },
+  chipText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: 'white',
+    fontVariant: ['tabular-nums'],
+  },
+  // Tesla tints the value blue while the wheel is open.
+  chipTextOpen: {
+    color: '#3368FF',
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  card: {
+    position: 'absolute',
+    width: CARD_W,
+    backgroundColor: '#2C2C2E',
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+  },
+  wheel: {
+    height: 200,
   },
 });

@@ -10,9 +10,9 @@ import {
   type LayoutRectangle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
+import { TeslaIcon } from '@/icons/TeslaIcon';
 import { CONTROL_ACTIONS, CONTROL_ACTION_ORDER, type ControlActionId } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
@@ -287,7 +287,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
             },
           ]}
         >
-          <SymbolView name={CONTROL_ACTIONS[dragId].symbol(state)} tintColor="white" size={32} />
+          <TeslaIcon name={CONTROL_ACTIONS[dragId].symbol(state)} color="white" size={32} />
         </Animated.View>
       ) : null}
     </View>

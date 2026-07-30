@@ -1,4 +1,4 @@
-import type { SFSymbol } from 'expo-symbols';
+import type { TeslaIconName } from '@/icons/TeslaIcon';
 
 import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import type { VehicleActions } from './useVehicleState';
@@ -32,7 +32,7 @@ export interface ControlActionDef {
    */
   gridLabel?: (state: VehicleViewState) => string;
   /** Glyph for the favorites bar / grid; a function so lock can swap open↔closed. */
-  symbol: (state: VehicleViewState) => SFSymbol;
+  symbol: (state: VehicleViewState) => TeslaIconName;
   /** When true, the glyph spins continuously (the climate fan while A/C is on). */
   spinning?: (state: VehicleViewState) => boolean;
   /** Whether the favorites-bar icon renders "active" (white) vs dimmed. */
@@ -51,7 +51,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     id: 'lock',
     label: 'Lock',
     gridLabel: (s) => (s.locked ? 'Locked' : 'Unlocked'),
-    symbol: (s) => (s.locked ? 'lock.fill' : 'lock.open.fill'),
+    symbol: (s) => (s.locked ? 'lock-filled' : 'unlock-filled'),
     isActive: (s) => !s.locked,
     run: (_s, a) => a.toggle('locked'),
   },
@@ -59,7 +59,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     id: 'climate',
     label: 'Climate',
     gridLabel: (s) => (s.climateOn ? 'On' : 'Off'),
-    symbol: () => 'fanblades.fill',
+    symbol: () => 'fan-filled',
     spinning: (s) => s.climateOn,
     isActive: (s) => s.climateOn,
     run: (_s, a) => a.setCameraMode('CLIMATE'),
@@ -70,7 +70,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     // Controls the charge port directly. Closed → "Open"; open & idle → "Close"; open & charging →
     // "Unlock" (releases the latch, stopping the session so the cable can be removed).
     gridLabel: (s) => (s.chargePortOpen ? (s.charging ? 'Unlock' : 'Close') : 'Open'),
-    symbol: () => 'bolt.fill',
+    symbol: () => 'bolt-filled',
     isActive: (s) => s.chargePortOpen,
     run: (s, a) =>
       a.patch(
@@ -80,7 +80,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   frunk: {
     id: 'frunk',
     label: 'Frunk',
-    symbol: () => 'car.side.front.open.fill',
+    symbol: () => 'frunk-filled',
     isActive: (s) => s.frunkOpen,
     // Toggle: the frunk actuate is a toggle on the car, so BOTH taps send the
     // same openFrunk command (see reconcile.ts). The state flip drives the
@@ -92,14 +92,14 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   trunk: {
     id: 'trunk',
     label: 'Trunk',
-    symbol: () => 'car.side.rear.open.fill',
+    symbol: () => 'trunk-filled',
     isActive: (s) => s.trunkOpen,
     run: (_s, a) => a.toggle('trunkOpen'),
   },
   vent: {
     id: 'vent',
     label: 'Vent',
-    symbol: () => 'car.window.left',
+    symbol: () => 'vent-windows-filled',
     isActive: anyWindowOpen,
     run: (s, a) => {
       const open = !anyWindowOpen(s);
@@ -114,7 +114,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   flash: {
     id: 'flash',
     label: 'Flash',
-    symbol: () => 'headlight.low.beam',
+    symbol: () => 'brights-filled',
     isActive: () => false,
     run: (_s, a) => {
       a.patch({ headlightsOn: true });
@@ -124,70 +124,70 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   honk: {
     id: 'honk',
     label: 'Honk',
-    symbol: () => 'horn.fill',
+    symbol: () => 'horn-filled',
     isActive: () => false,
     run: noop,
   },
   lightShow: {
     id: 'lightShow',
     label: 'Light Show',
-    symbol: () => 'globe.americas.fill',
+    symbol: () => 'sparkles-filled',
     isActive: () => false,
     run: noop,
   },
   lowPower: {
     id: 'lowPower',
     label: 'Low Power',
-    symbol: () => 'battery.25',
+    symbol: () => 'battery-empty-filled',
     isActive: () => false,
     run: noop,
   },
   start: {
     id: 'start',
     label: 'Start',
-    symbol: () => 'key.radiowaves.forward.fill',
+    symbol: () => 'remote-filled',
     isActive: () => false,
     run: noop,
   },
   sentry: {
     id: 'sentry',
     label: 'Sentry',
-    symbol: () => 'record.circle.fill',
+    symbol: () => 'target-filled',
     isActive: (s) => s.sentryEnabled,
     run: (_s, a) => a.toggle('sentryEnabled'),
   },
   summon: {
     id: 'summon',
     label: 'Summon',
-    symbol: () => 'steeringwheel',
+    symbol: () => 'steering-wheel',
     isActive: () => false,
     run: noop,
   },
   unlatchDoor: {
     id: 'unlatchDoor',
     label: 'Unlatch Door',
-    symbol: () => 'car.top.door.front.left.open.fill',
+    symbol: () => 'doors-open-filled',
     isActive: (s) => s.driverFrontDoorOpen,
     run: (_s, a) => a.toggle('driverFrontDoorOpen'),
   },
   bioweapon: {
     id: 'bioweapon',
     label: 'Bioweapon Defense',
-    symbol: () => 'microbe',
+    symbol: () => 'biohazard-filled',
     isActive: () => false,
     run: noop,
   },
   homelink: {
     id: 'homelink',
     label: 'HomeLink',
-    symbol: () => 'house.fill',
+    symbol: () => 'homelink-filled',
     isActive: () => false,
     run: noop,
   },
   fart: {
     id: 'fart',
     label: 'Fart',
-    symbol: () => 'wind',
+    symbol: () => 'speaker-filled',
     isActive: () => false,
     run: noop,
   },

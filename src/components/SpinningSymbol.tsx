@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
+
+import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
 
 interface Props {
-  name: SFSymbol;
+  name: TeslaIconName;
   tintColor: string;
   size: number;
   /** When true, the glyph rotates continuously (used for the climate fan while A/C is on). */
@@ -12,8 +13,8 @@ interface Props {
   periodMs?: number;
 }
 
-// SymbolView wrapped in an Animated.View that rotates 360° on a loop while `spin` is true. Used to
-// make the radially-symmetric `fanblades` glyph read as an actually-spinning fan. Native-driven, so
+// TeslaIcon wrapped in an Animated.View that rotates 360° on a loop while `spin` is true. Used to
+// make the radially-symmetric `fan-filled` glyph read as an actually-spinning fan. Native-driven, so
 // it stays smooth and off the JS thread.
 export function SpinningSymbol({ name, tintColor, size, spin = false, periodMs = 1400 }: Props) {
   const rotation = useRef(new Animated.Value(0)).current;
@@ -41,7 +42,7 @@ export function SpinningSymbol({ name, tintColor, size, spin = false, periodMs =
 
   return (
     <Animated.View style={{ transform }}>
-      <SymbolView name={name} tintColor={tintColor} size={size} />
+      <TeslaIcon name={name} color={tintColor} size={size} />
     </Animated.View>
   );
 }

@@ -16,6 +16,8 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
+import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
+import { vehicleGlyphFor } from '@/icons/vehicleGlyph';
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
 import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
@@ -487,9 +489,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             <MediaCard media={media} onAction={fleet.sendMedia} />
           ) : null}
 
-          <NavRow symbol="car.fill" title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
+          <NavRow symbol={vehicleGlyphFor(state.carModel, state.charging)} title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
           <NavRow
-            symbol="fanblades.fill"
+            symbol="fan-filled"
             title="Climate"
             // ONE cascade, theirs (@3887821), rendered through the two slots
             // this row already has: their climate-ON arm reads as a status, their
@@ -508,7 +510,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             onPress={() => actions.setCameraMode('CLIMATE')}
           />
           <NavRow
-            symbol="location.fill"
+            symbol="navigate-filled"
             title="Location"
             subtitle="Nearby"
             onPress={() => router.push('/location')}
@@ -518,13 +520,13 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               ) : undefined
             }
           />
-          <NavRow symbol="steeringwheel" title="Summon" disabled />
-          <NavRow symbol="bolt.fill" title="Charging" onPress={() => router.push('/charging')} />
-          <NavRow symbol="alarm.fill" title="Set Schedules" onPress={() => router.push('/schedules')} />
-          <NavRow symbol="lock.shield.fill" title="Security & Drivers" subtitle="Ivan P" onPress={() => router.push('/security')} />
-          <NavRow symbol="wrench.and.screwdriver.fill" title="Service" disabled />
-          <NavRow symbol="camera.fill" title="Dashcam Viewer" disabled />
-          <NavRow symbol="camera.viewfinder" title="Photobooth" disabled />
+          <NavRow symbol="steering-wheel" title="Summon" disabled />
+          <NavRow symbol="bolt-filled" title="Charging" onPress={() => router.push('/charging')} />
+          <NavRow symbol="schedule-filled" title="Set Schedules" onPress={() => router.push('/schedules')} />
+          <NavRow symbol="security-filled" title="Security & Drivers" subtitle="Ivan P" onPress={() => router.push('/security')} />
+          <NavRow symbol="service-filled" title="Service" disabled />
+          <NavRow symbol="dashcam-filled" title="Dashcam Viewer" disabled />
+          <NavRow symbol="photo-filled" title="Photobooth" disabled />
           </>
           )}
         </View>
@@ -602,7 +604,7 @@ function QuickIcon({
   onPress,
   onLongPress,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   active: boolean;
   spin?: boolean;
   // A real command for this control is in flight (dispatched, unconfirmed).
@@ -651,7 +653,7 @@ function NavRow({
   leading,
   disabled,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   title: string;
   // Bold/bright leading word (e.g. Climate "Active"), like the official app; rendered before subtitle.
   status?: string;
@@ -673,7 +675,7 @@ function NavRow({
       {leading ? (
         <View style={styles.navIcon}>{leading}</View>
       ) : (
-        <SymbolView name={symbol} tintColor="white" size={26} style={styles.navIcon} />
+        <TeslaIcon name={symbol} color="white" size={26} style={styles.navIcon} />
       )}
       <View style={styles.navText}>
         <Text style={styles.navTitle}>{title}</Text>

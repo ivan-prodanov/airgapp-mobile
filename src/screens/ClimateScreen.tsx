@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
 import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
@@ -340,7 +340,7 @@ export function ClimateScreen({ state, actions }: Props) {
               hitSlop={16}
               onPress={() => adjustTemp(-0.5)}
             >
-              <SymbolView name="chevron.left" tintColor={TEXT_DIM} size={CHEVRON_SIZE} weight="medium" />
+              <TeslaIcon name="chevron-small-270" color={TEXT_DIM} size={CHEVRON_SIZE} />
             </Pressable>
             {/* BRIGHT when climate is on, DIM when off — visible across Ivan's
                 first two screenshots, which differ only by the AC state: the
@@ -381,12 +381,12 @@ export function ClimateScreen({ state, actions }: Props) {
               hitSlop={16}
               onPress={() => adjustTemp(0.5)}
             >
-              <SymbolView name="chevron.right" tintColor={TEXT_DIM} size={CHEVRON_SIZE} weight="medium" />
+              <TeslaIcon name="chevron-small-90" color={TEXT_DIM} size={CHEVRON_SIZE} />
             </Pressable>
           </View>
 
           <Quick
-            symbol="car.window.left"
+            symbol="vent-windows-filled"
             label={vented ? 'Close' : 'Vent'}
             active={vented}
             onPress={toggleVent}
@@ -394,14 +394,14 @@ export function ClimateScreen({ state, actions }: Props) {
         </View>
 
         <Row
-          symbol="windshield.front.and.heat.waves"
+          symbol="defrost-front-filled"
           label="Defrost Car"
           active={state.frontDefrostOn}
           onPress={toggleDefrost}
         />
         <View style={styles.spacer} />
         <Row
-          symbol="microbe"
+          symbol="biohazard-filled"
           label="Bioweapon Defense Mode"
           active={state.bioweaponOn}
           onPress={onBioweaponPress}
@@ -410,14 +410,14 @@ export function ClimateScreen({ state, actions }: Props) {
         <View style={styles.spacer} />
         <View style={styles.group}>
           <GroupRow
-            symbol="tent"
+            symbol="camp-filled"
             label="Camp Mode"
             active={state.climateKeeper === 'camp'}
             first
             onPress={onCampPress}
           />
           <GroupRow
-            symbol="pawprint.fill"
+            symbol="dog"
             label="Pet Mode"
             active={state.climateKeeper === 'pet'}
             onPress={onPetPress}
@@ -473,7 +473,7 @@ function Quick({
   active,
   onPress,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   label: string;
   active: boolean;
   onPress: () => void;
@@ -485,7 +485,7 @@ function Quick({
           when the state is off and WHITE when on. No blue anywhere in this row —
           blue is reserved for an engaged card (Defrost), which is the one place
           it appears in all four screenshots. */}
-      <SymbolView name={symbol} tintColor={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
+      <TeslaIcon name={symbol} color={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
       <Text style={[styles.quickLabel, active && styles.quickLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -497,7 +497,7 @@ function Row({
   active,
   onPress,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   label: string;
   active: boolean;
   onPress: () => void;
@@ -511,7 +511,7 @@ function Row({
       ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
+      <TeslaIcon name={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -524,7 +524,7 @@ function GroupRow({
   first,
   onPress,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   label: string;
   active: boolean;
   first?: boolean;
@@ -540,7 +540,7 @@ function GroupRow({
       ]}
       onPress={onPress}
     >
-      <SymbolView name={symbol} tintColor={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
+      <TeslaIcon name={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
