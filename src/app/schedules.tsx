@@ -21,6 +21,7 @@ import {
 } from '@/state/schedules';
 import { useSchedules } from '@/state/useSchedules';
 import { useFleet } from '@/state/VehicleProvider';
+import { TeslaFonts } from '@/constants/fonts';
 
 // Sofia city centre — the same fallback the Location screen uses when GPS isn't available yet.
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -342,14 +343,26 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  // Recovered from ScheduleV3PreconditionView -> ScheduleItemRow (@1318713): the
+  // section title and subtitle are BOTH TextCategory.BodyLabel (UniversalSans
+  // Medium 14/20/+0.1), NOT a big display title. They differ only by
+  // TextAppearance — the title is Default (bright textColor #F3F3F3), the
+  // subtitle is Light (dim textColorLight #8A8B8B). Our 22/700 system-bold title
+  // was invented; theirs is the same restrained label size as the subtitle,
+  // carried by colour, in their own typeface.
   sectionTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: 'white',
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: '#F3F3F3',
   },
   sectionSub: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.5)',
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: '#8A8B8B',
   },
   disabled: {
     opacity: 0.35,
