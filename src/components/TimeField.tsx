@@ -1,6 +1,8 @@
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   Modal,
   Pressable,
   StyleSheet,
@@ -39,8 +41,34 @@ export function TimeField({
 }) {
   const { width: screenW } = useWindowDimensions();
   const [open, setOpen] = useState(false);
+  // `render` keeps the Modal mounted through the close animation; `anim` drives
+  // the expand (0 → 1) / minimize (1 → 0), replacing the Modal's plain fade with
+  // a scale+fade that grows from near the chip — closer to the native popover.
+  const [render, setRender] = useState(false);
+  const anim = useRef(new Animated.Value(0)).current;
   const [anchor, setAnchor] = useState<LayoutRectangle | null>(null);
   const chipRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 140,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setRender(false);
+      });
+    }
+  }, [open, anim]);
 
   const openPicker = () =>
     chipRef.current?.measureInWindow((x, y, w, h) => {
@@ -67,9 +95,24 @@ export function TimeField({
         <Text style={[styles.chipText, open && styles.chipTextOpen]}>{value}</Text>
       </Pressable>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <Modal visible={render} transparent animationType="none" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-        <View style={[styles.card, { top, left }]}>
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              top,
+              left,
+              opacity: anim,
+              // Grow from near the chip (top): scale up while sliding the last
+              // few points down into place.
+              transform: [
+                { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) },
+                { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
+              ],
+            },
+          ]}
+        >
           <DateTimePicker
             value={toDate(value)}
             mode="time"
@@ -82,7 +125,7 @@ export function TimeField({
               if (d) onChange(fmt(d));
             }}
           />
-        </View>
+        </Animated.View>
       </Modal>
     </>
   );

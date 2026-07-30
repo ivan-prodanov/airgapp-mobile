@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Easing,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { DayPicker } from './DayPicker';
 import { Toggle } from './Toggle';
@@ -36,6 +45,33 @@ export function ScheduleSheet({
     if (visible) setWork(draft);
   }, [visible, draft]);
 
+  // Backdrop and sheet animate SEPARATELY (Tesla fades the dim in place while the
+  // sheet slides up — the Modal's single "slide" would drag the dim up too).
+  // `render` keeps the Modal mounted through the close animation.
+  const sheetH = Math.min(height * 0.8, height - 60);
+  const [render, setRender] = useState(visible);
+  const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  useEffect(() => {
+    if (visible) {
+      setRender(true);
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 240,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setRender(false);
+      });
+    }
+  }, [visible, anim]);
+
   if (!work) return null;
 
   const kindLabel = work.kind === 'precondition' ? 'Precondition' : 'Charging';
@@ -46,9 +82,21 @@ export function ScheduleSheet({
     setWork((w) => (w ? ({ ...w, ...p } as AnySchedule) : w));
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel} />
-      <View style={[styles.sheet, { height: Math.min(height * 0.8, height - 60) }]}>
+    <Modal visible={render} transparent animationType="none" onRequestClose={onCancel}>
+      <Animated.View style={[styles.backdrop, { opacity: anim }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.sheet,
+          {
+            height: sheetH,
+            transform: [
+              { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [sheetH, 0] }) },
+            ],
+          },
+        ]}
+      >
         <Text style={styles.title}>{title}</Text>
         <View style={styles.divider} />
 
@@ -106,7 +154,7 @@ export function ScheduleSheet({
             </Pressable>
           )}
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -148,10 +196,18 @@ function ChargeField({
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#141414',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
