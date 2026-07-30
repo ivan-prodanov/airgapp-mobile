@@ -139,6 +139,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#2C2C2E',
     borderRadius: 14,
     overflow: 'hidden',
+    // Center the wheels instead of stretching the picker to the card width —
+    // a stretched .time spinner hugs the trailing edge (right-aligned). Letting
+    // it size to its intrinsic content and centering matches Tesla's native pop.
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5,
