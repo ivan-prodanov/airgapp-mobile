@@ -91,9 +91,9 @@ Leaving it as the source icon is also a valid answer — it is what Tesla ships.
 
 ---
 
-## UI / icons — open (found 2026-07-31)
+## Open bugs — found 2026-07-31
 
-Surfaced by Ivan while reviewing the home/controls/climate screens and the Tesla-icon pass.
+Surfaced by Ivan across the Tesla-icon pass, the Schedules screen, charging, and Security & Drivers.
 Not yet root-caused unless noted; the file named is where the work starts, not a diagnosis.
 
 1. **Home header fades too late on scroll.** Scrolling the Home screen while the music/battery pane
@@ -118,6 +118,39 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
 
 6. **Parental Control & Speed Limit Mode icons are wrong.** Both render the wrong glyph on the
    Security screen. `security.tsx`.
+
+7. **Schedules screen shows every location's schedules.** The Set Schedules list renders ALL
+   schedules regardless of the selected location — it doesn't filter by the location chosen in the
+   header dropdown. Should show only the current location's. `schedules.tsx` (schedules already carry
+   coords, so filter the list by the selected location).
+
+8. **(Optional) "Other locations" entry in the location picker.** Add an optional dropdown item
+   listing every location that isn't Home / Work / Current Location. When the schedules screen is
+   opened on such a location, the sheet should show which location the schedule is assigned to.
+   `LocationPickerSheet.tsx` + the schedules header.
+
+9. **Charging: 3rd-party (paid) charger plugged, session not started.** Two checks, don't
+   overcomplicate:
+   - The app shows **"Charging Error – No Power"** when a paid 3rd-party charger is plugged but no
+     session has been started (no electricity yet). Possibly expected — deserves its own check.
+   - Pressing **Start Charging** flips the button to **Stop**, but charging never starts (expected
+     here — 3rd-party, unpaid) and the button does NOT revert. Check how the Tesla app reacts: it
+     likely flips the button back when charging doesn't start. Reverting on "didn't start" seems
+     logical; match Tesla — no more, no less. Charge screen.
+
+10. **Parental Controls sub-toggles are off by one (suspected proto offset).** Security & Drivers →
+    Customize Parental Controls (⋯): checking **Limit Speed** makes the car check **Reduce
+    Acceleration**; **Reduce Acceleration** → **Require Safety Features**; **Require Safety Features**
+    → **Send Curfew Notifications**; **Send Curfew Notifications** → nothing; and **Limit Speed** can
+    never be checked. Every field maps one ahead — smells like a proto field-index off-by-one.
+    Unconfirmed; likely a small proto/mapping fix. `ParentalControlsSheet` + the parental action map.
+
+11. **Speed-Limit value is two fields in the app, one on the car.** "Limit Speed" in Customize
+    Parental Controls and "Limit Speed" in Adjust Speed Limit (Speed Limit Mode) are DISTINCT in our
+    state but a SINGLE value on the car. Repro: set Parental Controls limit → 100; the car sets 100
+    AND its Speed Limit Mode limit also reads 100 — but our app still shows a different Speed Limit
+    Mode value (e.g. 139). Bump Speed Limit Mode 139 → 140 and Parental Controls stays 100. Unify to
+    one backing field, mirroring the car. `security.tsx` state.
 
 ---
 
