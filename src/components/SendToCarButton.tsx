@@ -12,11 +12,21 @@ import { useSendToCar, type SendTarget } from '@/hooks/useSendToCar';
 // rerouting — and we cannot detect which of those two will happen, because route
 // state is unreadable while the car is locked. "Send to Car" is true either way;
 // "Navigate" would be a lie in one of them.
-export function SendToCarButton({ target, onSent }: { target: SendTarget; onSent?: () => void }) {
+export function SendToCarButton({ target, onSent, onShare }: { target: SendTarget; onSent?: () => void; onShare?: () => void }) {
   const send = useSendToCar();
   return (
     <SafeAreaView edges={['bottom']} style={styles.bar} pointerEvents="box-none">
       <View style={styles.row}>
+        {onShare ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Share location"
+            style={({ pressed }) => [styles.shareButton, { opacity: pressed ? 0.6 : 1 }]}
+            onPress={onShare}
+          >
+            <SymbolView name="square.and.arrow.up" tintColor="white" size={20} weight="semibold" />
+          </Pressable>
+        ) : null}
         <Pressable
           style={({ pressed }) => [styles.button, { opacity: pressed ? 0.75 : 1 }]}
           onPress={() => {
@@ -52,6 +62,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+  },
+  // Secondary square action beside the primary button. Subtle fill on the bar's
+  // #161616 so "Send to Car" stays the prominent one.
+  shareButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#2C2C2E',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: { color: 'white', fontSize: 17, fontWeight: '700' },
 });

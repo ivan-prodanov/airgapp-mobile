@@ -45,6 +45,7 @@ import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import type { Place } from '@/services/place';
 import { sharedLocationStore } from '@/state/sharedLocationStore';
 import { useSendToCar } from '@/hooks/useSendToCar';
+import { useShareLocation } from '@/hooks/useShareLocation';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -210,6 +211,7 @@ export default function LocationView() {
   // sharing into airgapp. The screen still opens so the toast has somewhere to
   // land and you can see the pin that was sent.
   const sendToCar = useSendToCar();
+  const shareLocation = useShareLocation();
   useEffect(() => {
     const consume = () => {
       const intent = sharedLocationStore.consume();
@@ -748,6 +750,13 @@ export default function LocationView() {
             coordinate: droppedPin.coordinate,
           }}
           onSent={dismissDroppedPin}
+          onShare={() =>
+            shareLocation({
+              name: droppedPin.name,
+              address: droppedPin.address ?? droppedPin.subtitle,
+              coordinate: droppedPin.coordinate,
+            })
+          }
         />
       ) : tab === 'charging' && selectedCharger ? (
         <SendToCarButton
@@ -756,6 +765,13 @@ export default function LocationView() {
             address: selectedCharger.region || selectedCharger.place,
             coordinate: chargerCoord(selectedCharger),
           }}
+          onShare={() =>
+            shareLocation({
+              name: selectedCharger.name,
+              address: selectedCharger.region || selectedCharger.place,
+              coordinate: chargerCoord(selectedCharger),
+            })
+          }
         />
       ) : null}
 
