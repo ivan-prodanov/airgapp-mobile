@@ -124,8 +124,8 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
    prop to `NavRow` (renders through `SpinningSymbol`) and passed `spin={state.climateOn}`.
    `HomeScreen.tsx`. On-device confirmed by Ivan.
 
-6. **Parental Control & Speed Limit Mode icons are wrong.** Both render the wrong glyph on the
-   Security screen. `security.tsx`.
+6. **FIXED 2026-08-01 (another agent) — Parental Control & Speed Limit Mode icons were wrong.** Both
+   rendered the wrong glyph on the Security screen. `security.tsx`. Confirmed by Ivan.
 
 7. **Schedules screen shows every location's schedules.** The Set Schedules list renders ALL
    schedules regardless of the selected location — it doesn't filter by the location chosen in the
@@ -137,14 +137,15 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
    opened on such a location, the sheet should show which location the schedule is assigned to.
    `LocationPickerSheet.tsx` + the schedules header.
 
-9. **Charging: 3rd-party (paid) charger plugged, session not started.** Two checks, don't
-   overcomplicate:
-   - The app shows **"Charging Error – No Power"** when a paid 3rd-party charger is plugged but no
-     session has been started (no electricity yet). Possibly expected — deserves its own check.
-   - Pressing **Start Charging** flips the button to **Stop**, but charging never starts (expected
-     here — 3rd-party, unpaid) and the button does NOT revert. Check how the Tesla app reacts: it
-     likely flips the button back when charging doesn't start. Reverting on "didn't start" seems
-     logical; match Tesla — no more, no less. Charge screen.
+9. **REQUIRES TESTING (implemented 2026-08-01) — 3rd-party charger, session not started.**
+   - (a) RESOLVED, EXPECTED: "Charging Error - No Power" is Tesla's literal string
+     (`vehicle_status_screen_charging_no_power`, verified in the translation table @926615). The car
+     reports `chargingState=NoPower` when a cable is seated but no current flows (unpaid 3rd-party
+     charger). No change beyond a comment marking the string verified.
+   - (b) FIXED: the Start button was driven by a sticky optimistic `charging` flag. A definitive
+     NoPower read now overrides it (`showStop = charging && !noPower`), so it no longer sticks on
+     "Stop" on a dead charger — the narrow, no-refactor version of Tesla's live-state + ongoing-command
+     selector (`getDisplayStartButtonSelector`). `ChargeCard.tsx`. **On-device verification pending.**
 
 10. **Parental Controls sub-toggles are off by one (suspected proto offset).** Security & Drivers →
     Customize Parental Controls (⋯): checking **Limit Speed** makes the car check **Reduce
@@ -160,10 +161,14 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
     Mode value (e.g. 139). Bump Speed Limit Mode 139 → 140 and Parental Controls stays 100. Unify to
     one backing field, mirroring the car. `security.tsx` state.
 
-12. **Charging-finished panel: "Unlock Port" didn't unlock.** On the charging-finished panel, tapping
-    **Unlock Port** did nothing — the port had to be released from the car itself. Seen once
-    (2026-07-30); unclear whether it's specific to the finish screen or the charge-port unlock in
-    general. Needs a repro. Charge screen / charge-port command.
+12. **REQUIRES TESTING (implemented 2026-08-01) — Charging-finished "Unlock Port" was a no-op.**
+    Root cause: the button did `patch({ chargePortOpen: true })`, but with a cable in the port is
+    already open, so it diffed to NOTHING and no command reached the car (the frunk lesson, which the
+    button's own comment named but never applied). Now dispatches `openChargePort` (unlatch,
+    `closureMoveRequest chargePort=OPEN`) EXPLICITLY via a new `unlockChargePort` action, claiming no
+    keys. `ChargeCard.tsx` + `useFleetState.ts` + `useVehicleState.ts`. **On-device verification
+    pending** — was "seen once", so if it still fails after this it's a transport hiccup, not a
+    missing command.
 
 ---
 
