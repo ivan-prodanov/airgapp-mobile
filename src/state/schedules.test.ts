@@ -12,6 +12,7 @@ import {
   newPrecondition,
   scheduleLocations,
   schedulesAt,
+  schedulesElsewhere,
   preconditionScheduleToInput,
   removeSchedule,
   scheduleSubtitle,
@@ -196,4 +197,16 @@ test('schedulesAt filters by location; coordless schedules ride with Current', (
   assert.deepEqual(cur.charging.map((s) => s.id).sort(), ['h', 'l']); // here + legacy, not there
   const oth = schedulesAt(state, locationKey(40, 25), false);
   assert.deepEqual(oth.charging.map((s) => s.id), ['t']); // only there; legacy does NOT ride here
+});
+
+test('schedulesElsewhere buckets schedules NOT at the given locations', () => {
+  const here = { ...newCharging(), id: 'h', lat: 42.698, lon: 23.322 };
+  const home = { ...newCharging(), id: 'hm', lat: 40, lon: 25 };
+  const far1 = { ...newCharging(), id: 'e1', lat: 10, lon: 10 };
+  const far2 = { ...newPrecondition(), id: 'e2', lat: 20, lon: 20 };
+  const legacy = { ...newCharging(), id: 'l' }; // coordless → rides with Current, NOT Others
+  const state = { charging: [here, home, far1, legacy], precondition: [far2] };
+  const bucket = schedulesElsewhere(state, [locationKey(42.698, 23.322), locationKey(40, 25)]);
+  assert.deepEqual(bucket.charging.map((s) => s.id), ['e1']);
+  assert.deepEqual(bucket.precondition.map((s) => s.id), ['e2']);
 });

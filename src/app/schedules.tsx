@@ -17,8 +17,10 @@ import {
   locationKey,
   newCharging,
   newPrecondition,
+  scheduleKey,
   scheduleLocations,
   schedulesAt,
+  schedulesElsewhere,
   scheduleSubtitle,
   scheduleTitle,
   type SchedulesState,
@@ -29,8 +31,10 @@ import { TeslaFonts } from '@/constants/fonts';
 
 // Sofia city centre — the same fallback the Location screen uses when GPS isn't available yet.
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
-// Picker sentinel for the "Current Location" row (maps to a null selectedKey).
+// Picker sentinels: "Current Location" maps to a null selectedKey; "Other locations"
+// is a read-only bucket of schedules that aren't at Current/Home/Work.
 const CURRENT_OPTION_KEY = '__current__';
+const OTHERS_OPTION_KEY = '__others__';
 
 // iOS reverseGeocode sometimes returns a postal code ("814 01") in `street`/`name`. Prefer the first
 // candidate that reads like a real place name (has a letter), so the header shows the street/area, not a code.
@@ -140,30 +144,40 @@ export default function SchedulesScreen() {
     };
   }, [otherLocs, otherLabels]);
 
+  // The "Other locations" bucket — schedules not at Current/Home/Work.
+  const others = useMemo(
+    () => schedulesElsewhere(schedules, [currentKey, homeKey, workKey]),
+    [schedules, currentKey, homeKey, workKey],
+  );
+  const hasOthers = others.precondition.length + others.charging.length > 0;
+
   const isCurrent = selectedKey === null;
+  const isOthers = selectedKey === OTHERS_OPTION_KEY;
   const locLabel = isCurrent
     ? currentLabel
-    : named.find((n) => n.key === selectedKey)?.label ?? otherLabels[selectedKey] ?? 'Location';
+    : isOthers
+      ? 'Other locations'
+      : named.find((n) => n.key === selectedKey)?.label ?? 'Location';
 
   // Schedules scoped to the selected location (bug 7). When Current is selected but
   // the car position is unknown, we can't scope — show everything rather than hide all.
   const visible: SchedulesState = useMemo(() => {
+    if (isOthers) return others;
     if (isCurrent && currentKey === null) return schedules;
     return schedulesAt(schedules, isCurrent ? currentKey : selectedKey, isCurrent);
-  }, [schedules, isCurrent, currentKey, selectedKey]);
+  }, [schedules, others, isOthers, isCurrent, currentKey, selectedKey]);
 
-  // Coords a NEW schedule is tagged with = the selected location.
+  // Coords a NEW schedule is tagged with = the selected location. Null for "Other
+  // locations" (you can't add there — the "+" is disabled) and for Current when the
+  // car position is unknown.
   const selectedCoord: LatLng | null = useMemo(() => {
     if (isCurrent) return carCoord;
-    const n = named.find((x) => x.key === selectedKey);
-    if (n) return n.coord;
-    const l = otherLocs.find((x) => x.key === selectedKey);
-    return l ? { latitude: l.lat, longitude: l.lon } : null;
-  }, [isCurrent, carCoord, named, otherLocs, selectedKey]);
+    return named.find((x) => x.key === selectedKey)?.coord ?? null;
+  }, [isCurrent, carCoord, named, selectedKey]);
 
-  // Picker rows: Current Location, then Home & Work (ALWAYS shown — greyed and
-  // non-selectable when the car hasn't set them), then each OTHER place that has
-  // schedules (bugs 7 & 8).
+  // Picker rows: Current Location, Home & Work (always shown — greyed when the car
+  // hasn't set them), and a single "Other locations" bucket (greyed when empty).
+  // Bugs 7 & 8.
   const pickerOptions = useMemo(
     () => [
       { key: CURRENT_OPTION_KEY, label: currentLabel },
@@ -173,9 +187,9 @@ export default function SchedulesScreen() {
       homeWork.work && workKey
         ? { key: workKey, label: 'Work' }
         : { key: '__work__', label: 'Work', disabled: true },
-      ...otherLocs.map((l) => ({ key: l.key, label: otherLabels[l.key] ?? 'Location' })),
+      { key: OTHERS_OPTION_KEY, label: 'Other locations', disabled: !hasOthers },
     ],
-    [currentLabel, homeWork, homeKey, workKey, otherLocs, otherLabels],
+    [currentLabel, homeWork, homeKey, workKey, hasOthers],
   );
 
   const openCreate = (draft: AnySchedule) => {
@@ -288,6 +302,7 @@ export default function SchedulesScreen() {
             title="Precondition"
             subtitle="Set climate and preheat battery"
             onAdd={() => openCreate(newPrecondition())}
+            disabled={isOthers}
           >
             {visible.precondition.map((s) => (
               <ScheduleRow
@@ -295,6 +310,7 @@ export default function SchedulesScreen() {
                 schedule={s}
                 onToggle={() => onToggleRow(s)}
                 onPress={() => openEdit(s)}
+                location={isOthers ? otherLabels[scheduleKey(s) ?? ''] ?? 'Location' : undefined}
               />
             ))}
           </Section>
@@ -303,6 +319,7 @@ export default function SchedulesScreen() {
             title="Charging"
             subtitle="Set a charging schedule"
             onAdd={() => openCreate(newCharging())}
+            disabled={isOthers}
           >
             {visible.charging.map((s) => (
               <ScheduleRow
@@ -310,6 +327,7 @@ export default function SchedulesScreen() {
                 schedule={s}
                 onToggle={() => onToggleRow(s)}
                 onPress={() => openEdit(s)}
+                location={isOthers ? otherLabels[scheduleKey(s) ?? ''] ?? 'Location' : undefined}
               />
             ))}
           </Section>
@@ -376,16 +394,22 @@ function ScheduleRow({
   schedule,
   onToggle,
   onPress,
+  location,
 }: {
   schedule: AnySchedule;
   onToggle: () => void;
   onPress: () => void;
+  // In the "Other locations" view, the place this schedule is assigned to (bug 8).
+  location?: string;
 }) {
   return (
     <Pressable style={styles.card} onPress={onPress}>
       <View style={styles.cardText}>
         <Text style={styles.cardTitle}>{scheduleTitle(schedule)}</Text>
-        <Text style={styles.cardSub}>{scheduleSubtitle(schedule)}</Text>
+        <Text style={styles.cardSub}>
+          {location ? `${location} · ` : ''}
+          {scheduleSubtitle(schedule)}
+        </Text>
       </View>
       <Toggle value={schedule.enabled} onToggle={onToggle} />
     </Pressable>

@@ -96,6 +96,20 @@ export function schedulesAt(state: SchedulesState, key: string | null, isCurrent
   };
 }
 
+// The "Other locations" bucket: schedules NOT at any of `keys` (Current/Home/Work).
+// Coordless schedules ride with Current, so they're excluded here too.
+export function schedulesElsewhere(state: SchedulesState, keys: (string | null)[]): SchedulesState {
+  const set = new Set(keys.filter((k): k is string => k !== null));
+  const keep = (s: AnySchedule): boolean => {
+    const k = scheduleKey(s);
+    return k !== null && !set.has(k);
+  };
+  return {
+    precondition: state.precondition.filter(keep),
+    charging: state.charging.filter(keep),
+  };
+}
+
 export interface SchedulesState {
   precondition: PreconditionSchedule[];
   charging: ChargingSchedule[];
