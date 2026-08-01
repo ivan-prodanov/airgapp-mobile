@@ -159,14 +159,14 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
     unambiguous; **speedLimit→0 is omitted on the wire (encoder guards `setting !== 0`) so the car
     reads a missing setting as its default (0 = speed limit) — the one part to confirm on-car.**
 
-11. **REQUIRES TESTING (implemented 2026-08-01) — Speed-Limit value was two fields, one on the car.**
+11. **FIXED 2026-08-01 — Speed-Limit value was two fields, one on the car.**
     Root cause was two independent LOCAL fields (`speedLimitMph`, `parentalLimitSpeedMph`) — and
     telemetry reads back NEITHER (only the on/off `speedLimitMode`), so the drift was purely local.
     Removed `parentalLimitSpeedMph`; both sheets now read/write the single `speedLimitMph`. Reconcile
     emits the Speed-Limit-Mode setter, and when Parental Controls is active also mirrors through the
     parental setter (owns no keys → uncoalesced) so the car's parental cap can't drift.
     `vehicleTypes.ts` + `ParentalControlsSheet.tsx` + `reconcile.ts` + `vehicleVisualState.ts`.
-    881/881 tests (incl. a new reconcile case). **On-device verification pending.**
+    881/881 tests (incl. a new reconcile case). Confirmed by Ivan.
 
 12. **REQUIRES TESTING (implemented 2026-08-01) — Charging-finished "Unlock Port" was a no-op.**
     Root cause: the button did `patch({ chargePortOpen: true })`, but with a cable in the port is
