@@ -136,6 +136,9 @@ export interface VehicleViewState {
   charging: boolean;
   locked: boolean;
   sentryEnabled: boolean;
+  // Low Power Mode on/off. Optimistic-only — the car has a SET action but reports
+  // no readback in our poll (bug 4). No "forced on" 3rd state until a read exists.
+  lowPowerMode: boolean;
   // Security & Drivers screen toggles (UI state for now; persisted per-vehicle like the rest).
   valetMode: boolean;
   parentalControls: boolean;
@@ -148,13 +151,15 @@ export interface VehicleViewState {
   parentalPin: string | null;
   speedLimitPin: string | null;
   pinToDrivePin: string | null;
-  // Speed Limit Mode's cap in MPH — the car's own unit (DrivingSetSpeedLimitAction.limitMph). Stored as the
-  // EXACT km/h→mph value so the km/h shown in the "…" panel steps by 1 cleanly (see fleet.ts speed helpers).
+  // The SHARED speed cap in MPH, used by BOTH Speed Limit Mode and Parental Controls'
+  // "Limit Speed" — the car keeps ONE value for both (proven on-car: setting the
+  // parental limit also moved Speed Limit Mode's). Stored as the EXACT km/h→mph value
+  // so the km/h shown in the "…" panel steps by 1 cleanly (see fleet.ts speed helpers).
   speedLimitMph: number;
   // "Customize Parental Controls" panel sub-options (all non-renderer sheet state).
+  // The parental "Limit Speed" VALUE is NOT here — it shares `speedLimitMph` above
+  // (one cap on the car). Bug 11.
   parentalLimitSpeed: boolean;
-  // Also MPH (ParentalControlsSetSpeedLimitAction.limitMph), converted to km/h only for display.
-  parentalLimitSpeedMph: number;
   parentalReduceAccel: boolean;
   parentalRequireSafety: boolean;
   parentalCurfewNotify: boolean;
@@ -284,6 +289,7 @@ export const initialVehicleState: VehicleViewState = {
   charging: false,
   locked: true,
   sentryEnabled: false,
+  lowPowerMode: false,
   valetMode: false,
   parentalControls: false,
   speedLimitMode: false,
@@ -294,7 +300,6 @@ export const initialVehicleState: VehicleViewState = {
   pinToDrivePin: null,
   speedLimitMph: 85, // Tesla's default ≈ 137 km/h (what the UI shows)
   parentalLimitSpeed: true,
-  parentalLimitSpeedMph: 85,
   parentalReduceAccel: true,
   parentalRequireSafety: true,
   parentalCurfewNotify: true,

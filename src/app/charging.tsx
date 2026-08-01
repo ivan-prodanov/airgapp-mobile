@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
+import { AppIcon, type IconRef } from '@/icons/AppIcon';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { useVehicle } from '@/state/VehicleProvider';
@@ -113,12 +114,12 @@ export default function ChargingScreen() {
 
           <View style={styles.list}>
             <LinkRow
-              symbol="bolt.fill"
+              symbol="charging-toggle"
               title="Find Chargers"
               onPress={() => router.push({ pathname: '/location', params: { tab: 'charging' } })}
             />
             <LinkRow
-              symbol="alarm.fill"
+              symbol="schedule-charge"
               title="Schedule Charging"
               onPress={() => router.push('/schedules')}
             />
@@ -136,7 +137,7 @@ function LinkRow({
   onPress,
   disabled,
 }: {
-  symbol: SFSymbol;
+  symbol: IconRef;
   title: string;
   onPress: () => void;
   // Greyed-out + non-interactive (feature not wired yet), matching Home's NavRow.
@@ -145,7 +146,7 @@ function LinkRow({
   return (
     <Pressable style={[styles.linkRow, disabled && styles.linkRowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={styles.badge}>
-        <SymbolView name={symbol} tintColor="white" size={20} />
+        <AppIcon icon={symbol} color="white" size={20} />
       </View>
       <Text style={styles.linkTitle}>{title}</Text>
       <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.4)" size={16} weight="semibold" />

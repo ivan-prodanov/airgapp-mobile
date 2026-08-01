@@ -316,8 +316,15 @@ test('Parental activate/deactivate carry the PIN; sub-settings + mph map to thei
   expect(s({ parentalReduceAccel: true }), s({ parentalReduceAccel: false }), [
     { cmd: { type: 'parental', action: 'setSetting', setting: 'acceleration', enable: false }, keys: ['parentalReduceAccel'] },
   ]);
-  expect(s({ parentalLimitSpeedMph: 85 }), s({ parentalLimitSpeedMph: 90 }), [
-    { cmd: { type: 'parental', action: 'setSpeedLimit', mph: 90 }, keys: ['parentalLimitSpeedMph'] },
+  // Bug 11: Speed Limit Mode and Parental "Limit Speed" share ONE field (speedLimitMph).
+  // Changing it emits the driving setter; with parental OFF that's all.
+  expect(s({ speedLimitMph: 85 }), s({ speedLimitMph: 90 }), [
+    { cmd: { type: 'speedLimit', action: 'set', mph: 90 }, keys: ['speedLimitMph'] },
+  ]);
+  // With parental ACTIVE it also mirrors through the parental setter (owns no keys).
+  expect(s({ speedLimitMph: 85, parentalControls: true }), s({ speedLimitMph: 90, parentalControls: true }), [
+    { cmd: { type: 'speedLimit', action: 'set', mph: 90 }, keys: ['speedLimitMph'] },
+    { cmd: { type: 'parental', action: 'setSpeedLimit', mph: 90 }, keys: [] },
   ]);
 });
 

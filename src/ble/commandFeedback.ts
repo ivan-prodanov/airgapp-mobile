@@ -40,6 +40,7 @@ const FEEDBACK: Record<CarCommand['type'], FeedbackClass> = {
   lock: 'optimistic',
   unlock: 'optimistic',
   sentry: 'optimistic',
+  lowPowerMode: 'optimistic',
   // Parental toggles flip a switch like the others; the two Clear-PIN actions have no state to
   // reflect (the row's subtitle just stops offering "Clear PIN" once the PIN is gone).
   parental: 'optimistic',

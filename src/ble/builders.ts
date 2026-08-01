@@ -912,11 +912,20 @@ export function setParentalSpeedLimitAction(mph: number): ActionPayload {
 
 // The four sub-settings of the "Customize Parental Controls" panel.
 export type ParentalSetting = 'speedLimit' | 'acceleration' | 'safetyFeatures' | 'curfew';
+// ⚠️ DEVIATES from the vendored proto (UNKNOWN=0, SPEED_LIMIT=1 … CURFEW=4). Ivan's
+// on-car repro proved the FIRMWARE enum is 0-based: checking Limit Speed (we sent 1)
+// set Reduce Acceleration on the car; checking Curfew (4) set nothing — every setting
+// landed ONE AHEAD. The vendored proto is a different revision; the device outranks
+// the doc (see tesla-parity-verify-dont-infer). Decremented to match the car:
+//   acceleration→1, safetyFeatures→2, curfew→3  land exactly (verified by the shift).
+//   speedLimit→0 is OMITTED on the wire (encoder guards `setting !== 0`), so the car
+//   reads a MISSING setting as its default (0 = speed limit). ← the one part still to
+//   confirm on-car; accel/safety/curfew are unambiguous.
 const PARENTAL_SETTING_ENUM: Record<ParentalSetting, number> = {
-  speedLimit: 1, // PARENTAL_CONTROLS_SETTING_SPEED_LIMIT
-  acceleration: 2, // PARENTAL_CONTROLS_SETTING_ACCELERATION
-  safetyFeatures: 3, // PARENTAL_CONTROLS_SETTING_SAFETY_FEATURES
-  curfew: 4, // PARENTAL_CONTROLS_SETTING_CURFEW
+  speedLimit: 0,
+  acceleration: 1,
+  safetyFeatures: 2,
+  curfew: 3,
 };
 export function setParentalSettingAction(setting: ParentalSetting, enable: boolean): ActionPayload {
   return {
@@ -948,5 +957,18 @@ export function setCopTempAction(level: 'low' | 'medium' | 'high'): ActionPayloa
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ setCopTempAction: { copActivationTemp: v } }),
+  };
+}
+
+// Low Power Mode — CarServer.SetLowPowerModeAction (VehicleAction 130, bool
+// low_power_mode). A plain on/off setter; the car reduces standby draw. There is
+// NO readback for it in the vehicle-data we poll, so our value is optimistic-only
+// (like the security PINs). The 3rd icon state (on_disabled = Tesla's
+// `vehicle_low_power_mode_disable_forced_on`) needs a car-reported "forced on"
+// flag we don't receive, so it stays on/off until that read exists.
+export function setLowPowerModeAction(on: boolean): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ setLowPowerModeAction: { lowPowerMode: !!on } }),
   };
 }

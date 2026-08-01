@@ -115,9 +115,13 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
    optional Tesla-`glyph` path (AppIcon); the charge port now uses `bolt-filled`. Lock marker left on
    its SF symbol (not reported). On-device confirmed by Ivan.
 
-4. **Low Power Mode is inert.** The control does nothing — wire it to its THREE states
-   (off / on / on-disabled). Assets already exist as `LOW_POWER_MODE.{off,on,onDisabled}` in
-   `nativePng.ts`; needs the state model + dispatch.
+4. **REQUIRES TESTING (implemented 2026-08-01) — Low Power Mode was inert.** Wired to a real command:
+   `SetLowPowerModeAction` (VehicleAction 130) exists, so added the builder + `lowPowerMode` command +
+   optimistic `lowPowerMode` state; the control now toggles on/off and shows `LOW_POWER.{on,off}`.
+   ⚠️ Only TWO of the three states: the car reports NO low-power readback in our poll, and the 3rd icon
+   (on_disabled = Tesla's `vehicle_low_power_mode_disable_forced_on`, a car-reported "forced on") can't
+   be detected without that read. On/off is optimistic-only (like the security PINs). `builders.ts` +
+   `commands.ts` + `controlActions.ts` + `reconcile.ts`. **On-device verification pending.**
 
 5. **FIXED 2026-07-31 — Climate fan static on the Home menu.** The Home menu's "Climate" `NavRow`
    drew a static `fan-filled` (the favourites bar already spun via `SpinningSymbol`). Added a `spin`
@@ -147,19 +151,22 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
      "Stop" on a dead charger — the narrow, no-refactor version of Tesla's live-state + ongoing-command
      selector (`getDisplayStartButtonSelector`). `ChargeCard.tsx`. **On-device verification pending.**
 
-10. **Parental Controls sub-toggles are off by one (suspected proto offset).** Security & Drivers →
-    Customize Parental Controls (⋯): checking **Limit Speed** makes the car check **Reduce
-    Acceleration**; **Reduce Acceleration** → **Require Safety Features**; **Require Safety Features**
-    → **Send Curfew Notifications**; **Send Curfew Notifications** → nothing; and **Limit Speed** can
-    never be checked. Every field maps one ahead — smells like a proto field-index off-by-one.
-    Unconfirmed; likely a small proto/mapping fix. `ParentalControlsSheet` + the parental action map.
+10. **REQUIRES TESTING (implemented 2026-08-01) — Parental Controls sub-toggles were off by one.**
+    Confirmed the cause: the on-car repro (our SPEED_LIMIT set the car's ACCELERATION, CURFEW set
+    nothing — every setting one ahead) proves the FIRMWARE enum is 0-based, while the vendored proto
+    (and our `PARENTAL_SETTING_ENUM`) is 1-based (UNKNOWN=0, SPEED_LIMIT=1 … CURFEW=4). Decremented to
+    match the car (acceleration→1, safetyFeatures→2, curfew→3). `builders.ts`. accel/safety/curfew are
+    unambiguous; **speedLimit→0 is omitted on the wire (encoder guards `setting !== 0`) so the car
+    reads a missing setting as its default (0 = speed limit) — the one part to confirm on-car.**
 
-11. **Speed-Limit value is two fields in the app, one on the car.** "Limit Speed" in Customize
-    Parental Controls and "Limit Speed" in Adjust Speed Limit (Speed Limit Mode) are DISTINCT in our
-    state but a SINGLE value on the car. Repro: set Parental Controls limit → 100; the car sets 100
-    AND its Speed Limit Mode limit also reads 100 — but our app still shows a different Speed Limit
-    Mode value (e.g. 139). Bump Speed Limit Mode 139 → 140 and Parental Controls stays 100. Unify to
-    one backing field, mirroring the car. `security.tsx` state.
+11. **REQUIRES TESTING (implemented 2026-08-01) — Speed-Limit value was two fields, one on the car.**
+    Root cause was two independent LOCAL fields (`speedLimitMph`, `parentalLimitSpeedMph`) — and
+    telemetry reads back NEITHER (only the on/off `speedLimitMode`), so the drift was purely local.
+    Removed `parentalLimitSpeedMph`; both sheets now read/write the single `speedLimitMph`. Reconcile
+    emits the Speed-Limit-Mode setter, and when Parental Controls is active also mirrors through the
+    parental setter (owns no keys → uncoalesced) so the car's parental cap can't drift.
+    `vehicleTypes.ts` + `ParentalControlsSheet.tsx` + `reconcile.ts` + `vehicleVisualState.ts`.
+    881/881 tests (incl. a new reconcile case). **On-device verification pending.**
 
 12. **REQUIRES TESTING (implemented 2026-08-01) — Charging-finished "Unlock Port" was a no-op.**
     Root cause: the button did `patch({ chargePortOpen: true })`, but with a cable in the port is

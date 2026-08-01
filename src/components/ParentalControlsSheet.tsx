@@ -38,13 +38,14 @@ export function ParentalControlsSheet({
   const insets = useSafeAreaInsets();
   // Local km/h for immediate display; the debounced patch is the only thing that reaches the car (see
   // SpeedLimitSheet for the same pattern).
-  const propKmh = speedLimitDisplayKmh(state.parentalLimitSpeedMph);
+  // Shared with Speed Limit Mode — ONE cap on the car (bug 11), so read/write speedLimitMph.
+  const propKmh = speedLimitDisplayKmh(state.speedLimitMph);
   const [kmh, setKmh] = useState(propKmh);
   useEffect(() => {
     setKmh(propKmh);
   }, [propKmh]);
   const debouncedSetMph = useDebouncedCallback(
-    (mph: number) => actions.patch({ parentalLimitSpeedMph: mph }),
+    (mph: number) => actions.patch({ speedLimitMph: mph }),
     SPEED_LIMIT_DEBOUNCE_MS,
   );
 

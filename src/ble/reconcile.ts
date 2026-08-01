@@ -124,6 +124,9 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   if (prev.sentryEnabled !== next.sentryEnabled) {
     emit({ type: 'sentry', on: next.sentryEnabled }, 'sentryEnabled');
   }
+  if (prev.lowPowerMode !== next.lowPowerMode) {
+    emit({ type: 'lowPowerMode', on: next.lowPowerMode }, 'lowPowerMode');
+  }
 
   // ── Security & Drivers: PIN-gated toggles ──────────────────────────────────
   // Each feature emits on TWO independent transitions: the on/off toggle, and a
@@ -181,6 +184,13 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   }
   if (prev.speedLimitMph !== next.speedLimitMph) {
     emit({ type: 'speedLimit', action: 'set', mph: next.speedLimitMph }, 'speedLimitMph');
+    // ONE cap on the car, shared with Parental Controls (bug 11 — proven on-car).
+    // When parental is active, mirror the change through its own setter too so the
+    // car's parental cap can't drift from Speed Limit Mode's. Owns no keys →
+    // fire-and-forget, never coalesced (so it can't supersede the speedLimit set).
+    if (next.parentalControls) {
+      emit({ type: 'parental', action: 'setSpeedLimit', mph: next.speedLimitMph });
+    }
   }
 
   // Parental Controls: activate/deactivate (verify PIN) + clear-PIN, the "Customize
@@ -198,9 +208,6 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
     }
   } else if (prev.parentalPin && !next.parentalPin) {
     emit({ type: 'parental', action: 'clearPin', pin: prev.parentalPin }, 'parentalPin');
-  }
-  if (prev.parentalLimitSpeedMph !== next.parentalLimitSpeedMph) {
-    emit({ type: 'parental', action: 'setSpeedLimit', mph: next.parentalLimitSpeedMph }, 'parentalLimitSpeedMph');
   }
   for (const [key, setting] of PARENTAL_SETTING_KEYS) {
     // Every key in PARENTAL_SETTING_KEYS is a boolean field; the cast narrows the state-value union.

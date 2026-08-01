@@ -140,10 +140,12 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   lowPower: {
     id: 'lowPower',
     label: 'Low Power',
-    // 3-state raster (on/off/on_disabled); we don't model a low-power state yet, so show 'off'.
-    symbol: () => ({ png: LOW_POWER.off }),
-    isActive: () => false,
-    run: noop,
+    // 3-state raster (on/off/on_disabled). We can drive on/off from our optimistic
+    // `lowPowerMode`; the on_disabled ("forced on") state needs a car readback we
+    // don't get, so it isn't reachable yet — see setLowPowerModeAction / bug 4.
+    symbol: (s) => ({ png: s.lowPowerMode ? LOW_POWER.on : LOW_POWER.off }),
+    isActive: (s) => s.lowPowerMode,
+    run: (_s, a) => a.toggle('lowPowerMode'),
   },
   start: {
     id: 'start',
@@ -241,7 +243,7 @@ export const CONTROL_AFFECTED_KEYS: Record<ControlActionId, VehicleStateKey[]> =
   flash: [],
   honk: [],
   lightShow: [],
-  lowPower: [],
+  lowPower: ['lowPowerMode'],
   start: [],
   sentry: [],
   summon: [],
