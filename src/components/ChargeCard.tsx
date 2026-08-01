@@ -145,6 +145,8 @@ export interface ChargeCardProps {
   onSlidingChange?: (sliding: boolean) => void;
   onStartStopCharging: (start: boolean) => void;
   onToggleChargePort: (open: boolean) => void;
+  /** Unlatch a seated cable — fires openChargePort explicitly (see the button below). */
+  onUnlockChargePort: () => void;
 }
 
 export function ChargeCard({
@@ -169,12 +171,22 @@ export function ChargeCard({
   onSlidingChange,
   onStartStopCharging,
   onToggleChargePort,
+  onUnlockChargePort,
 }: ChargeCardProps) {
   // The label tracks the finger; the CAR is only told on release. Without this
   // the label could not move during a drag, since the committed value does not
   // change until the end.
   const [liveLimit, setLiveLimit] = useState<number | null>(null);
   const stateText = chargingStateText(chargingState);
+  // A NoPower car cannot be charging, so a definitive NoPower read overrides the
+  // optimistic `charging` — otherwise pressing Start on a dead 3rd-party charger
+  // (no session paid) leaves the button stuck on "Stop". Tesla's
+  // getDisplayStartButtonSelector derives from the live charge state + ongoing
+  // command; this is the narrow, no-refactor version of that (the layered-optimism
+  // rework is the P0 item). Only NoPower overrides — Stopped/Starting are normal
+  // transitions on the way to Charging and must not flicker the button.
+  const noPower = (chargingState ?? '').toLowerCase() === 'nopower';
+  const showStop = charging && !noPower;
 
   return (
     <View style={styles.card}>
@@ -305,9 +317,9 @@ export function ChargeCard({
             its own command is in flight, which is their actual use of disabled. */}
         {cableAttached ? (
           <ChargeButton
-            label={charging ? 'Stop Charging' : 'Start Charging'}
+            label={showStop ? 'Stop Charging' : 'Start Charging'}
             disabled={!!pending?.has('charging')}
-            onPress={() => onStartStopCharging(!charging)}
+            onPress={() => onStartStopCharging(!showStop)}
           />
         ) : null}
         {/* buttonDivider — only between two buttons, never dangling beside one. */}
@@ -328,8 +340,11 @@ export function ChargeCard({
         {cableAttached ? (
           <ChargeButton
             label="Unlock Charge Port"
-            disabled={!!pending?.has('chargePortOpen')}
-            onPress={() => onToggleChargePort(true)}
+            // Explicit openChargePort (unlatch) — the port is already open, so
+            // `onToggleChargePort(true)` diffed to nothing and never fired. No
+            // pending affordance because we claim no keys (frunk re-actuate).
+            disabled={false}
+            onPress={onUnlockChargePort}
           />
         ) : (
           <ChargeButton

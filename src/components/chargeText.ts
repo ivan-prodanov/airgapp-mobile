@@ -53,11 +53,12 @@ export function chargingStateText(chargingState: string | null): string | null {
     case 'stopped':
       return 'Charging Stopped';
     case 'nopower':
-      // 'Charging Error - No Power', not the 'No Power' I shipped. When I
-      // recovered these four branches I could find in-bundle literals for the
-      // other three and guessed this one from the key name. The English
-      // translation table is at main.decompiled.js:926615 — every key/value the
-      // app ships. Look strings up there instead of inferring them from keys.
+      // VERIFIED 2026-08-01 from the translation table (main.decompiled.js:926615):
+      // `vehicle_status_screen_charging_no_power` = 'Charging Error - No Power'.
+      // This was originally GUESSED from the key name and happens to be exactly
+      // right. Ivan asked whether this state is expected — it is: the car reports
+      // chargingState=NoPower when a cable is seated but no current flows (e.g. an
+      // unpaid 3rd-party charger), and this is Tesla's literal string for it.
       return 'Charging Error - No Power';
     // Disconnected / Starting / Unknown fall through: their switch has no arm for
     // them, so the header's right side is empty rather than guessing a label.

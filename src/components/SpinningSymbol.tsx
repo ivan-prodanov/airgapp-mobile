@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
 
-import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
+import { AppIcon, type IconRef } from '@/icons/AppIcon';
 
 interface Props {
-  name: TeslaIconName;
+  icon: IconRef;
   tintColor: string;
   size: number;
   /** When true, the glyph rotates continuously (used for the climate fan while A/C is on). */
@@ -13,10 +13,10 @@ interface Props {
   periodMs?: number;
 }
 
-// TeslaIcon wrapped in an Animated.View that rotates 360° on a loop while `spin` is true. Used to
+// AppIcon wrapped in an Animated.View that rotates 360° on a loop while `spin` is true. Used to
 // make the radially-symmetric `fan-filled` glyph read as an actually-spinning fan. Native-driven, so
-// it stays smooth and off the JS thread.
-export function SpinningSymbol({ name, tintColor, size, spin = false, periodMs = 1400 }: Props) {
+// it stays smooth and off the JS thread. Only the (vector) fan spins; PNG/other icons render still.
+export function SpinningSymbol({ icon, tintColor, size, spin = false, periodMs = 1400 }: Props) {
   const rotation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export function SpinningSymbol({ name, tintColor, size, spin = false, periodMs =
 
   return (
     <Animated.View style={{ transform }}>
-      <TeslaIcon name={name} color={tintColor} size={size} />
+      <AppIcon icon={icon} color={tintColor} size={size} />
     </Animated.View>
   );
 }

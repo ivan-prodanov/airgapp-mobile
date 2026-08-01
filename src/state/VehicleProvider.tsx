@@ -3,8 +3,8 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useFleetState, type Fleet } from './useFleetState';
 import type { CarLinkStatus } from './useCarLink';
 import { usePersistedReducer } from './usePersistedReducer';
-import { memoryBackend } from './persistence';
-import { defaultPreferences, preferencesReducer } from './preferences';
+import { appStorage } from './appStorage';
+import { defaultPreferences, favoritesFor, preferencesReducer } from './preferences';
 import type { ControlActionId } from './controlActions';
 import type { VehicleActions } from './useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
@@ -29,19 +29,25 @@ const CarLinkStatusContext = createContext<CarLinkStatus | null>(null);
 // layer (in-memory by default).
 export function VehicleProvider({ children }: { children: ReactNode }) {
   const { active, activeId, fleet, carLinkStatus } = useFleetState();
+  // appStorage = AsyncStorage-backed, so the favorites bar survives relaunch.
+  // memoryBackend (the old value) was an in-process Map — customizations were
+  // lost on every cold start. AsyncStorage is already in the build (useCarLink).
+  // v2: the shape is now a per-vehicle map (was a single global list).
   const [prefs, dispatch] = usePersistedReducer(
-    memoryBackend,
-    'prefs.v1',
+    appStorage,
+    'prefs.v2',
     defaultPreferences,
     preferencesReducer,
   );
 
+  // Favorites are per-vehicle (Tesla keys `quickControlsLayout` by VIN), so the
+  // bar reflects the ACTIVE car and edits write to that car's entry.
   const preferences = useMemo<PreferencesApi>(
     () => ({
-      favorites: prefs.favorites,
-      setFavorite: (slotIndex, id) => dispatch({ type: 'setFavorite', slotIndex, id }),
+      favorites: favoritesFor(prefs, activeId),
+      setFavorite: (slotIndex, id) => dispatch({ type: 'setFavorite', vehicleId: activeId, slotIndex, id }),
     }),
-    [prefs.favorites, dispatch],
+    [prefs, activeId, dispatch],
   );
 
   return (

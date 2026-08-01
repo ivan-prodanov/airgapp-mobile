@@ -212,9 +212,17 @@ export function useFleetState(): {
     applyActive(actuateFrunkState);
   }, [carLink, applyActive, current.state]);
 
+  // Unlatch the charge port so a seated cable can be removed. The port is already
+  // "open" (cable in), so a chargePortOpen patch would diff to nothing and never
+  // reach the car — dispatch openChargePort EXPLICITLY. No optimistic change and
+  // no claimed keys (we assert nothing that a read could contradict). Frunk lesson.
+  const unlockChargePort = useCallback(() => {
+    carLink.dispatch({ type: 'openChargePort' }, () => {}, []);
+  }, [carLink]);
+
   const actions = useMemo(
-    () => ({ ...buildVehicleActions(applyActiveUser), actuateFrunk }),
-    [applyActiveUser, actuateFrunk],
+    () => ({ ...buildVehicleActions(applyActiveUser), actuateFrunk, unlockChargePort }),
+    [applyActiveUser, actuateFrunk, unlockChargePort],
   );
 
   // One-shot commands bypass the state diff (nothing optimistic to mirror), but

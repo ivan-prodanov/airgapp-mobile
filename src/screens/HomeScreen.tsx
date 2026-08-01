@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
 import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
+import { type IconRef } from '@/icons/AppIcon';
 import { vehicleGlyphFor } from '@/icons/vehicleGlyph';
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
@@ -190,15 +191,19 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   });
 
   // Fade the fixed top row (name / battery / icons) out as the menu rises, so the scrolling rows don't
-  // collide with it — like the official app. Anchored to the ACTUAL max scroll offset (content height −
-  // viewport height) rather than EXPAND multiples, so the header stays solid until the very last stretch
-  // of travel and finishes hiding right at the top — "as late as possible", independent of device.
-  const [contentH, setContentH] = useState(0);
-  const [viewportH, setViewportH] = useState(0);
-  const maxScroll = Math.max(0, contentH - viewportH);
-  const scrollCeil = maxScroll > EXPAND ? maxScroll : EXPAND * 1.22; // measured top of travel; fallback pre-layout
-  const fadeStart = Math.max(1, scrollCeil - EXPAND * 0.55); // begin fading in the final ~0.55·EXPAND
-  const fadeEnd = fadeStart + EXPAND * 0.2; // quick fade: fully hidden well before the top, then stays hidden
+  // collide with it — like the official app. Anchored to the FAVOURITES BAR reaching the header, NOT to
+  // the menu's total height: the bar sits at the top of `menu` (content-offset `carBand`), and the fixed
+  // header overlay's bottom is `insets.top + headerH`, so they meet at `scrollY = carBand − headerBottom`
+  // — a fixed distance, independent of how many rows are below. (Was anchored to maxScroll, which grew
+  // with the menu and hid the header far too late — Ivan: "related to the menu, not the favorites bar".)
+  const [headerH, setHeaderH] = useState(0);
+  const favMeetsHeader = Math.max(EXPAND, carBand - (insets.top + headerH));
+  // ▸ TUNE HERE: how much LATER than the bar-meets-header point the header finishes
+  //   hiding. Bigger = later (header lingers as the bar rises past it); 0 = hides
+  //   exactly as they meet; negative = earlier.
+  const FADE_LATER = EXPAND * 0.3;
+  const fadeEnd = Math.max(1, favMeetsHeader + FADE_LATER); // header fully hidden a touch after the bar arrives
+  const fadeStart = Math.max(1, fadeEnd - EXPAND * 0.5); // fade over the last ~half-EXPAND of the approach
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, fadeStart, fadeEnd],
     outputRange: [1, 1, 0],
@@ -359,8 +364,6 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
         scrollEnabled={!chargeSliding}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
-        onContentSizeChange={(_w, h) => setContentH(h)}
         // No snapToOffsets / decelerationRate="fast": the drawer snap made a scroll started on the car
         // spring back to 0 unless the drag crossed the midpoint, so the menu felt sticky/slow vs. the
         // free scroll on Climate/Location. Plain momentum scroll (default deceleration) matches them;
@@ -481,6 +484,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
                 // no second code path to keep in step.
                 onStartStopCharging={(start) => actions.patch({ charging: start })}
                   onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
+                  onUnlockChargePort={actions.unlockChargePort}
                 />
             </View>
           ) : null}
@@ -492,6 +496,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <NavRow symbol={vehicleGlyphFor(state.carModel, state.charging)} title="Controls" onPress={() => actions.setCameraMode('TOP_DOWN')} />
           <NavRow
             symbol="fan-filled"
+            spin={state.climateOn}
             title="Climate"
             // ONE cascade, theirs (@3887821), rendered through the two slots
             // this row already has: their climate-ON arm reads as a status, their
@@ -521,7 +526,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             }
           />
           <NavRow symbol="steering-wheel" title="Summon" disabled />
-          <NavRow symbol="bolt-filled" title="Charging" onPress={() => router.push('/charging')} />
+          <NavRow symbol="charging-bolt" title="Charging" onPress={() => router.push('/charging')} />
           <NavRow symbol="schedule-filled" title="Set Schedules" onPress={() => router.push('/schedules')} />
           <NavRow symbol="security-filled" title="Security & Drivers" subtitle="Ivan P" onPress={() => router.push('/security')} />
           <NavRow symbol="service-filled" title="Service" disabled />
@@ -537,6 +542,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
       {/* fixed header on top — fades out (and stops taking touches) as the menu scrolls up over it */}
       <SafeAreaView edges={['top']} style={styles.top} pointerEvents="box-none">
         <Animated.View
+          onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}
           style={{ opacity: headerOpacity }}
           pointerEvents={headerInteractive ? 'box-none' : 'none'}>
         {/* Header tree per findings §C1: NAME -> BATTERY (own row) -> STATUS TEXT
@@ -604,7 +610,7 @@ function QuickIcon({
   onPress,
   onLongPress,
 }: {
-  symbol: TeslaIconName;
+  symbol: IconRef;
   active: boolean;
   spin?: boolean;
   // A real command for this control is in flight (dispatched, unconfirmed).
@@ -628,7 +634,7 @@ function QuickIcon({
           // one place that overrides it to 18). Findings §D.
           <BusyIcon size={20} />
         ) : (
-          <SpinningSymbol name={symbol} tintColor={tint} size={ICON_SIZE} spin={spin} />
+          <SpinningSymbol icon={symbol} tintColor={tint} size={ICON_SIZE} spin={spin} />
         )}
       </View>
     </Pressable>
@@ -652,6 +658,7 @@ function NavRow({
   onPress,
   leading,
   disabled,
+  spin,
 }: {
   symbol: TeslaIconName;
   title: string;
@@ -669,11 +676,19 @@ function NavRow({
   leading?: ReactNode;
   // Greyed-out + non-interactive (feature not wired yet).
   disabled?: boolean;
+  // Rotate the leading glyph continuously (the climate fan while A/C is on).
+  spin?: boolean;
 }) {
   return (
     <Pressable style={[styles.navRow, disabled && styles.navRowDisabled]} onPress={onPress} disabled={disabled}>
       {leading ? (
         <View style={styles.navIcon}>{leading}</View>
+      ) : spin ? (
+        // Same spinning fan as the favourites bar — this was a static TeslaIcon,
+        // so the Home menu's Climate row never rotated while the favourites one did.
+        <View style={styles.navIcon}>
+          <SpinningSymbol icon={symbol} tintColor="white" size={26} spin />
+        </View>
       ) : (
         <TeslaIcon name={symbol} color="white" size={26} style={styles.navIcon} />
       )}

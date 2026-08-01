@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
-import { TeslaIcon } from '@/icons/TeslaIcon';
+import { AppIcon } from '@/icons/AppIcon';
 import { CONTROL_ACTIONS, CONTROL_ACTION_ORDER, type ControlActionId } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
@@ -234,7 +234,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
                 style={[styles.slot, hoverSlot === i && styles.slotHover]}
               >
                 <SpinningSymbol
-                  name={action.symbol(state)}
+                  icon={action.symbol(state)}
                   tintColor={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.55)'}
                   size={28}
                   spin={action.spinning?.(state) ?? false}
@@ -258,7 +258,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
               <View key={id} style={styles.tile} {...tilePans[id].panHandlers}>
                 <View style={dragging ? styles.tileIconHidden : undefined}>
                   <SpinningSymbol
-                    name={action.symbol(state)}
+                    icon={action.symbol(state)}
                     tintColor="rgba(255,255,255,0.92)"
                     size={26}
                     spin={action.spinning?.(state) ?? false}
@@ -287,7 +287,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
             },
           ]}
         >
-          <TeslaIcon name={CONTROL_ACTIONS[dragId].symbol(state)} color="white" size={32} />
+          <AppIcon icon={CONTROL_ACTIONS[dragId].symbol(state)} color="white" size={32} />
         </Animated.View>
       ) : null}
     </View>

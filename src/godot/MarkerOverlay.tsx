@@ -6,6 +6,7 @@ import { controlHaptic } from '../state/controlHaptic';
 import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
 import { TeslaFonts } from '@/constants/fonts';
+import { AppIcon, type IconRef } from '@/icons/AppIcon';
 import { isLightExteriorColor } from './markerPaint';
 import { useContentFade } from './useContentFade';
 import type { VehicleActions } from '../state/useVehicleState';
@@ -106,7 +107,7 @@ export function MarkerOverlay({ state, actions }: Props) {
           anchorPx={anchors.chargePort}
           pixelRatio={pixelRatio}
           marker="chargePort"
-          symbol="bolt.fill"
+          glyph="charging-bolt"
           size={26}
           tint={state.chargePortOpen ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)'}
           onPress={() => actions.toggle('chargePortOpen')}
@@ -155,6 +156,7 @@ function IconButton({
   pixelRatio,
   marker,
   symbol,
+  glyph,
   size,
   tint,
   onPress,
@@ -162,7 +164,9 @@ function IconButton({
   anchorPx: MarkerPoint;
   pixelRatio: number;
   marker: OverlayKey;
-  symbol: SFSymbol;
+  // Either an SF Symbol (lock) or a Tesla vector glyph (charge port). glyph wins.
+  symbol?: SFSymbol;
+  glyph?: IconRef;
   size: number;
   tint: string;
   onPress: () => void;
@@ -179,7 +183,11 @@ function IconButton({
         controlHaptic();
         onPress();
       }}>
-      <SymbolView name={symbol} tintColor={tint} size={size} />
+      {glyph ? (
+        <AppIcon icon={glyph} color={tint} size={size} />
+      ) : symbol ? (
+        <SymbolView name={symbol} tintColor={tint} size={size} />
+      ) : null}
     </Pressable>
   );
 }

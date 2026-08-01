@@ -107,6 +107,7 @@ export default function ChargingScreen() {
               onSetAmps={(a) => actions.patch({ chargingAmps: a })}
               onStartStopCharging={(start) => actions.patch({ charging: start })}
               onToggleChargePort={(open) => actions.patch({ chargePortOpen: open })}
+              onUnlockChargePort={actions.unlockChargePort}
             />
           </View>
 

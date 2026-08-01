@@ -9,7 +9,8 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
+import { AppIcon, type IconRef } from '@/icons/AppIcon';
+import { defrostPng } from '@/icons/nativePng';
 import * as Haptics from 'expo-haptics';
 
 import { ClimateMarkerOverlay } from '../godot/ClimateMarkerOverlay';
@@ -340,7 +341,7 @@ export function ClimateScreen({ state, actions }: Props) {
               hitSlop={16}
               onPress={() => adjustTemp(-0.5)}
             >
-              <TeslaIcon name="chevron-small-270" color={TEXT_DIM} size={CHEVRON_SIZE} />
+              <AppIcon icon="chevron-small-270" color={TEXT_DIM} size={CHEVRON_SIZE} />
             </Pressable>
             {/* BRIGHT when climate is on, DIM when off — visible across Ivan's
                 first two screenshots, which differ only by the AC state: the
@@ -381,7 +382,7 @@ export function ClimateScreen({ state, actions }: Props) {
               hitSlop={16}
               onPress={() => adjustTemp(0.5)}
             >
-              <TeslaIcon name="chevron-small-90" color={TEXT_DIM} size={CHEVRON_SIZE} />
+              <AppIcon icon="chevron-small-90" color={TEXT_DIM} size={CHEVRON_SIZE} />
             </Pressable>
           </View>
 
@@ -394,7 +395,7 @@ export function ClimateScreen({ state, actions }: Props) {
         </View>
 
         <Row
-          symbol="defrost-front-filled"
+          symbol={{ png: defrostPng(state.carModel) }}
           label="Defrost Car"
           active={state.frontDefrostOn}
           onPress={toggleDefrost}
@@ -473,7 +474,7 @@ function Quick({
   active,
   onPress,
 }: {
-  symbol: TeslaIconName;
+  symbol: IconRef;
   label: string;
   active: boolean;
   onPress: () => void;
@@ -485,7 +486,7 @@ function Quick({
           when the state is off and WHITE when on. No blue anywhere in this row —
           blue is reserved for an engaged card (Defrost), which is the one place
           it appears in all four screenshots. */}
-      <TeslaIcon name={symbol} color={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
+      <AppIcon icon={symbol} color={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
       <Text style={[styles.quickLabel, active && styles.quickLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -497,7 +498,7 @@ function Row({
   active,
   onPress,
 }: {
-  symbol: TeslaIconName;
+  symbol: IconRef;
   label: string;
   active: boolean;
   onPress: () => void;
@@ -511,7 +512,7 @@ function Row({
       ]}
       onPress={onPress}
     >
-      <TeslaIcon name={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
+      <AppIcon icon={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -524,7 +525,7 @@ function GroupRow({
   first,
   onPress,
 }: {
-  symbol: TeslaIconName;
+  symbol: IconRef;
   label: string;
   active: boolean;
   first?: boolean;
@@ -540,7 +541,7 @@ function GroupRow({
       ]}
       onPress={onPress}
     >
-      <TeslaIcon name={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
+      <AppIcon icon={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
       <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
     </Pressable>
   );

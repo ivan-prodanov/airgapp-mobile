@@ -1,4 +1,5 @@
-import type { TeslaIconName } from '@/icons/TeslaIcon';
+import type { IconRef } from '@/icons/AppIcon';
+import { DISCO_LIGHT, FART_PNG, LOW_POWER, SENTRY, unlatchPng } from '@/icons/nativePng';
 
 import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import type { VehicleActions } from './useVehicleState';
@@ -31,8 +32,9 @@ export interface ControlActionDef {
    * grid caption reflects live state (e.g. charging → Open/Close/Unlock, climate → On/Off).
    */
   gridLabel?: (state: VehicleViewState) => string;
-  /** Glyph for the favorites bar / grid; a function so lock can swap open↔closed. */
-  symbol: (state: VehicleViewState) => TeslaIconName;
+  /** Glyph for the favorites bar / grid; a function so it can swap by state (lock open↔closed, sentry
+   *  on↔off) or by car model (unlatch door). Returns an IconRef so PNG-only glyphs work too. */
+  symbol: (state: VehicleViewState) => IconRef;
   /** When true, the glyph spins continuously (the climate fan while A/C is on). */
   spinning?: (state: VehicleViewState) => boolean;
   /** Whether the favorites-bar icon renders "active" (white) vs dimmed. */
@@ -70,7 +72,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     // Controls the charge port directly. Closed → "Open"; open & idle → "Close"; open & charging →
     // "Unlock" (releases the latch, stopping the session so the cable can be removed).
     gridLabel: (s) => (s.chargePortOpen ? (s.charging ? 'Unlock' : 'Close') : 'Open'),
-    symbol: () => 'bolt-filled',
+    symbol: () => 'charging-bolt',
     isActive: (s) => s.chargePortOpen,
     run: (s, a) =>
       a.patch(
@@ -131,14 +133,15 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   lightShow: {
     id: 'lightShow',
     label: 'Light Show',
-    symbol: () => 'sparkles-filled',
+    symbol: () => ({ png: DISCO_LIGHT }),
     isActive: () => false,
     run: noop,
   },
   lowPower: {
     id: 'lowPower',
     label: 'Low Power',
-    symbol: () => 'battery-empty-filled',
+    // 3-state raster (on/off/on_disabled); we don't model a low-power state yet, so show 'off'.
+    symbol: () => ({ png: LOW_POWER.off }),
     isActive: () => false,
     run: noop,
   },
@@ -152,7 +155,8 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   sentry: {
     id: 'sentry',
     label: 'Sentry',
-    symbol: () => 'target-filled',
+    // sentry_on is baked RED (tint:false keeps it); sentry_off is a gray template that tints.
+    symbol: (s) => (s.sentryEnabled ? { png: SENTRY.on, tint: false } : { png: SENTRY.off }),
     isActive: (s) => s.sentryEnabled,
     run: (_s, a) => a.toggle('sentryEnabled'),
   },
@@ -166,7 +170,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   unlatchDoor: {
     id: 'unlatchDoor',
     label: 'Unlatch Door',
-    symbol: () => 'doors-open-filled',
+    symbol: (s) => ({ png: unlatchPng(s.carModel) }),
     isActive: (s) => s.driverFrontDoorOpen,
     run: (_s, a) => a.toggle('driverFrontDoorOpen'),
   },
@@ -187,7 +191,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
   fart: {
     id: 'fart',
     label: 'Fart',
-    symbol: () => 'speaker-filled',
+    symbol: () => ({ png: FART_PNG }),
     isActive: () => false,
     run: noop,
   },

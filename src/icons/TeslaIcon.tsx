@@ -46,14 +46,4 @@ export function TeslaIcon({
   return null;
 }
 
-// Map a car's fascia -> vehicle glyph name (mirrors the app's getVehicleIconName).
-// fascia comes from the vehicle's FasciaType; charge=true appends the charge-port bolt.
-export function vehicleGlyphName(
-  fascia: 'bayberry' | 'model_3y' | 'model_s' | 'model_x',
-  charge = false,
-): VehicleName {
-  const base = 'vehicle-' + fascia.replace('_', '-');
-  return (charge ? base + '-charge' : base) as VehicleName;
-}
-
 export default TeslaIcon;

@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
-import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
+import { AppIcon, type IconRef } from '@/icons/AppIcon';
+import { SENTRY } from '@/icons/nativePng';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { ParentalControlsSheet } from '@/components/ParentalControlsSheet';
 import { PinSheet } from '@/components/PinSheet';
@@ -177,7 +178,7 @@ export default function SecurityScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <NavRow symbol="dashcam-filled" title="Dashcam Viewer" subtitle="View saved clips" disabled />
           <ToggleRow
-            symbol="target-filled"
+            symbol={state.sentryEnabled ? { png: SENTRY.on, tint: false } : { png: SENTRY.off }}
             title="Sentry Mode"
             subtitle="Enable to view live camera"
             value={state.sentryEnabled}
@@ -193,7 +194,7 @@ export default function SecurityScreen() {
             onClearPin={() => requestClearPin('valetMode')}
           />
           <ToggleRow
-            symbol="child-lock-filled"
+            symbol="parental-control-profile"
             title="Parental Controls"
             subtitle="Turn on a full suite of safety features including speed limit mode, chill acceleration, and more..."
             value={state.parentalControls}
@@ -205,7 +206,7 @@ export default function SecurityScreen() {
             gateSubtitle={phoneKeyMissing ? 'Please set up Phone Key' : undefined}
           />
           <ToggleRow
-            symbol="speedometer-filled"
+            symbol="speed-limit-gauge"
             title="Speed Limit Mode"
             subtitle="Limit top speed"
             value={state.speedLimitMode}
@@ -262,7 +263,7 @@ function NavRow({
   onPress,
   disabled,
 }: {
-  symbol: TeslaIconName;
+  symbol: IconRef;
   title: string;
   subtitle: string;
   onPress?: () => void;
@@ -271,7 +272,7 @@ function NavRow({
   return (
     <Pressable style={[styles.row, disabled && styles.rowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={styles.iconCol}>
-        <TeslaIcon name={symbol} color="rgba(255,255,255,0.9)" size={26} />
+        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={26} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -294,7 +295,7 @@ function ToggleRow({
   disabled,
   gateSubtitle,
 }: {
-  symbol: TeslaIconName;
+  symbol: IconRef;
   title: string;
   subtitle: string;
   value: boolean;
@@ -316,7 +317,7 @@ function ToggleRow({
   return (
     <View style={[styles.row, disabled && styles.rowDisabled]}>
       <View style={styles.iconCol}>
-        <TeslaIcon name={symbol} color="rgba(255,255,255,0.9)" size={26} />
+        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={26} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>

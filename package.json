@@ -64,7 +64,7 @@
     "lint": "expo lint",
     "build:places": "tsx scripts/geonames/build-places-db.ts",
     "build:teslaproto": "pbjs -t static-module -w commonjs --no-service --force-number -p proto -o src/ble/proto/gen.js proto/*.proto && pbts -o src/ble/proto/gen.d.ts src/ble/proto/gen.js",
-    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test": "node --import tsx --require ./scripts/test-asset-stub.cjs --test \"src/**/*.test.ts\"",
     "build:extension-bundle": "node scripts/build-extension-bundle.mjs"
   },
   "private": true

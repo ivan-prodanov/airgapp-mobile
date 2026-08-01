@@ -41,6 +41,13 @@ export interface VehicleActions {
    * value to OPEN. Closed arrives from the stream or the poll.
    */
   actuateFrunk: () => void;
+  /**
+   * Unlock (unlatch) the charge port so a seated cable can be removed. Sends
+   * openChargePort (closureMoveRequest chargePort=OPEN) EXPLICITLY — with a cable
+   * in, the port is already "open", so a `chargePortOpen` patch diffs to nothing
+   * and never reaches the car. Same one-command-two-meanings lesson as the frunk.
+   */
+  unlockChargePort: () => void;
   patch: (patch: Partial<VehicleViewState>) => void;
   // Tapping the seat/wheel icon steps the level down (3→2→1→off); the menu sets the mode outright.
   stepSeatClimate: (seat: SeatPosition) => void;
@@ -71,7 +78,7 @@ export interface VehicleActions {
 // optimism in `actuateFrunkState` + an explicit dispatch — see fleet.ts.
 export function buildVehicleActions(
   apply: (update: (state: VehicleViewState) => VehicleViewState) => void,
-): Omit<VehicleActions, 'actuateFrunk'> {
+): Omit<VehicleActions, 'actuateFrunk' | 'unlockChargePort'> {
   return {
     setCameraMode: (cameraMode) => apply((s) => setCameraModeState(s, cameraMode)),
     setTirePressureVisible: (visible) => apply((s) => ({ ...s, tirePressureVisible: visible })),

@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { TeslaIcon } from '@/icons/TeslaIcon';
+import { AppIcon } from '@/icons/AppIcon';
 
 import { MarkerOverlay } from '../godot/MarkerOverlay';
 import { TirePressureOverlay } from '../godot/TirePressureOverlay';
@@ -85,8 +85,8 @@ function Action({
       {pending ? (
         <BusyIcon size={26} />
       ) : (
-        <TeslaIcon
-          name={action.symbol(state)}
+        <AppIcon
+          icon={action.symbol(state)}
           color={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.85)'}
           size={26}
         />
