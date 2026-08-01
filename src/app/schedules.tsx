@@ -161,15 +161,21 @@ export default function SchedulesScreen() {
     return l ? { latitude: l.lat, longitude: l.lon } : null;
   }, [isCurrent, carCoord, named, otherLocs, selectedKey]);
 
-  // Picker rows: Current Location + Home/Work (from the car) + each OTHER place
-  // that has schedules (bugs 7 & 8).
+  // Picker rows: Current Location, then Home & Work (ALWAYS shown — greyed and
+  // non-selectable when the car hasn't set them), then each OTHER place that has
+  // schedules (bugs 7 & 8).
   const pickerOptions = useMemo(
     () => [
       { key: CURRENT_OPTION_KEY, label: currentLabel },
-      ...named.map((n) => ({ key: n.key, label: n.label })),
+      homeWork.home && homeKey
+        ? { key: homeKey, label: 'Home' }
+        : { key: '__home__', label: 'Home', disabled: true },
+      homeWork.work && workKey
+        ? { key: workKey, label: 'Work' }
+        : { key: '__work__', label: 'Work', disabled: true },
       ...otherLocs.map((l) => ({ key: l.key, label: otherLabels[l.key] ?? 'Location' })),
     ],
-    [currentLabel, named, otherLocs, otherLabels],
+    [currentLabel, homeWork, homeKey, workKey, otherLocs, otherLabels],
   );
 
   const openCreate = (draft: AnySchedule) => {

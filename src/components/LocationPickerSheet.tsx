@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export interface LocationOption {
   key: string;
   label: string;
+  // Shown greyed-out and non-selectable (e.g. Home/Work the car hasn't set).
+  disabled?: boolean;
 }
 
 // Dropdown under the header (tapping "at <location> ⌄"): pick which location the
@@ -50,11 +52,12 @@ export function LocationPickerSheet({
         {options.map((o) => (
           <Pressable
             key={o.key}
+            disabled={o.disabled}
             onPress={() => {
               onSelect(o.key);
               onClose();
             }}
-            style={[styles.row, styles.rowBorder]}
+            style={[styles.row, styles.rowBorder, o.disabled && styles.rowDisabled]}
           >
             <Text style={styles.label} numberOfLines={1}>
               {o.label}
