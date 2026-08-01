@@ -96,25 +96,33 @@ Leaving it as the source icon is also a valid answer — it is what Tesla ships.
 Surfaced by Ivan across the Tesla-icon pass, the Schedules screen, charging, and Security & Drivers.
 Not yet root-caused unless noted; the file named is where the work starts, not a diagnosis.
 
-1. **Home header fades too late on scroll.** Scrolling the Home screen while the music/battery pane
-   is shown fades out the vehicle name + info, but later than Tesla. The fade seems tied to the menu
-   list BELOW, when it should track the **favorites bar** — fade as the bar reaches the header.
-   *Hypothesis, unmeasured:* the fade's scroll threshold is anchored to the wrong element.
-   `HomeScreen.tsx`.
+1. **FIXED 2026-07-31 — Home header faded too late on scroll.** The hypothesis held: the fade was
+   anchored to `maxScroll` (which grows with the menu below, so it hid the header far too late).
+   Re-anchored to where the favorites bar meets the header — `carBand − (insets.top + headerH)`, a
+   fixed distance independent of menu length — with a `FADE_LATER` knob (`EXPAND * 0.3`) for exactly
+   how late it finishes. `HomeScreen.tsx`. On-device confirmed by Ivan.
 
-2. **Favorites bar not persisted.** The customized favorites/controls bar is neither saved nor
-   loaded — a customization is lost on relaunch. Needs to write to the prefs store and hydrate on
-   mount. `CustomizeControlsSheet.tsx` + favorites state.
+2. **FIXED 2026-07-31 — Favorites bar not persisted.** Two faults: it used an in-memory `Map` (lost
+   on cold start) AND was global. Confirmed from the decompiled bundle that Tesla stores it
+   PER-VEHICLE — `quickControlsLayout`, a VIN-keyed map in `vehiclePresentationState` (reducer writes
+   `[vin] = layout`, selector `getSelectedQuickControlsLayout`, default `{}`). Reimplemented favorites
+   as a per-vehicle map keyed by the active vehicle id, persisted via AsyncStorage (`prefs.v2`); the
+   `usePreferences()` API is unchanged so consumers didn't move. `preferences.ts` + `VehicleProvider.tsx`.
+   881/881 tests (incl. a per-vehicle-isolation test); on-device confirmed by Ivan.
 
-3. **Controls screen charge-port uses the old icon.** The charge-port control on the Controls screen
-   still renders the pre-glyph icon instead of the Tesla glyph used elsewhere. `ControlsScreen.tsx`.
+3. **FIXED 2026-07-31 — Controls charge-port used the old icon.** It was the charge-port MARKER in
+   `MarkerOverlay` (not `ControlsScreen`), rendering SF Symbol `bolt.fill`. `IconButton` gained an
+   optional Tesla-`glyph` path (AppIcon); the charge port now uses `bolt-filled`. Lock marker left on
+   its SF symbol (not reported). On-device confirmed by Ivan.
 
 4. **Low Power Mode is inert.** The control does nothing — wire it to its THREE states
    (off / on / on-disabled). Assets already exist as `LOW_POWER_MODE.{off,on,onDisabled}` in
    `nativePng.ts`; needs the state model + dispatch.
 
-5. **Climate fan doesn't spin on Home.** The climate fan glyph rotates only in the favorites bar,
-   not on the Home screen — should animate in both. `SpinningSymbol.tsx` and its Home call site.
+5. **FIXED 2026-07-31 — Climate fan static on the Home menu.** The Home menu's "Climate" `NavRow`
+   drew a static `fan-filled` (the favourites bar already spun via `SpinningSymbol`). Added a `spin`
+   prop to `NavRow` (renders through `SpinningSymbol`) and passed `spin={state.climateOn}`.
+   `HomeScreen.tsx`. On-device confirmed by Ivan.
 
 6. **Parental Control & Speed Limit Mode icons are wrong.** Both render the wrong glyph on the
    Security screen. `security.tsx`.
