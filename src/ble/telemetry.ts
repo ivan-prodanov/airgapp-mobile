@@ -72,6 +72,10 @@ export interface InfotainmentSnapshot {
     rangeMiles: number | null;
     chargingState: string | undefined;
     chargeLimitSoc: number | undefined;
+    // Saved Home/Work locations (ChargeState.home_location/work_location). Present
+    // only when the car reports them; used to name the Set Schedules dropdown.
+    homeCoord?: { lat: number; lon: number } | null;
+    workCoord?: { lat: number; lon: number } | null;
   };
   climate?: {
     insideTempC: number | undefined;
@@ -247,6 +251,15 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
+// A CarServer.LatLong ({ latitude, longitude }) → our lean { lat, lon }, or null
+// when either coordinate is missing/non-finite.
+function latLong(v: unknown): { lat: number; lon: number } | null {
+  const o = v as { latitude?: unknown; longitude?: unknown } | null | undefined;
+  const lat = num(o?.latitude);
+  const lon = num(o?.longitude);
+  return lat !== undefined && lon !== undefined ? { lat, lon } : null;
+}
+
 // str — a non-empty string, else undefined. Empty strings are the proto default for
 // an unset string field, so they mean "absent", not "".
 function str(v: unknown): string | undefined {
@@ -370,6 +383,8 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       chargerVoltageV: num(cs.chargerVoltage) ?? null,
       chargerPilotCurrentA: num(cs.chargerPilotCurrent) ?? null,
       chargeLimitSoc: num(cs.chargeLimitSoc),
+      homeCoord: latLong(cs.homeLocation),
+      workCoord: latLong(cs.workLocation),
     };
   }
 
@@ -748,6 +763,10 @@ export function infotainmentToPatch(
     if (snap.charge.chargerPilotCurrentA != null)
       patch.chargerPilotCurrentA = snap.charge.chargerPilotCurrentA;
     if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
+    // Only overwrite when the car actually reported a location — a read that omits
+    // it (undefined) must not clear a Home/Work we already have.
+    if (snap.charge.homeCoord !== undefined) patch.homeCoord = snap.charge.homeCoord;
+    if (snap.charge.workCoord !== undefined) patch.workCoord = snap.charge.workCoord;
   }
 
   // Gated on the MediaState half, not on either half. That read carries the

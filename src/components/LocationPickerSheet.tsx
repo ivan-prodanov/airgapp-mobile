@@ -2,10 +2,14 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export type ScheduleLocationKey = 'current' | 'home' | 'work';
+export interface LocationOption {
+  key: string;
+  label: string;
+}
 
-// Dropdown under the header (tapping "at <location> ⌄"): pick which location the schedules are for.
-// Current Location = the live car position; Home = a preset; Work is a disabled placeholder for now.
+// Dropdown under the header (tapping "at <location> ⌄"): pick which location the
+// schedules are for. Rows are DATA-DRIVEN (bugs 7 & 8): "Current Location" (the
+// live car position) plus one row per OTHER place that has schedules.
 //
 // The header (title + "at <location>") stays VISIBLE on top of the sheet, with the
 // chevron flipped to ▲ — tapping it closes the sheet again, exactly as the Tesla
@@ -14,26 +18,21 @@ export type ScheduleLocationKey = 'current' | 'home' | 'work';
 // the backdrop where it would be dimmed and untappable.
 export function LocationPickerSheet({
   visible,
-  selected,
+  options,
+  selectedKey,
   headerLabel,
   onSelect,
   onClose,
 }: {
   visible: boolean;
-  selected: ScheduleLocationKey;
-  // What the header line shows ("at <headerLabel>"): the resolved address, "Home" or "Work".
+  options: LocationOption[];
+  selectedKey: string;
+  // What the header line shows ("at <headerLabel>"): the resolved place name.
   headerLabel: string;
-  onSelect: (key: ScheduleLocationKey) => void;
+  onSelect: (key: string) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  // Tesla labels the live option literally "Current Location" — the resolved
-  // address only appears in the header line, not as the option label.
-  const options: { key: ScheduleLocationKey; label: string; disabled?: boolean }[] = [
-    { key: 'current', label: 'Current Location' },
-    { key: 'home', label: 'Home' },
-    { key: 'work', label: 'Work', disabled: true },
-  ];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -51,16 +50,17 @@ export function LocationPickerSheet({
         {options.map((o) => (
           <Pressable
             key={o.key}
-            disabled={o.disabled}
             onPress={() => {
               onSelect(o.key);
               onClose();
             }}
-            style={[styles.row, styles.rowBorder, o.disabled && styles.rowDisabled]}
+            style={[styles.row, styles.rowBorder]}
           >
-            <Text style={styles.label}>{o.label}</Text>
-            <View style={[styles.radio, selected === o.key && styles.radioOn]}>
-              {selected === o.key ? <View style={styles.radioDot} /> : null}
+            <Text style={styles.label} numberOfLines={1}>
+              {o.label}
+            </Text>
+            <View style={[styles.radio, selectedKey === o.key && styles.radioOn]}>
+              {selectedKey === o.key ? <View style={styles.radioDot} /> : null}
             </View>
           </Pressable>
         ))}
@@ -126,6 +126,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: 'white',
+    flexShrink: 1,
+    marginRight: 12,
   },
   radio: {
     width: 24,

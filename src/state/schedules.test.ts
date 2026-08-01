@@ -7,8 +7,11 @@ import {
   chargeScheduleToInput,
   formatDays,
   isComplete,
+  locationKey,
   newCharging,
   newPrecondition,
+  scheduleLocations,
+  schedulesAt,
   preconditionScheduleToInput,
   removeSchedule,
   scheduleSubtitle,
@@ -165,4 +168,32 @@ test('a full round-trip local → wire input → car echo → local is stable', 
 test('carSchedulesToState — the car being EMPTY yields an empty list (the drift fix)', () => {
   // Deleting on the car must clear our UI, not leave a phantom row.
   assert.deepEqual(carSchedulesToState([], []), { charging: [], precondition: [] });
+});
+
+// ── Location scoping (bugs 7 & 8) ────────────────────────────────────────────
+test('locationKey rounds coords (~110m) and rejects invalid input', () => {
+  assert.equal(locationKey(42.69773, 23.32194), '42.698,23.322');
+  assert.equal(locationKey(undefined, 23), null);
+  assert.equal(locationKey(Number.NaN, 23), null);
+});
+
+test('scheduleLocations returns distinct places (nearby coords collapse to one)', () => {
+  const a = { ...newCharging(), id: 'a', lat: 42.69773, lon: 23.32194 };
+  const a2 = { ...newPrecondition(), id: 'a2', lat: 42.6977, lon: 23.3219 }; // same ~110m bucket
+  const b = { ...newCharging(), id: 'b', lat: 40, lon: 25 };
+  const keys = scheduleLocations({ charging: [a, b], precondition: [a2] })
+    .map((l) => l.key)
+    .sort();
+  assert.deepEqual(keys, ['40.000,25.000', '42.698,23.322']);
+});
+
+test('schedulesAt filters by location; coordless schedules ride with Current', () => {
+  const here = { ...newCharging(), id: 'h', lat: 42.698, lon: 23.322 };
+  const there = { ...newCharging(), id: 't', lat: 40, lon: 25 };
+  const legacy = { ...newCharging(), id: 'l' }; // no coords (demo/legacy)
+  const state = { charging: [here, there, legacy], precondition: [] };
+  const cur = schedulesAt(state, locationKey(42.698, 23.322), true);
+  assert.deepEqual(cur.charging.map((s) => s.id).sort(), ['h', 'l']); // here + legacy, not there
+  const oth = schedulesAt(state, locationKey(40, 25), false);
+  assert.deepEqual(oth.charging.map((s) => s.id), ['t']); // only there; legacy does NOT ride here
 });

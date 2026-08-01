@@ -27,6 +27,11 @@ export interface PreconditionSchedule {
   days: number[]; // sorted, unique, 0=Mon … 6=Sun
   repeatWeekly: boolean;
   enabled: boolean;
+  // The location this schedule is keyed to on the car (schedules are
+  // location-keyed). From the car readback, and for new schedules the selected
+  // location's coords at save time. Optional — demo/legacy schedules have none.
+  lat?: number;
+  lon?: number;
 }
 
 export interface ChargingSchedule {
@@ -40,9 +45,56 @@ export interface ChargingSchedule {
   days: number[];
   repeatWeekly: boolean;
   enabled: boolean;
+  lat?: number; // see PreconditionSchedule.lat
+  lon?: number;
 }
 
 export type AnySchedule = PreconditionSchedule | ChargingSchedule;
+
+// ── Location scoping (bugs 7 & 8) ────────────────────────────────────────────
+// The car keys schedules by location; the Set Schedules screen shows ONE
+// location at a time. A location's identity is its coords rounded to ~110m, so
+// small GPS drift between creating a schedule and reading the car's position back
+// still groups to the same place.
+export interface ScheduleLocation {
+  key: string;
+  lat: number;
+  lon: number;
+}
+
+export function locationKey(lat: number | undefined, lon: number | undefined): string | null {
+  if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+  return `${lat.toFixed(3)},${lon.toFixed(3)}`;
+}
+
+export function scheduleKey(s: AnySchedule): string | null {
+  return locationKey(s.lat, s.lon);
+}
+
+// The distinct locations that have schedules, each with a representative coord.
+export function scheduleLocations(state: SchedulesState): ScheduleLocation[] {
+  const seen = new Map<string, ScheduleLocation>();
+  for (const s of [...state.precondition, ...state.charging]) {
+    const key = scheduleKey(s);
+    if (key && !seen.has(key)) seen.set(key, { key, lat: s.lat as number, lon: s.lon as number });
+  }
+  return [...seen.values()];
+}
+
+// Schedules at ONE location key. Coordless (legacy/demo) schedules ride with the
+// CURRENT location so they never silently vanish.
+export function schedulesAt(state: SchedulesState, key: string | null, isCurrent: boolean): SchedulesState {
+  const keep = (s: AnySchedule): boolean => {
+    const k = scheduleKey(s);
+    return k === key || (k === null && isCurrent);
+  };
+  return {
+    precondition: state.precondition.filter(keep),
+    charging: state.charging.filter(keep),
+  };
+}
 
 export interface SchedulesState {
   precondition: PreconditionSchedule[];
@@ -244,6 +296,8 @@ export interface CarSchedule {
   preconditionTime?: number | undefined;
   enabled: boolean | undefined;
   oneTime: boolean | undefined;
+  latitude?: number | undefined;
+  longitude?: number | undefined;
 }
 
 const minutesToHHMM = (m: number | undefined): string => {
@@ -270,6 +324,8 @@ export function carToChargingSchedule(r: CarSchedule): ChargingSchedule {
     days: bitmaskToDays(r.daysOfWeek),
     repeatWeekly: !r.oneTime,
     enabled: r.enabled ?? true,
+    lat: r.latitude,
+    lon: r.longitude,
   };
 }
 
@@ -283,6 +339,8 @@ export function carToPreconditionSchedule(r: CarSchedule): PreconditionSchedule 
     days: bitmaskToDays(r.daysOfWeek),
     repeatWeekly: !r.oneTime,
     enabled: r.enabled ?? true,
+    lat: r.latitude,
+    lon: r.longitude,
   };
 }
 

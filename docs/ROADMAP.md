@@ -131,15 +131,22 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
 6. **FIXED 2026-08-01 (another agent) — Parental Control & Speed Limit Mode icons were wrong.** Both
    rendered the wrong glyph on the Security screen. `security.tsx`. Confirmed by Ivan.
 
-7. **Schedules screen shows every location's schedules.** The Set Schedules list renders ALL
-   schedules regardless of the selected location — it doesn't filter by the location chosen in the
-   header dropdown. Should show only the current location's. `schedules.tsx` (schedules already carry
-   coords, so filter the list by the selected location).
+7. **REQUIRES TESTING (implemented 2026-08-01) — Schedules weren't scoped to the selected location.**
+   The car keys schedules by location and returns per-schedule coords (`RawSchedule.lat/lon`), which we
+   were dropping. Now captured onto the local model (`carTo*`), and the list is filtered to the selected
+   location (`schedulesAt`). New schedules are tagged with the selected location's coords; edit/toggle
+   keep their own. Coordless legacy/demo schedules ride with Current so nothing vanishes.
+   `schedules.ts` + `schedules.tsx`. New unit tests (`locationKey`/`scheduleLocations`/`schedulesAt`).
+   **On-device verification pending.**
 
-8. **(Optional) "Other locations" entry in the location picker.** Add an optional dropdown item
-   listing every location that isn't Home / Work / Current Location. When the schedules screen is
-   opened on such a location, the sheet should show which location the schedule is assigned to.
-   `LocationPickerSheet.tsx` + the schedules header.
+8. **REQUIRES TESTING (implemented 2026-08-01) — location picker is now data-driven.** Done with 7:
+   replaced the fixed `ScheduleLocationKey` picker with dynamic `{key,label}` options. The dropdown now
+   lists **Current Location + Home + Work + each OTHER place that has schedules**. Home/Work are sourced
+   from the CAR's saved locations (`ChargeState.home_location`/`work_location`, fields 176/177 — now read
+   in telemetry into `homeCoord`/`workCoord`); other places are reverse-geocoded to a street name.
+   Selecting one scopes the list to it. `LocationPickerSheet.tsx` + telemetry + `vehicleTypes.ts`.
+   **On-device pending — and Home/Work only appear IF the car actually reports those coords over BLE
+   (the field exists in the ChargeState we read; the car may still omit it).**
 
 9. **REQUIRES TESTING (implemented 2026-08-01) — 3rd-party charger, session not started.**
    - (a) RESOLVED, EXPECTED: "Charging Error - No Power" is Tesla's literal string

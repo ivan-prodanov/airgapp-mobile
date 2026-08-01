@@ -7,17 +7,21 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
-import { LocationPickerSheet, type ScheduleLocationKey } from '@/components/LocationPickerSheet';
+import { LocationPickerSheet } from '@/components/LocationPickerSheet';
 import { ScheduleSheet } from '@/components/ScheduleSheet';
 import { Toggle } from '@/components/Toggle';
 import { type LatLng } from '@/state/mockLocation';
 import {
   type AnySchedule,
   carSchedulesToState,
+  locationKey,
   newCharging,
   newPrecondition,
+  scheduleLocations,
+  schedulesAt,
   scheduleSubtitle,
   scheduleTitle,
+  type SchedulesState,
 } from '@/state/schedules';
 import { useSchedules } from '@/state/useSchedules';
 import { useFleet } from '@/state/VehicleProvider';
@@ -25,6 +29,8 @@ import { TeslaFonts } from '@/constants/fonts';
 
 // Sofia city centre — the same fallback the Location screen uses when GPS isn't available yet.
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
+// Picker sentinel for the "Current Location" row (maps to a null selectedKey).
+const CURRENT_OPTION_KEY = '__current__';
 
 // iOS reverseGeocode sometimes returns a postal code ("814 01") in `street`/`name`. Prefer the first
 // candidate that reads like a real place name (has a letter), so the header shows the street/area, not a code.
@@ -46,8 +52,12 @@ export default function SchedulesScreen() {
 
   const [editing, setEditing] = useState<Editing | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [locationKey, setLocationKey] = useState<ScheduleLocationKey>('current');
+  // Selected location: null = Current Location (the car's position); otherwise the
+  // location KEY (rounded coords) of another place that has schedules. Bugs 7 & 8.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [currentLabel, setCurrentLabel] = useState('Current location');
+  // Reverse-geocoded street names for the OTHER locations, keyed by location key.
+  const [otherLabels, setOtherLabels] = useState<Record<string, string>>({});
 
   // The active car's real GPS (null until read / for demo cars) — no fake offset.
   const carCoord: LatLng | null = useMemo(() => {
@@ -56,6 +66,14 @@ export default function SchedulesScreen() {
     return loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon)
       ? { latitude: loc.lat, longitude: loc.lon }
       : null;
+  }, [fleet.vehicles, fleet.activeId]);
+
+  // The car's saved Home / Work locations (ChargeState), null until read.
+  const homeWork = useMemo(() => {
+    const st = (fleet.vehicles.find((v) => v.id === fleet.activeId) ?? fleet.vehicles[0]).state;
+    const toLL = (c: { lat: number; lon: number } | null): LatLng | null =>
+      c ? { latitude: c.lat, longitude: c.lon } : null;
+    return { home: toLL(st.homeCoord), work: toLL(st.workCoord) };
   }, [fleet.vehicles, fleet.activeId]);
 
   // Resolve the car position (real GPS if known, else the user's) to a street/boulevard name for the header.
@@ -82,7 +100,77 @@ export default function SchedulesScreen() {
     };
   }, [carCoord]);
 
-  const locLabel = locationKey === 'current' ? currentLabel : locationKey === 'home' ? 'Home' : 'Work';
+  // The location the car is parked at now, the named Home/Work rows the car gives
+  // us, and the OTHER places that have schedules.
+  const currentKey = locationKey(carCoord?.latitude, carCoord?.longitude);
+  const homeKey = locationKey(homeWork.home?.latitude, homeWork.home?.longitude);
+  const workKey = locationKey(homeWork.work?.latitude, homeWork.work?.longitude);
+  const named = useMemo(
+    () =>
+      [
+        homeWork.home && homeKey ? { key: homeKey, label: 'Home', coord: homeWork.home } : null,
+        homeWork.work && workKey ? { key: workKey, label: 'Work', coord: homeWork.work } : null,
+      ].filter((x): x is { key: string; label: string; coord: LatLng } => x !== null),
+    [homeWork, homeKey, workKey],
+  );
+  const excluded = useMemo(
+    () => new Set([currentKey, homeKey, workKey].filter((k): k is string => k !== null)),
+    [currentKey, homeKey, workKey],
+  );
+  const otherLocs = useMemo(
+    () => scheduleLocations(schedules).filter((l) => !excluded.has(l.key)),
+    [schedules, excluded],
+  );
+  // Reverse-geocode any other location we don't yet have a label for.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      for (const l of otherLocs) {
+        if (otherLabels[l.key]) continue;
+        try {
+          const [addr] = await Location.reverseGeocodeAsync({ latitude: l.lat, longitude: l.lon });
+          if (!cancelled && addr) setOtherLabels((m) => ({ ...m, [l.key]: pickPlaceLabel(addr) }));
+        } catch {
+          // leave it unlabeled; the picker falls back to "Location"
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [otherLocs, otherLabels]);
+
+  const isCurrent = selectedKey === null;
+  const locLabel = isCurrent
+    ? currentLabel
+    : named.find((n) => n.key === selectedKey)?.label ?? otherLabels[selectedKey] ?? 'Location';
+
+  // Schedules scoped to the selected location (bug 7). When Current is selected but
+  // the car position is unknown, we can't scope — show everything rather than hide all.
+  const visible: SchedulesState = useMemo(() => {
+    if (isCurrent && currentKey === null) return schedules;
+    return schedulesAt(schedules, isCurrent ? currentKey : selectedKey, isCurrent);
+  }, [schedules, isCurrent, currentKey, selectedKey]);
+
+  // Coords a NEW schedule is tagged with = the selected location.
+  const selectedCoord: LatLng | null = useMemo(() => {
+    if (isCurrent) return carCoord;
+    const n = named.find((x) => x.key === selectedKey);
+    if (n) return n.coord;
+    const l = otherLocs.find((x) => x.key === selectedKey);
+    return l ? { latitude: l.lat, longitude: l.lon } : null;
+  }, [isCurrent, carCoord, named, otherLocs, selectedKey]);
+
+  // Picker rows: Current Location + Home/Work (from the car) + each OTHER place
+  // that has schedules (bugs 7 & 8).
+  const pickerOptions = useMemo(
+    () => [
+      { key: CURRENT_OPTION_KEY, label: currentLabel },
+      ...named.map((n) => ({ key: n.key, label: n.label })),
+      ...otherLocs.map((l) => ({ key: l.key, label: otherLabels[l.key] ?? 'Location' })),
+    ],
+    [currentLabel, named, otherLocs, otherLabels],
+  );
 
   const openCreate = (draft: AnySchedule) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -122,14 +210,22 @@ export default function SchedulesScreen() {
   const resyncSoon = () => setTimeout(() => void syncFromCar(), 2500);
 
   const carCoordLL = carCoord ? { latitude: carCoord.latitude, longitude: carCoord.longitude } : null;
+  // A schedule keeps its OWN location on edit/toggle; a fresh one is tagged with the
+  // SELECTED location so it lands under the place you're viewing (bugs 7 & 8).
+  const sendCoordFor = (s: AnySchedule): LatLng | null =>
+    typeof s.lat === 'number' && typeof s.lon === 'number'
+      ? { latitude: s.lat, longitude: s.lon }
+      : carCoordLL;
 
   const onSave = (s: AnySchedule) => {
-    if (s.kind === 'precondition') savePrecondition(s);
-    else saveCharging(s);
-    // Push to the car. One-shot: no-op for a demo car or with no known car
-    // position (the modern schedules are location-keyed). The local store is the
-    // source of truth either way.
-    fleet.sendSchedule(s, carCoordLL);
+    const tagged: AnySchedule = selectedCoord
+      ? { ...s, lat: selectedCoord.latitude, lon: selectedCoord.longitude }
+      : s;
+    if (tagged.kind === 'precondition') savePrecondition(tagged);
+    else saveCharging(tagged);
+    // Push to the car. One-shot: no-op for a demo car or with no known position
+    // (the modern schedules are location-keyed). Local store is the source of truth.
+    fleet.sendSchedule(tagged, selectedCoord ?? carCoordLL);
     resyncSoon();
     setEditing(null);
   };
@@ -146,7 +242,7 @@ export default function SchedulesScreen() {
     setEnabled(s.kind, s.id, !s.enabled);
     // Re-add with the flipped `enabled`; the car keys on carId, so this updates
     // the same schedule rather than creating a second one.
-    fleet.sendSchedule({ ...s, enabled: !s.enabled }, carCoordLL);
+    fleet.sendSchedule({ ...s, enabled: !s.enabled }, sendCoordFor(s));
     resyncSoon();
   };
 
@@ -187,7 +283,7 @@ export default function SchedulesScreen() {
             subtitle="Set climate and preheat battery"
             onAdd={() => openCreate(newPrecondition())}
           >
-            {schedules.precondition.map((s) => (
+            {visible.precondition.map((s) => (
               <ScheduleRow
                 key={s.id}
                 schedule={s}
@@ -202,7 +298,7 @@ export default function SchedulesScreen() {
             subtitle="Set a charging schedule"
             onAdd={() => openCreate(newCharging())}
           >
-            {schedules.charging.map((s) => (
+            {visible.charging.map((s) => (
               <ScheduleRow
                 key={s.id}
                 schedule={s}
@@ -227,9 +323,10 @@ export default function SchedulesScreen() {
       />
       <LocationPickerSheet
         visible={pickerOpen}
-        selected={locationKey}
+        options={pickerOptions}
+        selectedKey={isCurrent ? CURRENT_OPTION_KEY : selectedKey ?? CURRENT_OPTION_KEY}
         headerLabel={locLabel}
-        onSelect={setLocationKey}
+        onSelect={(key) => setSelectedKey(key === CURRENT_OPTION_KEY ? null : key)}
         onClose={() => setPickerOpen(false)}
       />
       <EdgeSwipeBack onBack={() => router.back()} />

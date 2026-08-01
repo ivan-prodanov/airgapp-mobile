@@ -218,6 +218,10 @@ export interface VehicleViewState {
   carLocation: CarLocation | null;
   /** When the car was seen at `carLocation` — gps_as_of, else our read time. */
   carLocationAt: number | null;
+  // The car's saved Home/Work locations (ChargeState.home_location/work_location),
+  // used to name the Set Schedules location dropdown (bugs 7 & 8). Null until read.
+  homeCoord: { lat: number; lon: number } | null;
+  workCoord: { lat: number; lon: number } | null;
   // TPMS in BAR, straight from the car (it reports bar and supplies its own
   // recommended cold pressure, so nothing is converted or hardcoded per model).
   // `null` until a tire read lands; a single wheel is null when its sensor has
@@ -337,6 +341,8 @@ export const initialVehicleState: VehicleViewState = {
   exteriorTempC: null,
   carLocation: null,
   carLocationAt: null,
+  homeCoord: null,
+  workCoord: null,
   tirePressures: null,
   media: null,
   targetTempC: 19.5,
