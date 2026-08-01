@@ -152,6 +152,11 @@ Not yet root-caused unless noted; the file named is where the work starts, not a
     Mode value (e.g. 139). Bump Speed Limit Mode 139 → 140 and Parental Controls stays 100. Unify to
     one backing field, mirroring the car. `security.tsx` state.
 
+12. **Charging-finished panel: "Unlock Port" didn't unlock.** On the charging-finished panel, tapping
+    **Unlock Port** did nothing — the port had to be released from the car itself. Seen once
+    (2026-07-30); unclear whether it's specific to the finish screen or the charge-port unlock in
+    general. Needs a repro. Charge screen / charge-port command.
+
 ---
 
 ## Done 2026-07-28
