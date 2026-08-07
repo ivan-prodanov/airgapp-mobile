@@ -287,7 +287,7 @@ function NavRow({
   return (
     <Pressable style={[styles.row, disabled && styles.rowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={styles.iconCol}>
-        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={26} />
+        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={24} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -337,7 +337,7 @@ function ToggleRow({
   return (
     <View style={[styles.row, disabled && styles.rowDisabled]}>
       <View style={styles.iconCol}>
-        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={26} />
+        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={24} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -400,13 +400,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    paddingVertical: 18,
+    // Tesla's settings rows are tighter than the home MENU rows (which are 18) —
+    // calibrated to the screenshot's row pitch (~13% smaller than ours was).
+    paddingVertical: 13,
   },
   rowDisabled: {
     opacity: 0.35,
   },
   iconCol: {
-    width: 34,
+    width: 32,
     alignItems: 'center',
   },
   textCol: {
@@ -414,13 +416,13 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   rowTitle: {
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '600',
     color: 'white',
   },
   rowSub: {
     fontSize: 14,
-    lineHeight: 19,
+    lineHeight: 18,
     color: 'rgba(255,255,255,0.5)',
   },
   clearPin: {
