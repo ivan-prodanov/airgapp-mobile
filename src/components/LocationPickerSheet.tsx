@@ -39,7 +39,11 @@ export function LocationPickerSheet({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.card, { paddingTop: insets.top + 8 }]}>
+      {/* paddingTop = insets.top (NOT +8): the screen's real header is a
+          SafeAreaView(top) + header paddingTop:8, so its title sits at
+          insets.top + 8. headerBlock below adds that same 8, so the sheet's title
+          lands at the SAME Y and doesn't jump down when the dropdown opens. */}
+      <View style={[styles.card, { paddingTop: insets.top }]}>
         {/* The header, kept on the sheet — tap the ▲ (or anywhere on it) to close. */}
         <View style={styles.headerBlock}>
           <Text style={styles.headerTitle}>Set Schedules</Text>
