@@ -176,7 +176,7 @@ export default function SecurityScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <NavRow symbol="dashcam-filled" title="Dashcam Viewer" subtitle="View saved clips" disabled />
+          <NavRow symbol="dashcam-filled" title="Dashcam Viewer" subtitle="View saved clips" />
           <ToggleRow
             symbol={state.sentryEnabled ? { png: SENTRY.on, tint: false } : { png: SENTRY.off }}
             title="Sentry Mode"
@@ -229,6 +229,21 @@ export default function SecurityScreen() {
               phoneKeyMissing ? 'Please set up Phone Key' : state.valetMode ? 'Disable Valet Mode to enable' : undefined
             }
           />
+
+          <Divider />
+          <NavRow symbol="person" title="Add Driver" />
+
+          <Divider />
+          <ToggleRow
+            symbol="phone-key"
+            title="Phone Key"
+            subtitle="Automatically unlock and start when mobile device is near"
+            value={!phoneKeyMissing}
+            onToggle={() => {}}
+          />
+          <NavRow symbol="lightbulb" title="Phone Key Best Practices" />
+          <NavRow symbol="badge" title="Add Key Card" />
+          <NavRow symbol="bluetooth" title="Set Up Bluetooth Audio" />
         </ScrollView>
       </SafeAreaView>
 
@@ -265,7 +280,7 @@ function NavRow({
 }: {
   symbol: IconRef;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   onPress?: () => void;
   disabled?: boolean;
 }) {
@@ -276,11 +291,16 @@ function NavRow({
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowSub}>{subtitle}</Text>
+        {subtitle ? <Text style={styles.rowSub}>{subtitle}</Text> : null}
       </View>
       <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.35)" size={16} weight="semibold" />
     </Pressable>
   );
+}
+
+// A full-width group separator, matching the Tesla page's sectioning.
+function Divider() {
+  return <View style={styles.divider} />;
 }
 
 function ToggleRow({
@@ -410,5 +430,12 @@ const styles = StyleSheet.create({
   },
   more: {
     paddingHorizontal: 6,
+  },
+  // Full-width group separator (cancels the scroll's 20pt side padding).
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: -20,
+    marginVertical: 8,
   },
 });
