@@ -77,10 +77,23 @@ export function TimeField({
       setOpen(true);
     });
 
+  // Which side of the screen is the chip on? A chip on the LEFT (charging Start/End)
+  // opens a popover that LEFT-aligns to it and grows from its top-LEFT corner; one on
+  // the RIGHT (precondition) right-aligns and grows from its top-RIGHT — always out of
+  // the chip and toward the centre, where there's room. This is the custom equivalent
+  // of iOS's native compact-picker popover, which anchors to the control and opens
+  // toward available space rather than hardcoding a side.
+  const alignLeft = anchor ? anchor.x + anchor.width / 2 < screenW / 2 : false;
   const left = anchor
-    ? Math.min(Math.max(anchor.x + anchor.width - CARD_W, 8), screenW - CARD_W - 8)
+    ? Math.min(
+        Math.max(alignLeft ? anchor.x : anchor.x + anchor.width - CARD_W, 8),
+        screenW - CARD_W - 8,
+      )
     : 8;
   const top = anchor ? anchor.y + anchor.height + 6 : 120;
+  // Pivot the grow/shrink at the chip's near corner (top-left for a left chip,
+  // top-right for a right chip).
+  const pivotX = alignLeft ? -CARD_W / 2 : CARD_W / 2;
 
   return (
     <>
@@ -111,10 +124,10 @@ export function TimeField({
               // origin, scales, then moves it back — so the corner stays put and
               // the popover expands/minimizes from it, like the native one.
               transform: [
-                { translateX: CARD_W / 2 },
+                { translateX: pivotX },
                 { translateY: -CARD_H / 2 },
                 { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }) },
-                { translateX: -CARD_W / 2 },
+                { translateX: -pivotX },
                 { translateY: CARD_H / 2 },
               ],
             },
