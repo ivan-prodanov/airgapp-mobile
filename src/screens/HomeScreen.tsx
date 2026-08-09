@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Easing,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -25,6 +26,7 @@ import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
 import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
+import { CarsSheet } from '@/components/CarsSheet';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
 import { isChargePanelVisible, shouldClearShowCharge } from '@/state/chargePanel';
@@ -44,6 +46,8 @@ import {
   climateStatusText,
   type ClimateStatusIcon,
 } from '@/ble/climateDisplay';
+import { TeslaFonts } from '@/constants/fonts';
+import { KM_PER_MILES } from '@/ble/batteryDisplay';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
@@ -127,6 +131,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
       ? bearingBetween(userCoord, { latitude: carLoc.lat, longitude: carLoc.lon })
       : null;
   const [customizing, setCustomizing] = useState(false);
+  const [carsOpen, setCarsOpen] = useState(false);
   const openCustomize = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setCustomizing(true);
@@ -532,6 +537,15 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <NavRow symbol="service-filled" title="Service" disabled />
           <NavRow symbol="dashcam-filled" title="Dashcam Viewer" disabled />
           <NavRow symbol="photo-filled" title="Photobooth" disabled />
+          {/* The vehicle-identity block that sits below Photobooth in the official
+              app's main menu: separator -> model wordmark -> image -> odometer /
+              VIN / software / Release Notes -> Specs & Warranty + Manage Drivers.
+              Odometer and VIN come from live state when available; software, the
+              photo, and the two buttons are placeholders until wired. */}
+          <VehicleSummary
+            state={state}
+            vin={fleet.vehicles[fleet.activeIndex]?.vin ?? null}
+          />
           </>
           )}
         </View>
@@ -550,7 +564,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             sit opposite them; the status line spans the width underneath. */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Pressable style={styles.nameWrap} onPress={() => actions.toggle('awake')}>
+            <Pressable style={styles.nameWrap} onPress={() => setCarsOpen(true)}>
               <Text style={styles.name}>{fleet.activeName}</Text>
               <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
             </Pressable>
@@ -598,6 +612,17 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
         ) : null}
         </Animated.View>
       </SafeAreaView>
+
+      {/* Rendered LAST so the dropdown paints above the fixed header (name /
+          battery / status text), which is itself absolutely positioned. */}
+      <CarsSheet
+        visible={carsOpen}
+        onClose={() => setCarsOpen(false)}
+        vehicles={fleet.vehicles}
+        activeId={fleet.activeId}
+        onSelectVehicle={fleet.setActiveVehicle}
+        onAddVehicle={fleet.addVehicle}
+      />
     </Animated.View>
   );
 }
@@ -715,6 +740,49 @@ function NavRow({
       </View>
       <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.4)" size={16} />
     </Pressable>
+  );
+}
+
+// The Airgapp brand wordmark shown below Photobooth (replaces the Tesla-style
+// "MODEL Y" text + the car image).
+const AIRGAP_LOGO = require('@/assets/images/airgap-logo-full.png');
+
+// Shown for any field the car hasn't supplied. Only the one enrolled car carries
+// a VIN and a streamed odometer; demo cars (added via addVehicle) have neither,
+// and nothing feeds a software version yet — so those read as a dash rather than
+// a shared fake value that would look identical across every demo car.
+const MISSING = '—';
+
+// The vehicle-identity block below Photobooth: separator, model wordmark, the
+// vehicle image (rendered Godot snapshot of this exact car, silhouette until it
+// arrives), the odometer / VIN / software lines with a Release Notes link, and the
+// Specs & Warranty / Manage Drivers buttons. Odometer and VIN render live when
+// present and fall back to a dash otherwise; the two buttons are placeholders.
+function VehicleSummary({ state, vin }: { state: VehicleViewState; vin: string | null }) {
+  const odometer =
+    state.odometerMiles != null ? `${Math.round(state.odometerMiles * KM_PER_MILES)} km` : MISSING;
+
+  return (
+    <View style={styles.summary}>
+      <View style={styles.summaryDivider} />
+      <View style={styles.summaryLogoBox}>
+        <Image source={AIRGAP_LOGO} style={styles.summaryLogoImg} resizeMode="contain" />
+      </View>
+      <Text style={styles.summaryLine}>{odometer}</Text>
+      <Text style={styles.summaryLine}>VIN: {vin ?? MISSING}</Text>
+      <Text style={styles.summaryLine}>Software: {MISSING}</Text>
+      <Pressable disabled>
+        <Text style={styles.summaryLink}>Release Notes</Text>
+      </Pressable>
+      <View style={styles.summaryButtons}>
+        <Pressable style={styles.summaryButton} disabled>
+          <Text style={styles.summaryButtonText}>Specs & Warranty</Text>
+        </Pressable>
+        <Pressable style={styles.summaryButton} disabled>
+          <Text style={styles.summaryButtonText}>Manage Drivers</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -865,5 +933,61 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     backgroundColor: 'white',
+  },
+  // ── Vehicle-identity block below Photobooth ──────────────────────────────
+  summary: {
+    // Sits inside `menu`'s 16pt horizontal padding, so no inset of its own.
+    paddingBottom: 8,
+  },
+  // The full-width hairline separating Photobooth from the model section.
+  summaryDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginTop: 6,
+    marginBottom: 22,
+  },
+  // Same footprint as the old image frame (56% width). The BOX (a View) resolves
+  // the percentage width + aspectRatio reliably; the Image just fills it — putting
+  // width%/aspectRatio straight on the Image let it fall back to intrinsic pixels.
+  summaryLogoBox: {
+    width: '56%',
+    aspectRatio: 1060 / 446,
+    marginBottom: 18,
+  },
+  summaryLogoImg: {
+    width: '100%',
+    height: '100%',
+  },
+  summaryLine: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  summaryLink: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: 'rgba(255,255,255,0.6)',
+    textDecorationLine: 'underline',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  summaryButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  summaryButton: {
+    backgroundColor: '#2A2B2D',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryButtonText: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
   },
 });

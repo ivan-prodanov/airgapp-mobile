@@ -12,7 +12,11 @@ export type ReactToGodotType =
   | 'FADE_ROOF'
   | 'SHOW_FX_ABOVE'
   | 'SET_VEHICLE_LIGHTS'
-  | 'GET_VEHICLE_MARKERS';
+  | 'GET_VEHICLE_MARKERS'
+  // Off-screen snapshot request: render the given product config in the named
+  // pose(s) and save a PNG keyed by config_hash (handled by SnapshotManager on the
+  // Godot side; the result comes back as NEW_VEHICLE_SNAPSHOT).
+  | 'TAKE_SNAPSHOTS';
 
 export type GodotToReactType =
   | 'GODOT_READY'

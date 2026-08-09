@@ -58,6 +58,39 @@ test('addVehicle appends a fresh car of the chosen model and makes it active', (
   assert.equal(fleet.activeId, 'veh_2');
 });
 
+test('addVehicle uses a provided name (trimmed + de-duped), else the model base name', () => {
+  let fleet = addVehicle(createInitialFleet(), 'model3', { name: '  Blue Steel  ' });
+  assert.equal(activeVehicle(fleet).name, 'Blue Steel');
+  // Blank / whitespace-only names fall back to the model base name.
+  fleet = addVehicle(fleet, 'modelX', { name: '   ' });
+  assert.equal(activeVehicle(fleet).name, 'Model X');
+  // A duplicate provided name is de-duped like the model-name path.
+  fleet = addVehicle(fleet, 'model3', { name: 'Blue Steel' });
+  assert.equal(activeVehicle(fleet).name, 'Blue Steel (2)');
+});
+
+test('addVehicle stores per-car color / wheel / interior / performance overrides in state', () => {
+  const fleet = addVehicle(createInitialFleet(), 'modelY', {
+    exteriorColor: 'DeepBlue',
+    wheelType: 'Induction20Black',
+    interiorTrim: 'Cream',
+    performance: true,
+  });
+  const added = activeVehicle(fleet).state;
+  assert.equal(added.exteriorColor, 'DeepBlue');
+  assert.equal(added.wheelType, 'Induction20Black');
+  assert.equal(added.interiorTrim, 'Cream');
+  assert.equal(added.performance, true);
+});
+
+test('addVehicle without overrides leaves all config overrides null (model default renders)', () => {
+  const added = activeVehicle(addVehicle(createInitialFleet(), 'modelX')).state;
+  assert.equal(added.exteriorColor, null);
+  assert.equal(added.wheelType, null);
+  assert.equal(added.interiorTrim, null);
+  assert.equal(added.performance, null);
+});
+
 test('addVehicle de-dups names for the same model', () => {
   let fleet = createInitialFleet();
   fleet = addVehicle(fleet, 'model3');

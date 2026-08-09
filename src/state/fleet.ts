@@ -107,14 +107,36 @@ function defaultStateForModel(model: CarModel, inheritFrom: VehicleViewState): V
   };
 }
 
-export function addVehicle(fleet: FleetState, model: CarModel): FleetState {
+// opts.name lets the Add Car flow give the car a custom name; blank/whitespace
+// falls back to the model's base name. Either way it's de-duped like before.
+// The other opts are the per-car config overrides (Godot key strings /
+// performance flag); omitted → the model's default config renders.
+export function addVehicle(
+  fleet: FleetState,
+  model: CarModel,
+  opts?: {
+    name?: string;
+    exteriorColor?: string;
+    wheelType?: string;
+    interiorTrim?: string;
+    performance?: boolean;
+  },
+): FleetState {
   const id = nextId(fleet);
-  const name = uniqueName(MODEL_BASE_NAME[model], fleet.vehicles.map((v) => v.name));
+  const requested = opts?.name?.trim();
+  const base = requested && requested.length > 0 ? requested : MODEL_BASE_NAME[model];
+  const name = uniqueName(base, fleet.vehicles.map((v) => v.name));
   const inheritFrom = activeVehicle(fleet).state;
   const vehicle: Vehicle = {
     id,
     name,
-    state: defaultStateForModel(model, inheritFrom),
+    state: {
+      ...defaultStateForModel(model, inheritFrom),
+      exteriorColor: opts?.exteriorColor ?? null,
+      wheelType: opts?.wheelType ?? null,
+      interiorTrim: opts?.interiorTrim ?? null,
+      performance: opts?.performance ?? null,
+    },
   };
   return { vehicles: [...fleet.vehicles, vehicle], activeId: id };
 }

@@ -189,6 +189,16 @@ export interface VehicleViewState {
   // Which Tesla model the Godot scene renders. Switching this re-issues SHOW_PRODUCT with that model's
   // config (mirrors the harness S/3/X/Y buttons). Only Model Y is texture-verified on device.
   carModel: CarModel;
+  // Per-car config overrides chosen in the Add Car flow. null = use the model's
+  // default from vehicleConfigs. When set, createShowProductMessage merges them
+  // over vehicle_config, so the renderer applies them to this specific car.
+  //   exteriorColor / wheelType — Godot ExteriorColorValue / MobileWheelTypeEnumMap keys.
+  //   interiorTrim            — Godot InteriorMap key (Black / White / Cream …).
+  //   performance             — trim: red brake calipers + rear spoiler on/off.
+  exteriorColor: string | null;
+  wheelType: string | null;
+  interiorTrim: string | null;
+  performance: boolean | null;
   // Persistent manual lights (harness J / N). Driven via the SET_VEHICLE_LIGHTS message, not the
   // product payload — the Godot scene has no product-state path for these.
   headlightsOn: boolean;
@@ -320,6 +330,10 @@ export const initialVehicleState: VehicleViewState = {
   centerDisplay: null,
   activeRoute: null,
   carModel: 'modelY',
+  exteriorColor: null,
+  wheelType: null,
+  interiorTrim: null,
+  performance: null,
   headlightsOn: false,
   brakeLightsOn: false,
   lightingMode: 'mobile',

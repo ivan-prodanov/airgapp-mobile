@@ -3,6 +3,7 @@ import { PixelRatio } from 'react-native';
 import { CAMERA_ANIM, cameraPresets } from './cameraPresets';
 import type { FrameData, GodotMessage } from '../types/rendererMessages';
 import { modelYProductConfig, vehicleConfigs, type CameraMode, type CarModel, type LightingMode, type ThemeMode, type VehicleViewState } from '../types/vehicleTypes';
+import { configForState } from './vehicleConfigForState';
 
 export const VEHICLE_ID = modelYProductConfig.id;
 
@@ -46,23 +47,36 @@ export function createFrameMessage(frame: FrameData): GodotMessage<'UPDATE_MAIN_
   };
 }
 
-export function createShowProductMessage(state: VehicleViewState): GodotMessage<'SHOW_PRODUCT'> {
+// The full SHOW_PRODUCT-shaped payload for a car: its (override-merged) config plus
+// the dynamic state block. Shared by SHOW/UPDATE_PRODUCT and TAKE_SNAPSHOTS so the
+// snapshot renders the exact same car the main view would.
+function productDataForState(state: VehicleViewState) {
   return {
-    type: 'SHOW_PRODUCT',
-    data: {
-      ...vehicleConfigs[state.carModel],
-      ...createGodotStatePayload(state),
-    },
+    ...configForState(state),
+    ...createGodotStatePayload(state),
   };
 }
 
+export function createShowProductMessage(state: VehicleViewState): GodotMessage<'SHOW_PRODUCT'> {
+  return { type: 'SHOW_PRODUCT', data: productDataForState(state) };
+}
+
 export function createUpdateProductMessage(state: VehicleViewState): GodotMessage<'UPDATE_PRODUCT'> {
+  return { type: 'UPDATE_PRODUCT', data: productDataForState(state) };
+}
+
+// Ask the off-screen SnapshotManager to render this car in the given pose(s) and
+// save a PNG named `<configHash>_<POSE>.png` under user://snapshots. The result
+// returns as a NEW_VEHICLE_SNAPSHOT message. `vehicle` is the same product payload
+// SHOW_PRODUCT uses (the snapshot scene loads it itself + applies default state).
+export function createTakeSnapshotsMessage(
+  state: VehicleViewState,
+  configHash: string,
+  poses: string[] = ['THREEQUARTER'],
+): GodotMessage<'TAKE_SNAPSHOTS'> {
   return {
-    type: 'UPDATE_PRODUCT',
-    data: {
-      ...vehicleConfigs[state.carModel],
-      ...createGodotStatePayload(state),
-    },
+    type: 'TAKE_SNAPSHOTS',
+    data: { vehicle: productDataForState(state), poses, config_hash: configHash },
   };
 }
 

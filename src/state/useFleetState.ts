@@ -34,7 +34,16 @@ export interface Fleet {
   activeId: string;
   activeIndex: number;
   activeName: string;
-  addVehicle: (model: CarModel) => void;
+  addVehicle: (
+    model: CarModel,
+    opts?: {
+      name?: string;
+      exteriorColor?: string;
+      wheelType?: string;
+      interiorTrim?: string;
+      performance?: boolean;
+    },
+  ) => void;
   removeVehicle: (id: string) => void;
   setActiveVehicle: (id: string) => void;
   nextVehicle: () => void;
@@ -328,7 +337,7 @@ export function useFleetState(): {
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),
       activeName: current.name,
-      addVehicle: (model) => setFleet((f) => addVehicle(f, model)),
+      addVehicle: (model, opts) => setFleet((f) => addVehicle(f, model, opts)),
       removeVehicle: (id) => setFleet((f) => removeVehicle(f, id)),
       setActiveVehicle: (id) => setFleet((f) => setActiveVehicle(f, id)),
       nextVehicle: () => setFleet((f) => setActiveVehicle(f, nextVehicleId(f))),

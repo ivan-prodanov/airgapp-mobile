@@ -8,6 +8,7 @@ import {
   createMoveCameraMessages,
   createShowFxAboveMessage,
   createShowProductMessage,
+  createTakeSnapshotsMessage,
   createThemeMessage,
   createUpdateProductMessage,
   createVehicleLightsMessage,
@@ -19,6 +20,14 @@ import type { VehicleMarkers } from '../types/markerTypes';
 import type { CameraMode, VehicleViewState } from '../types/vehicleTypes';
 
 type Listener<T> = (payload: T) => void;
+
+// NEW_VEHICLE_SNAPSHOT payload: `path` is RELATIVE to user:// (i.e. the app's
+// Documents dir on iOS), e.g. "snapshots/<config_hash>_THREEQUARTER.png".
+export interface VehicleSnapshot {
+  config_hash: string;
+  pose: string;
+  path: string;
+}
 
 export class GodotRendererBridge {
   private diagnostics: RendererDiagnostics = {
@@ -202,6 +211,21 @@ export class GodotRendererBridge {
   onRawMessage(listener: Listener<GodotMessage>): () => void {
     this.rawListeners.add(listener);
     return () => this.rawListeners.delete(listener);
+  }
+
+  // Request an off-screen snapshot of `state`'s car in the given pose(s), keyed by
+  // configHash. The PNG comes back via onSnapshot (NEW_VEHICLE_SNAPSHOT). Fire-and-
+  // forget — SnapshotManager serializes concurrent requests on the Godot side.
+  takeSnapshot(state: VehicleViewState, configHash: string, poses: string[] = ['THREEQUARTER']): void {
+    this.send(createTakeSnapshotsMessage(state, configHash, poses));
+  }
+
+  onSnapshot(listener: Listener<VehicleSnapshot>): () => void {
+    return this.onRawMessage((msg) => {
+      if (msg.type === 'NEW_VEHICLE_SNAPSHOT' && msg.data) {
+        listener(msg.data as VehicleSnapshot);
+      }
+    });
   }
 
   getDiagnostics(): RendererDiagnostics {

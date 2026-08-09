@@ -10,6 +10,7 @@ import { TIRE_PRESSURE_BAR_URI } from '@/constants/tirePressureIcon';
 
 import { CARD_FADE_MS, cardFadeEasing } from '@/godot/cardTransition';
 import { VehicleCanvas } from '@/godot/VehicleCanvas';
+import { SnapshotDriver } from '@/godot/SnapshotDriver';
 import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
@@ -164,6 +165,9 @@ export default function Index() {
   return (
     <View style={styles.root}>
       <VehicleCanvas state={state} actions={actions} vehicleId={vehicleId} carTranslateX={carTranslateX}>
+        {/* Drives per-car snapshot rendering into vehicleSnapshotStore (needs the
+            Godot bridge, so it lives inside VehicleCanvas). Renders nothing. */}
+        <SnapshotDriver />
         {/* Root card: always mounted, never fades (its CONTENT does — HomeScreen
             owns that clock). Untouchable while a card covers it. */}
         <View style={StyleSheet.absoluteFill} pointerEvents={pushed ? 'none' : 'box-none'}>
