@@ -27,6 +27,7 @@ import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
 import { CarsSheet } from '@/components/CarsSheet';
+import { confirmRemoveVehicle } from '@/components/confirmRemoveVehicle';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
 import { isChargePanelVisible, shouldClearShowCharge } from '@/state/chargePanel';
@@ -545,6 +546,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <VehicleSummary
             state={state}
             vin={fleet.vehicles[fleet.activeIndex]?.vin ?? null}
+            name={fleet.activeName}
+            isReal={fleet.vehicles[fleet.activeIndex]?.vin != null}
+            onRemove={() => fleet.removeVehicle(fleet.activeId)}
           />
           </>
           )}
@@ -621,6 +625,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
         vehicles={fleet.vehicles}
         activeId={fleet.activeId}
         onSelectVehicle={fleet.setActiveVehicle}
+        onRemoveVehicle={fleet.removeVehicle}
         onAddVehicle={fleet.addVehicle}
       />
     </Animated.View>
@@ -747,20 +752,24 @@ function NavRow({
 // "MODEL Y" text + the car image).
 const AIRGAP_LOGO = require('@/assets/images/airgap-logo-full.png');
 
-// Shown for any field the car hasn't supplied. Only the one enrolled car carries
-// a VIN and a streamed odometer; demo cars (added via addVehicle) have neither,
-// and nothing feeds a software version yet — so those read as a dash rather than
-// a shared fake value that would look identical across every demo car.
-const MISSING = '—';
-
-// The vehicle-identity block below Photobooth: separator, model wordmark, the
-// vehicle image (rendered Godot snapshot of this exact car, silhouette until it
-// arrives), the odometer / VIN / software lines with a Release Notes link, and the
-// Specs & Warranty / Manage Drivers buttons. Odometer and VIN render live when
-// present and fall back to a dash otherwise; the two buttons are placeholders.
-function VehicleSummary({ state, vin }: { state: VehicleViewState; vin: string | null }) {
-  const odometer =
-    state.odometerMiles != null ? `${Math.round(state.odometerMiles * KM_PER_MILES)} km` : MISSING;
+// The vehicle-identity block below Photobooth: separator, Airgapp logo, the odometer
+// and VIN lines, and a Remove Vehicle button. Odometer and VIN render live when
+// present and fall back to a dash otherwise.
+function VehicleSummary({
+  state,
+  vin,
+  name,
+  isReal,
+  onRemove,
+}: {
+  state: VehicleViewState;
+  vin: string | null;
+  name: string;
+  isReal: boolean;
+  onRemove: () => void;
+}) {
+  // Only render each line when it has a value — no dash placeholder.
+  const odometerKm = state.odometerMiles != null ? `${Math.round(state.odometerMiles * KM_PER_MILES)} km` : null;
 
   return (
     <View style={styles.summary}>
@@ -768,18 +777,11 @@ function VehicleSummary({ state, vin }: { state: VehicleViewState; vin: string |
       <View style={styles.summaryLogoBox}>
         <Image source={AIRGAP_LOGO} style={styles.summaryLogoImg} resizeMode="contain" />
       </View>
-      <Text style={styles.summaryLine}>{odometer}</Text>
-      <Text style={styles.summaryLine}>VIN: {vin ?? MISSING}</Text>
-      <Text style={styles.summaryLine}>Software: {MISSING}</Text>
-      <Pressable disabled>
-        <Text style={styles.summaryLink}>Release Notes</Text>
-      </Pressable>
+      {odometerKm ? <Text style={styles.summaryLine}>{odometerKm}</Text> : null}
+      {vin ? <Text style={styles.summaryLine}>VIN: {vin}</Text> : null}
       <View style={styles.summaryButtons}>
-        <Pressable style={styles.summaryButton} disabled>
-          <Text style={styles.summaryButtonText}>Specs & Warranty</Text>
-        </Pressable>
-        <Pressable style={styles.summaryButton} disabled>
-          <Text style={styles.summaryButtonText}>Manage Drivers</Text>
+        <Pressable style={styles.summaryButton} onPress={() => confirmRemoveVehicle({ name, isReal, onRemove })}>
+          <Text style={[styles.summaryButtonText, styles.summaryButtonDanger]}>Remove Vehicle</Text>
         </Pressable>
       </View>
     </View>
@@ -964,18 +966,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: 'rgba(255,255,255,0.5)',
   },
-  summaryLink: {
-    fontFamily: TeslaFonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    color: 'rgba(255,255,255,0.6)',
-    textDecorationLine: 'underline',
-    marginTop: 4,
-    marginBottom: 20,
-  },
   summaryButtons: {
     flexDirection: 'row',
     gap: 12,
+    marginTop: 18,
   },
   summaryButton: {
     backgroundColor: '#2A2B2D',
@@ -989,5 +983,8 @@ const styles = StyleSheet.create({
     fontFamily: TeslaFonts.medium,
     fontSize: 14,
     color: 'rgba(255,255,255,0.7)',
+  },
+  summaryButtonDanger: {
+    color: '#E5484D',
   },
 });

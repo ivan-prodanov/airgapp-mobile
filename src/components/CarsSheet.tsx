@@ -15,6 +15,7 @@ import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { VehicleThumbnail } from '@/components/VehicleThumbnail';
+import { confirmRemoveVehicle } from '@/components/confirmRemoveVehicle';
 import { TeslaFonts } from '@/constants/fonts';
 import type { Vehicle } from '@/state/fleet';
 import type { CarModel } from '@/types/vehicleTypes';
@@ -41,6 +42,7 @@ interface Props {
   vehicles: Vehicle[];
   activeId: string;
   onSelectVehicle: (id: string) => void;
+  onRemoveVehicle: (id: string) => void;
   onAddVehicle: (
     model: CarModel,
     opts?: {
@@ -61,7 +63,15 @@ interface Props {
 // Same sheet mechanics as CustomizeControlsSheet — Animated + PanResponder, since
 // RNGH is inert in this app's native tabs — but anchored at the TOP and dragged
 // UP to dismiss.
-export function CarsSheet({ visible, onClose, vehicles, activeId, onSelectVehicle, onAddVehicle }: Props) {
+export function CarsSheet({
+  visible,
+  onClose,
+  vehicles,
+  activeId,
+  onSelectVehicle,
+  onRemoveVehicle,
+  onAddVehicle,
+}: Props) {
   const { height } = useWindowDimensions();
   // Cap the car list so the card never runs past the screen; beyond that it
   // scrolls. Everything else (title, Add Car, handle) stays pinned.
@@ -134,6 +144,7 @@ export function CarsSheet({ visible, onClose, vehicles, activeId, onSelectVehicl
                   onSelectVehicle(id);
                   onClose();
                 }}
+                onRemove={onRemoveVehicle}
                 onAdd={() => {
                   Haptics.selectionAsync();
                   setMode('add');
@@ -174,6 +185,7 @@ function CarList({
   listMaxHeight,
   onClose,
   onSelect,
+  onRemove,
   onAdd,
 }: {
   vehicles: Vehicle[];
@@ -181,6 +193,7 @@ function CarList({
   listMaxHeight: number;
   onClose: () => void;
   onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
   onAdd: () => void;
 }) {
   return (
@@ -194,13 +207,23 @@ function CarList({
         {vehicles.map((v) => {
           const battery = v.state.batteryLevel != null ? `${Math.round(v.state.batteryLevel)}%` : null;
           return (
-            <Pressable key={v.id} style={styles.carRow} onPress={() => onSelect(v.id)}>
-              <View style={styles.carText}>
-                <Text style={[styles.carName, v.id === activeId && styles.carNameActive]}>{v.name}</Text>
-                {battery ? <Text style={styles.carBattery}>{battery}</Text> : null}
-              </View>
-              <VehicleThumbnail state={v.state} imageStyle={styles.carThumb} glyphSize={64} />
-            </Pressable>
+            <View key={v.id} style={styles.carRow}>
+              <Pressable style={styles.carSelect} onPress={() => onSelect(v.id)}>
+                <View style={styles.carText}>
+                  <Text style={[styles.carName, v.id === activeId && styles.carNameActive]}>{v.name}</Text>
+                  {battery ? <Text style={styles.carBattery}>{battery}</Text> : null}
+                </View>
+                <VehicleThumbnail state={v.state} imageStyle={styles.carThumb} glyphSize={64} />
+              </Pressable>
+              <Pressable
+                style={styles.carRemove}
+                hitSlop={8}
+                onPress={() =>
+                  confirmRemoveVehicle({ name: v.name, isReal: v.vin != null, onRemove: () => onRemove(v.id) })
+                }>
+                <SymbolView name="xmark.circle.fill" tintColor="rgba(255,255,255,0.35)" size={24} />
+              </Pressable>
+            </View>
           );
         })}
       </ScrollView>
@@ -492,8 +515,19 @@ const styles = StyleSheet.create({
   carRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 8,
+  },
+  // The tappable select area (name + battery + thumbnail); the X remove control
+  // sits outside it on the far right.
+  carSelect: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  carRemove: {
+    paddingLeft: 16,
+    paddingVertical: 6,
   },
   carText: {
     flex: 1,
