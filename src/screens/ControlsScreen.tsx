@@ -5,7 +5,7 @@ import { AppIcon } from '@/icons/AppIcon';
 
 import { MarkerOverlay } from '../godot/MarkerOverlay';
 import { TirePressureOverlay } from '../godot/TirePressureOverlay';
-import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS, type ControlActionId } from '../state/controlActions';
+import { CONTROL_ACTIONS, isControlActionPending, type ControlActionId } from '../state/controlActions';
 import { controlHaptic } from '../state/controlHaptic';
 import { useCarLinkStatus } from '../state/VehicleProvider';
 import { BusyIcon } from '../components/BusyIcon';
@@ -70,7 +70,7 @@ function Action({
   // iconButtonBusyOpacity fade); this screen — the one the bug was reported on —
   // had neither, and did not consult `pending` at all.
   const carLink = useCarLinkStatus();
-  const pending = CONTROL_AFFECTED_KEYS[id].some((key) => carLink.pending.has(key));
+  const pending = isControlActionPending(id, carLink.pending, carLink.pendingCommands);
   return (
     <Pressable
       style={[styles.action, pending ? styles.actionBusy : null]}

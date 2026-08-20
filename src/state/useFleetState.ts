@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { CarCommand } from '../ble/commands';
 import type { CarModel, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import { initialVehicleState } from '../types/vehicleTypes';
 import {
@@ -66,6 +67,9 @@ export interface Fleet {
   removeScheduleFromCar: (kind: ScheduleKind, carId: number) => void;
   // Reads the car's stored schedules and logs them raw (write-path verification).
   readSchedules: () => Promise<import('./useCarLink').ScheduleReadback>;
+  // Reads closures + parental state into the active car so the Security & Drivers
+  // page reflects the car. Resolves false on a demo/unlinked/sleeping car.
+  readSecurity: () => Promise<boolean>;
 }
 
 export function useFleetState(): {
@@ -97,6 +101,13 @@ export function useFleetState(): {
   // applyTelemetry; the guard needs the result) and is read only inside the
   // async poll, well after it's populated.
   const activeIsLiveRef = useRef(false);
+  // Whether the live car is actually REACHABLE right now (a read has recently
+  // succeeded), read as a ref so the command callbacks stay stable. Optimism is
+  // gated on this: we only pretend a command worked when the car can plausibly
+  // act on it. An enrolled-but-offline car ("last seen a day ago") still gets the
+  // command dispatched (it can wake a nearby asleep car), but NOT the optimistic
+  // flip — the spinner shows it's trying and the control updates only on confirm.
+  const reachableRef = useRef(false);
   // An optimistic play/pause, and how long it wins for. ONE FIELD, not the whole
   // `media` key — the earlier attempt stamped `media` with the 30s intent grace
   // and froze the entire card (title included) for half a minute.
@@ -107,9 +118,25 @@ export function useFleetState(): {
   // pause/play is finicky". 4s covers a ~3.75s rotation plus the command's own
   // round trip; after that the car is authoritative, whatever it says.
   const pendingPlayback = useRef<{ status: number; until: number } | null>(null);
+  // The live car's CONFIRMED state — a snapshot fed ONLY by the telemetry paths
+  // (this + hydrateTelemetry), never by optimistic taps. It is the rollback
+  // baseline: on a failed command we revert the affected keys to what the CAR
+  // last told us, not to the render-time optimistic value. Without this, toggling
+  // one control twice (climate on→off) made the second command capture the first
+  // command's UNCONFIRMED optimistic value as its baseline, so its failure
+  // "reverted" to a bright state and the control stuck on. (The full fix is
+  // layering optimistic-over-confirmed everywhere — the roadmap P0 — but the
+  // rollback target is the only place that bug actually bites.)
+  //
+  // It carries the same intent-filtered patch applyTelemetry applies, so a value
+  // being optimistically contested (under intent grace) does NOT overwrite the
+  // confirmed baseline until the car agrees or the grace lapses — exactly what we
+  // want to roll back to.
+  const confirmedStateRef = useRef<VehicleViewState>(initialVehicleState);
   const applyTelemetry = useCallback(
     (patch: Partial<VehicleViewState>) => {
       if (!activeIsLiveRef.current) return;
+      confirmedStateRef.current = { ...confirmedStateRef.current, ...patch };
       const pending = pendingPlayback.current;
       let next = patch;
       if (pending && patch.media) {
@@ -134,6 +161,10 @@ export function useFleetState(): {
   // targets vehicles[0] (the real car) directly, so the value paints instantly
   // and dimmed; the first live tick then overwrites it with fresh data.
   const hydrateTelemetry = useCallback((patch: Partial<VehicleViewState>) => {
+    // Cold-start cached telemetry is confirmed truth too — seed the baseline so a
+    // command that fails before the first live poll still rolls back to the car's
+    // last-known value rather than an optimistic one.
+    confirmedStateRef.current = { ...confirmedStateRef.current, ...patch };
     setFleet((f) => updateEnrolledVehicleState(f, (s) => ({ ...s, ...patch })));
   }, []);
   // Latest active-car state, tracked in a ref so useCarLink's stable poll/push
@@ -166,6 +197,22 @@ export function useFleetState(): {
   // tapping Lock on a demo Model S sent a real lock to the real Tesla.
   const activeIsLive = carLink.linked && !!carLink.vin && current.vin === carLink.vin;
   activeIsLiveRef.current = activeIsLive;
+  reachableRef.current = carLink.connection === 'online';
+
+  // dispatchToCar — the ONE door to the enrolled car. Every command MUST go
+  // through here so the demo-car gate can never be forgotten: that is exactly how
+  // "Open frunk"/honk/flash on a DEMO car reached the real Tesla (actuateFrunk,
+  // unlockChargePort and fireCommand each called carLink.dispatch directly,
+  // skipping the activeIsLive narrowing that Lock got via applyActiveUser). Reads
+  // the ref so the gate is evaluated at call time and the callback stays stable.
+  // Enforced by fleet.test.ts: the raw carLink dispatch call may appear ONLY here.
+  const dispatchToCar = useCallback(
+    (cmd: CarCommand, onFail: () => void = () => {}, keys: VehicleStateKey[] = []) => {
+      if (!activeIsLiveRef.current) return;
+      carLink.dispatch(cmd, onFail, keys);
+    },
+    [carLink],
+  );
 
   // applyActiveUser wraps applyActive for USER-initiated mutations only: it
   // computes prev→next and, for a linked (live) car, dispatches the reconciled
@@ -182,20 +229,41 @@ export function useFleetState(): {
   // the wrapper (and `actions`) always see the freshest snapshot.
   const applyActiveUser = useCallback(
     (update: (state: VehicleViewState) => VehicleViewState) => {
-      if (activeIsLive) {
-        const prev = current.state;
-        const next = update(prev);
-        // Each command carries the fields IT owns. dispatch gets those keys, so:
-        // the coalescer lanes per field, the grace window covers exactly them,
-        // and a failure reverts only that command's fields (not every edit made
-        // in the same tick — see revertFields).
-        for (const { cmd, keys } of diffToCommands(prev, next)) {
-          carLink.dispatch(cmd, () => applyActive((s) => revertFields(s, prev, keys)), keys);
-        }
+      const prev = current.state;
+      const next = update(prev);
+      // Each command carries the fields IT owns. dispatch gets those keys, so:
+      // the coalescer lanes per field, the grace window covers exactly them,
+      // and a failure reverts only that command's fields (not every edit made
+      // in the same tick — see revertFields).
+      const cmds = activeIsLive ? diffToCommands(prev, next) : [];
+      for (const { cmd, keys } of cmds) {
+        // Roll back to the CONFIRMED baseline (what the car last told us), read
+        // at failure time — NOT `prev` (the render-time optimistic snapshot),
+        // which can itself be an unconfirmed value from a prior tap. See
+        // confirmedStateRef.
+        dispatchToCar(cmd, () => applyActive((s) => revertFields(s, confirmedStateRef.current, keys)), keys);
       }
-      applyActive(update);
+      // The optimism gate applies ONLY to fields backed by a car command. UI-only
+      // changes (cameraMode → which panel/screen shows, tire-pressure toggle, etc.)
+      // must ALWAYS apply — gating them blanket-broke navigation on an offline car
+      // (the Controls/Climate menu rows are setCameraMode, routed through here).
+      // When the live car is UNREACHABLE we still dispatch above (it may wake a
+      // nearby asleep car) but don't optimistically FLIP the command fields — apply
+      // the update with those fields pinned to their pre-tap value; the spinner
+      // shows they're being attempted, and they update on confirm.
+      if (activeIsLive && !reachableRef.current) {
+        // Pin only BOOLEAN command fields — a toggle flipping to "on" offline
+        // falsely reads as success. A SETPOINT the user is dialing in (targetTempC,
+        // chargeLimitPercent, chargingAmps, speedLimitMph…) is their chosen value,
+        // not a success flag, so it must still move; it syncs to the car when
+        // reachable. So gate booleans, let numbers/enums through.
+        const commandKeys = cmds.flatMap((c) => c.keys).filter((k) => typeof prev[k] === 'boolean');
+        applyActive((s) => revertFields(update(s), prev, commandKeys));
+      } else {
+        applyActive(update);
+      }
     },
-    [carLink, applyActive, current.state],
+    [dispatchToCar, applyActive, current.state, activeIsLive],
   );
 
   // Frunk actuate. Lives here rather than in buildVehicleActions because it is
@@ -216,38 +284,77 @@ export function useFleetState(): {
     // Claim ONLY what we actually assert. affectedKeys stamps the intent-grace
     // window as well as the busy flag, and on a re-actuate we assert nothing —
     // claiming there would suppress the very "closed" read we are waiting for.
-    // See frunkActuateClaimedKeys.
-    carLink.dispatch({ type: 'openFrunk' }, () => {}, frunkActuateClaimedKeys(current.state));
-    applyActive(actuateFrunkState);
-  }, [carLink, applyActive, current.state]);
+    // See frunkActuateClaimedKeys. dispatchToCar gates on the live car; the
+    // optimistic OPEN below still applies so a DEMO car's frunk animates locally.
+    //
+    // On FAILURE, revert frunkOpen to the CONFIRMED baseline (what the car last
+    // reported) so a failed actuate doesn't leave the frunk looking open (bright)
+    // — the spinner covers the icon until then, so the user sees spinner → dim,
+    // never a false success. The double-tap design is untouched: on SUCCESS the
+    // optimistic OPEN stands, and both taps still reach the car.
+    dispatchToCar(
+      { type: 'openFrunk' },
+      () => applyActive((s) => revertFields(s, confirmedStateRef.current, ['frunkOpen'])),
+      frunkActuateClaimedKeys(current.state),
+    );
+    if (!activeIsLiveRef.current) {
+      // DEMO car: there's no car read to ever bring the frunk back to CLOSED, so
+      // actuateFrunkState (which only moves to OPEN) would leave it stuck open.
+      // A demo is a pure visual mock, so just TOGGLE it locally.
+      applyActive((s) => ({ ...s, frunkOpen: !s.frunkOpen }));
+    } else if (reachableRef.current) {
+      // Live + reachable: optimistic OPEN only; the car's read confirms the close
+      // (the double-tap fix — never hold a CLOSED the car hasn't confirmed).
+      applyActive(actuateFrunkState);
+    }
+    // Live + offline: no optimistic flip — the spinner shows it's being attempted.
+  }, [dispatchToCar, applyActive, current.state]);
 
   // Unlatch the charge port so a seated cable can be removed. The port is already
   // "open" (cable in), so a chargePortOpen patch would diff to nothing and never
   // reach the car — dispatch openChargePort EXPLICITLY. No optimistic change and
   // no claimed keys (we assert nothing that a read could contradict). Frunk lesson.
   const unlockChargePort = useCallback(() => {
-    carLink.dispatch({ type: 'openChargePort' }, () => {}, []);
-  }, [carLink]);
+    dispatchToCar({ type: 'openChargePort' });
+  }, [dispatchToCar]);
+
+  // Fire-and-forget momentary commands (honk, flash, remote start, HomeLink, boombox) — no persistent
+  // state to diff, so like the frunk they dispatch directly rather than through the reconciler.
+  // A one-shot with an optimistic side effect (e.g. unlatch's driverFrontDoorOpen)
+  // passes `optimistic` (a state updater) + `rollback`. The optimistic update is
+  // gated on reachability exactly like applyActiveUser — but it MUST live here, not
+  // in a bare a.patch(), because these fields have no reconciler command, so
+  // applyActiveUser's gate can't see them and would let the door "open" offline.
+  // Demo car → apply (visual mock); reachable live car → apply; offline → skip
+  // (the spinner shows it's attempting; the door opens only once the car confirms).
+  // Pure momentary commands (honk/flash) pass neither.
+  const fireCommand = useCallback(
+    (cmd: CarCommand, opts?: { optimistic?: (s: VehicleViewState) => VehicleViewState; rollback?: () => void }) => {
+      if (opts?.optimistic && (!activeIsLiveRef.current || reachableRef.current)) {
+        applyActive(opts.optimistic);
+      }
+      dispatchToCar(cmd, opts?.rollback);
+    },
+    [dispatchToCar, applyActive],
+  );
 
   const actions = useMemo(
-    () => ({ ...buildVehicleActions(applyActiveUser), actuateFrunk, unlockChargePort }),
-    [applyActiveUser, actuateFrunk, unlockChargePort],
+    () => ({ ...buildVehicleActions(applyActiveUser), actuateFrunk, unlockChargePort, fireCommand }),
+    [applyActiveUser, actuateFrunk, unlockChargePort, fireCommand],
   );
 
   // One-shot commands bypass the state diff (nothing optimistic to mirror), but
-  // still go through carLink.dispatch so they share the queue, the grace window
-  // and the failure toast with every other command.
+  // still go through dispatchToCar so they share the live-car gate, the queue, the
+  // grace window and the failure toast with every other command.
   const sendNavigation = useCallback(
     (lat: number, lon: number, label?: string) => {
-      if (!activeIsLive) return;
-      carLink.dispatch({ type: 'navigateTo', lat, lon, label }, () => {});
+      dispatchToCar({ type: 'navigateTo', lat, lon, label });
     },
-    [activeIsLive, carLink],
+    [dispatchToCar],
   );
 
   const sendSchedule = useCallback(
     (s: AnySchedule, coord: { latitude: number; longitude: number } | null) => {
-      if (!activeIsLive) return;
       // The modern schedules are location-keyed; with no known car position we
       // can't build a faithful one, so we skip the push rather than send (0,0).
       // The local store still saved it — the car just doesn't get it until we
@@ -258,22 +365,20 @@ export function useFleetState(): {
         s.kind === 'charging'
           ? ({ type: 'addChargeSchedule', sched: chargeScheduleToInput(s, coord) } as const)
           : ({ type: 'addPreconditionSchedule', sched: preconditionScheduleToInput(s, coord) } as const);
-      carLink.dispatch(cmd, () => {});
+      dispatchToCar(cmd);
     },
-    [activeIsLive, carLink],
+    [dispatchToCar],
   );
 
   const removeScheduleFromCar = useCallback(
     (kind: ScheduleKind, carId: number) => {
-      if (!activeIsLive) return;
-      carLink.dispatch(
+      dispatchToCar(
         kind === 'charging'
           ? { type: 'removeChargeSchedule', id: carId }
           : { type: 'removePreconditionSchedule', id: carId },
-        () => {},
       );
     },
-    [activeIsLive, carLink],
+    [dispatchToCar],
   );
 
   const sendMedia = useCallback(
@@ -313,7 +418,7 @@ export function useFleetState(): {
         // the optimistic glyph is corrected almost immediately — and if the car
         // REFUSED the command, being corrected is the right outcome, not
         // something to suppress for half a minute.
-        carLink.dispatch({ type: 'media', action }, () => {
+        dispatchToCar({ type: 'media', action }, () => {
           // The command failed: drop the hold immediately so the car's next read
           // is believed rather than suppressed for the rest of the window.
           pendingPlayback.current = null;
@@ -321,9 +426,9 @@ export function useFleetState(): {
         });
         return;
       }
-      carLink.dispatch({ type: 'media', action }, () => {});
+      dispatchToCar({ type: 'media', action });
     },
-    [activeIsLive, carLink, applyActive, current.state],
+    [activeIsLive, dispatchToCar, applyActive, current.state],
   );
 
   const fleetApi = useMemo<Fleet>(
@@ -333,6 +438,7 @@ export function useFleetState(): {
       sendSchedule,
       removeScheduleFromCar,
       readSchedules: carLink.readSchedules,
+      readSecurity: carLink.readSecurity,
       vehicles: fleet.vehicles,
       activeId: fleet.activeId,
       activeIndex: activeIndex(fleet),
@@ -343,7 +449,16 @@ export function useFleetState(): {
       nextVehicle: () => setFleet((f) => setActiveVehicle(f, nextVehicleId(f))),
       prevVehicle: () => setFleet((f) => setActiveVehicle(f, prevVehicleId(f))),
     }),
-    [fleet, current, sendNavigation, sendMedia, sendSchedule, removeScheduleFromCar, carLink.readSchedules],
+    [
+      fleet,
+      current,
+      sendNavigation,
+      sendMedia,
+      sendSchedule,
+      removeScheduleFromCar,
+      carLink.readSchedules,
+      carLink.readSecurity,
+    ],
   );
 
   const active = useMemo<[VehicleViewState, VehicleActions]>(
@@ -366,7 +481,9 @@ export function useFleetState(): {
       refresh: carLink.refresh,
       sendWithOutcome: carLink.sendWithOutcome,
       readSchedules: carLink.readSchedules,
+      readSecurity: carLink.readSecurity,
       pending: carLink.pending,
+      pendingCommands: carLink.pendingCommands,
       // NOT narrowed by activeIsLive: a bond wedge is a property of the PHONE,
       // so it is equally true whichever car is on screen.
       recoveryRemedy: carLink.recoveryRemedy,
@@ -384,6 +501,7 @@ export function useFleetState(): {
       carLink.wakeInFlight,
       carLink.refresh,
       carLink.pending,
+      carLink.pendingCommands,
       carLink.recoveryRemedy,
       carLink.piConfigured,
       carLink.vehicleBleName,

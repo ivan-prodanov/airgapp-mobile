@@ -45,13 +45,15 @@ import {
   getDriveStateAction,
   getLocationStateAction,
   getTirePressureStateAction,
+  getClosuresStateAction,
+  getParentalControlsStateAction,
   getChargeScheduleStateAction,
   getPreconditioningScheduleStateAction,
   getMediaStateAction,
   getMediaDetailStateAction,
 } from "./builders";
 import { decodeMessage, FromVCSECMessage, Response } from "./proto";
-import { parseCarActionStatus, type CarActionStatus } from "./carActionStatus";
+import { parseCarActionStatus, parseVcsecNominalError, type CarActionStatus } from "./carActionStatus";
 import {
   parseWhitelistPermissions,
   describeWhitelistPermissions,
@@ -162,6 +164,8 @@ export type InfotainmentStateKey =
   | "tires"
   | "media"
   | "mediaDetail"
+  | "closures"
+  | "parental"
   | "chargeSchedule"
   | "preconditionSchedule";
 
@@ -487,6 +491,35 @@ export function createCarGateway({
         const opStatus = status?.operationStatus;
         const fault = status?.signedMessageFault ?? 0;
 
+        // The car answers a REFUSED VCSEC command (lock/unlock/frunk/trunk/…) with a
+        // plaintext `FromVCSECMessage.nominalError` in the reply's
+        // `protobufMessageAsBytes` — e.g. a lock with a door open replies
+        // `nominalError.genericError = GENERICERROR_CLOSURES_OPEN` (captured on-car
+        // 2026-08-08). It is NOT in signedMessageStatus (null here) or the encrypted
+        // payload (empty), which is why the app used to treat a refused lock as a
+        // success and silently revert. Honour it: a nominalError is a hard rejection.
+        const vcsecError = parseVcsecNominalError(
+          (result.routable as { protobufMessageAsBytes?: Uint8Array | null }).protobufMessageAsBytes,
+        );
+        // GENERICERROR_ALREADY_ON is benign — the car is ALREADY in the requested
+        // state, so the command achieved its goal (a success for us, not a
+        // failure). GENERICERROR_NONE is "no error". Everything else is a hard
+        // rejection the user must be told about.
+        if (vcsecError && vcsecError !== "GENERICERROR_ALREADY_ON" && vcsecError !== "GENERICERROR_NONE") {
+          logw("gateway", "car rejected VCSEC command", { label, error: vcsecError });
+          return {
+            outcome: {
+              ok: false,
+              kind: "fault",
+              fault: 0,
+              faultName: "carRejected",
+              message: `[${label}] the car rejected it: ${vcsecError}`,
+              reason: vcsecError,
+            },
+            result,
+          };
+        }
+
         // opStatus 0 (or absent) means the ROUTABLE layer accepted the frame. It
         // does NOT mean the car carried the command out — that verdict is in
         // CarServer's Response.actionStatus, which we decode here.
@@ -511,13 +544,14 @@ export function createCarGateway({
               bytes: result.decryptedPayload?.length ?? 0,
             });
           }
-          // Only NAVIGATION is failed on the car's verdict for now. Other commands
-          // may be returning ERROR today in ways the app tolerates silently, and
-          // flipping all of them at once would invent user-visible failures with
-          // no evidence behind them. The log line above is how we gather that
-          // evidence; widen this once we know what it says.
-          const isNav = label.startsWith("navigate");
-          if (isNav && carStatus && !carStatus.ok) {
+          // Honour the car's OWN verdict for EVERY CarServer command. A CarServer
+          // actionStatus with result=ERROR is a genuine rejection (result 0=OK /
+          // 1=ERROR — there is no "wait"), which is how climate/defrost/seat &
+          // wheel heater/suspension report a door-open (and every other) refusal,
+          // the same channel navigation uses. The VCSEC nominalError above covers
+          // lock/frunk/trunk/chargePort; this covers the infotainment side, so no
+          // command silently swallows a rejection anymore.
+          if (carStatus && !carStatus.ok) {
             return {
               outcome: {
                 ok: false,
@@ -525,7 +559,8 @@ export function createCarGateway({
                 fault: 0,
                 faultName: "carRejected",
                 message: `[${label}] the car rejected it${carStatus.reason ? `: ${carStatus.reason}` : ""}`,
-                // Surfaced VERBATIM in the failure toast (commandMessages).
+                // Surfaced in the failure toast (commandMessages), verbatim unless
+                // it maps to readable copy.
                 ...(carStatus.reason ? { reason: carStatus.reason } : {}),
               },
               result,
@@ -860,6 +895,8 @@ export function createCarGateway({
       tires: getTirePressureStateAction,
       media: getMediaStateAction,
       mediaDetail: getMediaDetailStateAction,
+      closures: getClosuresStateAction,
+      parental: getParentalControlsStateAction,
       chargeSchedule: getChargeScheduleStateAction,
       preconditionSchedule: getPreconditioningScheduleStateAction,
     };
@@ -876,6 +913,13 @@ export function createCarGateway({
         "climate",
         "drive",
         "location",
+        // closures_state carries sentry/valet/speed-limit-mode + locked/windows —
+        // the parse existed but was never fed because no default read requested it,
+        // so those indicators (incl. Home's sentry) never reflected the car. One
+        // extra round trip per 60s tick, the cost the throttle already bounds.
+        // parental_controls_state is NOT here: it matters only on the Security
+        // screen, which fetches it on demand via readSecurity.
+        "closures",
         "media",
         "mediaDetail",
       ] as InfotainmentStateKey[]);

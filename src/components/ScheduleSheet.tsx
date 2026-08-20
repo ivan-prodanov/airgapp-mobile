@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { BusyIcon } from './BusyIcon';
 import { DayPicker } from './DayPicker';
 import { Toggle } from './Toggle';
 import { TimeField } from './TimeField';
@@ -30,6 +31,7 @@ export function ScheduleSheet({
   onSave,
   onDelete,
   onCancel,
+  saving,
 }: {
   visible: boolean;
   draft: AnySchedule | null;
@@ -37,6 +39,9 @@ export function ScheduleSheet({
   onSave: (s: AnySchedule) => void;
   onDelete?: () => void;
   onCancel: () => void;
+  // While the add command is in flight, the button text is replaced by a spinner
+  // and the button is disabled (Tesla's Create/Save behaviour).
+  saving?: boolean;
 }) {
   const { height } = useWindowDimensions();
   // Local working copy so edits are only committed on Save (Cancel discards them).
@@ -136,12 +141,16 @@ export function ScheduleSheet({
         <View style={styles.footer}>
           <Pressable
             style={[styles.createBtn, !canSave && styles.createBtnDisabled]}
-            disabled={!canSave}
+            disabled={!canSave || saving}
             onPress={() => onSave(work)}
           >
-            <Text style={[styles.createText, !canSave && styles.createTextDisabled]}>
-              {mode === 'create' ? 'Create' : 'Save'}
-            </Text>
+            {saving ? (
+              <BusyIcon size={22} />
+            ) : (
+              <Text style={[styles.createText, !canSave && styles.createTextDisabled]}>
+                {mode === 'create' ? 'Create' : 'Save'}
+              </Text>
+            )}
           </Pressable>
           {/* Below the button: Delete (edit) / Cancel (create), matching the Tesla app's layout. */}
           {mode === 'edit' && onDelete ? (

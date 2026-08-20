@@ -70,6 +70,7 @@ import {
   getDriveStateAction,
   getLocationStateAction,
   getClosuresStateAction,
+  getParentalControlsStateAction,
   getFullVehicleDataAction,
   defrostOnAction,
   defrostOffAction,
@@ -285,6 +286,14 @@ test('state-read builders set FLAG_ENCRYPT_RESPONSE_BIT and the right GetVehicle
 
   const closures = getClosuresStateAction();
   assert.equal(closures.flags, FLAG_ENCRYPT_RESPONSE_BIT);
+  assert.notEqual(decodeAction(closures.bytes).vehicleAction?.getVehicleData?.getClosuresState, undefined);
+
+  const parental = getParentalControlsStateAction();
+  assert.equal(parental.flags, FLAG_ENCRYPT_RESPONSE_BIT);
+  assert.notEqual(
+    decodeAction(parental.bytes).vehicleAction?.getVehicleData?.getParentalControlsState,
+    undefined,
+  );
 
   const full = getFullVehicleDataAction();
   assert.equal(full.flags, FLAG_ENCRYPT_RESPONSE_BIT);

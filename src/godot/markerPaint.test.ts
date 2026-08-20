@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { isLightExteriorColor, isLightHSB } from './markerPaint.ts';
+import { frunkLabelDark, isLightExteriorColor, isLightHSB } from './markerPaint.ts';
+import { initialVehicleState, type VehicleViewState } from '../types/vehicleTypes.ts';
 
 describe('isLightHSB (findings §2c, fn #30231 verbatim)', () => {
   it('calls anything brighter than 0.55 light, regardless of hue/sat', () => {
@@ -59,5 +60,36 @@ describe('isLightExteriorColor (findings §2c paint table)', () => {
   it('is tolerant of separator/case variants of the enum name', () => {
     assert.equal(isLightExteriorColor('PEARL_WHITE'), true);
     assert.equal(isLightExteriorColor('pearl white'), true);
+  });
+});
+
+describe('frunkLabelDark — tracks the SELECTED colour, not the model default', () => {
+  const withCar = (carModel: VehicleViewState['carModel'], exteriorColor: string | null): VehicleViewState => ({
+    ...initialVehicleState,
+    carModel,
+    exteriorColor,
+  });
+
+  it('no override → follows the model base paint (Model X base is PearlWhite → dark)', () => {
+    assert.equal(frunkLabelDark(withCar('modelX', null)), true);
+  });
+
+  it('no override → dark-based models get the white label (Model 3 base GlacierBlue → not dark)', () => {
+    assert.equal(frunkLabelDark(withCar('model3', null)), false);
+  });
+
+  // THE BUG: selecting white on a dark-default model must flip the label to dark.
+  // The old code read vehicleConfigs[carModel] (the base) and ignored the pick, so
+  // this returned false (white-on-white) — the reported "other white models".
+  it('selecting a white paint on a dark-default model → dark label (was white before the fix)', () => {
+    assert.equal(frunkLabelDark(withCar('model3', 'PearlWhite')), true);
+    assert.equal(frunkLabelDark(withCar('modelY', 'White')), true);
+  });
+
+  // The mirror: selecting a dark paint on Model X (PearlWhite base) must flip to
+  // the white label. The old code returned true (dark) regardless — "stuck on that model".
+  it('selecting a dark paint on Model X → white label (was dark before the fix)', () => {
+    assert.equal(frunkLabelDark(withCar('modelX', 'DeepBlue')), false);
+    assert.equal(frunkLabelDark(withCar('modelX', 'SolidBlack')), false);
   });
 });

@@ -1,6 +1,7 @@
 import type { IconRef } from '@/icons/AppIcon';
 import { DISCO_LIGHT, FART_PNG, LOW_POWER, SENTRY, unlatchPng } from '@/icons/nativePng';
 
+import type { CarCommand } from '../ble/commands';
 import type { VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import type { VehicleActions } from './useVehicleState';
 
@@ -37,10 +38,19 @@ export interface ControlActionDef {
   symbol: (state: VehicleViewState) => IconRef;
   /** When true, the glyph spins continuously (the climate fan while A/C is on). */
   spinning?: (state: VehicleViewState) => boolean;
+  /** When true, the favorites-bar icon gets Tesla's soft glow — shown while a control is actively
+   *  "working" (climate running). Tesla's `iconGlow`: a white shadow, radius 10, opacity 0.5. */
+  glow?: (state: VehicleViewState) => boolean;
   /** Whether the favorites-bar icon renders "active" (white) vs dimmed. */
   isActive: (state: VehicleViewState) => boolean;
   /** What happens when the favorites-bar icon is tapped. */
   run: (state: VehicleViewState, actions: VehicleActions) => void;
+  /**
+   * False for actions with no BLE command in our protocol yet (Light Show, Summon). The customize grid
+   * greys these out and refuses to add them as a favorite, showing a "not available" toast instead.
+   * Absent → available.
+   */
+  available?: boolean;
 }
 
 const noop = () => {};
@@ -63,8 +73,10 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     gridLabel: (s) => (s.climateOn ? 'On' : 'Off'),
     symbol: () => 'fan-filled',
     spinning: (s) => s.climateOn,
+    glow: (s) => s.climateOn,
     isActive: (s) => s.climateOn,
-    run: (_s, a) => a.setCameraMode('CLIMATE'),
+    // Tesla's favourite TOGGLES climate on/off; opening the Climate screen is the menu row's job.
+    run: (s, a) => a.setClimateOn(!s.climateOn),
   },
   charging: {
     id: 'charging',
@@ -118,24 +130,23 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     label: 'Flash',
     symbol: () => 'brights-filled',
     isActive: () => false,
-    run: (_s, a) => {
-      a.patch({ headlightsOn: true });
-      setTimeout(() => a.patch({ headlightsOn: false }), 1200);
-    },
+    run: (_s, a) => a.fireCommand({ type: 'flashLights' }),
   },
   honk: {
     id: 'honk',
     label: 'Honk',
     symbol: () => 'horn-filled',
     isActive: () => false,
-    run: noop,
+    run: (_s, a) => a.fireCommand({ type: 'honk' }),
   },
   lightShow: {
     id: 'lightShow',
     label: 'Light Show',
     symbol: () => ({ png: DISCO_LIGHT }),
     isActive: () => false,
+    // No BLE command in our protocol yet — greyed in the grid, refuses to be favourited.
     run: noop,
+    available: false,
   },
   lowPower: {
     id: 'lowPower',
@@ -152,7 +163,7 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     label: 'Start',
     symbol: () => 'remote-filled',
     isActive: () => false,
-    run: noop,
+    run: (_s, a) => a.fireCommand({ type: 'remoteStart' }),
   },
   sentry: {
     id: 'sentry',
@@ -167,35 +178,57 @@ export const CONTROL_ACTIONS: Record<ControlActionId, ControlActionDef> = {
     label: 'Summon',
     symbol: () => 'steering-wheel',
     isActive: () => false,
+    // No BLE command in our protocol yet — greyed in the grid, refuses to be favourited.
     run: noop,
+    available: false,
   },
   unlatchDoor: {
     id: 'unlatchDoor',
     label: 'Unlatch Door',
     symbol: (s) => ({ png: unlatchPng(s.carModel) }),
     isActive: (s) => s.driverFrontDoorOpen,
-    run: (_s, a) => a.toggle('driverFrontDoorOpen'),
+    // Unlatch = closureMoveRequest opening frontDriverDoor (same VCSEC mechanism as the frunk/trunk — see
+    // unlatchDriverDoorAction). The optimistic door-pop rides fireCommand's `optimistic` (NOT a bare patch):
+    // driverFrontDoorOpen has no reconciler diff rule, so applyActiveUser's reachability gate can't see it —
+    // routing it through fireCommand gets the SAME gate, so an OFFLINE tap doesn't falsely open the door.
+    // `rollback` reverts on failure. Spinner covers the icon until the car answers → spinner → dim on
+    // failure, spinner → open on success. Never a false success.
+    run: (_s, a) => {
+      a.fireCommand(
+        { type: 'unlatchDriverDoor' },
+        {
+          optimistic: (s) => ({ ...s, driverFrontDoorOpen: true }),
+          rollback: () => a.patch({ driverFrontDoorOpen: false }),
+        },
+      );
+    },
   },
   bioweapon: {
     id: 'bioweapon',
     label: 'Bioweapon Defense',
     symbol: () => 'biohazard-filled',
-    isActive: () => false,
-    run: noop,
+    // Stateful, like Sentry: toggling `bioweaponOn` drives the reconciler, which sends the bioweaponMode
+    // command (reconcile.ts).
+    isActive: (s) => s.bioweaponOn,
+    run: (_s, a) => a.toggle('bioweaponOn'),
   },
   homelink: {
     id: 'homelink',
     label: 'HomeLink',
     symbol: () => 'homelink-filled',
     isActive: () => false,
-    run: noop,
+    // Triggers the nearest HomeLink device at the car's GPS. No fix → nothing to trigger.
+    run: (s, a) => {
+      if (s.carLocation) a.fireCommand({ type: 'homelink', lat: s.carLocation.lat, lon: s.carLocation.lon });
+    },
   },
   fart: {
     id: 'fart',
     label: 'Fart',
     symbol: () => ({ png: FART_PNG }),
     isActive: () => false,
-    run: noop,
+    // Boombox sound 0 = the selected/default fart (Emissions Testing).
+    run: (_s, a) => a.fireCommand({ type: 'boombox', sound: 0 }),
   },
 };
 
@@ -223,32 +256,77 @@ export const CONTROL_ACTION_ORDER: ControlActionId[] = [
 
 export const DEFAULT_FAVORITES: ControlActionId[] = ['lock', 'climate', 'charging', 'frunk', 'vent'];
 
-// The VehicleStateKeys a control's real command puts in flight — used to render
-// a pending affordance on the favorites bar (a key is "pending" while its
-// command is dispatched but unconfirmed; see useCarLink.dispatch). Anything
-// still [] is not a live BLE command yet; add its key(s) here when it becomes
-// one. Empty arrays keep demo/unlinked cars unaffected regardless.
+// A control shows a loading spinner while ITS command is in flight, then reveals
+// the icon (bright iff isActive) once the car answers — on failure the optimistic
+// value has already rolled back, so the revealed icon is honest. That needs a
+// pending signal for EVERY action, and there are two kinds of command:
 //
-// `frunk` was left [] by that rule and then missed when openFrunk went live, so
-// the frunk never showed a busy affordance anywhere — which is part of why the
-// double-tap was so easy to trigger: nothing on screen said the first command
-// was still running.
+//   • STATEFUL actions dispatch through the reconciler, which claims the state
+//     key it changed (reconcile.ts). Those keys land in `carLink.pending`, so
+//     CONTROL_AFFECTED_KEYS lists exactly the key(s) each action's reconciled
+//     command claims (verified against reconcile.ts emit() calls).
+//   • MOMENTARY actions (honk/flash/start/homelink/fart) and unlatch dispatch a
+//     one-shot with NO state key, so they can't use the key channel. They ride
+//     `carLink.pendingCommands` (keyed by CarCommand type) instead — see
+//     CONTROL_AFFECTED_CMDS. frunk is in BOTH: its first tap claims `frunkOpen`,
+//     but a re-actuate deliberately claims no key (frunkActuateClaimedKeys), so
+//     the command channel is what keeps the spinner showing on the second tap.
+//
+// Empty arrays keep demo/unlinked cars unaffected (neither set ever populates).
 export const CONTROL_AFFECTED_KEYS: Record<ControlActionId, VehicleStateKey[]> = {
   lock: ['locked'],
-  climate: [],
-  charging: [],
+  climate: ['climateOn'],
+  charging: ['chargePortOpen', 'charging'],
   frunk: ['frunkOpen'],
-  trunk: [],
-  vent: [],
+  trunk: ['trunkOpen'],
+  vent: ['leftFrontWindowOpen', 'rightFrontWindowOpen', 'leftRearWindowOpen', 'rightRearWindowOpen'],
   flash: [],
   honk: [],
   lightShow: [],
   lowPower: ['lowPowerMode'],
   start: [],
-  sentry: [],
+  sentry: ['sentryEnabled'],
   summon: [],
   unlatchDoor: [],
-  bioweapon: [],
+  bioweapon: ['bioweaponOn'],
   homelink: [],
   fart: [],
 };
+
+// The CarCommand type(s) each action puts in flight that carry NO state key — the
+// momentary one-shots + frunk's re-actuate. Watched via carLink.pendingCommands
+// so these still show a spinner. Stateful actions leave this [] (they use the key
+// channel above). lightShow/summon have no live command, so both channels stay [].
+export const CONTROL_AFFECTED_CMDS: Record<ControlActionId, CarCommand['type'][]> = {
+  lock: [],
+  climate: [],
+  charging: [],
+  frunk: ['openFrunk'],
+  trunk: [],
+  vent: [],
+  flash: ['flashLights'],
+  honk: ['honk'],
+  lightShow: [],
+  lowPower: [],
+  start: ['remoteStart'],
+  sentry: [],
+  summon: [],
+  unlatchDoor: ['unlatchDriverDoor'],
+  bioweapon: [],
+  homelink: ['homelink'],
+  fart: ['boombox'],
+};
+
+// isControlActionPending — the ONE place the favorites bar / controls bar asks
+// "is this action's command in flight?", across both channels. Used by HomeScreen
+// and ControlsScreen so the spinner rule can't drift between them.
+export function isControlActionPending(
+  id: ControlActionId,
+  pendingKeys: ReadonlySet<VehicleStateKey>,
+  pendingCommands: ReadonlySet<CarCommand['type']>,
+): boolean {
+  return (
+    CONTROL_AFFECTED_KEYS[id].some((key) => pendingKeys.has(key)) ||
+    CONTROL_AFFECTED_CMDS[id].some((type) => pendingCommands.has(type))
+  );
+}

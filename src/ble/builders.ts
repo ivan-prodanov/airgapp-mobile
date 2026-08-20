@@ -104,6 +104,15 @@ export function closeTrunkAction(): ActionPayload {
     bytes: encodeVCSECMessage({ closureMoveRequest: { rearTrunk: CLOSURE_MOVE.CLOSE } }),
   };
 }
+// Unlatch the driver's door — a closureMoveRequest opening frontDriverDoor, exactly as the Tesla app's
+// `sendUnlatchDriverDoor` does (ClosureMoveRequestDoorFrom(DRIVER_FRONT_DOOR)). NOT an RKE action — there is
+// no RKE_ACTION_UNLATCH; it rides the same VCSEC closure mechanism as the frunk/trunk.
+export function unlatchDriverDoorAction(): ActionPayload {
+  return {
+    domain: DOMAIN_VEHICLE_SECURITY,
+    bytes: encodeVCSECMessage({ closureMoveRequest: { frontDriverDoor: CLOSURE_MOVE.OPEN } }),
+  };
+}
 export function openChargePortAction(): ActionPayload {
   return {
     domain: DOMAIN_VEHICLE_SECURITY,
@@ -615,6 +624,18 @@ export function getPreconditioningScheduleStateAction(): ActionPayload {
     domain: DOMAIN_INFOTAINMENT,
     flags: FLAG_ENCRYPT_RESPONSE_BIT,
     bytes: encodeInfotainmentAction({ getVehicleData: { getPreconditioningScheduleState: {} } }),
+  };
+}
+// Parental controls readback — the Customize-Parental-Controls page's truth
+// (active, pin_set, and the settings: speed limit, chill accel, require-safety,
+// curfew). The official app fetches this together with closures_state whenever
+// its Security screen is open ("on security screen, fetching closures & parental
+// controls state..."); we do the same via readSecurity.
+export function getParentalControlsStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getParentalControlsState: {} } }),
   };
 }
 

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
+import { BusyIcon } from '@/components/BusyIcon';
 import { defrostPng } from '@/icons/nativePng';
 import * as Haptics from 'expo-haptics';
 
@@ -23,7 +24,7 @@ import { StatusBarFade } from '../components/StatusBarFade';
 import { SHEET_SPRING } from '../godot/cardTransition';
 import { HI_TEMP, LO_TEMP } from '../state/fleet';
 import type { VehicleActions } from '../state/useVehicleState';
-import type { CabinOverheatMode, CabinOverheatTemp, VehicleViewState } from '../types/vehicleTypes';
+import type { CabinOverheatMode, CabinOverheatTemp, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 
 interface Props {
   state: VehicleViewState;
@@ -72,6 +73,24 @@ export function ClimateScreen({ state, actions }: Props) {
     wakeInFlight: carLink.wakeInFlight,
     now: Date.now(),
   }).stale;
+  // A control shows the in-flight affordance while its command's state key is
+  // pending (key-based, like the official app — pressing Defrost, which also turns
+  // climate on, spins BOTH the Defrost button and the power button). Buttons swap
+  // their content for a spinner; the Cabin-Overheat segmented group dims + disables
+  // with one spinner on top. Steppers (temp) are left alone — they fire per-step.
+  const pendingAny = (...keys: VehicleStateKey[]) => keys.some((k) => carLink.pending.has(k));
+  const climatePending = pendingAny('climateOn');
+  const ventPending = pendingAny(
+    'leftFrontWindowOpen',
+    'rightFrontWindowOpen',
+    'leftRearWindowOpen',
+    'rightRearWindowOpen',
+  );
+  const defrostPending = pendingAny('frontDefrostOn', 'rearDefrostOn');
+  const bioweaponPending = pendingAny('bioweaponOn');
+  const keeperPending = pendingAny('climateKeeper');
+  const overheatModePending = pendingAny('cabinOverheatMode');
+  const overheatTempPending = pendingAny('cabinOverheatTemp');
   const { height } = useWindowDimensions();
 
   // Collapsed peek = how much of the panel shows at rest.
@@ -329,6 +348,7 @@ export function ClimateScreen({ state, actions }: Props) {
             symbol="power"
             label={state.climateOn ? 'On' : 'Off'}
             active={state.climateOn}
+            pending={climatePending}
             onPress={() => {
               tap();
               actions.setClimateOn(!state.climateOn);
@@ -390,6 +410,7 @@ export function ClimateScreen({ state, actions }: Props) {
             symbol="vent-windows-filled"
             label={vented ? 'Close' : 'Vent'}
             active={vented}
+            pending={ventPending}
             onPress={toggleVent}
           />
         </View>
@@ -398,6 +419,7 @@ export function ClimateScreen({ state, actions }: Props) {
           symbol={{ png: defrostPng(state.carModel) }}
           label="Defrost Car"
           active={state.frontDefrostOn}
+          pending={defrostPending}
           onPress={toggleDefrost}
         />
         <View style={styles.spacer} />
@@ -405,6 +427,7 @@ export function ClimateScreen({ state, actions }: Props) {
           symbol="biohazard-filled"
           label="Bioweapon Defense Mode"
           active={state.bioweaponOn}
+          pending={bioweaponPending}
           onPress={onBioweaponPress}
         />
 
@@ -415,12 +438,14 @@ export function ClimateScreen({ state, actions }: Props) {
             label="Camp Mode"
             active={state.climateKeeper === 'camp'}
             first
+            pending={keeperPending}
             onPress={onCampPress}
           />
           <GroupRow
             symbol="dog"
             label="Pet Mode"
             active={state.climateKeeper === 'pet'}
+            pending={keeperPending}
             onPress={onPetPress}
           />
         </View>
@@ -437,6 +462,7 @@ export function ClimateScreen({ state, actions }: Props) {
               { key: 'on', label: 'On' },
             ]}
             value={state.cabinOverheatMode}
+            pending={overheatModePending}
             onChange={(k) => {
               tap();
               actions.setCabinOverheatMode(k as CabinOverheatMode);
@@ -456,6 +482,7 @@ export function ClimateScreen({ state, actions }: Props) {
                 { key: '40', label: '40°C' },
               ]}
               value={state.cabinOverheatTemp}
+              pending={overheatTempPending}
               onChange={(k) => {
                 tap();
                 actions.setCabinOverheatTemp(k as CabinOverheatTemp);
@@ -473,20 +500,26 @@ function Quick({
   label,
   active,
   onPress,
+  pending,
 }: {
   symbol: IconRef;
   label: string;
   active: boolean;
   onPress: () => void;
+  pending?: boolean;
 }) {
   return (
-    <Pressable style={styles.quick} onPress={onPress}>
+    <Pressable style={styles.quick} onPress={onPress} disabled={pending}>
       {/* INVERTED from what we had. Ours went BLUE when active and near-white
           when idle; across Ivan's off/on pair the glyph and its label are DIM
           when the state is off and WHITE when on. No blue anywhere in this row —
           blue is reserved for an engaged card (Defrost), which is the one place
           it appears in all four screenshots. */}
-      <AppIcon icon={symbol} color={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
+      {pending ? (
+        <BusyIcon size={QUICK_ICON_SIZE} />
+      ) : (
+        <AppIcon icon={symbol} color={active ? TEXT_BRIGHT : TEXT_DIM} size={QUICK_ICON_SIZE} />
+      )}
       <Text style={[styles.quickLabel, active && styles.quickLabelActive]}>{label}</Text>
     </Pressable>
   );
@@ -497,11 +530,13 @@ function Row({
   label,
   active,
   onPress,
+  pending,
 }: {
   symbol: IconRef;
   label: string;
   active: boolean;
   onPress: () => void;
+  pending?: boolean;
 }) {
   return (
     <Pressable
@@ -511,9 +546,18 @@ function Row({
         pressed && { opacity: PRESS_OPACITY },
       ]}
       onPress={onPress}
+      disabled={pending}
     >
-      <AppIcon icon={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
-      <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
+      {pending ? (
+        <View style={styles.rowSpinner}>
+          <BusyIcon size={ICON_SIZE} />
+        </View>
+      ) : (
+        <>
+          <AppIcon icon={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
+          <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -524,12 +568,14 @@ function GroupRow({
   active,
   first,
   onPress,
+  pending,
 }: {
   symbol: IconRef;
   label: string;
   active: boolean;
   first?: boolean;
   onPress: () => void;
+  pending?: boolean;
 }) {
   return (
     <Pressable
@@ -540,9 +586,18 @@ function GroupRow({
         pressed && { opacity: PRESS_OPACITY },
       ]}
       onPress={onPress}
+      disabled={pending}
     >
-      <AppIcon icon={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
-      <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
+      {pending ? (
+        <View style={styles.rowSpinner}>
+          <BusyIcon size={ICON_SIZE} />
+        </View>
+      ) : (
+        <>
+          <AppIcon icon={symbol} color={active ? TEXT_ON_ACTIVE : TEXT_DIM} size={ICON_SIZE} />
+          <Text style={[styles.rowText, active && styles.rowTextActive]}>{label}</Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -560,25 +615,36 @@ function Segmented({
   options,
   value,
   onChange,
+  pending,
 }: {
   options: { key: string; label: string }[];
   value: string;
   onChange: (key: string) => void;
+  // While the group's command is in flight the WHOLE control is disabled and
+  // dimmed, with one spinner centered on top (Tesla's Cabin-Overheat behaviour).
+  pending?: boolean;
 }) {
   return (
-    <View style={styles.segmented}>
-      {options.map((opt) => {
-        const selected = opt.key === value;
-        return (
-          <Pressable
-            key={opt.key}
-            style={[styles.segment, selected && styles.segmentSelected]}
-            onPress={() => onChange(opt.key)}
-          >
-            <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{opt.label}</Text>
-          </Pressable>
-        );
-      })}
+    <View>
+      <View style={[styles.segmented, pending && styles.segmentedPending]} pointerEvents={pending ? 'none' : 'auto'}>
+        {options.map((opt) => {
+          const selected = opt.key === value;
+          return (
+            <Pressable
+              key={opt.key}
+              style={[styles.segment, selected && styles.segmentSelected]}
+              onPress={() => onChange(opt.key)}
+            >
+              <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{opt.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {pending ? (
+        <View style={[StyleSheet.absoluteFill, styles.segmentedOverlay]} pointerEvents="none">
+          <BusyIcon size={ICON_SIZE} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -940,6 +1006,13 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH,
     borderColor: BORDER,
   },
+  // The full-width button's content is replaced by a spinner centered across it
+  // while its command is in flight.
+  rowSpinner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   rowActive: {
     backgroundColor: ACTIVE_BLUE,
     borderColor: ACTIVE_BLUE,
@@ -1051,6 +1124,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#212121',
     borderRadius: RADIUS,
+  },
+  // While its command is in flight the whole group dims and a single spinner sits
+  // centered on top of it.
+  segmentedPending: {
+    opacity: 0.4,
+  },
+  segmentedOverlay: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   segment: {
     flex: 1,

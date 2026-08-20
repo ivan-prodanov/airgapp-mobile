@@ -1,3 +1,4 @@
+import type { CarCommand } from '../ble/commands';
 import type {
   CabinOverheatMode,
   ClimateKeeperMode,
@@ -48,6 +49,15 @@ export interface VehicleActions {
    * and never reaches the car. Same one-command-two-meanings lesson as the frunk.
    */
   unlockChargePort: () => void;
+  /**
+   * Fire-and-forget a momentary BLE command that has no persistent state to diff (honk, flash, remote
+   * start, HomeLink, boombox). Dispatched directly like `actuateFrunk`, bypassing the reconciler — a
+   * no-op on a demo/unlinked car.
+   */
+  fireCommand: (
+    cmd: CarCommand,
+    opts?: { optimistic?: (s: VehicleViewState) => VehicleViewState; rollback?: () => void },
+  ) => void;
   patch: (patch: Partial<VehicleViewState>) => void;
   // Tapping the seat/wheel icon steps the level down (3→2→1→off); the menu sets the mode outright.
   stepSeatClimate: (seat: SeatPosition) => void;
@@ -78,7 +88,7 @@ export interface VehicleActions {
 // optimism in `actuateFrunkState` + an explicit dispatch — see fleet.ts.
 export function buildVehicleActions(
   apply: (update: (state: VehicleViewState) => VehicleViewState) => void,
-): Omit<VehicleActions, 'actuateFrunk' | 'unlockChargePort'> {
+): Omit<VehicleActions, 'actuateFrunk' | 'unlockChargePort' | 'fireCommand'> {
   return {
     setCameraMode: (cameraMode) => apply((s) => setCameraModeState(s, cameraMode)),
     setTirePressureVisible: (visible) => apply((s) => ({ ...s, tirePressureVisible: visible })),

@@ -30,6 +30,7 @@ import {
   openTrunkAction,
   closeTrunkAction,
   openChargePortAction,
+  unlatchDriverDoorAction,
   closeChargePortAction,
   flashLightsAction,
   climateOnAction,
@@ -94,6 +95,7 @@ export type CarCommand =
   | { type: 'openTrunk' }
   | { type: 'closeTrunk' }
   | { type: 'openChargePort' }
+  | { type: 'unlatchDriverDoor' }
   | { type: 'closeChargePort' }
   | { type: 'chargeStart' }
   | { type: 'chargeStop' }
@@ -206,6 +208,8 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
       return fromPayload(closeTrunkAction());
     case 'openChargePort':
       return fromPayload(openChargePortAction());
+    case 'unlatchDriverDoor':
+      return fromPayload(unlatchDriverDoorAction());
     case 'closeChargePort':
       return fromPayload(closeChargePortAction());
     case 'chargeStart':

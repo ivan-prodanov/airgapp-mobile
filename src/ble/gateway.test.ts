@@ -421,19 +421,22 @@ test('runAction (navigate): a car-rejected verdict fails the command with faultN
   assert.equal(car.decryptedCommands.length, 1);
 });
 
-test('runAction (non-navigation): the same car-rejected actionStatus does NOT fail a non-nav command — the nav-only scoping is deliberate', async () => {
+test('runAction (any CarServer command): a car-rejected actionStatus FAILS it — the verdict is honoured for all commands, not just nav', async () => {
   __resetSessionCaches();
   const rejected = encodeMessage(Response, {
-    actionStatus: { result: 1, resultReason: { plainText: 'timed reservation expired' } },
+    actionStatus: { result: 1, resultReason: { plainText: 'doors_open' } },
   });
   const { gateway } = makeGateway([{ kind: 'ok', response: rejected }]);
 
-  const outcome = await gateway.runCommand({ type: 'lock' });
+  const outcome = await gateway.runCommand({ type: 'climateOn' });
 
   assert.deepEqual(outcome, {
-    ok: true,
-    attempts: 1,
-    carStatus: { ok: false, reason: 'timed reservation expired' },
+    ok: false,
+    kind: 'fault',
+    fault: 0,
+    faultName: 'carRejected',
+    message: '[climateOn] the car rejected it: doors_open',
+    reason: 'doors_open',
   });
 });
 
@@ -578,16 +581,18 @@ test('awakeSync: partial success (charge + climate ok, drive + location fault) r
 // it incidentally via `decryptedCommands.length === 4`, so adding a state broke
 // them for reasons that had nothing to do with what they were testing. Pin it
 // here, once, by name.
-test('awakeSync: the default state list is charge/climate/drive/location/media/mediaDetail', async () => {
+test('awakeSync: the default state list is charge/climate/drive/location/closures/media/mediaDetail', async () => {
   __resetSessionCaches();
   const empty = encodeMessage(Response, { vehicleData: {} });
-  const { car, gateway } = makeGateway(Array.from({ length: 6 }, () => ({ kind: 'ok' as const, response: empty })));
+  const { car, gateway } = makeGateway(Array.from({ length: 7 }, () => ({ kind: 'ok' as const, response: empty })));
 
   await gateway.awakeSync();
 
-  // Six reads, one warm session. If you change the default, change this and say
-  // why in the commit — every extra state is another round trip per sync.
-  assert.equal(car.decryptedCommands.length, 6);
+  // Seven reads, one warm session. closures_state joined the default set so
+  // sentry/valet/speed-limit-mode (parsed but never previously requested) reflect
+  // the car app-wide. If you change the default, change this and say why in the
+  // commit — every extra state is another round trip per sync.
+  assert.equal(car.decryptedCommands.length, 7);
   assert.equal(car.openCount, 1);
 });
 

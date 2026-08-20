@@ -26,7 +26,7 @@ import {
   type SchedulesState,
 } from '@/state/schedules';
 import { useSchedules } from '@/state/useSchedules';
-import { useFleet } from '@/state/VehicleProvider';
+import { useCarLinkStatus, useFleet } from '@/state/VehicleProvider';
 import { TeslaFonts } from '@/constants/fonts';
 
 // Sofia city centre — the same fallback the Location screen uses when GPS isn't available yet.
@@ -52,9 +52,28 @@ type Editing = { draft: AnySchedule; mode: 'create' | 'edit' };
 export default function SchedulesScreen() {
   const router = useRouter();
   const fleet = useFleet();
+  const carLink = useCarLinkStatus();
   const { schedules, setAll, savePrecondition, saveCharging, remove, setEnabled } = useSchedules();
 
   const [editing, setEditing] = useState<Editing | null>(null);
+  // The sheet's Create/Save button shows a spinner and the sheet stays OPEN while
+  // the add command is in flight, closing when it settles — the official app's
+  // behaviour (button text → spinner, disabled). `savePressed` is set on tap; the
+  // effect below closes once the command clears. `pendingCommands` carries the add
+  // command's type (sendSchedule dispatches with no state key). If no command ever
+  // goes out (demo/no coord/not live) the effect still closes on the next tick.
+  const [savePressed, setSavePressed] = useState(false);
+  const scheduleSaveInFlight =
+    carLink.pendingCommands.has('addChargeSchedule') ||
+    carLink.pendingCommands.has('addPreconditionSchedule');
+  useEffect(() => {
+    if (!savePressed || scheduleSaveInFlight) return;
+    const t = setTimeout(() => {
+      setSavePressed(false);
+      setEditing(null);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [savePressed, scheduleSaveInFlight]);
   const [pickerOpen, setPickerOpen] = useState(false);
   // Selected location: null = Current Location (the car's position); otherwise the
   // location KEY (rounded coords) of another place that has schedules. Bugs 7 & 8.
@@ -247,7 +266,9 @@ export default function SchedulesScreen() {
     // (the modern schedules are location-keyed). Local store is the source of truth.
     fleet.sendSchedule(tagged, selectedCoord ?? carCoordLL);
     resyncSoon();
-    setEditing(null);
+    // Keep the sheet open with the Create/Save button spinning; the effect above
+    // closes it once the command settles (or immediately if none went out).
+    setSavePressed(true);
   };
   const onDelete = () => {
     if (editing) {
@@ -344,6 +365,7 @@ export default function SchedulesScreen() {
         onSave={onSave}
         onDelete={onDelete}
         onCancel={() => setEditing(null)}
+        saving={savePressed && scheduleSaveInFlight}
       />
       <LocationPickerSheet
         visible={pickerOpen}

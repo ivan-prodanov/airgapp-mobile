@@ -72,6 +72,16 @@ export interface CarLinkCache {
   sentryEnabled: boolean | null;
   valetMode: boolean | null;
   speedLimitMode: boolean | null;
+  // Steady-state Security & Drivers settings, now that closures_state +
+  // parental_controls_state are actually read (see readSecurity). Cached for the
+  // same reason as the toggles above: a cold start shows the last known value
+  // dimmed rather than the initial default (e.g. 85 mph) presented as the car's.
+  speedLimitMph: number | null;
+  parentalControls: boolean | null;
+  parentalLimitSpeed: boolean | null;
+  parentalReduceAccel: boolean | null;
+  parentalRequireSafety: boolean | null;
+  parentalCurfewNotify: boolean | null;
   cableAttached: boolean | null;
   // Monotonic — it cannot become wrong while the app is closed, only slightly
   // out of date. The most cacheable value we have.
@@ -213,6 +223,12 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     sentryEnabled: bool(cached?.sentryEnabled),
     valetMode: bool(cached?.valetMode),
     speedLimitMode: bool(cached?.speedLimitMode),
+    speedLimitMph: num(cached?.speedLimitMph),
+    parentalControls: bool(cached?.parentalControls),
+    parentalLimitSpeed: bool(cached?.parentalLimitSpeed),
+    parentalReduceAccel: bool(cached?.parentalReduceAccel),
+    parentalRequireSafety: bool(cached?.parentalRequireSafety),
+    parentalCurfewNotify: bool(cached?.parentalCurfewNotify),
     cableAttached: bool(cached?.cableAttached),
     odometerMiles: num(cached?.odometerMiles),
     leftFrontWindowOpen: bool(cached?.leftFrontWindowOpen),

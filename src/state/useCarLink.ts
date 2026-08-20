@@ -190,6 +190,7 @@ const PENDING_TICK_MS = 1000;
 
 // Stable empty Set so the common (nothing pending) case never churns identity.
 const EMPTY_PENDING: ReadonlySet<VehicleStateKey> = new Set();
+const EMPTY_PENDING_CMDS: ReadonlySet<CarCommand['type']> = new Set();
 
 // CarLinkStatus is the car-link surface consumers render from: read-only state
 // plus refresh(), the one user-initiated action a screen can take against the
@@ -253,11 +254,21 @@ export interface CarLinkStatus {
   // (REQUEST-15 T5 write-path verification). No-op-logs on a demo/unlinked car.
   readSchedules: () => Promise<ScheduleReadback>;
 
+  // Reads closures_state + parental_controls_state and applies them to the
+  // active vehicle's telemetry, so the Security & Drivers page reflects the car
+  // (sentry/valet/speed-limit/parental) instead of local optimistic state.
+  // Resolves true if the read landed, false on a demo/unlinked/sleeping car.
+  readSecurity: () => Promise<boolean>;
+
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
   // Controls read this to show a pending affordance; demo/unlinked cars never
   // populate it (dispatch no-ops before adding).
   pending: ReadonlySet<VehicleStateKey>;
+  // The command-type twin of `pending`, for one-shots that carry no state key
+  // (honk/flash/start/homelink/fart, and frunk's re-actuate). Same lifetime and
+  // 30s cap. Controls watch it via CONTROL_AFFECTED_CMDS so every action spins.
+  pendingCommands: ReadonlySet<CarCommand['type']>;
   // What the user must DO to restore the phone key, or 'none' when nothing is
   // wrong. Drives Home's recovery card. Distinguishing forget-device from
   // re-enroll is why we can be gentler than the official app — see remedyFor.
@@ -481,6 +492,15 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const [pendingMap, setPendingMap] = useState<ReadonlyMap<VehicleStateKey, number>>(
     () => new Map(),
   );
+  // The command-type twin of pendingMap: momentary one-shots (honk/flash/…) carry
+  // no state key, so a control that fires one has nothing in pendingMap to spin
+  // on. Every dispatch also stamps its CarCommand type here (start time, same 30s
+  // expiry), and the favorites bar watches it via CONTROL_AFFECTED_CMDS so those
+  // actions get a spinner too. Kept separate from pendingMap so command tokens
+  // never leak into the state-key intent-grace path.
+  const [pendingCmdMap, setPendingCmdMap] = useState<ReadonlyMap<CarCommand['type'], number>>(
+    () => new Map(),
+  );
 
   // ── Render-time pending expiry (findings §2.3) ───────────────────────────
   // The exposed Set is DERIVED here, on every render, by the pure comparison
@@ -499,6 +519,20 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const pending: ReadonlySet<VehicleStateKey> = unchanged ? prevExposed : new Set(live);
   exposedPendingRef.current = pending;
 
+  // Same render-time expiry for the command-type twin.
+  const exposedPendingCmdRef = useRef<ReadonlySet<CarCommand['type']>>(EMPTY_PENDING_CMDS);
+  const liveCmds: CarCommand['type'][] = [];
+  for (const [type, startTime] of pendingCmdMap) {
+    if (nowAtRender < startTime + OPTIMISTIC_TIMEOUT_MS) liveCmds.push(type);
+  }
+  const prevExposedCmds = exposedPendingCmdRef.current;
+  const cmdsUnchanged =
+    prevExposedCmds.size === liveCmds.length && liveCmds.every((type) => prevExposedCmds.has(type));
+  const pendingCommands: ReadonlySet<CarCommand['type']> = cmdsUnchanged
+    ? prevExposedCmds
+    : new Set(liveCmds);
+  exposedPendingCmdRef.current = pendingCommands;
+
   // prunePending drops expired entries from the map. It is the RE-RENDER
   // TRIGGER (the comparison above only runs when React renders): the 1s ticker
   // below and the AppState → 'active' handler call it, and a real change to the
@@ -515,15 +549,25 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       }
       return next ?? prev; // unchanged identity → no re-render
     });
+    setPendingCmdMap((prev) => {
+      let next: Map<CarCommand['type'], number> | null = null;
+      for (const [type, startTime] of prev) {
+        if (now >= startTime + OPTIMISTIC_TIMEOUT_MS) {
+          if (!next) next = new Map(prev);
+          next.delete(type);
+        }
+      }
+      return next ?? prev;
+    });
   }, []);
 
   // The ticker runs ONLY while something is pending, and only re-renders when
   // it actually prunes something (prunePending returns the same map otherwise).
   useEffect(() => {
-    if (pendingMap.size === 0) return;
+    if (pendingMap.size === 0 && pendingCmdMap.size === 0) return;
     const id = setInterval(prunePending, PENDING_TICK_MS);
     return () => clearInterval(id);
-  }, [pendingMap, prunePending]);
+  }, [pendingMap, pendingCmdMap, prunePending]);
 
   // Toast surface for command failures. Held in a ref so dispatch's identity
   // (and the memoized CarLink) doesn't churn on every provider render. The
@@ -964,6 +1008,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       // affordance. Cleared on every terminal path below.
       const keys = affectedKeys && affectedKeys.length ? affectedKeys : null;
       const clearPending = () => {
+        setPendingCmdMap((prev) => {
+          if (!prev.has(cmd.type)) return prev;
+          const next = new Map(prev);
+          next.delete(cmd.type);
+          return next;
+        });
         if (!keys) return;
         setPendingMap((prev) => {
           const next = new Map(prev);
@@ -971,11 +1021,18 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           return next;
         });
       };
+      // startTime is the deadline's anchor: the exposed Sets filter an entry out
+      // once now >= startTime + OPTIMISTIC_TIMEOUT_MS, whatever happens (or
+      // doesn't) to the command. The command type is ALWAYS stamped — that is how
+      // a keyless momentary one-shot still shows a spinner; the state keys are
+      // stamped too when the command claims any.
+      const startTime = Date.now();
+      setPendingCmdMap((prev) => {
+        const next = new Map(prev);
+        next.set(cmd.type, startTime);
+        return next;
+      });
       if (keys) {
-        // startTime is the deadline's anchor: the exposed Set filters this
-        // entry out once now >= startTime + OPTIMISTIC_TIMEOUT_MS, whatever
-        // happens (or doesn't) to the command.
-        const startTime = Date.now();
         setPendingMap((prev) => {
           const next = new Map(prev);
           for (const key of keys) next.set(key, startTime);
@@ -1001,7 +1058,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           void notifyCommandFailure();
         } else {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-          toastRef.current.show(commandFailureText(commandActionLabel(cmd.type), outcome));
+          toastRef.current.show(commandFailureText(commandActionLabel(cmd.type), outcome, cmd.type));
         }
       };
 
@@ -1394,6 +1451,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       sentryEnabled: patch.sentryEnabled ?? base.sentryEnabled,
       valetMode: patch.valetMode ?? base.valetMode,
       speedLimitMode: patch.speedLimitMode ?? base.speedLimitMode,
+      speedLimitMph: patch.speedLimitMph ?? base.speedLimitMph,
+      parentalControls: patch.parentalControls ?? base.parentalControls,
+      parentalLimitSpeed: patch.parentalLimitSpeed ?? base.parentalLimitSpeed,
+      parentalReduceAccel: patch.parentalReduceAccel ?? base.parentalReduceAccel,
+      parentalRequireSafety: patch.parentalRequireSafety ?? base.parentalRequireSafety,
+      parentalCurfewNotify: patch.parentalCurfewNotify ?? base.parentalCurfewNotify,
       cableAttached: patch.cableAttached ?? base.cableAttached,
       odometerMiles: patch.odometerMiles ?? base.odometerMiles,
       leftFrontWindowOpen: patch.leftFrontWindowOpen ?? base.leftFrontWindowOpen,
@@ -1419,6 +1482,61 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     cacheRef.current = next;
     saveCacheRef.current?.(next);
   }, []);
+
+  // readSecurity — the Security & Drivers page's on-open status read, the
+  // analogue of readSchedules' syncFromCar. It scopes the infotainment read to
+  // closures_state + parental_controls_state, exactly what the official app
+  // fetches while its Security screen is open ("on security screen, fetching
+  // closures & parental controls state..."). Without it the page showed only
+  // local optimistic state — sentry/valet/speed-limit/parental never reflected
+  // the car. The patch runs through filterPatchUnderIntent like every other read,
+  // so a value the user just toggled is not flipped back mid-grace. Faults
+  // harmlessly on a sleeping car (returns false); the caller keeps what it has
+  // rather than blanking, matching schedules. PIN-to-Drive is deliberately
+  // absent: it lives in VehicleState, which even the official app's Security poll
+  // never fetches over BLE — so there is nothing to read for it here.
+  const readSecurity = useCallback(async (): Promise<boolean> => {
+    const gw = getGateway();
+    if (!gw) {
+      logi('read', 'security', { skip: 'no gateway (demo/unlinked)' });
+      return false;
+    }
+    // Domain-3 reads fault on a sleeping car, and the Security screen polls this
+    // ~1250ms — without the gate a parked-asleep car would eat a cold infotainment
+    // open every tick. Same guard the 60s poll and focusTick use. The 20s VCSEC
+    // poll keeps `awake` fresh, so this re-arms on its own once the car wakes.
+    if (!getActiveStateRef.current()?.awake) {
+      return false;
+    }
+    try {
+      // 'background' so the ~1250ms Security-screen poll YIELDS to the unlock
+      // path — a status read must never delay a command. On an idle parked car
+      // nothing else is queued, so the on-open read is still immediate.
+      const snap = await gw.awakeSync({ states: ['closures', 'parental'], priority: 'background' });
+      const patch = filterPatchUnderIntent(
+        infotainmentToPatch(snap),
+        intentRef.current,
+        Date.now(),
+        getActiveStateRef.current(),
+      );
+      logi('read', 'security', {
+        sentry: String(snap.closures?.sentryOn ?? 'unread'),
+        valet: String(snap.closures?.valetMode ?? 'unread'),
+        speedLimit: String(snap.closures?.speedLimitMode ?? 'unread'),
+        speedMph: snap.closures?.speedLimitCurrentMph ?? -1,
+        parental: String(snap.parental?.active ?? 'unread'),
+        keys: Object.keys(patch).join(','),
+      });
+      if (Object.keys(patch).length) {
+        applyTelemetryRef.current(patch);
+        cacheInfotainment(patch);
+      }
+      return true;
+    } catch (e) {
+      logi('read', 'security', { error: e instanceof Error ? e.message : String(e) });
+      return false;
+    }
+  }, [getGateway, cacheInfotainment]);
 
   // stampRead records a successful contact with the car.
   //
@@ -1478,6 +1596,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         sentryEnabled: null,
         valetMode: null,
         speedLimitMode: null,
+        speedLimitMph: null,
+        parentalControls: null,
+        parentalLimitSpeed: null,
+        parentalReduceAccel: null,
+        parentalRequireSafety: null,
+        parentalCurfewNotify: null,
         cableAttached: null,
         odometerMiles: null,
         leftFrontWindowOpen: null,
@@ -1971,6 +2095,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       lastVehicleDataAt,
       wakeInFlight,
       pending,
+      pendingCommands,
       recoveryRemedy,
       piConfigured,
       vehicleBleName: bondWedge.bleName,
@@ -1978,7 +2103,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       sendWithOutcome,
       refresh,
       readSchedules,
+      readSecurity,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, sendWithOutcome, refresh, readSchedules],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, sendWithOutcome, refresh, readSchedules, readSecurity],
   );
 }

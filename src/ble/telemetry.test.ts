@@ -570,12 +570,87 @@ test('drive: an unread driveState leaves activeRoute untouched', () => {
 
 test('closures: isUserPresent + centerDisplayState -> patch (the Driving-status inputs)', () => {
   const snap = parseCarServerResponse({
-    closuresState: { isUserPresent: true, valetMode: false, speedLimitMode: true },
+    // speed_limit_mode is a MESSAGE on the wire (not a bool): its `active` is the
+    // on/off. The old fixture passed a bare `true` — a shape the car never sends.
+    closuresState: { isUserPresent: true, valetMode: false, speedLimitMode: { active: true } },
   });
   const patch = infotainmentToPatch(snap);
   assert.equal(patch.userPresent, true);
   assert.equal(patch.valetMode, false);
   assert.equal(patch.speedLimitMode, true);
+});
+
+test('closures: speed_limit_mode message -> active + current_limit_mph (rounded to mph)', () => {
+  const snap = parseCarServerResponse({
+    closuresState: { speedLimitMode: { active: true, currentLimitMph: 84.6, pinCodeSet: true } },
+  });
+  assert.equal(snap.closures?.speedLimitMode, true);
+  assert.equal(snap.closures?.speedLimitCurrentMph, 84.6);
+  assert.equal(snap.closures?.speedLimitPinSet, true);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.speedLimitMode, true);
+  assert.equal(patch.speedLimitMph, 85); // 84.6 -> 85
+});
+
+test('closures: speed_limit_mode message present but active unset -> speedLimitMode omitted (never fabricated)', () => {
+  // A message with only current_limit_mph set. active absent -> the toggle is
+  // unknown, so we must not emit a fabricated false.
+  const snap = parseCarServerResponse({ closuresState: { speedLimitMode: { currentLimitMph: 90 } } });
+  assert.equal(snap.closures?.speedLimitMode, undefined);
+  const patch = infotainmentToPatch(snap);
+  assert.equal('speedLimitMode' in patch, false);
+  assert.equal(patch.speedLimitMph, 90);
+});
+
+test('closures: valet_pin_needed flows through as valetPinNeeded', () => {
+  const snap = parseCarServerResponse({ closuresState: { valetPinNeeded: true } });
+  assert.equal(snap.closures?.valetPinNeeded, true);
+});
+
+test('parental_controls_state -> parental toggles; active parental limit overrides speedLimitMph', () => {
+  const snap = parseCarServerResponse({
+    parentalControlsState: {
+      parentalControlsActive: true,
+      parentalControlsPinSet: true,
+      parentalControlsSettings: {
+        speedLimitEnabled: true,
+        currentLimitMph: 70.2,
+        chillAccelerationEnabled: false,
+        requireSafetySettingsEnabled: true,
+        curfewEnabled: false,
+      },
+    },
+  });
+  assert.equal(snap.parental?.active, true);
+  assert.equal(snap.parental?.pinSet, true);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.parentalControls, true);
+  assert.equal(patch.parentalLimitSpeed, true);
+  assert.equal(patch.parentalReduceAccel, false);
+  assert.equal(patch.parentalRequireSafety, true);
+  assert.equal(patch.parentalCurfewNotify, false);
+  // parental active -> its own limit governs the shared speedLimitMph field.
+  assert.equal(patch.speedLimitMph, 70); // 70.2 -> 70
+});
+
+test('parental inactive -> its stale limit does NOT override speedLimitMph', () => {
+  const snap = parseCarServerResponse({
+    closuresState: { speedLimitMode: { active: true, currentLimitMph: 85 } },
+    parentalControlsState: {
+      parentalControlsActive: false,
+      parentalControlsSettings: { currentLimitMph: 40 },
+    },
+  });
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.parentalControls, false);
+  assert.equal(patch.speedLimitMph, 85); // speed-limit-mode value stands; parental (inactive) ignored
+});
+
+test('parental slice absent -> no parental keys in patch (partial patch)', () => {
+  const patch = infotainmentToPatch(parseCarServerResponse({ closuresState: { valetMode: true } }));
+  assert.equal('parentalControls' in patch, false);
+  assert.equal('parentalLimitSpeed' in patch, false);
+  assert.equal(patch.valetMode, true);
 });
 
 test('closures: absent extras stay absent (never fabricate a false)', () => {

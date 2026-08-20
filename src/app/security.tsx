@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
+import { BusyIcon } from '@/components/BusyIcon';
 import { SENTRY } from '@/icons/nativePng';
+import { TeslaFonts } from '@/constants/fonts';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { ParentalControlsSheet } from '@/components/ParentalControlsSheet';
 import { PinSheet } from '@/components/PinSheet';
 import { SpeedLimitSheet } from '@/components/SpeedLimitSheet';
 import { Toggle } from '@/components/Toggle';
 import { controlHaptic } from '@/state/controlHaptic';
-import { useCarLinkStatus, useVehicle } from '@/state/VehicleProvider';
+import { useCarLinkStatus, useFleet, useVehicle } from '@/state/VehicleProvider';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // The four "Customize Parental Controls" sub-settings we model (the app has 7, incl. Restricted-Apps
@@ -64,7 +66,45 @@ export default function SecurityScreen() {
   // The car's whitelist has no key for us (a genuine wipe, remedy 're-enroll-with-card') — the faithful
   // analog of the app's `phone_key_required`. A mere BT bond wedge ('forget-bluetooth-device') leaves the
   // key intact, so it does NOT count as "no phone key". Reads the shared status context (no 2nd BLE link).
-  const phoneKeyMissing = useCarLinkStatus().recoveryRemedy === 're-enroll-with-card';
+  const carLink = useCarLinkStatus();
+  const phoneKeyMissing = carLink.recoveryRemedy === 're-enroll-with-card';
+  // A row's toggle is REPLACED by a spinner while its command is in flight, exactly
+  // like the official app's Security screen (Speed Limit Mode mid-write shows the
+  // spinner where the switch was). Each row's command claims its state key (see
+  // reconcile.ts), so pending membership is the in-flight signal.
+  const pendingFor = (key: VehicleStateKey) => carLink.pending.has(key);
+
+  // THE CAR IS THE SOURCE OF TRUTH — same principle as Set Schedules. Until now
+  // this page read nothing: sentry/valet/speed-limit/parental only ever showed
+  // local optimistic state. Poll the car while the screen is open, exactly as the
+  // official app does: its Security screen runs a ~1250ms BLE poll fetching
+  // closures + parental controls ("on security screen, fetching closures &
+  // parental controls state..."). readSecurity is a stable callback that reads at
+  // 'background' priority (yields to any command) and applies through the read
+  // pipeline's intent grace, so a value the user just toggled is not flipped back
+  // mid-flight. On a demo/unlinked/sleeping car it resolves false and leaves what
+  // we have. The in-flight guard drops a tick rather than piling reads onto the
+  // per-VIN queue when a round trip runs long; the interval stops on unmount.
+  const readSecurity = useFleet().readSecurity;
+  useEffect(() => {
+    let alive = true;
+    let inFlight = false;
+    const tick = async () => {
+      if (!alive || inFlight) return;
+      inFlight = true;
+      try {
+        await readSecurity();
+      } finally {
+        inFlight = false;
+      }
+    };
+    void tick(); // immediate on open, then match Tesla's cadence
+    const id = setInterval(() => void tick(), 1250);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [readSecurity]);
 
   // Which protected toggle is awaiting a PIN, and why (set new / verify to enable / verify to disable /
   // verify to clear); null = no prompt.
@@ -183,6 +223,7 @@ export default function SecurityScreen() {
             subtitle="Enable to view live camera"
             value={state.sentryEnabled}
             onToggle={() => toggle('sentryEnabled')}
+            pending={pendingFor('sentryEnabled')}
           />
           <ToggleRow
             symbol="valet"
@@ -192,6 +233,7 @@ export default function SecurityScreen() {
             onToggle={() => requestToggle('valetMode')}
             pinSet={pinSetFor('valetMode')}
             onClearPin={() => requestClearPin('valetMode')}
+            pending={pendingFor('valetMode')}
           />
           <ToggleRow
             symbol="parental-control-profile"
@@ -204,6 +246,7 @@ export default function SecurityScreen() {
             onClearPin={() => requestClearPin('parentalControls')}
             disabled={gatedParental}
             gateSubtitle={phoneKeyMissing ? 'Please set up Phone Key' : undefined}
+            pending={pendingFor('parentalControls')}
           />
           <ToggleRow
             symbol="speed-limit-gauge"
@@ -215,6 +258,7 @@ export default function SecurityScreen() {
             pinSet={pinSetFor('speedLimitMode')}
             onClearPin={() => requestClearPin('speedLimitMode')}
             disabled={gatedSpeedLimit}
+            pending={pendingFor('speedLimitMode')}
           />
           <ToggleRow
             symbol="security-filled"
@@ -228,21 +272,22 @@ export default function SecurityScreen() {
             gateSubtitle={
               phoneKeyMissing ? 'Please set up Phone Key' : state.valetMode ? 'Disable Valet Mode to enable' : undefined
             }
+            pending={pendingFor('pinToDrive')}
           />
 
           <Divider />
-          <NavRow symbol="person" title="Add Driver" />
+          <NavRow symbol="account" title="Add Driver" />
 
           <Divider />
           <ToggleRow
-            symbol="phone-key"
+            symbol="phone-key-2"
             title="Phone Key"
             subtitle="Automatically unlock and start when mobile device is near"
             value={!phoneKeyMissing}
             onToggle={() => {}}
           />
-          <NavRow symbol="lightbulb" title="Phone Key Best Practices" />
-          <NavRow symbol="badge" title="Add Key Card" />
+          <NavRow symbol="light-bulb" title="Phone Key Best Practices" />
+          <NavRow symbol="key-card" title="Add Key Card" />
           <NavRow symbol="bluetooth" title="Set Up Bluetooth Audio" />
         </ScrollView>
       </SafeAreaView>
@@ -287,7 +332,14 @@ function NavRow({
   return (
     <Pressable style={[styles.row, disabled && styles.rowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={styles.iconCol}>
-        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={24} />
+        {/* Tesla draws dashcam-filled compact (its artwork fills ~half the glyph box), so at the shared
+            size it reads much smaller than the other rows. Render it bigger so its ~half-height artwork
+            lands at the same optical size as the other icons. Row height is text-driven, so this doesn't
+            shift the row. */}
+        {/* Tesla's Row icon = IconSize.MEDIUM = mediumIconSize = 30 (normal dark
+            theme; CYBERTRUCK uses MEDIUMSMALL=25). Dashcam's glyph reads small at
+            its natural box, so it keeps its own bump. */}
+        <AppIcon icon={symbol} color="#8A8B8B" size={symbol === 'dashcam-filled' ? 32 : 28} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -314,12 +366,16 @@ function ToggleRow({
   onClearPin,
   disabled,
   gateSubtitle,
+  pending,
 }: {
   symbol: IconRef;
   title: string;
   subtitle: string;
   value: boolean;
   onToggle: () => void;
+  // While this row's command is in flight, the switch is replaced by a spinner
+  // in place (Tesla's Security screen behaviour).
+  pending?: boolean;
   // Present → shows the "…" affordance that opens the row's detail panel.
   onMore?: () => void;
   // "Clear PIN" replaces the subtitle only while this feature's PIN is set AND the feature is OFF — the
@@ -337,7 +393,8 @@ function ToggleRow({
   return (
     <View style={[styles.row, disabled && styles.rowDisabled]}>
       <View style={styles.iconCol}>
-        <AppIcon icon={symbol} color="rgba(255,255,255,0.9)" size={24} />
+        {/* IconSize.MEDIUM nominal 30; trimmed to 28 to match on-device. */}
+        <AppIcon icon={symbol} color="#8A8B8B" size={28} />
       </View>
       <View style={styles.textCol}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -356,8 +413,8 @@ function ToggleRow({
       ) : null}
       {/* pointerEvents rather than Toggle's own `disabled`: the row is already at 0.35 opacity and the
           Toggle's disabled style would multiply another 0.4 on top, leaving it nearly invisible. */}
-      <View pointerEvents={disabled ? 'none' : 'auto'}>
-        <Toggle value={value} onToggle={onToggle} />
+      <View style={styles.toggleSlot} pointerEvents={disabled || pending ? 'none' : 'auto'}>
+        {pending ? <BusyIcon size={28} /> : <Toggle value={value} onToggle={onToggle} />}
       </View>
     </View>
   );
@@ -399,10 +456,15 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    // Tesla's settings rows are tighter than the home MENU rows (which are 18) —
-    // calibrated to the screenshot's row pitch (~13% smaller than ours was).
-    paddingVertical: 13,
+    // icon → text gap = Gutter (10): Tesla's textContainerWithIcon.marginLeft.
+    gap: 10,
+    // Tesla's rowContainer (getStyles @3927579) has NO paddingVertical — every row
+    // instead holds minHeight = 7 * Gutter = 70 (Gutter = 10, @1338450) with its
+    // content vertically centred. That is why their single-line rows (Add Driver,
+    // Add Key Card, Set Up Bluetooth Audio…) stay tall while ours were collapsing
+    // to title + padding. Multi-line rows (Parental) grow past 70 with the content
+    // flush, exactly as the real app does.
+    minHeight: 70,
   },
   rowDisabled: {
     opacity: 0.35,
@@ -413,31 +475,60 @@ const styles = StyleSheet.create({
   },
   textCol: {
     flex: 1,
-    gap: 3,
+    gap: 2,
   },
+  // EXACT from the decompiled design system (not screenshot-calibrated): the
+  // RowWithSwitch/Row title defaults to TextCategory.BodyLabel, the subtitle to
+  // CaptionLabel. Their Text component resolves those from the Typography ladder
+  // (@1643336) as UniversalSansText-Medium — the weight (500) is baked into the
+  // cut, so we set the family and pass NO fontWeight (per constants/fonts.ts).
+  //   bodyLabel    -> 14 / lh20 / ls0.1
+  //   captionLabel -> 12 / lh16 / ls0.1
+  // The old 17/600 (title) & 14 (subtitle) in the SYSTEM font were my calibrated
+  // guesses — bigger, heavier, and the wrong typeface. That was the whole delta.
   rowTitle: {
-    fontSize: 17,
-    fontWeight: '600',
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
     color: 'white',
   },
   rowSub: {
-    fontSize: 14,
-    lineHeight: 18,
+    fontFamily: TeslaFonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
     color: 'rgba(255,255,255,0.5)',
   },
+  // "Clear PIN" occupies the subtitle slot (CaptionLabel) tinted blue.
   clearPin: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontFamily: TeslaFonts.medium,
+    fontSize: 12,
+    letterSpacing: 0.1,
     color: '#3E6AE1',
   },
   more: {
     paddingHorizontal: 6,
   },
-  // Full-width group separator (cancels the scroll's 20pt side padding).
+  // Footprint of the Toggle (51×31) so swapping it for the in-flight spinner
+  // doesn't shift the row; the spinner sits centered where the switch was.
+  toggleSlot: {
+    width: 51,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The real Tesla `<Divider>` (component @1431035) is height:1 / width:100% in
+  // the dark-theme `dividerColor` #2D2E2F, at opacity 0.5, with marginVertical =
+  // Gutter (10) (screen style @3926224). Their `width:100%` lives in a list
+  // container with NO horizontal padding, so it spans edge to edge — our scroll
+  // pads 20, so marginHorizontal:-20 cancels it to reach full width. (Do NOT
+  // inset it — that was the "not wide enough" regression.)
   divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    height: 1,
+    backgroundColor: '#2D2E2F',
+    opacity: 0.5,
     marginHorizontal: -20,
-    marginVertical: 8,
+    marginVertical: 10,
   },
 });

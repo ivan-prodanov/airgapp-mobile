@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated as RNAnimated,
+  AppState,
   Easing,
   StyleSheet,
   useWindowDimensions,
@@ -275,6 +276,28 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
       bridge.updateState(state);
     }
   }, [bridge, state, vehicleId]);
+
+  // GPU-resource recovery. iOS can reclaim the Godot scene's textures/lighting
+  // while the app is BACKGROUNDED — the EAGL context survives, so the engine never
+  // detects a loss and never re-uploads them, and the car returns as a black
+  // silhouette (geometry + shadow still draw; materials/lighting are gone). The
+  // framebuffer is fine (that's why the shape renders), so this can't be fixed by
+  // recreating it — the scene CONTENT has to be re-pushed. switchVehicle re-sends
+  // SHOW/UPDATE_PRODUCT + env params (lighting) + lights, rebuilding those
+  // resources. Gated to a REAL 'background' (not transient 'inactive' peeks like
+  // Control Center) via `wasBackgrounded`, so a normal return doesn't re-sync.
+  const wasBackgrounded = useRef(false);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'background') {
+        wasBackgrounded.current = true;
+      } else if (next === 'active' && wasBackgrounded.current) {
+        wasBackgrounded.current = false;
+        if (booted.current) bridge.resync('foreground');
+      }
+    });
+    return () => sub.remove();
+  }, [bridge]);
 
   return (
     <BridgeContext.Provider value={bridge}>

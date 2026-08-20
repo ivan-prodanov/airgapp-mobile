@@ -22,6 +22,9 @@
 // marker fallback is used (those dicts carry no frunk_color). Flagged as a known
 // divergence for a repainted/wrapped car.
 
+import { configForState } from './vehicleConfigForState';
+import type { VehicleViewState } from '../types/vehicleTypes';
+
 // isLightHSB — fn #30231 (iOS 1240024), VERBATIM. Kept for when/if we can sample
 // the render (tier 1) or resolve a blend colour (tier 2).
 export function isLightHSB(h: number, s: number, b: number): boolean {
@@ -79,4 +82,16 @@ export function isLightExteriorColor(exteriorColor: string | null | undefined): 
   if (DARK_PAINTS.has(key)) return false;
   // Not in either list: their table returns undefined -> falsy -> dark.
   return false;
+}
+
+// frunkLabelDark — should the frunk "Open/Close" label render dark (for contrast
+// on a light-painted car)? It MUST read the car's EFFECTIVE colour — the same one
+// Godot renders, i.e. configForState(state), which overlays the per-car
+// `exteriorColor` pick onto the model's base config. Reading the raw model base
+// (vehicleConfigs[carModel]) instead was a bug: the label tracked the model's
+// DEFAULT paint, not the colour actually selected, so e.g. Model X (base
+// PearlWhite) was always dark and every other model (dark base) was always white,
+// regardless of the chosen colour.
+export function frunkLabelDark(state: VehicleViewState): boolean {
+  return isLightExteriorColor(configForState(state).vehicle_config.exterior_color);
 }

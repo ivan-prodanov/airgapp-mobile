@@ -48,6 +48,7 @@ const FEEDBACK: Record<CarCommand['type'], FeedbackClass> = {
   pinToDriveClearPin: 'fire-and-forget',
   openChargePort: 'optimistic',
   closeChargePort: 'optimistic',
+  unlatchDriverDoor: 'optimistic', // optimistically pops the door open; car telemetry confirms/reverts
   ventWindows: 'optimistic',
   closeWindows: 'optimistic',
   chargeStart: 'optimistic',

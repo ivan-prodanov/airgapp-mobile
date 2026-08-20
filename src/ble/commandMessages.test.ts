@@ -95,6 +95,42 @@ test('fault INSUFFICIENT_PRIVILEGES → vehicle_error_insufficient_privileges, v
   );
 });
 
+const carRejectedVcsec = (reason: string): Fail => ({
+  ok: false,
+  kind: 'fault',
+  fault: 0,
+  faultName: 'carRejected',
+  message: `[cmd] the car rejected it: ${reason}`,
+  reason,
+});
+
+test('lock rejected with CLOSURES_OPEN → verbatim command_error_LOCK_doors_open', () => {
+  assert.deepEqual(commandFailureText('Lock', carRejectedVcsec('GENERICERROR_CLOSURES_OPEN'), 'lock'), {
+    title: 'Lock failed',
+    body: 'Failed to lock vehicle. One or more doors are open.',
+  });
+});
+
+test('a VCSEC nominalError on ANY command → readable body, never the raw enum name', () => {
+  assert.equal(
+    commandFailureText('Open frunk', carRejectedVcsec('GENERICERROR_CLOSURES_OPEN'), 'openFrunk').body,
+    'One or more doors are open.',
+  );
+  assert.equal(
+    commandFailureText('Open trunk', carRejectedVcsec('GENERICERROR_VEHICLE_NOT_IN_PARK'), 'openTrunk').body,
+    'Vehicle is not in Park.',
+  );
+  assert.equal(
+    commandFailureText('Unlatch door', carRejectedVcsec('GENERICERROR_UNAUTHORIZED'), 'unlatchDriverDoor').body,
+    'Not authorized.',
+  );
+});
+
+test('a non-VCSEC reason (CarServer plain_text) is still shown verbatim', () => {
+  // e.g. a navigation send the car rejected with "No PII request".
+  assert.equal(commandFailureText('Send to car', carRejectedVcsec('No PII request'), 'navigateTo').body, 'No PII request');
+});
+
 test('fault (other) → the generic command_error_GENERIC_ fallback', () => {
   assert.equal(commandFailureText('Lock', faultOther).body, 'Command failed');
 });

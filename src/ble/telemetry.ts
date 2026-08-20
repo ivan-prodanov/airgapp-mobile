@@ -174,7 +174,26 @@ export interface InfotainmentSnapshot {
     centerDisplay?: string | undefined;
     locked?: boolean | undefined;
     valetMode?: boolean | undefined;
+    // valet_pin_needed (118): true once a valet PIN has been set on the car.
+    valetPinNeeded?: boolean | undefined;
+    // speed_limit_mode (22) is a MESSAGE, not a bool — active is its on/off, and
+    // current_limit_mph is the value the Speed-Limit sheet shows. pin_code_set
+    // says whether a PIN guards it.
     speedLimitMode?: boolean | undefined;
+    speedLimitCurrentMph?: number | undefined;
+    speedLimitPinSet?: boolean | undefined;
+  };
+  // parental_controls_state (24): the whole Customize-Parental-Controls page.
+  // active/pinSet are the top-level toggle + whether a PIN is set; the settings
+  // are the four sub-toggles + the shared speed-limit value.
+  parental?: {
+    active?: boolean | undefined;
+    pinSet?: boolean | undefined;
+    speedLimitEnabled?: boolean | undefined;
+    currentLimitMph?: number | undefined;
+    chillAcceleration?: boolean | undefined;
+    requireSafety?: boolean | undefined;
+    curfewEnabled?: boolean | undefined;
   };
   // Schedule readback — the raw entries the car holds, for the write-path truth
   // check. Kept verbatim (daysOfWeek is the car's own bitmask; start/end are
@@ -570,6 +589,12 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     if (typeof cls.windowOpenDriverRear === 'boolean') windows.leftRear = cls.windowOpenDriverRear;
     if (typeof cls.windowOpenPassengerRear === 'boolean') windows.rightRear = cls.windowOpenPassengerRear;
 
+    // speed_limit_mode (22) is a nested SpeedLimitMode MESSAGE, not a bool: its
+    // `active` is the on/off, `current_limit_mph` the value, `pin_code_set` the
+    // PIN flag. The old code tested `typeof cls.speedLimitMode === 'boolean'`,
+    // which an object never satisfies — so it silently always read undefined and
+    // the Speed-Limit page never reflected the car. Read the message's fields.
+    const slm = isRecord(cls.speedLimitMode) ? cls.speedLimitMode : undefined;
     snap.closures = {
       sentryOn: sentryMode !== undefined ? sentryMode !== 'Off' : undefined,
       windows,
@@ -580,7 +605,32 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       centerDisplay: oneofName(cls.centerDisplayState),
       locked: typeof cls.locked === 'boolean' ? cls.locked : undefined,
       valetMode: typeof cls.valetMode === 'boolean' ? cls.valetMode : undefined,
-      speedLimitMode: typeof cls.speedLimitMode === 'boolean' ? cls.speedLimitMode : undefined,
+      valetPinNeeded: typeof cls.valetPinNeeded === 'boolean' ? cls.valetPinNeeded : undefined,
+      speedLimitMode: slm && typeof slm.active === 'boolean' ? slm.active : undefined,
+      speedLimitCurrentMph: slm ? num(slm.currentLimitMph) : undefined,
+      speedLimitPinSet: slm && typeof slm.pinCodeSet === 'boolean' ? slm.pinCodeSet : undefined,
+    };
+  }
+
+  const pcs = pick(vehicleData, root, 'parentalControlsState');
+  if (pcs) {
+    const settings = isRecord(pcs.parentalControlsSettings) ? pcs.parentalControlsSettings : undefined;
+    snap.parental = {
+      active: typeof pcs.parentalControlsActive === 'boolean' ? pcs.parentalControlsActive : undefined,
+      pinSet: typeof pcs.parentalControlsPinSet === 'boolean' ? pcs.parentalControlsPinSet : undefined,
+      speedLimitEnabled:
+        settings && typeof settings.speedLimitEnabled === 'boolean' ? settings.speedLimitEnabled : undefined,
+      currentLimitMph: settings ? num(settings.currentLimitMph) : undefined,
+      chillAcceleration:
+        settings && typeof settings.chillAccelerationEnabled === 'boolean'
+          ? settings.chillAccelerationEnabled
+          : undefined,
+      requireSafety:
+        settings && typeof settings.requireSafetySettingsEnabled === 'boolean'
+          ? settings.requireSafetySettingsEnabled
+          : undefined,
+      curfewEnabled:
+        settings && typeof settings.curfewEnabled === 'boolean' ? settings.curfewEnabled : undefined,
     };
   }
 
@@ -876,6 +926,26 @@ export function infotainmentToPatch(
     if (c.centerDisplay !== undefined) patch.centerDisplay = c.centerDisplay;
     if (c.valetMode !== undefined) patch.valetMode = c.valetMode;
     if (c.speedLimitMode !== undefined) patch.speedLimitMode = c.speedLimitMode;
+    // The Speed-Limit sheet stores the value in mph (it converts to km/h for
+    // display). The car sends a float; round to whole mph.
+    if (c.speedLimitCurrentMph !== undefined && Number.isFinite(c.speedLimitCurrentMph)) {
+      patch.speedLimitMph = Math.round(c.speedLimitCurrentMph);
+    }
+  }
+
+  if (snap.parental) {
+    const p = snap.parental;
+    if (p.active !== undefined) patch.parentalControls = p.active;
+    if (p.speedLimitEnabled !== undefined) patch.parentalLimitSpeed = p.speedLimitEnabled;
+    if (p.chillAcceleration !== undefined) patch.parentalReduceAccel = p.chillAcceleration;
+    if (p.requireSafety !== undefined) patch.parentalRequireSafety = p.requireSafety;
+    if (p.curfewEnabled !== undefined) patch.parentalCurfewNotify = p.curfewEnabled;
+    // speedLimitMph is shared between Speed Limit Mode and Parental (the two are
+    // mutually exclusive in the UI). When parental is the active governor, its
+    // own limit wins over any speed_limit_mode value read above.
+    if (p.active === true && p.currentLimitMph !== undefined && Number.isFinite(p.currentLimitMph)) {
+      patch.speedLimitMph = Math.round(p.currentLimitMph);
+    }
   }
 
   return patch;

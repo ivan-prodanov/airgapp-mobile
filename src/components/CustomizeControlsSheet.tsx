@@ -16,7 +16,11 @@ import { AppIcon } from '@/icons/AppIcon';
 import { CONTROL_ACTIONS, CONTROL_ACTION_ORDER, type ControlActionId } from '@/state/controlActions';
 import { controlHaptic } from '@/state/controlHaptic';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
+import { useToast } from '@/components/ToastHost';
 import { usePreferences, useVehicle } from '@/state/VehicleProvider';
+
+// Actions with no BLE command in our protocol yet (Light Show, Summon) — greyed, and can't be favourited.
+const isUnavailable = (id: ControlActionId) => CONTROL_ACTIONS[id].available === false;
 
 const TILE = 72; // ghost square size
 
@@ -34,6 +38,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const [state, actions] = useVehicle();
   const { favorites, setFavorite } = usePreferences();
+  const toast = useToast();
 
   // Grid = catalog order minus the current favorites → always 11 items.
   const gridItems = CONTROL_ACTION_ORDER.filter((id) => !favorites.includes(id));
@@ -45,11 +50,27 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const setFavoriteRef = useRef(setFavorite);
-  setFavoriteRef.current = setFavorite;
+  // Drop onto a favourite slot. An unavailable action (Light Show / Summon) can't be favourited — it
+  // shows a "not available" toast instead of taking the slot.
+  const dropFavoriteRef = useRef((_slot: number, _id: ControlActionId) => {});
+  dropFavoriteRef.current = (slot, id) => {
+    if (isUnavailable(id)) {
+      toast.show(`${CONTROL_ACTIONS[id].label} isn't available yet`);
+      return;
+    }
+    setFavorite(slot, id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  };
   // Run a control with the LIVE state/actions (the tile PanResponders are built once, so read via a ref).
+  // Tapping an unavailable tile also surfaces the toast rather than silently doing nothing.
   const runActionRef = useRef((_id: ControlActionId) => {});
-  runActionRef.current = (id) => CONTROL_ACTIONS[id].run(state, actions);
+  runActionRef.current = (id) => {
+    if (isUnavailable(id)) {
+      toast.show(`${CONTROL_ACTIONS[id].label} isn't available yet`);
+      return;
+    }
+    CONTROL_ACTIONS[id].run(state, actions);
+  };
 
   const open = useCallback(() => {
     Animated.parallel([
@@ -175,8 +196,7 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
             const slot = hitSlot(g.moveX, g.moveY);
             const draggedId = dragRef.current.id;
             if (slot !== -1 && draggedId) {
-              setFavoriteRef.current(slot, draggedId);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              dropFavoriteRef.current(slot, draggedId);
             }
             endDrag();
           } else {
@@ -254,12 +274,15 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
           {gridItems.map((id) => {
             const action = CONTROL_ACTIONS[id];
             const dragging = dragId === id;
+            // Greyed: no BLE command yet. Still a drag source so the drop can explain why via the toast.
+            const dim = isUnavailable(id);
             return (
-              <View key={id} style={styles.tile} {...tilePans[id].panHandlers}>
+              <View key={id} style={[styles.tile, dim && styles.tileUnavailable]} {...tilePans[id].panHandlers}>
                 <View style={dragging ? styles.tileIconHidden : undefined}>
                   <SpinningSymbol
                     icon={action.symbol(state)}
-                    tintColor="rgba(255,255,255,0.92)"
+                    // Same active/inactive rule as the favorites bar (was always-bright here).
+                    tintColor={action.isActive(state) ? 'white' : 'rgba(255,255,255,0.45)'}
                     size={26}
                     spin={action.spinning?.(state) ?? false}
                   />
@@ -392,6 +415,10 @@ const styles = StyleSheet.create({
   },
   tileIconHidden: {
     opacity: 0,
+  },
+  // No BLE command yet — dimmed to read as disabled.
+  tileUnavailable: {
+    opacity: 0.35,
   },
   tileLabel: {
     fontSize: 13,

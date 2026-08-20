@@ -31,6 +31,7 @@ const COMMAND_LABELS: Partial<Record<CarCommand['type'], string>> = {
   closeTrunk: 'Close trunk',
   openChargePort: 'Open charge port',
   closeChargePort: 'Close charge port',
+  unlatchDriverDoor: 'Unlatch door',
   chargeStart: 'Start charging',
   chargeStop: 'Stop charging',
   climateOn: 'Turn on climate',
@@ -69,8 +70,12 @@ export interface CommandFailureText {
 // commandFailureText renders the two-line failure card for a failed command.
 // actionLabel is a display verb like "Lock" and is used VERBATIM in the title
 // ("Lock failed"), matching the app's capitalization.
-export function commandFailureText(actionLabel: string, outcome: FailureOutcome): CommandFailureText {
-  return { title: `${actionLabel} failed`, body: failureBody(outcome) };
+export function commandFailureText(
+  actionLabel: string,
+  outcome: FailureOutcome,
+  type?: CarCommand['type'],
+): CommandFailureText {
+  return { title: `${actionLabel} failed`, body: failureBody(outcome, type) };
 }
 
 // failureBody is the reason line — the only part that varies by failure kind.
@@ -79,7 +84,32 @@ export function commandFailureText(actionLabel: string, outcome: FailureOutcome)
 // body: the official app's command-failure path has no such key — sleep is
 // handled upstream by an auto-wake step (findings §3.2/§5.2), so inventing copy
 // for it here would be a parity regression.
-function failureBody(outcome: FailureOutcome): string {
+// The car's VCSEC rejection reasons (FromVCSECMessage.nominalError.genericError,
+// surfaced by parseVcsecNominalError) rendered as readable copy, so ANY VCSEC
+// command (lock/unlock/frunk/trunk/chargePort/…) shows a proper line instead of
+// the raw enum name. lock + CLOSURES_OPEN keeps its exact Tesla copy below; this
+// covers every other command/reason. GENERICERROR_ALREADY_ON never reaches here —
+// the gateway treats it as a success.
+const VCSEC_ERROR_BODY: Partial<Record<string, string>> = {
+  GENERICERROR_CLOSURES_OPEN: 'One or more doors are open.',
+  GENERICERROR_VEHICLE_NOT_IN_PARK: 'Vehicle is not in Park.',
+  GENERICERROR_UNAUTHORIZED: 'Not authorized.',
+  GENERICERROR_DISABLED_FOR_USER_COMMAND: 'This action is disabled.',
+  GENERICERROR_NOT_ALLOWED_OVER_TRANSPORT: 'Not available over this connection.',
+  GENERICERROR_UNKNOWN: 'Command failed',
+};
+
+function failureBody(outcome: FailureOutcome, type?: CarCommand['type']): string {
+  // The car refuses to lock with a door open (nominalError GENERICERROR_CLOSURES_OPEN)
+  // — Tesla's ONLY lock-rejection copy (command_error_LOCK_doors_open), verbatim.
+  if (
+    type === 'lock' &&
+    outcome.kind === 'fault' &&
+    outcome.faultName === 'carRejected' &&
+    outcome.reason === 'GENERICERROR_CLOSURES_OPEN'
+  ) {
+    return 'Failed to lock vehicle. One or more doors are open.';
+  }
   switch (outcome.kind) {
     case 'timeout':
       return 'Command timeout, please try again.'; // command_error_timeout
@@ -96,12 +126,12 @@ function failureBody(outcome: FailureOutcome): string {
       if (outcome.faultName === 'INSUFFICIENT_PRIVILEGES') {
         return 'Unpair your phone key and pair it again to retry.'; // vehicle_error_insufficient_privileges
       }
-      // The car answered with its OWN reason (Response.actionStatus
-      // result_reason.plain_text — e.g. "No PII request" on a navigation send).
-      // That beats the generic body: it is the only text that says WHY. Shown
-      // verbatim; `outcome.message` is deliberately NOT used here — it is the
-      // developer-facing string and carries a "[label]" prefix.
-      if (outcome.reason) return outcome.reason;
+      // The car answered with its OWN reason. A VCSEC nominalError maps to readable
+      // copy (VCSEC_ERROR_BODY); anything else — e.g. a CarServer
+      // Response.actionStatus result_reason.plain_text like "No PII request" on a
+      // navigation send — is shown verbatim (it is the only text that says WHY).
+      // `outcome.message` is deliberately NOT used — it carries a dev "[label]" prefix.
+      if (outcome.reason) return VCSEC_ERROR_BODY[outcome.reason] ?? outcome.reason;
       return 'Command failed'; // command_error_GENERIC_
   }
 }

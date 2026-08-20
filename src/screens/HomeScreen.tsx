@@ -22,7 +22,7 @@ import { type IconRef } from '@/icons/AppIcon';
 import { vehicleGlyphFor } from '@/icons/vehicleGlyph';
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
-import { CONTROL_ACTIONS, CONTROL_AFFECTED_KEYS } from '@/state/controlActions';
+import { CONTROL_ACTIONS, isControlActionPending } from '@/state/controlActions';
 import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
 import { CustomizeControlsSheet } from '@/components/CustomizeControlsSheet';
@@ -415,15 +415,17 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <Pressable onLongPress={openCustomize} delayLongPress={300} style={styles.iconRow}>
             {favorites.map((id) => {
               const action = CONTROL_ACTIONS[id];
-              // In-flight while any of this control's real command keys are
-              // pending. Empty for demo/unlinked cars (pending never populates).
-              const pending = CONTROL_AFFECTED_KEYS[id].some((key) => carLink.pending.has(key));
+              // In-flight while this control's command is pending — via its state
+              // keys OR (for keyless one-shots) its command type. Empty for
+              // demo/unlinked cars (neither channel populates).
+              const pending = isControlActionPending(id, carLink.pending, carLink.pendingCommands);
               return (
                 <QuickIcon
                   key={id}
                   symbol={action.symbol(state)}
                   active={action.isActive(state)}
                   spin={action.spinning?.(state) ?? false}
+                  glow={action.glow?.(state) ?? false}
                   pending={pending}
                   onPress={() => {
                     controlHaptic();
@@ -636,6 +638,7 @@ function QuickIcon({
   symbol,
   active,
   spin,
+  glow,
   pending,
   onPress,
   onLongPress,
@@ -643,6 +646,8 @@ function QuickIcon({
   symbol: IconRef;
   active: boolean;
   spin?: boolean;
+  // Tesla's soft glow while a control is actively working (climate running). `iconGlow`: white shadow.
+  glow?: boolean;
   // A real command for this control is in flight (dispatched, unconfirmed).
   // REPLACES the icon with a small circular spinner until the car
   // confirms/fails — what the official app does (it does not pulse the icon).
@@ -657,7 +662,7 @@ function QuickIcon({
       {/* Fixed ICON_SIZE box so swapping icon↔spinner never shifts the row.
           findings §5: a BUSY control button also fades to iconButtonBusyOpacity
           (0.5) ON TOP of the icon→spinner swap. */}
-      <View style={[styles.quickIconGlyph, pending ? styles.quickIconBusy : null]}>
+      <View style={[styles.quickIconGlyph, pending ? styles.quickIconBusy : null, glow && !pending ? styles.quickIconGlow : null]}>
         {pending ? (
           // The SAME spinner as the header — the official app's own
           // mini_spinner.png at BusyIcon's default size (20; the header is the
@@ -717,10 +722,11 @@ function NavRow({
         // Same spinning fan as the favourites bar — this was a static TeslaIcon,
         // so the Home menu's Climate row never rotated while the favourites one did.
         <View style={styles.navIcon}>
-          <SpinningSymbol icon={symbol} tintColor="white" size={26} spin />
+          {/* Tesla tints content icons with the theme `textColor` (#8A8B8B), not white. */}
+          <SpinningSymbol icon={symbol} tintColor="#8A8B8B" size={26} spin />
         </View>
       ) : (
-        <TeslaIcon name={symbol} color="white" size={26} style={styles.navIcon} />
+        <TeslaIcon name={symbol} color="#8A8B8B" size={26} style={styles.navIcon} />
       )}
       <View style={styles.navText}>
         <Text style={styles.navTitle}>{title}</Text>
@@ -881,6 +887,14 @@ const styles = StyleSheet.create({
   // findings §5: Specifications.iconButtonBusyOpacity.
   quickIconBusy: {
     opacity: 0.5,
+  },
+  // Tesla's `iconGlow` (@6650908): a soft white halo around a control that is actively working
+  // (climate running). shadowColor white, radius 10, opacity 0.5, no offset.
+  quickIconGlow: {
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
   },
   navRow: {
     flexDirection: 'row',

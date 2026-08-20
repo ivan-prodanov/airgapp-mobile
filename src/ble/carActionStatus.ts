@@ -11,7 +11,31 @@
 // undecodable bytes). Null means "no information", NOT "success" — the caller
 // must not treat it as a pass.
 
-import { Response as CarServerResponse, decodeMessage } from './proto';
+import { Response as CarServerResponse, FromVCSECMessage, decodeMessage } from './proto';
+
+// parseVcsecNominalError — the car's REJECTION reason for a VCSEC command (lock,
+// unlock, frunk, trunk, chargePort). The car answers a refused VCSEC command with
+// a plaintext `FromVCSECMessage.nominalError` carried in the reply's
+// `RoutableMessage.protobufMessageAsBytes` — NOT the encrypted payload and NOT the
+// routable `signedMessageStatus`. Captured on-car 2026-08-08: a lock with a door
+// open replies `{ nominalError: { genericError: GENERICERROR_CLOSURES_OPEN } }`.
+// Our old reads looked only at signedMessageStatus (null here) and the decrypted
+// payload (empty), logged "bytes:0", and wrongly called the lock a success.
+//
+// Returns the GenericError enum NAME (e.g. 'GENERICERROR_CLOSURES_OPEN') or null
+// when the reply carries no nominalError (a success, or a non-VCSEC reply).
+export function parseVcsecNominalError(protobufMessageAsBytes: Uint8Array | null | undefined): string | null {
+  if (!protobufMessageAsBytes || protobufMessageAsBytes.length === 0) return null;
+  try {
+    const msg = FromVCSECMessage.decode(protobufMessageAsBytes);
+    const obj = FromVCSECMessage.toObject(msg, { enums: String }) as {
+      nominalError?: { genericError?: string } | null;
+    };
+    return obj.nominalError?.genericError ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export interface CarActionStatus {
   ok: boolean;

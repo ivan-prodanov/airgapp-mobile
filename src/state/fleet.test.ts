@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   bindVehicleVin,
@@ -401,6 +404,57 @@ test('activeIsLive: only the enrolled car on screen counts as live', () => {
   assert.equal(activeIsLive('VIN_B', 'VIN_A', true), false, 'a different car');
   assert.equal(activeIsLive('VIN_A', null, false), false, 'nothing enrolled');
   assert.equal(activeIsLive(undefined, null, false), false, 'pure demo app');
+});
+
+// The predicate above is only half the guarantee — it means nothing unless EVERY
+// command actually passes through it. The real defect was a wiring one: actuateFrunk
+// / unlockChargePort / fireCommand called carLink.dispatch DIRECTLY, skipping the
+// gate, so a demo car's "Open frunk"/honk/flash actuated the enrolled Tesla.
+//
+// So pin the structural invariant that makes that unrepresentable: useFleetState
+// has exactly ONE raw `carLink.dispatch(` call — inside dispatchToCar, which gates
+// on activeIsLive. Every other site must route through dispatchToCar. Source-scanned
+// (same approach as carLinkCacheCoverage.test.ts) because the invariant lives in the
+// text: a new command that calls carLink.dispatch directly re-opens the hole, and
+// this fails the instant it does.
+// Command rollback must revert to the CONFIRMED baseline (confirmedStateRef —
+// what the car last reported), never to the render-time optimistic snapshot
+// (`prev`). Reverting to `prev` re-opens the stuck-bright bug: toggle a control
+// twice (climate on→off) and the second command captures the first's UNCONFIRMED
+// optimistic value as its baseline, so its failure "reverts" to a bright state.
+// Source-scanned because the invariant lives in the text.
+test('command rollbacks revert to the confirmed baseline, not the optimistic prev', () => {
+  const src = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'useFleetState.ts'),
+    'utf8',
+  );
+  const reverts = [...src.matchAll(/revertFields\(\s*s\s*,\s*([A-Za-z.]+)\s*,/g)].map((m) => m[1]);
+  assert.ok(reverts.length >= 2, `expected the reconciled + frunk rollbacks; found ${reverts.length}`);
+  for (const target of reverts) {
+    assert.equal(
+      target,
+      'confirmedStateRef.current',
+      `a rollback reverts to "${target}" — must be confirmedStateRef.current (the car's confirmed value), ` +
+        'never the optimistic snapshot, or a re-tapped control sticks bright on failure.',
+    );
+  }
+});
+
+test('useFleetState routes ALL car dispatch through the single gated door', () => {
+  const src = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'useFleetState.ts'),
+    'utf8',
+  );
+  const rawDispatches = [...src.matchAll(/carLink\.dispatch\(/g)].length;
+  assert.equal(
+    rawDispatches,
+    1,
+    `Expected exactly ONE raw carLink.dispatch( (inside dispatchToCar); found ${rawDispatches}. ` +
+      'A new command must call dispatchToCar (gated on activeIsLive), never carLink.dispatch directly — ' +
+      'that is the hole that let a demo car actuate the real Tesla.',
+  );
+  // And that one call lives in the gated door.
+  assert.match(src, /const dispatchToCar =[\s\S]*?if \(!activeIsLiveRef\.current\) return;[\s\S]*?carLink\.dispatch\(/);
 });
 
 test('speed-limit km/h stepping round-trips exactly (no 116→114 skip)', () => {

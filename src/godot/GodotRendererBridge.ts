@@ -15,6 +15,7 @@ import {
   vehicleIdForModel,
 } from './vehicleStateAdapter';
 import { hasVehicleVisualStateChanged } from './vehicleVisualState';
+import { logi } from '@/services/logbus';
 import type { FrameData, GodotMessage, RendererDiagnostics, VehicleMarkersMessage } from '../types/rendererMessages';
 import type { VehicleMarkers } from '../types/markerTypes';
 import type { CameraMode, VehicleViewState } from '../types/vehicleTypes';
@@ -60,10 +61,30 @@ export class GodotRendererBridge {
     this.lastFrame = frame;
     this.lastCameraMode = state.cameraMode;
 
+    logi('godot', 'boot', { model: state.carModel, ready: this.diagnostics.ready });
     this.send(createAppConfigMessage());
     this.send(createGodotConfigMessage());
     this.send(createThemeMessage(state.theme));
     this.send(createFrameMessage(frame));
+    this.send(createShowProductMessage(state));
+    this.moveCamera(state.cameraMode, false);
+    this.requestMarkers();
+    this.send(createVehicleLightsMessage(state, this.currentVehicleId()));
+    // If the engine already signalled ready BEFORE this boot ran (RN onLayout can
+    // lag engine init), the sends above are safe. If it signals ready AFTER, we
+    // re-apply on GODOT_READY (see handleRendererMessage) so nothing dropped during
+    // the cold-boot race leaves the car a black silhouette.
+  }
+
+  // Re-apply the current scene's visual content — the product, its lighting/env
+  // (via the camera re-frame) and lights. Idempotent for an already-loaded car
+  // (SHOW_PRODUCT reuses the instance), so it's safe to call on GODOT_READY or on
+  // a foreground resume to recover from dropped/early messages or reclaimed GPU
+  // resources. Config/theme/frame are engine-lifetime and not re-sent here.
+  resync(reason: string): void {
+    const state = this.lastState;
+    if (!state) return;
+    logi('godot', 'resync', { reason, model: state.carModel });
     this.send(createShowProductMessage(state));
     this.moveCamera(state.cameraMode, false);
     this.requestMarkers();
@@ -253,6 +274,21 @@ export class GodotRendererBridge {
       lastMessageAt: Date.now(),
       lastMessageType: parsed.type,
     };
+
+    // The engine's lifecycle signals — logged so a black-car repro shows whether
+    // the renderer ever reported ready / loaded the product (the missing evidence).
+    if (parsed.type === 'GODOT_READY' || parsed.type === 'FIRST_PRODUCT_LOADED') {
+      logi('godot', parsed.type, {
+        ready: this.diagnostics.ready,
+        firstProductLoaded: this.diagnostics.firstProductLoaded,
+        haveState: this.lastState != null,
+      });
+    }
+    // Re-apply on ready: guarantees the scene content lands even if boot() fired it
+    // before the engine was draining its queue (the cold-boot race → black car).
+    if (parsed.type === 'GODOT_READY') {
+      this.resync('godot-ready');
+    }
 
     if (parsed.type === 'VEHICLE_MARKERS_RESPONSE') {
       if (!this.pendingCameraAnimationId) {

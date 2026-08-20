@@ -3,15 +3,16 @@ import { Animated, PixelRatio, Pressable, StyleSheet, Text } from 'react-native'
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { controlHaptic } from '../state/controlHaptic';
+import { useCarLinkStatus } from '../state/VehicleProvider';
 import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
 import { TeslaFonts } from '@/constants/fonts';
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
-import { isLightExteriorColor } from './markerPaint';
+import { BusyIcon } from '@/components/BusyIcon';
+import { frunkLabelDark } from './markerPaint';
 import { useContentFade } from './useContentFade';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { MarkerPoint, VehicleMarkers } from '../types/markerTypes';
-import { vehicleConfigs } from '../types/vehicleTypes';
 import type { VehicleViewState } from '../types/vehicleTypes';
 
 interface Props {
@@ -31,6 +32,7 @@ const BOX = {
 // button opens the charge-port door. Hidden until markers arrive and the camera settles (no flicker).
 export function MarkerOverlay({ state, actions }: Props) {
   const bridge = useGodotBridge();
+  const carLink = useCarLinkStatus();
   const [markers, setMarkers] = useState<VehicleMarkers | null>(null);
   const [visible, setVisible] = useState(false);
   const shown = useRef(false);
@@ -74,7 +76,8 @@ export function MarkerOverlay({ state, actions }: Props) {
           pixelRatio={pixelRatio}
           marker="frunk"
           label={state.frunkOpen ? 'Close' : 'Open'}
-          dark={isLightExteriorColor(vehicleConfigs[state.carModel]?.vehicle_config.exterior_color)}
+          pending={carLink.pending.has('frunkOpen') || carLink.pendingCommands.has('openFrunk')}
+          dark={frunkLabelDark(state)}
           // actuateFrunk, NOT toggle. reconcile.ts has no frunk diff rule any
           // more, so a bare state toggle here flips the label and sends the car
           // NOTHING — which is exactly what it did after that rule was removed
@@ -88,6 +91,7 @@ export function MarkerOverlay({ state, actions }: Props) {
           pixelRatio={pixelRatio}
           marker="trunk"
           label={state.trunkOpen ? 'Close' : 'Open'}
+          pending={carLink.pending.has('trunkOpen')}
           onPress={() => actions.toggle('trunkOpen')}
         />
       ) : null}
@@ -99,6 +103,7 @@ export function MarkerOverlay({ state, actions }: Props) {
           symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
           size={34}
           tint="rgba(255,255,255,0.92)"
+          pending={carLink.pending.has('locked')}
           onPress={() => actions.toggle('locked')}
         />
       ) : null}
@@ -110,6 +115,7 @@ export function MarkerOverlay({ state, actions }: Props) {
           glyph="charging-bolt"
           size={26}
           tint={state.chargePortOpen ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)'}
+          pending={carLink.pending.has('chargePortOpen')}
           onPress={() => actions.toggle('chargePortOpen')}
         />
       ) : null}
@@ -126,6 +132,7 @@ function TextButton({
   // findings §2c: the frunk label — and ONLY the frunk label — flips to
   // rgba(0,0,0,0.7) on a light-painted car. Trunk and lock are hardcoded gray.
   dark = false,
+  pending,
 }: {
   anchorPx: MarkerPoint;
   pixelRatio: number;
@@ -133,6 +140,8 @@ function TextButton({
   label: string;
   onPress: () => void;
   dark?: boolean;
+  // While the closure command is in flight, the marker's text becomes a spinner.
+  pending?: boolean;
 }) {
   const point = anchorToPoint(anchorPx, pixelRatio, MARKER_CALIBRATION[marker]);
   return (
@@ -142,11 +151,16 @@ function TextButton({
         { left: point.left - BOX.text.w / 2, top: point.top - BOX.text.h / 2, width: BOX.text.w, height: BOX.text.h },
       ]}
       hitSlop={10}
+      disabled={pending}
       onPress={() => {
         controlHaptic();
         onPress();
       }}>
-      <Text style={[styles.label, dark ? styles.labelDark : null]}>{label}</Text>
+      {pending ? (
+        <BusyIcon size={18} />
+      ) : (
+        <Text style={[styles.label, dark ? styles.labelDark : null]}>{label}</Text>
+      )}
     </Pressable>
   );
 }
@@ -160,6 +174,7 @@ function IconButton({
   size,
   tint,
   onPress,
+  pending,
 }: {
   anchorPx: MarkerPoint;
   pixelRatio: number;
@@ -170,6 +185,8 @@ function IconButton({
   size: number;
   tint: string;
   onPress: () => void;
+  // While the command is in flight, the marker's glyph becomes a spinner.
+  pending?: boolean;
 }) {
   const point = anchorToPoint(anchorPx, pixelRatio, MARKER_CALIBRATION[marker]);
   return (
@@ -179,11 +196,14 @@ function IconButton({
         { left: point.left - BOX.icon.w / 2, top: point.top - BOX.icon.h / 2, width: BOX.icon.w, height: BOX.icon.h },
       ]}
       hitSlop={10}
+      disabled={pending}
       onPress={() => {
         controlHaptic();
         onPress();
       }}>
-      {glyph ? (
+      {pending ? (
+        <BusyIcon size={size * 0.7} />
+      ) : glyph ? (
         <AppIcon icon={glyph} color={tint} size={size} />
       ) : symbol ? (
         <SymbolView name={symbol} tintColor={tint} size={size} />

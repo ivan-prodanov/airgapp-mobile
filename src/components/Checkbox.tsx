@@ -19,16 +19,17 @@ export function Checkbox({
       onPress={onToggle}
       style={[styles.box, value ? styles.on : styles.off, disabled && styles.disabled]}
     >
-      {value ? <SymbolView name="checkmark" tintColor="white" size={16} weight="bold" /> : null}
+      {value ? <SymbolView name="checkmark" tintColor="white" size={13} weight="bold" /> : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   box: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
+    // Tesla's is smaller and barely rounded (ours was 26 / r6).
+    width: 20,
+    height: 20,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
