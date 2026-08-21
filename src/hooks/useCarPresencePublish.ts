@@ -29,7 +29,7 @@ export function useCarPresencePublish(): void {
       logi('presence', 'published', { linkUp });
       // Never throw into the app: this is advisory, and the reader already
       // handles a missing value correctly.
-      void SharedIntake.writeCarPresence(linkUp).catch(() => {});
+      void SharedIntake?.writeCarPresence(linkUp).catch(() => {});
     };
 
     // Publish once at mount so a fresh launch does not leave a stale value

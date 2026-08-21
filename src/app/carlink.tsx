@@ -289,16 +289,21 @@ export default function CarLinkScreen() {
   // every other symptom.
   const handleShareTraceProbe = async () => {
     const out: string[] = ['share-extension trace'];
-    try {
-      const trace = await SharedIntake.readShareTrace();
-      trace
-        .trim()
-        .split('\n')
-        .slice(-20)
-        .forEach((l) => out.push(`  ${l}`));
-    } catch (err) {
-      out.push(`  THREW — ${errMsg(err)}`);
-      out.push('  → readShareTrace is missing from this build');
+    if (!SharedIntake) {
+      // Android has no Share Extension process, so there is no trace to read.
+      out.push('  (no SharedIntake native module on this platform)');
+    } else {
+      try {
+        const trace = await SharedIntake.readShareTrace();
+        trace
+          .trim()
+          .split('\n')
+          .slice(-20)
+          .forEach((l) => out.push(`  ${l}`));
+      } catch (err) {
+        out.push(`  THREW — ${errMsg(err)}`);
+        out.push('  → readShareTrace is missing from this build');
+      }
     }
     out.forEach(append);
     await appendDiagnostic('share trace', out);

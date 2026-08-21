@@ -1,4 +1,4 @@
-import { requireNativeModule } from 'expo';
+import { requireOptionalNativeModule } from 'expo';
 
 declare class SharedIntakeModule {
   // What the Share Extension recorded about its own runs, plus the App Group
@@ -14,4 +14,6 @@ declare class SharedIntakeModule {
   consumeSharedIntent(): Promise<string | null>;
 }
 
-export default requireNativeModule<SharedIntakeModule>('SharedIntake');
+// Optional: the Share Extension is an iOS target, so this is null on Android until the
+// ACTION_SEND intake lands. Every caller null-checks; none of them are load-bearing for boot.
+export default requireOptionalNativeModule<SharedIntakeModule>('SharedIntake');

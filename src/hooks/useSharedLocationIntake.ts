@@ -51,6 +51,8 @@ const deps: ParseDeps = {
     }
     const region = { latitude: center.latitude, longitude: center.longitude, latitudeDelta: 30, longitudeDelta: 30 };
     const trySearch = async (q: string): Promise<LatLng | null> => {
+      // No MapKit off Apple platforms — the caller treats null as 'could not geocode'.
+      if (!AppleSearch) return null;
       try {
         const results = await withTimeout(AppleSearch.search(q, region), 8000, [] as AppleResult[]);
         const hit = results[0];
@@ -79,8 +81,11 @@ export function useSharedLocationIntake(): void {
       try {
         // Drain: a new share can be written WHILE we're processing the previous one, firing no fresh trigger —
         // so consume again until empty. This is what makes rapid successive shares reliable.
-        for (;;) {
-          const json = await SharedIntake.consumeSharedIntent();
+        // The legacy single-slot store is an iOS Share Extension concept; there is
+        // nothing to drain where the native module is absent.
+        const legacy = SharedIntake;
+        while (legacy) {
+          const json = await legacy.consumeSharedIntent();
           if (!json) break;
           let intent: Intent;
           try {

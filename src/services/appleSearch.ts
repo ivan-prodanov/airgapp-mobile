@@ -17,6 +17,7 @@ function toRegion(r: SearchRegion): AppleRegion {
 // Typeahead: title/subtitle only, no coordinate (resolved on tap via appleResolve). Rejects offline →
 // searchProvider catches and degrades to local-only.
 export async function appleComplete(q: string, region: SearchRegion): Promise<Place[]> {
+  if (!AppleSearch) throw new Error('AppleSearch unavailable on this platform');
   const raw = await AppleSearch.complete(q, toRegion(region));
   return raw.map((r, i) => ({
     id: `apple:${i}:${r.title}`,
@@ -31,6 +32,7 @@ export async function appleComplete(q: string, region: SearchRegion): Promise<Pl
 // Online list source: Apple MKLocalSearch (full results WITH coordinates → distance pill). Rejects offline →
 // searchProvider catches and falls back to local. This is the real SearchDeps.appleSearch.
 export async function appleSearch(q: string, region: SearchRegion): Promise<Place[]> {
+  if (!AppleSearch) throw new Error('AppleSearch unavailable on this platform');
   const raw = await AppleSearch.search(q, toRegion(region));
   return raw.map((r, i) => ({
     id: `apple:${i}:${r.title}`,
@@ -46,6 +48,7 @@ export async function appleSearch(q: string, region: SearchRegion): Promise<Plac
 // results already have a coordinate and don't need this.
 export async function appleResolve(place: Place, region: SearchRegion): Promise<Place> {
   if (place.coordinate) return place;
+  if (!AppleSearch) return place;  // no online resolver here; caller keeps the coordinate-less place
   const query = place.subtitle ? `${place.title} ${place.subtitle}` : place.title;
   const [first] = await AppleSearch.search(query, toRegion(region));
   if (!first) return place;

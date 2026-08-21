@@ -32,6 +32,7 @@ export function useShareTraceMirror(): void {
   const watermark = useRef<string | null>(null);
 
   const mirror = useCallback(async () => {
+    if (!SharedIntake) return;  // no Share Extension to mirror a trace from
     try {
       const raw = await SharedIntake.readShareTrace();
       const lines = raw.split('\n').filter((l) => l.trim().length > 0);
