@@ -79,6 +79,10 @@ modules/expo-godot-view/ios/*.pck
 # Vendored Godot Android engine — restore per modules/expo-godot-view/android/VENDORING.md
 modules/expo-godot-view/android/src/main/jniLibs/**/*.so
 
+# Per-module Gradle build outputs
+modules/*/android/build/
+modules/*/android/.cxx/
+
 
 # Local-only build artifacts
 *.log
