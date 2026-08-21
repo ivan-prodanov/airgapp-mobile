@@ -26,16 +26,32 @@ import {
   type MapRef,
 } from '@maplibre/maplibre-react-native';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
-import { PixelRatio, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 /**
- * MapLibre Android measures camera padding in DEVICE PIXELS, while every padding React Native
- * hands us — location.tsx's `edgePadding`, the `mapPadding` prop — is in dp. On a 3x screen that
- * makes the reserved space a third of what was asked for, so the bottom sheet covers the very
- * marker the fit was supposed to reveal. Same points-vs-pixels trap as the Godot main-view frame.
+ * react-native-maps' `mapPadding` maps onto MapLibre's `contentInset`, NOT onto `<Camera padding>`.
+ *
+ * That distinction is the whole of this bug. `<Camera padding>` applies to the declarative camera
+ * state only, so a `flyTo`/`fitBounds` issued through the ref ignored it — which is why only the
+ * one call that passed `edgePadding` explicitly (the charger fit) framed correctly, and every other
+ * operation, including the initial car view, centred behind the bottom sheet. `contentInset` is
+ * added to EVERY camera stop by the Android binding, whose own comment says it does this "to mimic
+ * MLN iOS behavior" (CameraStop.kt) — which is exactly the parity we want, because on iOS
+ * react-native-maps' mapPadding insets the map's logical viewport for every camera move.
+ *
+ * UNITS: dp, not pixels. The binding multiplies by display density itself, in both
+ * MLRNMapView.contentInset and CameraStop's own padding. An earlier attempt here converted dp→px
+ * first, which tripled every inset on this 3x screen; the charger fit only looked right because
+ * over-padding happened to push the marker into view.
  */
-function toPx(dp: number): number {
-  return Math.round(PixelRatio.get() * dp);
+function inset(p?: { top?: number; right?: number; bottom?: number; left?: number }) {
+  if (!p) return undefined;
+  return {
+    top: Math.round(p.top ?? 0),
+    right: Math.round(p.right ?? 0),
+    bottom: Math.round(p.bottom ?? 0),
+    left: Math.round(p.left ?? 0),
+  };
 }
 
 import {
@@ -183,9 +199,9 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
       if (!bounds) return;
       const p = opts?.edgePadding;
       cameraRef.current?.fitBounds(bounds, {
-        padding: p
-          ? { top: toPx(p.top), right: toPx(p.right), bottom: toPx(p.bottom), left: toPx(p.left) }
-          : undefined,
+        // Additional to contentInset, which the binding adds on top — the same layering
+        // react-native-maps has between mapPadding and edgePadding on iOS.
+        padding: inset(p),
         duration: opts?.animated === false ? 0 : 400,
       });
     },
@@ -242,6 +258,10 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
       ref={mapRef}
       style={[StyleSheet.absoluteFill, style as object]}
       mapStyle={styleFor(mapType)}
+      // The iOS `mapPadding` equivalent — see the note on `inset` above. Applies to the initial
+      // view and to every imperative camera move, so the car, a shared place, a tapped charger and
+      // a multi-point fit all land in the space ABOVE the bottom sheet rather than behind it.
+      contentInset={inset(mapPadding)}
 
       // The app draws its own chrome; MapLibre's built-in ornaments would double up.
       logo={false}
@@ -271,16 +291,8 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
         // nonsense view (observed: the map opened on the whole Mediterranean instead of the
         // car). Bounds carries the zoom implicitly, which is what a Region means.
         initialViewState={initialRegion ? { bounds: regionToBounds(initialRegion) } : undefined}
-        padding={
-          mapPadding
-            ? {
-                top: toPx(mapPadding.top ?? 0),
-                right: toPx(mapPadding.right ?? 0),
-                bottom: toPx(mapPadding.bottom ?? 0),
-                left: toPx(mapPadding.left ?? 0),
-              }
-            : undefined
-        }
+        // NO `padding` prop here on purpose: the map's contentInset is already added to every
+        // camera stop, and setting both would double the reserved space.
       />
       {showsUserLocation ? <UserLocation /> : null}
       {children}
