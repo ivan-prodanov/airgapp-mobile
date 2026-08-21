@@ -1,0 +1,33 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    xmlns:tools="http://schemas.android.com/tools"
+4    package="expo.modules.passiveentry" >
+5
+6    <uses-sdk android:minSdkVersion="26" />
+7    <!--
+8       Android 12+ split the install-time BLUETOOTH/BLUETOOTH_ADMIN pair into runtime
+9       permissions. neverForLocation is load-bearing: WITHOUT it the platform also demands
+10       ACCESS_FINE_LOCATION before delivering ANY scan result, and a scan missing that
+11       permission returns zero results silently — indistinguishable from "the car isn't
+12       nearby". We never derive location from a scan result.
+13    -->
+14    <uses-permission
+14-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:8:3-10:42
+15        android:name="android.permission.BLUETOOTH_SCAN"
+15-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:8:20-68
+16        android:usesPermissionFlags="neverForLocation"
+16-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:9:20-66
+17        tools:targetApi="s" />
+17-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:10:20-39
+18    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+18-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:11:3-74
+18-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:11:20-71
+19
+20    <uses-feature
+20-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:12:3-88
+21        android:name="android.hardware.bluetooth_le"
+21-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:12:17-61
+22        android:required="true" />
+22-->/Users/ivan/Work/airgapp/mobile/modules/expo-passive-entry/android/src/main/AndroidManifest.xml:12:62-85
+23
+24</manifest>

@@ -1,7 +1,10 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "modules": ["PassiveEntryModule"],
     "appDelegateSubscribers": ["PassiveEntryAppDelegate"]
+  },
+  "android": {
+    "modules": ["expo.modules.passiveentry.PassiveEntryModule"]
   }
 }

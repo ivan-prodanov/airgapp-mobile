@@ -867,7 +867,7 @@ The whole Tesla protocol — framing, session, signing, protobuf, VCSEC parsing,
 - Consumes: nothing.
 - Produces: an installed APK holding `BLUETOOTH_SCAN` (with `neverForLocation`), `BLUETOOTH_CONNECT`, and `ACCESS_FINE_LOCATION`.
 
-- [ ] **Step 1: Write the manifest**
+- [x] **Step 1: Write the manifest**
 
 `modules/expo-passive-entry/android/src/main/AndroidManifest.xml`:
 
@@ -885,7 +885,7 @@ The whole Tesla protocol — framing, session, signing, protobuf, VCSEC parsing,
 </manifest>
 ```
 
-- [ ] **Step 2: Write the failing test for the permission gate**
+- [x] **Step 2: Write the failing test for the permission gate**
 
 Create `src/ble/blePermissions.test.ts`:
 
@@ -912,21 +912,21 @@ test('ios needs no explicit runtime BLE permission list', () => {
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**
+- [x] **Step 3: Run it and watch it fail**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "blePermissions"
 ```
 
-- [ ] **Step 4: Write `src/ble/blePermissions.ts`** implementing exactly those three cases.
+- [x] **Step 4: Write `src/ble/blePermissions.ts`** implementing exactly those three cases.
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | tail -4
 ```
 
-- [ ] **Step 6: Verify the merged manifest on device**
+- [x] **Step 6: Verify the merged manifest on device**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug && cd .. && adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb shell dumpsys package local.airgapp.mobile | grep -A20 "requested permissions"
@@ -934,7 +934,7 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Expected: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` present.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
@@ -958,7 +958,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 The GATT contract, read from the Swift and the TS: service/characteristic UUIDs for the Tesla vehicle service, **write to `…0212`**, **notify on `…0213`**, frames carry a 2-byte big-endian length prefix (`src/ble/bleFraming.ts`), and `blockLength = mtu - 3`.
 
-- [ ] **Step 1: Extract the exact UUIDs and scan-name rule from the iOS implementation**
+- [x] **Step 1: Extract the exact UUIDs and scan-name rule from the iOS implementation**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && grep -n "CBUUID\|0212\|0213\|scanName\|withServices" modules/expo-passive-entry/ios/PassiveEntryCentral.swift | head -30 && sed -n '1,60p' src/ble/bleScanName.ts
@@ -966,7 +966,7 @@ cd /Users/ivan/Work/airgapp/mobile && grep -n "CBUUID\|0212\|0213\|scanName\|wit
 
 Copy the literal UUID strings. Do not retype them from memory.
 
-- [ ] **Step 2: Write the failing test for the framing contract Android must honour**
+- [x] **Step 2: Write the failing test for the framing contract Android must honour**
 
 `src/ble/bleFraming.test.ts` already covers framing and is platform-agnostic — it must keep passing untouched. Instead add a device-level assertion to `src/ble/transport.test.ts`:
 
@@ -977,9 +977,9 @@ test('blockLength is derived as mtu - 3 regardless of platform', () => {
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**, then implement `blockLengthForMtu` if it is not already exported. (Check first: `grep -rn "mtu - 3\|mtu-3" src/ble/`.)
+- [x] **Step 3: Run it and watch it fail**, then implement `blockLengthForMtu` if it is not already exported. (Check first: `grep -rn "mtu - 3\|mtu-3" src/ble/`.)
 
-- [ ] **Step 4: Write `PassiveEntryCentral.kt`**
+- [x] **Step 4: Write `PassiveEntryCentral.kt`**
 
 Structure it as a direct mirror of the Swift, section for section, so a reviewer can diff them:
 
@@ -992,13 +992,13 @@ Structure it as a direct mirror of the Swift, section for section, so a reviewer
 - `writeFrame` → chunk to `mtu - 3`, `WRITE_TYPE_NO_RESPONSE`, serialised behind a single-writer mutex (the TS side already guarantees one writer; the Kotlin side must not reorder).
 - Autoconnect on unexpected disconnect, with the same backoff the Swift uses.
 
-- [ ] **Step 5: Build**
+- [x] **Step 5: Build**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug 2>&1 | tail -20
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
@@ -1021,7 +1021,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `PassiveEntryCentral` from Task 3.2.
 - Produces: an Expo module named `PassiveEntry` with exactly the functions `modules/expo-passive-entry/index.ts` calls: `start`, `stop`, `isRunning`, `sealGolden`, `ecdhGolden`, `handshakeGolden`, `setDeviceKey`, `deviceFingerprint`, `writeFrame`, `connectionState`, `setForegroundResponderActive`, `postCpdWarning`, `setCarLocation`, `requestAlwaysLocation`; and the events `log`, `frame`, `connectionState`, `bondRemoved`.
 
-- [ ] **Step 1: Enumerate the contract from the TS, not from memory**
+- [x] **Step 1: Enumerate the contract from the TS, not from memory**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && grep -oP "PassiveEntryModule\?\.\K\w+" modules/expo-passive-entry/index.ts | sort -u && grep -oP "addListener\('\K[a-zA-Z]+" modules/expo-passive-entry/index.ts | sort -u
@@ -1029,13 +1029,13 @@ cd /Users/ivan/Work/airgapp/mobile && grep -oP "PassiveEntryModule\?\.\K\w+" mod
 
 Every name printed must exist in the Kotlin module. A missing one is a silent no-op at runtime, not a compile error.
 
-- [ ] **Step 2: Implement the module**
+- [x] **Step 2: Implement the module**
 
 Base64 in/out on `writeFrame`/`frame` (matching iOS: `frameB64`, `dataB64`). For this task, the three `*Golden()` functions may return `"android: not implemented"` — they are diagnostics comparing native crypto against the TS goldens, and native crypto only exists once Task 4.2 lands. **Do not return a fake-passing string**; a diagnostic that lies is worse than one that abstains.
 
 `KeystoreKey.kt` stores the P-256 private key. Note: the Android Keystore cannot export a raw private key, and `VcsecSigner` needs the scalar for ECDH. Store the key in `EncryptedSharedPreferences` (Jetpack Security, master key in the Keystore) rather than as a Keystore key object — the same trade-off `KeychainKey.swift` makes with a non-`kSecAttrTokenIDSecureEnclave` key.
 
-- [ ] **Step 3: Register android in the module config**
+- [x] **Step 3: Register android in the module config**
 
 ```json
 {
@@ -1048,7 +1048,7 @@ Base64 in/out on `writeFrame`/`frame` (matching iOS: `frameB64`, `dataB64`). For
 }
 ```
 
-- [ ] **Step 4: Build and confirm the module registers**
+- [x] **Step 4: Build and confirm the module registers**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug && cd .. && adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb logcat -c && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1 && sleep 6 && adb logcat -d -s ReactNativeJS:* | grep -i "passive\|native module absent" | head
@@ -1056,7 +1056,7 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Expected: **no** `native module absent` lines.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
