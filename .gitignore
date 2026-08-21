@@ -40,9 +40,12 @@ example
 
 # Native folders.
 #
-# /android IS generated — expo prebuild regenerates it from app config.
+# /android WAS generated (once, by `expo prebuild --platform android` on 2026-08-21)
+# and is now HAND-MAINTAINED, exactly like /ios: it carries the Godot engine embed,
+# the passive-entry foreground service and its manifest entries. Never prebuild it
+# again — the same clobbering argument below applies to it verbatim.
 #
-# /ios IS NOT, and treating it as generated was a lie inherited from the Expo
+# /ios IS NOT generated either, and treating it as generated was a lie inherited from the Expo
 # template. `expo prebuild` would CLOBBER it: the Xcode project carries the
 # embedded Godot engine, the share extension target and its entitlements, and
 # hand-written Swift that exists nowhere else. It was ignored anyway, so for
@@ -51,7 +54,11 @@ example
 #
 # The proper fix is a generated project (XcodeGen/Tuist) from a committed spec —
 # see docs/ROADMAP.md. This is the pragmatic version of that.
-/android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/app/src/main/assets/airgapp.pck
 /ios/Pods
 /ios/build
 /ios/DerivedData
