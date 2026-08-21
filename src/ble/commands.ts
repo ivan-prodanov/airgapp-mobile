@@ -38,6 +38,7 @@ import {
   sentryOnAction,
   sentryOffAction,
   setLowPowerModeAction,
+  setKeepAccessoryPowerModeAction,
   startChargingAction,
   stopChargingAction,
   setChargeLimitAction,
@@ -119,6 +120,7 @@ export type CarCommand =
   | { type: 'remoteStart' }
   | { type: 'sentry'; on: boolean }
   | { type: 'lowPowerMode'; on: boolean }
+  | { type: 'keepAccessoryPower'; on: boolean }
   | { type: 'valet'; on: boolean; pin?: string }
   // "Clear PIN" row actions — distinct from turning the feature off. Valet and PIN to Drive clear via a
   // confirm alert with no PIN entry; Parental and Speed Limit clear by verifying the PIN (speedLimit
@@ -264,6 +266,8 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
       return fromPayload(cmd.on ? sentryOnAction() : sentryOffAction());
     case 'lowPowerMode':
       return fromPayload(setLowPowerModeAction(cmd.on));
+    case 'keepAccessoryPower':
+      return fromPayload(setKeepAccessoryPowerModeAction(cmd.on));
     case 'valet':
       // Enabling carries the PIN; disabling sends an empty password (see setValetModeAction).
       return fromPayload(setValetModeAction(cmd.on, cmd.on ? requirePin(cmd.pin, 'valet') : ''));

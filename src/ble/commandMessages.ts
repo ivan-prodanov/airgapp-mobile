@@ -40,6 +40,8 @@ const COMMAND_LABELS: Partial<Record<CarCommand['type'], string>> = {
   closeWindows: 'Close windows',
   flashLights: 'Flash lights',
   honk: 'Honk',
+  lowPowerMode: 'Low power mode',
+  keepAccessoryPower: 'Keep accessory power',
   // Matches the button the user pressed ("Send to Car"), not the wire verb —
   // titleCase would otherwise render "Navigate to failed".
   navigateTo: 'Send to car',

@@ -127,6 +127,9 @@ export function diffToCommands(prev: VehicleViewState, next: VehicleViewState): 
   if (prev.lowPowerMode !== next.lowPowerMode) {
     emit({ type: 'lowPowerMode', on: next.lowPowerMode }, 'lowPowerMode');
   }
+  if (prev.keepAccessoryPower !== next.keepAccessoryPower) {
+    emit({ type: 'keepAccessoryPower', on: next.keepAccessoryPower }, 'keepAccessoryPower');
+  }
 
   // ── Security & Drivers: PIN-gated toggles ──────────────────────────────────
   // Each feature emits on TWO independent transitions: the on/off toggle, and a

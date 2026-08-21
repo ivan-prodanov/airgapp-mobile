@@ -58,6 +58,7 @@ const IGNORED_KEYS = new Set<keyof VehicleViewState>([
   'pinToDrivePin',
   'speedLimitMph',
   'lowPowerMode',
+  'keepAccessoryPower',
   'parentalLimitSpeed',
   'parentalReduceAccel',
   'parentalRequireSafety',

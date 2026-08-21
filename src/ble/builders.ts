@@ -13,7 +13,10 @@
 //
 //   1. `setKeepAccPowerAction` is MISNAMED in the reference — it actually
 //      builds hvacBioweaponModeAction. Ported here under its correct name,
-//      setBioweaponModeAction. No "keep accessory power" proto exists.
+//      setBioweaponModeAction. (The REAL keep-accessory-power action DOES exist
+//      as CarServer.SetKeepAccessoryPowerModeAction, VehicleAction 138 — see
+//      setKeepAccessoryPowerModeAction below; it was simply not what the
+//      reference's `setKeepAccPowerAction` built.)
 //
 //   2. `remoteDriveAction` in the reference wraps a VehicleAction field
 //      `vehicleControlRemoteStartAction` — THAT FIELD DOES NOT EXIST in the
@@ -251,7 +254,8 @@ export function setCabinOverheatAction(on: boolean, fanOnly: boolean): ActionPay
 }
 // setBioweaponModeAction — see deviation #1: the reference calls this
 // setKeepAccPowerAction, but it builds hvacBioweaponModeAction. Renamed to
-// its correct name; no "keep accessory power" proto exists.
+// its correct name. (The real keep-accessory-power setter is
+// setKeepAccessoryPowerModeAction, further down.)
 // `manualOverride` was pinned false — the same defect as cabin overheat's
 // `fanOnly`, a second proto field frozen to a constant. Tesla sets it from the
 // live keeper mode (@5223782):
@@ -991,5 +995,17 @@ export function setLowPowerModeAction(on: boolean): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
     bytes: encodeInfotainmentAction({ setLowPowerModeAction: { lowPowerMode: !!on } }),
+  };
+}
+
+// Keep Accessory Power — CarServer.SetKeepAccessoryPowerModeAction (VehicleAction
+// 138, bool keep_accessory_power_mode). A plain on/off setter: when on, the car
+// keeps 12V accessory power live after the driver exits. Like setLowPowerModeAction
+// this is WRITE-ONLY — no vendored proto exposes a readback field, so our value is
+// optimistic (see the keepAccessoryPower state note in vehicleTypes.ts).
+export function setKeepAccessoryPowerModeAction(on: boolean): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    bytes: encodeInfotainmentAction({ setKeepAccessoryPowerModeAction: { keepAccessoryPowerMode: !!on } }),
   };
 }

@@ -6,9 +6,13 @@ import { useRouter } from 'expo-router';
 
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
+import { Toggle } from '@/components/Toggle';
 import { AMP_MAX, AMP_MIN } from '@/state/fleet';
+import { controlHaptic } from '@/state/controlHaptic';
 import { useVehicle } from '@/state/VehicleProvider';
 import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
+import { TeslaFonts } from '@/constants/fonts';
+import type { VehicleStateKey } from '@/types/vehicleTypes';
 
 
 // Charging screen — RN build of the Tesla Charging page. Full opaque page (no car
@@ -46,6 +50,16 @@ export default function ChargingScreen() {
   // rather than on charging, which is what ControlButtons actually does: the
   // plugged-in branch renders UnlockChargePortButton whether or not current is
   // flowing.
+
+  // Both settings toggles below flip optimistically through actions.toggle — the
+  // reconciler maps each key to its SET command (lowPowerMode / keepAccessoryPower),
+  // so they inherit the same optimistic-mirror + rollback path as every other
+  // control. Neither has a BLE readback (see keepAccessoryPower in vehicleTypes.ts),
+  // so there is nothing to poll on open — the toggle reflects the last set value.
+  const toggle = (key: VehicleStateKey) => {
+    controlHaptic();
+    actions.toggle(key);
+  };
 
   return (
     <View style={styles.root}>
@@ -123,6 +137,24 @@ export default function ChargingScreen() {
               onPress={() => router.push('/schedules')}
             />
           </View>
+
+          {/* Settings group — a full-width separator, then the two energy toggles,
+              matching the Tesla Charging page's sectioning below the quick links. */}
+          <View style={styles.settings}>
+            <Divider />
+            <SettingToggleRow
+              title="Low Power Mode"
+              subtitle="Disables energy consuming features when you are not in the vehicle"
+              value={state.lowPowerMode}
+              onToggle={() => toggle('lowPowerMode')}
+            />
+            <SettingToggleRow
+              title="Keep Accessory Power On"
+              subtitle="Power remains active after exit. Vehicle consumes additional energy even without connected devices."
+              value={state.keepAccessoryPower}
+              onToggle={() => toggle('keepAccessoryPower')}
+            />
+          </View>
         </ScrollView>
       </SafeAreaView>
       <EdgeSwipeBack onBack={() => router.back()} />
@@ -150,6 +182,45 @@ function LinkRow({
       <Text style={styles.linkTitle}>{title}</Text>
       <AppIcon icon="chevron-90" color="rgba(255,255,255,0.4)" size={16} />
     </Pressable>
+  );
+}
+
+// The Tesla design-system <Divider> (component @1431035): height 1 / width 100% in
+// the dark-theme dividerColor #2D2E2F at opacity 0.5. Content-width here (the
+// screenshot shows it inset by the page gutter), so no negative margin.
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
+// A settings toggle row: no leading icon (unlike the Security page's ToggleRow),
+// the title carries an inline info glyph, a two-line caption sits below, and the
+// switch is right-aligned. Geometry + typography come from the same design-system
+// RowWithSwitch spec the Security screen uses (minHeight 7*Gutter=70, BodyLabel
+// title, CaptionLabel subtitle at 0.5 opacity, UniversalSans-Medium).
+function SettingToggleRow({
+  title,
+  subtitle,
+  value,
+  onToggle,
+}: {
+  title: string;
+  subtitle: string;
+  value: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <View style={styles.toggleRow}>
+      <View style={styles.toggleText}>
+        <View style={styles.titleRow}>
+          <Text style={styles.rowTitle}>{title}</Text>
+          <AppIcon icon="info-small" color="rgba(255,255,255,0.4)" size={15} />
+        </View>
+        <Text style={styles.rowSub}>{subtitle}</Text>
+      </View>
+      <View style={styles.toggleSlot}>
+        <Toggle value={value} onToggle={onToggle} />
+      </View>
+    </View>
   );
 }
 
@@ -264,5 +335,62 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: '600',
     color: 'white',
+  },
+
+  // Settings group below the quick links: separator + the two energy toggles.
+  settings: {
+    // marginTop cancels the scroll's gap:20 above this group so the separator
+    // sits a touch closer to the links, then Divider owns the rest of the rhythm.
+    marginTop: -4,
+  },
+  // See <Divider>: dark-theme dividerColor #2D2E2F @0.5, height 1. marginVertical
+  // gives the generous breathing room the Tesla page keeps around the separator.
+  divider: {
+    height: 1,
+    backgroundColor: '#2D2E2F',
+    opacity: 0.5,
+    marginVertical: 12,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    // Tesla's rowContainer holds minHeight = 7 * Gutter = 70 with content centred
+    // (no paddingVertical); a two-line caption grows the row past 70 flush.
+    minHeight: 70,
+  },
+  toggleText: {
+    flex: 1,
+    gap: 2,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  // RowWithSwitch title = BodyLabel (14/20/ls0.1), subtitle = CaptionLabel
+  // (12/16/ls0.1), both UniversalSans-Medium (weight baked into the cut — no
+  // fontWeight). Identical to the Security screen's rows.
+  rowTitle: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: 'white',
+  },
+  rowSub: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.1,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  // Footprint of the Toggle (51×31) so the switch stays put regardless of caption
+  // height.
+  toggleSlot: {
+    width: 51,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

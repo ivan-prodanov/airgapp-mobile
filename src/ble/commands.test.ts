@@ -83,6 +83,8 @@ import {
   setPinToDriveAction,
   resetPinToDriveAction,
   setCopTempAction,
+  setLowPowerModeAction,
+  setKeepAccessoryPowerModeAction,
 } from './builders';
 
 function decodeAction(bytes: Uint8Array) {
@@ -384,6 +386,38 @@ test('buildCommand dispatches representative CarCommand variants to the right bu
 
   const pin = buildCommand({ type: 'pinToDrive', on: true, pin: '1234' });
   assert.equal(decodeAction(pin.bytes).vehicleAction?.vehicleControlSetPinToDriveAction?.password, '1234');
+
+  const lowPower = buildCommand({ type: 'lowPowerMode', on: true });
+  assert.equal(lowPower.domain, DOMAIN_INFOTAINMENT);
+  assert.equal(decodeAction(lowPower.bytes).vehicleAction?.setLowPowerModeAction?.lowPowerMode, true);
+
+  const keepAcc = buildCommand({ type: 'keepAccessoryPower', on: true });
+  assert.equal(keepAcc.domain, DOMAIN_INFOTAINMENT);
+  assert.equal(
+    decodeAction(keepAcc.bytes).vehicleAction?.setKeepAccessoryPowerModeAction?.keepAccessoryPowerMode,
+    true,
+  );
+});
+
+test('setLowPowerModeAction / setKeepAccessoryPowerModeAction encode the bool (CarServer VehicleActions 130 / 138)', () => {
+  assert.equal(
+    decodeAction(setLowPowerModeAction(true).bytes).vehicleAction?.setLowPowerModeAction?.lowPowerMode,
+    true,
+  );
+  assert.equal(
+    decodeAction(setLowPowerModeAction(false).bytes).vehicleAction?.setLowPowerModeAction?.lowPowerMode,
+    false,
+  );
+  assert.equal(
+    decodeAction(setKeepAccessoryPowerModeAction(true).bytes).vehicleAction?.setKeepAccessoryPowerModeAction
+      ?.keepAccessoryPowerMode,
+    true,
+  );
+  assert.equal(
+    decodeAction(setKeepAccessoryPowerModeAction(false).bytes).vehicleAction?.setKeepAccessoryPowerModeAction
+      ?.keepAccessoryPowerMode,
+    false,
+  );
 });
 
 test('buildCommand: state-read-shaped variants are not in the CarCommand union — verify flags via direct builder + dispatcher-adjacent seatCooler/steeringWheelHeat/cabinOverheat/setCopTemp/climateKeeper/valet/speedLimit/remoteStart/media/pinToDrive-reset', () => {

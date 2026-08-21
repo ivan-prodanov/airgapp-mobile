@@ -70,6 +70,24 @@ test('sentry on/off', () => {
   ]);
 });
 
+test('low power on/off', () => {
+  expect(s({ lowPowerMode: false }), s({ lowPowerMode: true }), [
+    { cmd: { type: 'lowPowerMode', on: true }, keys: ['lowPowerMode'] },
+  ]);
+  expect(s({ lowPowerMode: true }), s({ lowPowerMode: false }), [
+    { cmd: { type: 'lowPowerMode', on: false }, keys: ['lowPowerMode'] },
+  ]);
+});
+
+test('keep accessory power on/off', () => {
+  expect(s({ keepAccessoryPower: false }), s({ keepAccessoryPower: true }), [
+    { cmd: { type: 'keepAccessoryPower', on: true }, keys: ['keepAccessoryPower'] },
+  ]);
+  expect(s({ keepAccessoryPower: true }), s({ keepAccessoryPower: false }), [
+    { cmd: { type: 'keepAccessoryPower', on: false }, keys: ['keepAccessoryPower'] },
+  ]);
+});
+
 test('windows: any-open → vent, all-closed → close, owning the whole set', () => {
   const wk = ['leftFrontWindowOpen', 'rightFrontWindowOpen', 'leftRearWindowOpen', 'rightRearWindowOpen'];
   expect(base, s({ leftFrontWindowOpen: true }), [{ cmd: { type: 'ventWindows' }, keys: wk }]);
