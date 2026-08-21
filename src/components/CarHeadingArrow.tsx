@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Animated } from 'react-native';
 import * as Location from 'expo-location';
+
+import { ensureForegroundLocation } from '@/services/locationPermission';
 import { AppIcon } from '../icons/AppIcon';
 
 // The compass glyph is `navigate-filled` — the SAME nav-heading arrow the Location
@@ -57,7 +59,9 @@ export function CarHeadingArrow({ bearingToCar, size = 17, color = 'rgba(255,255
     let sub: Location.LocationSubscription | undefined;
     let cancelled = false;
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // Query-then-ask — see ensureForegroundLocation. A bare request starts Android's permission
+      // Activity even when already granted, pausing us for ~100ms.
+      const status = (await ensureForegroundLocation()) ? 'granted' : 'denied';
       if (status !== 'granted' || cancelled) return;
       sub = await Location.watchHeadingAsync((h) => {
         // trueHeading is -1 until it has a location fix; fall back to magnetic north meanwhile.

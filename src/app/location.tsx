@@ -3,6 +3,8 @@ import { Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+
+import { ensureForegroundLocation } from '@/services/locationPermission';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MapView, { Marker, PROVIDER_DEFAULT, type MapType, type Region } from '@/components/MapSurface';
 
@@ -391,8 +393,10 @@ export default function LocationView() {
 
   const fetchLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      // Query-then-ask, NOT ask-every-time — see ensureForegroundLocation. Requesting on mount
+      // launched Android's permission Activity over ours and paused us mid-push, which blanked the
+      // screen being left.
+      if (!(await ensureForegroundLocation())) return;
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setUserCoord({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
     } catch {

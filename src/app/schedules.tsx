@@ -3,6 +3,8 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+
+import { ensureForegroundLocation } from '@/services/locationPermission';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
@@ -105,8 +107,10 @@ export default function SchedulesScreen() {
     void (async () => {
       try {
         let user = FALLBACK_COORD;
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
+        // Query-then-ask, NOT ask-every-time — see ensureForegroundLocation. Requesting on mount
+        // launched Android's permission Activity over ours and paused us mid-push, which blanked
+        // the screen being left.
+        if (await ensureForegroundLocation()) {
           const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           user = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         }

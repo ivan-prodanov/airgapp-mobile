@@ -140,31 +140,47 @@ unhandled configuration change. The engine cannot survive that, and would need e
 `newcontext` patch (rebuild from `godot-src`) or a full engine re-boot on Activity recreate. Not hit
 in testing; recorded here because it is the one path left.
 
+## Never call `requestForegroundPermissionsAsync` on mount
+
+`Location.requestForegroundPermissionsAsync()` is not a cheap check. On Android it starts the
+system's `GrantPermissionsActivity` over our own **even when the permission is already granted** —
+the dialog never becomes visible, but the Activity transition still happens. Ours pauses for ~100ms
+(measured: `onHostPause` 02:04:23.306, `onHostResume` .412), React Native stops driving the surface
+for that window, and the bare window shows instead.
+
+Land that on a screen push and the screen you are LEAVING appears to lose all its content — on Home
+that is the car and the entire menu — and then slide away blank.
+
+**The correlation that identified it:** it reproduced on exactly the two screens that requested on
+mount, Location and Set Schedules, and on no others. Charging and Security & Drivers never touch
+location and slide cleanly. Set Schedules is a plain list screen, which is what ruled out every
+map/surface/compositing theory — those had been chased and disproved first.
+
+`getForegroundPermissionsAsync()` is a pure query and starts nothing, which is why HomeScreen —
+which always used it — never caused this. `services/locationPermission.ts` now owns the rule:
+query, and ask only when we do not already have it.
+
+Verified: tapping Location or Set Schedules produces NO `onHostPause`/`onHostResume` pair and no
+`GrantPermissionsActivity` launch, where before there was one at the tap.
+
 ## The map is a TextureView, not a SurfaceView
 
-`androidView="texture"` on the MapLibre `Map` is load-bearing, and it is the fix for "tapping
-Location blanks the Home screen and slides an empty screen left".
+`androidView="texture"` on the MapLibre `Map`. A `GLSurfaceView` does not draw into the window: it
+gets its own compositor layer and the window punches a transparent HOLE where it sits. Until
+MapLibre renders its first frame that hole shows the window background — which is the "the map is
+white before it initializes" effect. Proved with a magenta window background: the exposed area went
+magenta.
 
-A `GLSurfaceView` does not draw into the window. It gets its own compositor layer, and the window
-punches a transparent HOLE where it sits so that layer shows through. The hole is cut at the
-surface's LAYOUT position and does not respect the parent's animation transform — so the moment the
-Location screen was laid out, the hole erased what the window had already drawn (the car, the menu
-rows, everything) and the push then slid a blank screen. Whatever the window painted underneath
-showed through the hole, which is why it read as a white flash on a light-mode phone.
+A `TextureView` renders into the view hierarchy like an ordinary view and cuts no hole, at the cost
+of a little memory and one extra copy per frame.
 
-The asymmetry is what gave it away: Security, Charging, Schedules and Explore are pure React Native,
-draw into the window buffer, punch no hole, and slide correctly. Only Location carries a surface.
+⚠️ This was NOT the cause of the outgoing screen going blank, though it was committed as if it
+were. Set Schedules has no map and blanked identically — see the permission note above. Recorded so
+the wrong explanation does not get re-derived.
 
-Proved rather than argued: setting `android:windowBackground` to magenta turned the flash magenta,
-confirming the hole was showing the window background.
-
-A `TextureView` renders into the view hierarchy like an ordinary view — it transforms and clips with
-its parent and cuts no hole. It costs a little more memory and one extra copy per frame, which is
-the price of being animatable.
-
-`android:windowBackground` stays pinned dark (`#161718`) even so: the Godot renderer is still a
-GLSurfaceView, so its hole is real, and a dark-only app has no business resolving DayNight to a
-white window. That is insurance, not the fix.
+`android:windowBackground` is pinned dark (`#161718`) for the same family of reasons: the Godot
+renderer is a real GLSurfaceView, and a dark-only app should never resolve DayNight to a white
+window.
 
 ## `centerOffset` on markers
 
