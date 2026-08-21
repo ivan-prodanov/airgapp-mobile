@@ -1,4 +1,5 @@
 {
-  "platforms": ["apple"],
-  "apple": { "modules": ["SharedIntakeModule"] }
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["SharedIntakeModule"] },
+  "android": { "modules": ["expo.modules.sharedintake.SharedIntakeModule"] }
 }

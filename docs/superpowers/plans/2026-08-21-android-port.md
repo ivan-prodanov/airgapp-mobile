@@ -1320,15 +1320,15 @@ Photon (`photon.komoot.io`) is a free, keyless OSM geocoder built for typeahead.
 
 Android's model is fundamentally simpler than iOS's: no separate extension process, no JSC-runs-our-TS trick, no `setTimeout`-less environment. An `ACTION_SEND` intent filter on the main activity delivers the shared text straight to the app.
 
-- [ ] **Step 1: Add the intent filter to `app.json`** under `expo.android.intentFilters`, matching `text/plain` for `ACTION_SEND`.
+- [x] **Step 1: Add the intent filter to `app.json`** under `expo.android.intentFilters`, matching `text/plain` for `ACTION_SEND`.
 
-- [ ] **Step 2: Implement the module** to read `intent.getStringExtra(Intent.EXTRA_TEXT)` and expose it through the existing contract.
+- [x] **Step 2: Implement the module** to read `intent.getStringExtra(Intent.EXTRA_TEXT)` and expose it through the existing contract.
 
-- [ ] **Step 3: Reuse the existing URL resolution.** `modules/shared-location-resolver` is a Swift package, but `src/hooks/useSharedLocationIntake.ts` holds the JS-side logic. The `share-extension-sends-natively` memory records the Google-302 gotcha — *read the `Location` header, don't follow blindly*. That logic must apply on Android too; if it currently lives in Swift, port it to TS so both platforms share it (and gain a test).
+- [x] **Step 3: Reuse the existing URL resolution.** `modules/shared-location-resolver` is a Swift package, but `src/hooks/useSharedLocationIntake.ts` holds the JS-side logic. The `share-extension-sends-natively` memory records the Google-302 gotcha — *read the `Location` header, don't follow blindly*. That logic must apply on Android too; if it currently lives in Swift, port it to TS so both platforms share it (and gain a test).
 
-- [ ] **Step 4: Verify** — share a Google Maps link from Chrome on the device into Airgapp; confirm the place preview sheet opens with the right coordinate. Per the `shared-location-intake` memory, there is a **single `pendingSharedIntent` slot** and Cancel rewinds it — test the cancel path explicitly.
+- [x] **Step 4: Verify** — share a Google Maps link from Chrome on the device into Airgapp; confirm the place preview sheet opens with the right coordinate. Per the `shared-location-intake` memory, there is a **single `pendingSharedIntent` slot** and Cancel rewinds it — test the cancel path explicitly.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 

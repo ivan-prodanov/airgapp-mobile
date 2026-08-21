@@ -23,6 +23,7 @@ pre-existing code.
 | Secure store | Device key persists across force-stop. |
 | BLE scan | Scanner starts, matches the VIN-derived name (byte-identical to `bleScanName.ts`), reports what it saw. |
 | System back | Pops Controls/Climate and the sheets; exits to launcher at the root. |
+| **Share intake** | `ACTION_SEND` text/plain → Location screen with the pin dropped and Send to Car. Verified with a Google Maps URL. |
 
 ## Accepted deltas (Android behaves differently by design)
 
@@ -43,7 +44,6 @@ pre-existing code.
 | **Phase 4** — background passive entry, geofence re-arm, CPD notification, native self-signing | Not built. The three crypto goldens deliberately return "not implemented" rather than a false pass. |
 | Charger list framing on entry | The map opens tighter than iOS, so the list can read empty until you zoom out. The DB and query are fine (proven by the populated list at wider zoom) — this is `fitToCoordinates` framing. |
 | `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` back behaviour | Not verified. They are detented map sheets rather than modal dismissals, so consuming Back there may be wrong. |
-| Share intake (`ACTION_SEND`) | Not built (Phase 5 Task 5.3). |
 | `expo-bg-task` wake lock at runtime | Compiles and autolinks; needs a real car command to exercise. |
 | Godot snapshot thumbnails | `SnapshotDriver` not verified on Android; the Cars sheet currently shows the vehicle glyph. |
 

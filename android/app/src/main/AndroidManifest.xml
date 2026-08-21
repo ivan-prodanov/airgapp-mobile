@@ -35,6 +35,21 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="airgapp"/>
       </intent-filter>
+      <!--
+        Share intake. Android's answer to the iOS Share Extension: a shared place arrives as an
+        ACTION_SEND intent straight to this activity, in-process — no extension, no App Group
+        container. modules/shared-intake reads EXTRA_TEXT off the intent and hands it to JS as
+        {"raw": ...}, which useSharedLocationIntake already resolves.
+
+        launchMode=singleTask above means a share into a running app arrives via onNewIntent
+        rather than a second activity instance; ReactActivity calls setIntent(), which is what
+        lets the module read it either way.
+      -->
+      <intent-filter>
+        <action android:name="android.intent.action.SEND"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <data android:mimeType="text/plain"/>
+      </intent-filter>
     </activity>
   </application>
 </manifest>
