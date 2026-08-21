@@ -1351,7 +1351,7 @@ Read `modules/expo-godot-view/ios/VENDORING.md` and `GODOT_INTEGRATION.md` befor
 
 The engine ships inside `~/Library/Application Support/Godot/templates/3.2.2.stable/android_source.zip` → `libs/release/godot-lib.release.aar` → `jni/<abi>/libgodot_android.so`. All four ABIs are present including **x86_64**, so the Android emulator can run the full app — unlike iOS, where the 2020 engine has no arm64-simulator slice.
 
-- [ ] **Step 1: Write `scripts/android/vendor-engine.sh`**
+- [x] **Step 1: Write `scripts/android/vendor-engine.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -1372,7 +1372,7 @@ done
 echo "✓ engine vendored (libc++_shared.so deliberately NOT copied — RN ships a newer one)"
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && chmod +x scripts/android/vendor-engine.sh && bash scripts/android/vendor-engine.sh
@@ -1380,9 +1380,9 @@ cd /Users/ivan/Work/airgapp/mobile && chmod +x scripts/android/vendor-engine.sh 
 
 Expected: arm64-v8a ≈ 24 MB, x86_64 ≈ 27 MB.
 
-- [ ] **Step 3: Gitignore the binaries** and write `VENDORING.md` explaining the restore, mirroring the iOS one.
+- [x] **Step 3: Gitignore the binaries** and write `VENDORING.md` explaining the restore, mirroring the iOS one.
 
-- [ ] **Step 4: Wire jniLibs + the packaging fix into `build.gradle`**
+- [x] **Step 4: Wire jniLibs + the packaging fix into `build.gradle`**
 
 ```gradle
 android {
@@ -1403,7 +1403,7 @@ android {
 }
 ```
 
-- [ ] **Step 5: Build and confirm the `.so` is in the APK**
+- [x] **Step 5: Build and confirm the `.so` is in the APK**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug && unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "libgodot|libc\+\+"
@@ -1411,7 +1411,7 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Expected: exactly one `libgodot_android.so` per ABI and exactly one `libc++_shared.so` per ABI.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ---
 
@@ -1419,7 +1419,7 @@ Expected: exactly one `libgodot_android.so` per ABI and exactly one `libc++_shar
 
 **Files:** none — this is a measurement task, but it gates everything after it.
 
-- [ ] **Step 1: Check the device page size**
+- [x] **Step 1: Check the device page size**
 
 ```bash
 adb shell getconf PAGE_SIZE
@@ -1427,7 +1427,7 @@ adb shell getconf PAGE_SIZE
 
 Expected on the S22: `4096`. If it prints `16384`, Risk 1 has fired — stop and rebuild the engine from `godot-src` with a modern NDK before continuing.
 
-- [ ] **Step 2: Check the `.so`'s alignment**
+- [x] **Step 2: Check the `.so`'s alignment**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && ~/Library/Android/sdk/ndk/*/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf -l modules/expo-godot-view/android/src/main/jniLibs/arm64-v8a/libgodot_android.so 2>/dev/null | grep -m1 "LOAD" 
@@ -1435,7 +1435,7 @@ cd /Users/ivan/Work/airgapp/mobile && ~/Library/Android/sdk/ndk/*/toolchains/llv
 
 Record the alignment. `0x1000` is 4 KB.
 
-- [ ] **Step 3: Prove it actually dlopens** — add a temporary `System.loadLibrary("godot_android")` in `ExpoGodotViewModule.kt`'s `OnCreate`, build, install, and check logcat for `UnsatisfiedLinkError`.
+- [x] **Step 3: Prove it actually dlopens** — add a temporary `System.loadLibrary("godot_android")` in `ExpoGodotViewModule.kt`'s `OnCreate`, build, install, and check logcat for `UnsatisfiedLinkError`.
 
 ```bash
 adb logcat -c && adb shell am force-stop local.airgapp.mobile && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1 && sleep 6 && adb logcat -d | grep -iE "godot_android|UnsatisfiedLink|dlopen"
@@ -1443,7 +1443,7 @@ adb logcat -c && adb shell am force-stop local.airgapp.mobile && adb shell monke
 
 Expected: no `UnsatisfiedLinkError`. **This one command decides whether Phase 6 is a two-day task or a two-week one — run it before writing any host code.**
 
-- [ ] **Step 4: Record the result** in `modules/expo-godot-view/android/VENDORING.md` and commit.
+- [x] **Step 4: Record the result** in `modules/expo-godot-view/android/VENDORING.md` and commit.
 
 ---
 
@@ -1458,7 +1458,7 @@ Expected: no `UnsatisfiedLinkError`. **This one command decides whether Phase 6 
 
 `java_godot_wrapper.cpp:44` does `FindClass("org/godotengine/godot/Godot")` — the class name and package are load-bearing and cannot change. Upstream declares it `public abstract class Godot extends FragmentActivity implements SensorEventListener, IDownloaderClient` (line 112), which cannot coexist with RN's `ReactActivity`. This task is the Android analogue of what `GodotHost.mm` does on iOS: keep the engine's expectations, drop the app-ownership.
 
-- [ ] **Step 1: Enumerate the exact JNI-bound method contract**
+- [x] **Step 1: Enumerate the exact JNI-bound method contract**
 
 ```bash
 sed -n '40,75p' /Users/ivan/Work/airgapp/godot-src/platform/android/java/java_godot_wrapper.cpp
@@ -1466,18 +1466,18 @@ sed -n '40,75p' /Users/ivan/Work/airgapp/godot-src/platform/android/java/java_go
 
 Every `GetMethodID` line is a method `Godot` must keep, with that exact signature. There are ~19. Write them into `VENDORING.md` as a checklist — this is the spec.
 
-- [ ] **Step 2: Copy the Java tree**
+- [x] **Step 2: Copy the Java tree**
 
 ```bash
 cp -R /Users/ivan/Work/airgapp/godot-src/platform/android/java/lib/src/org \
       /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/java/
 ```
 
-- [ ] **Step 3: Patch `Godot.java`** — change `extends FragmentActivity` to a plain class holding an `Activity` reference; replace `this` as Context with `activity`; drop the `IDownloaderClient` APK-expansion path entirely (we use `--main-pack`, not expansion files); keep every JNI-bound method from Step 1, no-oping the ones that only make sense for a full-screen Godot app (`restart`, `forceQuit`).
+- [x] **Step 3: Patch `Godot.java`** — change `extends FragmentActivity` to a plain class holding an `Activity` reference; replace `this` as Context with `activity`; drop the `IDownloaderClient` APK-expansion path entirely (we use `--main-pack`, not expansion files); keep every JNI-bound method from Step 1, no-oping the ones that only make sense for a full-screen Godot app (`restart`, `forceQuit`).
 
-- [ ] **Step 4: Build until it compiles**, deleting the downloader/`GodotDownloader*` files and the `com.google.android.vending` dependency they pull in.
+- [x] **Step 4: Build until it compiles**, deleting the downloader/`GodotDownloader*` files and the `com.google.android.vending` dependency they pull in.
 
-- [ ] **Step 5: Commit** with a `VENDORING.md` diff summary so the patch set is reviewable against upstream.
+- [x] **Step 5: Commit** with a `VENDORING.md` diff summary so the patch set is reviewable against upstream.
 
 ---
 
@@ -1494,13 +1494,13 @@ cp -R /Users/ivan/Work/airgapp/godot-src/platform/android/java/lib/src/org \
 
 `GodotHost.mm:76-82` builds argv as `<exe> --main-pack <abs path to airgapp.pck>`. The Android equivalent goes into `GodotLib.setup(String[])`.
 
-- [ ] **Step 1: Implement `GodotHost.kt`** — construct the patched `Godot`, create the `GodotView`, call `GodotLib.initialize(...)` on the main thread and `GodotLib.setup(arrayOf("airgapp", "--main-pack", pckPath))` on the GL thread, per `GodotLib.java`'s own doc comments (which state exactly which thread each call belongs on).
+- [x] **Step 1: Implement `GodotHost.kt`** — construct the patched `Godot`, create the `GodotView`, call `GodotLib.initialize(...)` on the main thread and `GodotLib.setup(arrayOf("airgapp", "--main-pack", pckPath))` on the GL thread, per `GodotLib.java`'s own doc comments (which state exactly which thread each call belongs on).
 
-- [ ] **Step 2: Fix z-ordering** — call `godotView.setZOrderMediaOverlay(true)` so RN's `MarkerOverlay` and `TirePressureOverlay` composite **above** the GLSurfaceView. Without this the overlays vanish (Risk 3).
+- [x] **Step 2: Fix z-ordering** — call `godotView.setZOrderMediaOverlay(true)` so RN's `MarkerOverlay` and `TirePressureOverlay` composite **above** the GLSurfaceView. Without this the overlays vanish (Risk 3).
 
-- [ ] **Step 3: Replace the gray stub in `ExpoGodotView.kt`**, keeping the `sceneName` prop contract.
+- [x] **Step 3: Replace the gray stub in `ExpoGodotView.kt`**, keeping the `sceneName` prop contract.
 
-- [ ] **Step 4: Push the pck and verify first render**
+- [x] **Step 4: Push the pck and verify first render**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && adb push modules/expo-godot-view/ios/airgapp.pck /data/local/tmp/airgapp.pck && adb shell "run-as local.airgapp.mobile cp /data/local/tmp/airgapp.pck files/airgapp.pck"
@@ -1514,7 +1514,7 @@ adb logcat -c && adb shell am force-stop local.airgapp.mobile && adb shell monke
 
 Expected: the vehicle renders. **If the body textures garble, do not assume bad data** — the `s3x-ios-texture-garble` memory records exactly this symptom on iOS as an *engine* bug, fixed by the 3.2.0→3.2.2 swap. We are already on 3.2.2, so a garble on Android is a genuinely new finding; capture it before theorizing.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -1532,7 +1532,7 @@ Expected: the vehicle renders. **If the body textures garble, do not assume bad 
 
 Crucially, unlike iOS — where `IOSGodotInterface.mm` is a C++ `Object` compiled into the app and registered with `Engine::add_singleton` — Android gets this **for free in pure Java** via Godot 3.2.2's plugin system: `GodotPlugin.onRegisterPluginWithGodotNative()` calls `nativeRegisterSingleton(getPluginName(), this)`. No engine rebuild, no C++.
 
-- [ ] **Step 1: Implement the plugin**
+- [x] **Step 1: Implement the plugin**
 
 ```kotlin
 package expo.modules.godotview
@@ -1557,9 +1557,9 @@ class AndroidGodotInterface(godot: Godot) : GodotPlugin(godot) {
 }
 ```
 
-- [ ] **Step 2: Make `GodotBridge.addMessage` real** — the current stub explicitly no-ops (`// No Godot engine on Android yet (Phase 6). No-op.`). Enqueue onto `outbound` instead.
+- [x] **Step 2: Make `GodotBridge.addMessage` real** — the current stub explicitly no-ops (`// No Godot engine on Android yet (Phase 6). No-op.`). Enqueue onto `outbound` instead.
 
-- [ ] **Step 3: Verify the round trip**
+- [x] **Step 3: Verify the round trip**
 
 ```bash
 adb logcat -c && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1 && sleep 15 && adb logcat -d | grep -iE "AndroidGodotInterface|has_singleton|onGodotMessage" | head
@@ -1567,9 +1567,9 @@ adb logcat -c && adb shell monkey -p local.airgapp.mobile -c android.intent.cate
 
 Then change the car colour in the app and confirm the render updates — that is a host→Godot message completing the loop.
 
-- [ ] **Step 4: Verify the snapshot path.** Per the `tesla-per-car-image-is-godot-snapshot` memory, the Cars sheet thumbnail is a cached `file://` Godot PNG keyed by config hash, and `Snapshots.gd` scaffolds it. Confirm `SnapshotDriver.tsx` produces a PNG on Android; the write path differs (no iOS Documents dir).
+- [x] **Step 4: Verify the snapshot path.** Per the `tesla-per-car-image-is-godot-snapshot` memory, the Cars sheet thumbnail is a cached `file://` Godot PNG keyed by config hash, and `Snapshots.gd` scaffolds it. Confirm `SnapshotDriver.tsx` produces a PNG on Android; the write path differs (no iOS Documents dir).
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 

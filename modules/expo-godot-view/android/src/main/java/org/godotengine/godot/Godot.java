@@ -400,12 +400,29 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		return true;
 	}
 
+	/**
+	 * PATCHED: forward Back to the host Activity.
+	 *
+	 * GodotInputHandler.onKeyDown intercepts KEYCODE_BACK, calls this, and returns TRUE — it
+	 * consumes the event so a game can handle Back itself. Combined with GodotView's
+	 * setFocusableInTouchMode(true), the focused engine surface swallows every Back press before
+	 * React Native's BackHandler can see it, and upstream's "let the game decide" default means
+	 * nothing happens at all. On device that read as the back gesture being dead on
+	 * Controls/Climate (reported 2026-08-21).
+	 *
+	 * The engine has no navigation of its own in this embed — the host owns it — so hand the press
+	 * straight back to the Activity, where ReactActivity dispatches it to the JS BackHandler and
+	 * useAndroidBack pops the pushed card. No recursion: the Activity's dispatch never re-enters
+	 * the engine's input handler.
+	 */
 	public void onBackPressed() {
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) {
 			if (plugin.onMainBackPressed()) return;
 		}
-		// The embed does not quit the engine on Back — the host's own back handling
-		// (useAndroidBack) owns navigation.
+		activity.runOnUiThread(() -> {
+			//noinspection deprecation
+			activity.onBackPressed();
+		});
 	}
 
 	public final void runOnRenderThread(@NonNull Runnable action) {
