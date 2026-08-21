@@ -986,11 +986,11 @@ export function setCopTempAction(level: 'low' | 'medium' | 'high'): ActionPayloa
 }
 
 // Low Power Mode — CarServer.SetLowPowerModeAction (VehicleAction 130, bool
-// low_power_mode). A plain on/off setter; the car reduces standby draw. There is
-// NO readback for it in the vehicle-data we poll, so our value is optimistic-only
-// (like the security PINs). The 3rd icon state (on_disabled = Tesla's
-// `vehicle_low_power_mode_disable_forced_on`) needs a car-reported "forced on"
-// flag we don't receive, so it stays on/off until that read exists.
+// low_power_mode). A plain on/off setter; the car reduces standby draw. The car
+// DOES report it back — ChargeState.low_power_mode (191), read on the charge poll
+// (telemetry.ts) — so the toggle reconciles from the car and is cached. The 3rd
+// icon state (on_disabled) is ChargeState.low_power_mode_forced_on (192), on the
+// wire but not yet surfaced.
 export function setLowPowerModeAction(on: boolean): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,
@@ -1000,9 +1000,9 @@ export function setLowPowerModeAction(on: boolean): ActionPayload {
 
 // Keep Accessory Power — CarServer.SetKeepAccessoryPowerModeAction (VehicleAction
 // 138, bool keep_accessory_power_mode). A plain on/off setter: when on, the car
-// keeps 12V accessory power live after the driver exits. Like setLowPowerModeAction
-// this is WRITE-ONLY — no vendored proto exposes a readback field, so our value is
-// optimistic (see the keepAccessoryPower state note in vehicleTypes.ts).
+// keeps 12V accessory power live after the driver exits. Read back via
+// ChargeState.keep_accessory_power_mode (194) on the charge poll (telemetry.ts),
+// so it reconciles from the car and is cached, like setLowPowerModeAction.
 export function setKeepAccessoryPowerModeAction(on: boolean): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,

@@ -15595,6 +15595,15 @@ export namespace CarServer {
         /** ChargeState outletMaxTimerMinutes. */
         outletMaxTimerMinutes?: (number|null);
 
+        /** ChargeState lowPowerMode. */
+        lowPowerMode?: (boolean|null);
+
+        /** ChargeState lowPowerModeForcedOn. */
+        lowPowerModeForcedOn?: (boolean|null);
+
+        /** ChargeState keepAccessoryPowerMode. */
+        keepAccessoryPowerMode?: (boolean|null);
+
         /** ChargeState optionalChargeLimitSoc. */
         optionalChargeLimitSoc?: "chargeLimitSoc";
 
@@ -15789,6 +15798,15 @@ export namespace CarServer {
 
         /** ChargeState optionalOutletMaxTimerMinutes. */
         optionalOutletMaxTimerMinutes?: "outletMaxTimerMinutes";
+
+        /** ChargeState optionalLowPowerMode. */
+        optionalLowPowerMode?: "lowPowerMode";
+
+        /** ChargeState optionalLowPowerModeForcedOn. */
+        optionalLowPowerModeForcedOn?: "lowPowerModeForcedOn";
+
+        /** ChargeState optionalKeepAccessoryPowerMode. */
+        optionalKeepAccessoryPowerMode?: "keepAccessoryPowerMode";
 
         /**
          * Creates a new ChargeState instance using the specified properties.
@@ -16099,6 +16117,15 @@ export namespace CarServer {
             /** ChargeState outletMaxTimerMinutes */
             outletMaxTimerMinutes?: (number|null);
 
+            /** ChargeState lowPowerMode */
+            lowPowerMode?: (boolean|null);
+
+            /** ChargeState lowPowerModeForcedOn */
+            lowPowerModeForcedOn?: (boolean|null);
+
+            /** ChargeState keepAccessoryPowerMode */
+            keepAccessoryPowerMode?: (boolean|null);
+
             /** ChargeState optionalChargeLimitSoc */
             optionalChargeLimitSoc?: "chargeLimitSoc";
 
@@ -16294,6 +16321,15 @@ export namespace CarServer {
             /** ChargeState optionalOutletMaxTimerMinutes */
             optionalOutletMaxTimerMinutes?: "outletMaxTimerMinutes";
 
+            /** ChargeState optionalLowPowerMode */
+            optionalLowPowerMode?: "lowPowerMode";
+
+            /** ChargeState optionalLowPowerModeForcedOn */
+            optionalLowPowerModeForcedOn?: "lowPowerModeForcedOn";
+
+            /** ChargeState optionalKeepAccessoryPowerMode */
+            optionalKeepAccessoryPowerMode?: "keepAccessoryPowerMode";
+
             /** Unknown fields preserved while decoding when enabled */
             $unknowns?: Uint8Array[];
         }
@@ -16375,6 +16411,9 @@ export namespace CarServer {
           homeLocation?: CarServer.LatLong.$Shape|null;
           workLocation?: CarServer.LatLong.$Shape|null;
           outletMaxTimerMinutes?: number|null;
+          lowPowerMode?: boolean|null;
+          lowPowerModeForcedOn?: boolean|null;
+          keepAccessoryPowerMode?: boolean|null;
           $unknowns?: Uint8Array[];
         } & (
           ({ optionalChargeLimitSoc?: undefined; chargeLimitSoc?: null }|{ optionalChargeLimitSoc?: "chargeLimitSoc"; chargeLimitSoc: number })
@@ -16506,6 +16545,12 @@ export namespace CarServer {
           ({ optionalWorkLocation?: undefined; workLocation?: null }|{ optionalWorkLocation?: "workLocation"; workLocation: CarServer.LatLong.$Shape })
         ) & (
           ({ optionalOutletMaxTimerMinutes?: undefined; outletMaxTimerMinutes?: null }|{ optionalOutletMaxTimerMinutes?: "outletMaxTimerMinutes"; outletMaxTimerMinutes: number })
+        ) & (
+          ({ optionalLowPowerMode?: undefined; lowPowerMode?: null }|{ optionalLowPowerMode?: "lowPowerMode"; lowPowerMode: boolean })
+        ) & (
+          ({ optionalLowPowerModeForcedOn?: undefined; lowPowerModeForcedOn?: null }|{ optionalLowPowerModeForcedOn?: "lowPowerModeForcedOn"; lowPowerModeForcedOn: boolean })
+        ) & (
+          ({ optionalKeepAccessoryPowerMode?: undefined; keepAccessoryPowerMode?: null }|{ optionalKeepAccessoryPowerMode?: "keepAccessoryPowerMode"; keepAccessoryPowerMode: boolean })
         );
 
         /**

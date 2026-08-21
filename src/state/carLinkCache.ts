@@ -70,6 +70,11 @@ export interface CarLinkCache {
   // worse than nothing.
   locked: boolean | null;
   sentryEnabled: boolean | null;
+  // Charging-page energy toggles. Now that ChargeState actually reports them (see
+  // telemetry.ts), cache them like every other steady-state setting: a cold start
+  // shows the last known value rather than the default OFF presented as fact.
+  lowPowerMode: boolean | null;
+  keepAccessoryPower: boolean | null;
   valetMode: boolean | null;
   speedLimitMode: boolean | null;
   // Steady-state Security & Drivers settings, now that closures_state +
@@ -221,6 +226,8 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     cabinOverheatTemp: oneOf(cached?.cabinOverheatTemp, ['30', '35', '40'] as const),
     locked: bool(cached?.locked),
     sentryEnabled: bool(cached?.sentryEnabled),
+    lowPowerMode: bool(cached?.lowPowerMode),
+    keepAccessoryPower: bool(cached?.keepAccessoryPower),
     valetMode: bool(cached?.valetMode),
     speedLimitMode: bool(cached?.speedLimitMode),
     speedLimitMph: num(cached?.speedLimitMph),

@@ -60,8 +60,8 @@ export default function ChargingScreen() {
   // Both settings toggles below flip optimistically through actions.toggle — the
   // reconciler maps each key to its SET command (lowPowerMode / keepAccessoryPower),
   // so they inherit the same optimistic-mirror + rollback path as every other
-  // control. Neither has a BLE readback (see keepAccessoryPower in vehicleTypes.ts),
-  // so there is nothing to poll on open — the toggle reflects the last set value.
+  // control. Both are ALSO read back from ChargeState (191 / 194) on the charge
+  // poll and cached, so a restart shows the car's real value, like sentry.
   const toggle = (key: VehicleStateKey) => {
     controlHaptic();
     actions.toggle(key);

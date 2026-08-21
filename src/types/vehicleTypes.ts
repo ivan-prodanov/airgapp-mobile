@@ -136,16 +136,15 @@ export interface VehicleViewState {
   charging: boolean;
   locked: boolean;
   sentryEnabled: boolean;
-  // Low Power Mode on/off. Optimistic-only — the car has a SET action but reports
-  // no readback in our poll (bug 4). No "forced on" 3rd state until a read exists.
+  // Low Power Mode on/off. Read AND written: SetLowPowerModeAction (130) writes,
+  // ChargeState.low_power_mode (191) reads it back on the charge poll — so it
+  // reconciles from the car and survives a restart via carLinkCache, like sentry.
+  // (The `low_power_mode_forced_on` (192) 3rd state exists on the wire too; not yet
+  // surfaced as the on_disabled icon.)
   lowPowerMode: boolean;
-  // Keep Accessory Power On/off — the Charging page's second settings toggle
-  // (CarServer.SetKeepAccessoryPowerModeAction, VehicleAction 138). Optimistic-only
-  // for the SAME reason as lowPowerMode: the car accepts the SET but exposes NO
-  // readback field over BLE (grep of every vendored proto + telemetry.ts: only the
-  // SET action exists, no getVehicleData category carries it), so we cannot poll
-  // its true value and it is not cached in carLinkCache. Resets to the default on a
-  // cold start, exactly like lowPowerMode above.
+  // Keep Accessory Power On/off — the Charging page's second settings toggle.
+  // SetKeepAccessoryPowerModeAction (138) writes; ChargeState.keep_accessory_power_mode
+  // (194) reads it back on the charge poll. Cached + reconciled like lowPowerMode.
   keepAccessoryPower: boolean;
   // Security & Drivers screen toggles (UI state for now; persisted per-vehicle like the rest).
   valetMode: boolean;

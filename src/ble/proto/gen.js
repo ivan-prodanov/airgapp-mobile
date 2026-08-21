@@ -39362,6 +39362,9 @@ $root.CarServer = (function() {
          * @property {CarServer.LatLong.$Properties|null} [homeLocation] ChargeState homeLocation
          * @property {CarServer.LatLong.$Properties|null} [workLocation] ChargeState workLocation
          * @property {number|null} [outletMaxTimerMinutes] ChargeState outletMaxTimerMinutes
+         * @property {boolean|null} [lowPowerMode] ChargeState lowPowerMode
+         * @property {boolean|null} [lowPowerModeForcedOn] ChargeState lowPowerModeForcedOn
+         * @property {boolean|null} [keepAccessoryPowerMode] ChargeState keepAccessoryPowerMode
          * @property {"chargeLimitSoc"} [optionalChargeLimitSoc] ChargeState optionalChargeLimitSoc
          * @property {"chargeLimitSocStd"} [optionalChargeLimitSocStd] ChargeState optionalChargeLimitSocStd
          * @property {"chargeLimitSocMin"} [optionalChargeLimitSocMin] ChargeState optionalChargeLimitSocMin
@@ -39427,6 +39430,9 @@ $root.CarServer = (function() {
          * @property {"homeLocation"} [optionalHomeLocation] ChargeState optionalHomeLocation
          * @property {"workLocation"} [optionalWorkLocation] ChargeState optionalWorkLocation
          * @property {"outletMaxTimerMinutes"} [optionalOutletMaxTimerMinutes] ChargeState optionalOutletMaxTimerMinutes
+         * @property {"lowPowerMode"} [optionalLowPowerMode] ChargeState optionalLowPowerMode
+         * @property {"lowPowerModeForcedOn"} [optionalLowPowerModeForcedOn] ChargeState optionalLowPowerModeForcedOn
+         * @property {"keepAccessoryPowerMode"} [optionalKeepAccessoryPowerMode] ChargeState optionalKeepAccessoryPowerMode
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
 
@@ -39516,6 +39522,9 @@ $root.CarServer = (function() {
          *   homeLocation?: CarServer.LatLong.$Shape|null;
          *   workLocation?: CarServer.LatLong.$Shape|null;
          *   outletMaxTimerMinutes?: number|null;
+         *   lowPowerMode?: boolean|null;
+         *   lowPowerModeForcedOn?: boolean|null;
+         *   keepAccessoryPowerMode?: boolean|null;
          *   $unknowns?: Array.<Uint8Array>;
          * } & (
          *   ({ optionalChargeLimitSoc?: undefined; chargeLimitSoc?: null }|{ optionalChargeLimitSoc?: "chargeLimitSoc"; chargeLimitSoc: number })
@@ -39647,6 +39656,12 @@ $root.CarServer = (function() {
          *   ({ optionalWorkLocation?: undefined; workLocation?: null }|{ optionalWorkLocation?: "workLocation"; workLocation: CarServer.LatLong.$Shape })
          * ) & (
          *   ({ optionalOutletMaxTimerMinutes?: undefined; outletMaxTimerMinutes?: null }|{ optionalOutletMaxTimerMinutes?: "outletMaxTimerMinutes"; outletMaxTimerMinutes: number })
+         * ) & (
+         *   ({ optionalLowPowerMode?: undefined; lowPowerMode?: null }|{ optionalLowPowerMode?: "lowPowerMode"; lowPowerMode: boolean })
+         * ) & (
+         *   ({ optionalLowPowerModeForcedOn?: undefined; lowPowerModeForcedOn?: null }|{ optionalLowPowerModeForcedOn?: "lowPowerModeForcedOn"; lowPowerModeForcedOn: boolean })
+         * ) & (
+         *   ({ optionalKeepAccessoryPowerMode?: undefined; keepAccessoryPowerMode?: null }|{ optionalKeepAccessoryPowerMode?: "keepAccessoryPowerMode"; keepAccessoryPowerMode: boolean })
          * )} CarServer.ChargeState.$Shape
          */
 
@@ -40264,6 +40279,30 @@ $root.CarServer = (function() {
          * @instance
          */
         ChargeState.prototype.outletMaxTimerMinutes = null;
+
+        /**
+         * ChargeState lowPowerMode.
+         * @member {boolean|null|undefined} lowPowerMode
+         * @memberof CarServer.ChargeState
+         * @instance
+         */
+        ChargeState.prototype.lowPowerMode = null;
+
+        /**
+         * ChargeState lowPowerModeForcedOn.
+         * @member {boolean|null|undefined} lowPowerModeForcedOn
+         * @memberof CarServer.ChargeState
+         * @instance
+         */
+        ChargeState.prototype.lowPowerModeForcedOn = null;
+
+        /**
+         * ChargeState keepAccessoryPowerMode.
+         * @member {boolean|null|undefined} keepAccessoryPowerMode
+         * @memberof CarServer.ChargeState
+         * @instance
+         */
+        ChargeState.prototype.keepAccessoryPowerMode = null;
 
         // OneOf field names bound to virtual getters and setters
         var $oneOfFields;
@@ -40984,6 +41023,39 @@ $root.CarServer = (function() {
         });
 
         /**
+         * ChargeState optionalLowPowerMode.
+         * @member {"lowPowerMode"|undefined} optionalLowPowerMode
+         * @memberof CarServer.ChargeState
+         * @instance
+         */
+        $Object.defineProperty(ChargeState.prototype, "optionalLowPowerMode", {
+            get: $util.oneOfGetter($oneOfFields = ["lowPowerMode"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * ChargeState optionalLowPowerModeForcedOn.
+         * @member {"lowPowerModeForcedOn"|undefined} optionalLowPowerModeForcedOn
+         * @memberof CarServer.ChargeState
+         * @instance
+         */
+        $Object.defineProperty(ChargeState.prototype, "optionalLowPowerModeForcedOn", {
+            get: $util.oneOfGetter($oneOfFields = ["lowPowerModeForcedOn"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * ChargeState optionalKeepAccessoryPowerMode.
+         * @member {"keepAccessoryPowerMode"|undefined} optionalKeepAccessoryPowerMode
+         * @memberof CarServer.ChargeState
+         * @instance
+         */
+        $Object.defineProperty(ChargeState.prototype, "optionalKeepAccessoryPowerMode", {
+            get: $util.oneOfGetter($oneOfFields = ["keepAccessoryPowerMode"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
          * Creates a new ChargeState instance using the specified properties.
          * @function create
          * @memberof CarServer.ChargeState
@@ -41165,6 +41237,12 @@ $root.CarServer = (function() {
                 $root.CarServer.LatLong.encode(message.workLocation, writer.uint32(/* id 177, wireType 2 =*/1418).fork(), _depth + 1).ldelim();
             if (message.outletMaxTimerMinutes != null && $Object.hasOwnProperty.call(message, "outletMaxTimerMinutes"))
                 writer.uint32(/* id 178, wireType 0 =*/1424).int32(message.outletMaxTimerMinutes);
+            if (message.lowPowerMode != null && $Object.hasOwnProperty.call(message, "lowPowerMode"))
+                writer.uint32(/* id 191, wireType 0 =*/1528).bool(message.lowPowerMode);
+            if (message.lowPowerModeForcedOn != null && $Object.hasOwnProperty.call(message, "lowPowerModeForcedOn"))
+                writer.uint32(/* id 192, wireType 0 =*/1536).bool(message.lowPowerModeForcedOn);
+            if (message.keepAccessoryPowerMode != null && $Object.hasOwnProperty.call(message, "keepAccessoryPowerMode"))
+                writer.uint32(/* id 194, wireType 0 =*/1552).bool(message.keepAccessoryPowerMode);
             if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                 for (var i = 0; i < message.$unknowns.length; ++i)
                     writer.raw(message.$unknowns[i]);
@@ -41727,6 +41805,27 @@ $root.CarServer = (function() {
                         message.optionalOutletMaxTimerMinutes = "outletMaxTimerMinutes";
                         continue;
                     }
+                case 191: {
+                        if (wireType !== 0)
+                            break;
+                        message.lowPowerMode = reader.bool();
+                        message.optionalLowPowerMode = "lowPowerMode";
+                        continue;
+                    }
+                case 192: {
+                        if (wireType !== 0)
+                            break;
+                        message.lowPowerModeForcedOn = reader.bool();
+                        message.optionalLowPowerModeForcedOn = "lowPowerModeForcedOn";
+                        continue;
+                    }
+                case 194: {
+                        if (wireType !== 0)
+                            break;
+                        message.keepAccessoryPowerMode = reader.bool();
+                        message.optionalKeepAccessoryPowerMode = "keepAccessoryPowerMode";
+                        continue;
+                    }
                 }
                 reader.skipType(wireType, _depth, tag);
                 if (!reader.discardUnknown) {
@@ -42151,6 +42250,21 @@ $root.CarServer = (function() {
                 properties.optionalOutletMaxTimerMinutes = 1;
                 if (!$util.isInteger(message.outletMaxTimerMinutes))
                     return "outletMaxTimerMinutes: integer expected";
+            }
+            if (message.lowPowerMode != null && $Object.hasOwnProperty.call(message, "lowPowerMode")) {
+                properties.optionalLowPowerMode = 1;
+                if (typeof message.lowPowerMode !== "boolean")
+                    return "lowPowerMode: boolean expected";
+            }
+            if (message.lowPowerModeForcedOn != null && $Object.hasOwnProperty.call(message, "lowPowerModeForcedOn")) {
+                properties.optionalLowPowerModeForcedOn = 1;
+                if (typeof message.lowPowerModeForcedOn !== "boolean")
+                    return "lowPowerModeForcedOn: boolean expected";
+            }
+            if (message.keepAccessoryPowerMode != null && $Object.hasOwnProperty.call(message, "keepAccessoryPowerMode")) {
+                properties.optionalKeepAccessoryPowerMode = 1;
+                if (typeof message.keepAccessoryPowerMode !== "boolean")
+                    return "keepAccessoryPowerMode: boolean expected";
             }
             return null;
         };
@@ -42579,6 +42693,12 @@ $root.CarServer = (function() {
             }
             if (object.outletMaxTimerMinutes != null)
                 message.outletMaxTimerMinutes = object.outletMaxTimerMinutes | 0;
+            if (object.lowPowerMode != null)
+                message.lowPowerMode = $Boolean(object.lowPowerMode);
+            if (object.lowPowerModeForcedOn != null)
+                message.lowPowerModeForcedOn = $Boolean(object.lowPowerModeForcedOn);
+            if (object.keepAccessoryPowerMode != null)
+                message.keepAccessoryPowerMode = $Boolean(object.keepAccessoryPowerMode);
             return message;
         };
 
@@ -42975,6 +43095,21 @@ $root.CarServer = (function() {
                 object.outletMaxTimerMinutes = message.outletMaxTimerMinutes;
                 if (options.oneofs)
                     object.optionalOutletMaxTimerMinutes = "outletMaxTimerMinutes";
+            }
+            if (message.lowPowerMode != null && $Object.hasOwnProperty.call(message, "lowPowerMode")) {
+                object.lowPowerMode = message.lowPowerMode;
+                if (options.oneofs)
+                    object.optionalLowPowerMode = "lowPowerMode";
+            }
+            if (message.lowPowerModeForcedOn != null && $Object.hasOwnProperty.call(message, "lowPowerModeForcedOn")) {
+                object.lowPowerModeForcedOn = message.lowPowerModeForcedOn;
+                if (options.oneofs)
+                    object.optionalLowPowerModeForcedOn = "lowPowerModeForcedOn";
+            }
+            if (message.keepAccessoryPowerMode != null && $Object.hasOwnProperty.call(message, "keepAccessoryPowerMode")) {
+                object.keepAccessoryPowerMode = message.keepAccessoryPowerMode;
+                if (options.oneofs)
+                    object.optionalKeepAccessoryPowerMode = "keepAccessoryPowerMode";
             }
             return object;
         };

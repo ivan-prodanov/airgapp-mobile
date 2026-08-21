@@ -76,6 +76,11 @@ export interface InfotainmentSnapshot {
     // only when the car reports them; used to name the Set Schedules dropdown.
     homeCoord?: { lat: number; lon: number } | null;
     workCoord?: { lat: number; lon: number } | null;
+    // Charging-page energy toggles — ChargeState.low_power_mode (191) and
+    // keep_accessory_power_mode (194). undefined when the car omits the field, so
+    // an absent read never clobbers the optimistic value.
+    lowPowerMode?: boolean;
+    keepAccessoryPower?: boolean;
   };
   climate?: {
     insideTempC: number | undefined;
@@ -404,6 +409,12 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       chargeLimitSoc: num(cs.chargeLimitSoc),
       homeCoord: latLong(cs.homeLocation),
       workCoord: latLong(cs.workLocation),
+      // Optional bools: protobufjs leaves the oneof member `null` when absent, so
+      // a strict boolean check keeps "not reported" (→ undefined, omitted below)
+      // distinct from a real false.
+      lowPowerMode: typeof cs.lowPowerMode === 'boolean' ? cs.lowPowerMode : undefined,
+      keepAccessoryPower:
+        typeof cs.keepAccessoryPowerMode === 'boolean' ? cs.keepAccessoryPowerMode : undefined,
     };
   }
 
@@ -813,6 +824,11 @@ export function infotainmentToPatch(
     if (snap.charge.chargerPilotCurrentA != null)
       patch.chargerPilotCurrentA = snap.charge.chargerPilotCurrentA;
     if (snap.charge.chargeRateMph != null) patch.chargeRateMph = snap.charge.chargeRateMph;
+    // Energy toggles: only write when the car actually reported them (undefined =
+    // omitted), so a poll that doesn't include them can't flip the switch.
+    if (snap.charge.lowPowerMode !== undefined) patch.lowPowerMode = snap.charge.lowPowerMode;
+    if (snap.charge.keepAccessoryPower !== undefined)
+      patch.keepAccessoryPower = snap.charge.keepAccessoryPower;
     // Only overwrite when the car actually reported a location — a read that omits
     // it (undefined) must not clear a Home/Work we already have.
     if (snap.charge.homeCoord !== undefined) patch.homeCoord = snap.charge.homeCoord;

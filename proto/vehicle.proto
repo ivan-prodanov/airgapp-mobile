@@ -410,6 +410,16 @@ message ChargeState {
     oneof optional_home_location { LatLong home_location = 176; }
     oneof optional_work_location { LatLong work_location = 177; }
     oneof optional_outlet_max_timer_minutes { int32 outlet_max_timer_minutes = 178; }
+    // Energy settings surfaced on the Charging page. Present on the wire but were
+    // missing from this vendored copy (it stopped at 178), which is why they read
+    // as "no readback exists". Field numbers + the synthetic-oneof shape are taken
+    // from the Tesla app's own Hermes disassembly:
+    //   proto.CarServer.ChargeState.OptionalLowPowerModeCase          -> 191
+    //   proto.CarServer.ChargeState.OptionalLowPowerModeForcedOnCase  -> 192
+    //   proto.CarServer.ChargeState.OptionalKeepAccessoryPowerModeCase-> 194
+    oneof optional_low_power_mode { bool low_power_mode = 191; }
+    oneof optional_low_power_mode_forced_on { bool low_power_mode_forced_on = 192; }
+    oneof optional_keep_accessory_power_mode { bool keep_accessory_power_mode = 194; }
 }
 
 message ManagedChargingState {

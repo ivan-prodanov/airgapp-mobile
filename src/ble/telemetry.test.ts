@@ -278,6 +278,26 @@ test('charge: chargingState {Disconnected:{}} -> charging:false', () => {
   assert.equal(patch.charging, false);
 });
 
+test('charge: low_power_mode (191) / keep_accessory_power_mode (194) read back into the patch', () => {
+  const snap = parseCarServerResponse({
+    chargeState: { batteryLevel: 40, lowPowerMode: true, keepAccessoryPowerMode: false },
+  });
+  assert.equal(snap.charge?.lowPowerMode, true);
+  assert.equal(snap.charge?.keepAccessoryPower, false);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.lowPowerMode, true);
+  assert.equal(patch.keepAccessoryPower, false);
+});
+
+test('charge: omitted energy toggles are NOT written to the patch (an absent read must not clobber the optimistic value)', () => {
+  const snap = parseCarServerResponse({ chargeState: { batteryLevel: 40 } });
+  assert.equal(snap.charge?.lowPowerMode, undefined);
+  assert.equal(snap.charge?.keepAccessoryPower, undefined);
+  const patch = infotainmentToPatch(snap);
+  assert.equal('lowPowerMode' in patch, false);
+  assert.equal('keepAccessoryPower' in patch, false);
+});
+
 test('climate: temps + isOn map through', () => {
   const snap = parseCarServerResponse({
     climateState: { insideTempCelsius: 22.5, outsideTempCelsius: 15, driverTempSetting: 21, isClimateOn: true },
