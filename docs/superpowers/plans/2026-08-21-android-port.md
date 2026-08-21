@@ -1233,7 +1233,7 @@ Open the carlink debug screen (`src/app/carlink.tsx` already renders `passiveEnt
 
 `location.tsx` imports exactly `MapView, { Marker, PROVIDER_DEFAULT, type MapType, type Region }`, plus the two patched extras (`onPoiClick`, `deselectFeatures`) from `patches/react-native-maps@1.27.2.patch`. That is a small enough surface to adapt cleanly.
 
-- [ ] **Step 1: Write the failing test** for the pure parts — region↔bounds conversion and the POI-tap payload normaliser, which differ between Apple's `onPoiClick` event and MapLibre's `queryRenderedFeatures` result.
+- [x] **Step 1: Write the failing test** for the pure parts — region↔bounds conversion and the POI-tap payload normaliser, which differ between Apple's `onPoiClick` event and MapLibre's `queryRenderedFeatures` result.
 
 ```ts
 test('a maplibre queryRenderedFeatures hit normalises to the same PoiTap shape as apple onPoiClick', () => {
@@ -1246,9 +1246,9 @@ test('a maplibre queryRenderedFeatures hit normalises to the same PoiTap shape a
 
 Note the coordinate order flip — GeoJSON is `[lon, lat]`. That flip is exactly the kind of thing that produces a marker in the ocean, so it gets a test.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Install MapLibre**
+- [x] **Step 3: Install MapLibre**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm add @maplibre/maplibre-react-native@11.3.6
@@ -1256,9 +1256,9 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm add @maplibre/maplibre-react-native@1
 
 Peer deps check out: `react-native >=0.80` (we have 0.85.3), `expo >=54` (we have 56), `react >=19.1` (we have 19.2.3). MIT-licensed, no API key, no account.
 
-- [ ] **Step 4: Implement both `MapSurface` files.** Android uses the **OpenFreeMap** style URL `https://tiles.openfreemap.org/styles/liberty` — free, keyless, unlimited, community-run OSM vector tiles. POI taps come from `queryRenderedFeatures` at the tap point against the style's POI layer.
+- [x] **Step 4: Implement both `MapSurface` files.** Android uses the **OpenFreeMap** style URL `https://tiles.openfreemap.org/styles/liberty` — free, keyless, unlimited, community-run OSM vector tiles. POI taps come from `queryRenderedFeatures` at the tap point against the style's POI layer.
 
-- [ ] **Step 5: Add the tile host to the Tesla-host guard's reasoning**
+- [x] **Step 5: Add the tile host to the Tesla-host guard's reasoning**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "no-tesla-servers"
@@ -1266,9 +1266,9 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "no-tesla-server
 
 `tiles.openfreemap.org` is not a Tesla host, so the guard should pass unchanged — **confirm that, don't assume it.** If the guard is an allowlist rather than a denylist, add the host with a comment.
 
-- [ ] **Step 6: Rewrite `location.tsx` against `MapSurface`.** iOS must render identically — screenshot-diff before/after on the iPhone.
+- [x] **Step 6: Rewrite `location.tsx` against `MapSurface`.** iOS must render identically — screenshot-diff before/after on the iPhone.
 
-- [ ] **Step 7: Verify both platforms**
+- [x] **Step 7: Verify both platforms**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm test 2>&1 | tail -4 && bash scripts/godot-ios/deploy-js.sh
@@ -1276,7 +1276,7 @@ cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm 
 
 Then rebuild Android (MapLibre is a native dep — this needs a full `assembleDebug`, not a JS push) and compare the Location screen on both.
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ---
 
