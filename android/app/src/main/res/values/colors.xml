@@ -1,4 +1,7 @@
 <resources>
+  <!-- What shows THROUGH the Godot GLSurfaceView's punch-through hole, and behind every window
+       before React Native has drawn. Matches the Godot scene background and the splash. -->
+  <color name="windowBackground">#161718</color>
   <color name="splashscreen_background">#161718</color>
   <color name="iconBackground">#E6F4FE</color>
   <color name="colorPrimary">#023c69</color>

@@ -1,5 +1,21 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
   <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!--
+      PIN THE WINDOW BACKGROUND. The parent is DayNight, so on a phone in LIGHT mode (`adb shell
+      cmd uimode night` → "Night mode: no") this resolves to WHITE — and that is what the user
+      sees flash.
+
+      The Godot renderer is a GLSurfaceView, i.e. a punch-through surface: it reaches the screen
+      through a hole cut in the window, so whatever the window paints is what shows the moment that
+      surface is torn down. Navigating away from Home does exactly that, which made the HOME screen
+      flash white right before the push animation — while every other screen, having no surface to
+      tear down, slid cleanly.
+
+      This app has no light mode, so the day/night split was never meaningful here; #161718 is the
+      Godot scene's own background, so the hole matches what was in it.
+    -->
+    <item name="android:windowBackground">@color/windowBackground</item>
+    <item name="android:colorBackground">@color/windowBackground</item>
     <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     <item name="colorPrimary">@color/colorPrimary</item>
     <item name="android:statusBarColor">@android:color/transparent</item>
