@@ -36,7 +36,7 @@ This is a better starting position than the plan assumed. Everything below is a
 | Symptom | Cause | Task |
 |---|---|---|
 | **Back chevron missing** on Controls (and every stack header) | `SymbolView` is iOS-only and renders *nothing* on Android — silently, no warning | 1.1 |
-| Whole screen washed gray | The Godot stub's `#808080` fills the vehicle canvas that the engine would occupy | 6.4 |
+| ~~Whole screen washed gray~~ **FIXED 2026-08-21** | The Godot stub painted an opaque `#808080` across the full-bleed vehicle canvas. Reported on device as "light gray at the top, fading to the real colours as you scroll" — the fade is the content layer's scroll opacity working correctly *over* the slab. Stub is now `Color.TRANSPARENT` with a dimmed label, so it composites against the themed root and follows light/dark. | — |
 | Text noticeably heavier than iOS | `themed-text.tsx:70` `Platform.select({ android: 700 })` plus `Fonts` falling through to `'normal'` instead of Universal Sans | 1.2 |
 
 ## Non-blocking warnings (pre-existing, both platforms)
