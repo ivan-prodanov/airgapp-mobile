@@ -271,6 +271,23 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
       ref={mapRef}
       style={[StyleSheet.absoluteFill, style as object]}
       mapStyle={styleFor(mapType)}
+      // TEXTURE, not the default SurfaceView. This is why navigating Home → Location used to blank
+      // the Home screen: a GLSurfaceView does not draw into the window, it gets its own compositor
+      // layer and the window punches a transparent HOLE where it sits. That hole is cut at the
+      // surface's LAYOUT position and ignores the parent's animation transform, so the moment the
+      // Location screen was laid out the hole erased what the window had already drawn — the car,
+      // the menu rows, everything — and the push then slid a blank screen. Whatever the window
+      // painted underneath showed through, which is why it read as a white flash on a light-mode
+      // phone (proved with a magenta window background: the flash went magenta).
+      //
+      // Every other route is pure React Native, draws into the window buffer, punches no hole, and
+      // slid correctly — which is exactly the asymmetry that gave this away.
+      //
+      // A TextureView renders into the view hierarchy like an ordinary view: it transforms and
+      // clips with its parent and cuts no hole. It costs a little more memory and one extra copy
+      // per frame than a SurfaceView, which is the price of being animatable, and is why the
+      // binding offers it.
+      androidView="texture"
       // The iOS `mapPadding` equivalent — see the note on `inset` above. Applies to the initial
       // view and to every imperative camera move, so the car, a shared place, a tapped charger and
       // a multi-point fit all land in the space ABOVE the bottom sheet rather than behind it.

@@ -140,6 +140,32 @@ unhandled configuration change. The engine cannot survive that, and would need e
 `newcontext` patch (rebuild from `godot-src`) or a full engine re-boot on Activity recreate. Not hit
 in testing; recorded here because it is the one path left.
 
+## The map is a TextureView, not a SurfaceView
+
+`androidView="texture"` on the MapLibre `Map` is load-bearing, and it is the fix for "tapping
+Location blanks the Home screen and slides an empty screen left".
+
+A `GLSurfaceView` does not draw into the window. It gets its own compositor layer, and the window
+punches a transparent HOLE where it sits so that layer shows through. The hole is cut at the
+surface's LAYOUT position and does not respect the parent's animation transform — so the moment the
+Location screen was laid out, the hole erased what the window had already drawn (the car, the menu
+rows, everything) and the push then slid a blank screen. Whatever the window painted underneath
+showed through the hole, which is why it read as a white flash on a light-mode phone.
+
+The asymmetry is what gave it away: Security, Charging, Schedules and Explore are pure React Native,
+draw into the window buffer, punch no hole, and slide correctly. Only Location carries a surface.
+
+Proved rather than argued: setting `android:windowBackground` to magenta turned the flash magenta,
+confirming the hole was showing the window background.
+
+A `TextureView` renders into the view hierarchy like an ordinary view — it transforms and clips with
+its parent and cuts no hole. It costs a little more memory and one extra copy per frame, which is
+the price of being animatable.
+
+`android:windowBackground` stays pinned dark (`#161718`) even so: the Godot renderer is still a
+GLSurfaceView, so its hole is real, and a dark-only app has no business resolving DayNight to a
+white window. That is insurance, not the fix.
+
 ## `centerOffset` on markers
 
 react-native-maps' `centerOffset` nudges a marker relative to its centre — it is how `location.tsx`
