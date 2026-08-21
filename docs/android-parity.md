@@ -14,6 +14,7 @@ pre-existing code.
 | Boot, navigation, layout | Every screen renders. Fabric/New Architecture. |
 | **Godot vehicle render** | Engine v3.2.2.stable boots from the pushed `.pck`; Model Y renders full-size with real paint, glass and wheels. Controls' top-down view and Climate's interior cutaway both correct. |
 | **RN ↔ Godot bridge** | `AndroidGodotInterface` registers as an engine singleton; `SHOW_PRODUCT`, `MOVE_CAMERA`, `GET_VEHICLE_MARKERS`, `SET_VEHICLE_LIGHTS` all round-trip. |
+| **Charger framing on entry** | Car and nearest charger both land in the visible map space above the sheet, pin fully clear of it. Needed `centerOffset` support in the Marker adapter — see below. |
 | **Marker overlays** | Lock/closure markers on Controls and seat-heater markers on Climate land on the right parts of the car — the strongest evidence the points→pixels fix is right. |
 | **Godot survives navigation** | Home → Controls / Climate / Location / Charging / Explore → back, five further Location round trips, background/resume and root-Back/relaunch: the car is still there. `onSurfaceCreated` fires exactly ONCE for the process. See "The disappearing car" below. |
 | Icons | All 61 SF Symbols migrated to Tesla glyphs; no missing chrome. |
@@ -43,10 +44,9 @@ pre-existing code.
 |---|---|
 | **BLE command to the car** | Not yet done — needs the phone at the car with the key card. Everything up to discovery is verified; the car has not been in range during testing. Wake the car first (a sleeping Tesla stops advertising). |
 | **Phase 4** — background passive entry, geofence re-arm, CPD notification, native self-signing | Not built. The three crypto goldens deliberately return "not implemented" rather than a false pass. |
-| Charger list framing on entry | The map opens tighter than iOS, so the list can read empty until you zoom out. The DB and query are fine (proven by the populated list at wider zoom) — this is `fitToCoordinates` framing. |
-| `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` back behaviour | Not verified. They are detented map sheets rather than modal dismissals, so consuming Back there may be wrong. |
+| `BottomSheet` back behaviour | The place-preview sheet's close button dismisses correctly (verified). Back-key behaviour on the detented sheets is still unverified. |
 | `expo-bg-task` wake lock at runtime | Compiles and autolinks; needs a real car command to exercise. |
-| **Share sheet: visual + send** | The sheet's JS is confirmed running (`ReactNativeJS: Running "shareSheet"` in the `:share` process, followed by resolution and a BLE scan for the car), but the rendered sheet has NOT been seen: the test phone was PIN-locked for the whole session, so every screenshot is a black lock screen. The send leg needs the car in range. |
+| **Share sheet: send** | The sheet is verified end to end visually — spinner → "Sharing to car" + place + "Trying Bluetooth…" → "Error / Couldn't reach your car — try again" → auto-dismiss back to the sharing app. Only the SEND leg is unverified; it needs the car in range. |
 | Godot snapshot thumbnails | `SnapshotDriver` not verified on Android; the Cars sheet currently shows the vehicle glyph. |
 
 ## Deleted as dead code
@@ -139,6 +139,23 @@ need to, because keeping the context alive means it is never reached.
 unhandled configuration change. The engine cannot survive that, and would need either a native
 `newcontext` patch (rebuild from `godot-src`) or a full engine re-boot on Activity recreate. Not hit
 in testing; recorded here because it is the one path left.
+
+## `centerOffset` on markers
+
+react-native-maps' `centerOffset` nudges a marker relative to its centre — it is how `location.tsx`
+puts a charger pin's BOTTOM TIP on the coordinate instead of its middle. The Android adapter ignored
+it, so every charger pin drew half a pin too low, and the nearest one sat half-behind the bottom
+sheet even once the fit padding was right: `fitToCoordinates` only guarantees the COORDINATE clears
+the padding, and the pin is drawn around it.
+
+MapLibre's `Marker` has an `offset` prop with the same meaning and the same sign convention
+(negative is up/left), and its Android binding multiplies by display density itself — so it takes
+dp, like every other measurement crossing this boundary.
+
+Related: `fitBottomPad` now treats its `targetFrac` as a FLOOR rather than a fallback for an
+unmounted ref. Switching to the Charging tab both fits the map and raises the sheet to its tall
+detent, and the fit runs first, so `reserveFrac()` could still report the old minimal detent and
+compute zero extra padding.
 
 ## The share sheet (Android's Share Extension)
 

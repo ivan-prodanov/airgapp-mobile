@@ -273,11 +273,18 @@ export default function LocationView() {
     }
   };
 
-  // Bottom edge-padding for a map fit: reserve down to wherever the given sheet currently rests (mapPadding
-  // already reserves the minimal detent, so subtract it). Honors the sheet's current detent and caps at middle
-  // when it is fully extended (reserveFrac). Falls back to fallbackFrac if the sheet ref isn't mounted yet.
-  const fitBottomPad = (sheetHandle: LocationSheetHandle | null, fallbackFrac: number) => {
-    const frac = sheetHandle?.reserveFrac?.() ?? fallbackFrac;
+  // Bottom edge-padding for a map fit: reserve down to wherever the given sheet will REST (mapPadding already
+  // reserves the minimal detent, so subtract it). reserveFrac() honors the sheet's current detent and caps at
+  // middle when it is fully extended.
+  //
+  // `targetFrac` is a FLOOR, not just a fallback for an unmounted ref. Switching to the Charging tab both fits
+  // the map AND raises the sheet to its tall detent, and the fit runs first — so reserveFrac() still reported
+  // the OLD minimal detent, `frac - SHEET_MINIMAL_FRAC` came out ZERO, and the nearest charger was framed into
+  // the strip the sheet was about to cover. On device that put the charger's pin half-behind the panel, which
+  // is the original complaint this padding exists to answer. Reserving for where the sheet is going fixes it,
+  // and cannot over-reserve: reserveFrac() is already capped at the middle detent.
+  const fitBottomPad = (sheetHandle: LocationSheetHandle | null, targetFrac: number) => {
+    const frac = Math.max(sheetHandle?.reserveFrac?.() ?? 0, targetFrac);
     return Math.round(height * (frac - SHEET_MINIMAL_FRAC));
   };
   // Pool filtered by AC/DC + availability. The map pins and the list both derive from this so they stay

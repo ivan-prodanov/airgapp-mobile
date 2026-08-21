@@ -92,6 +92,18 @@ interface MarkerProps {
   coordinate: { latitude: number; longitude: number };
   /** react-native-maps takes a fractional {x, y}; MapLibre takes a named anchor. */
   anchor?: { x: number; y: number };
+  /**
+   * react-native-maps' pixel nudge relative to the marker's centre — how location.tsx puts a
+   * charger pin's BOTTOM TIP on the coordinate rather than its middle.
+   *
+   * Ignoring it (as this adapter first did) draws every charger pin half a pin too low, and the
+   * nearest one ends up half-hidden behind the bottom sheet even when the fit padding is right:
+   * fitToCoordinates only guarantees the COORDINATE clears the padding, and the pin is drawn
+   * around it. MapLibre's `offset` has the same meaning and the same sign convention (negative is
+   * up/left), and its Android binding multiplies by display density itself — so this is dp, like
+   * every other measurement crossing this boundary.
+   */
+  centerOffset?: { x: number; y: number };
   flat?: boolean;
   children?: React.ReactNode;
   identifier?: string;
@@ -111,14 +123,15 @@ function toMapLibreAnchor(a?: { x: number; y: number }) {
 let markerSeq = 0;
 
 /** react-native-maps' `<Marker coordinate=…>` mapped onto MapLibre's `<Marker lngLat=…>`. */
-export function Marker({ coordinate, anchor, children, identifier }: MarkerProps) {
+export function Marker({ coordinate, anchor, centerOffset, children, identifier }: MarkerProps) {
   const autoId = useRef<string>(undefined);
   if (autoId.current === undefined) autoId.current = `marker-${markerSeq++}`;
   return (
     <MLMarker
       id={identifier ?? autoId.current}
       lngLat={[coordinate.longitude, coordinate.latitude]}
-      anchor={toMapLibreAnchor(anchor)}>
+      anchor={toMapLibreAnchor(anchor)}
+      offset={centerOffset ? [centerOffset.x, centerOffset.y] : undefined}>
       <View>{children ?? <View style={styles.defaultPin} />}</View>
     </MLMarker>
   );
