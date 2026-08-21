@@ -34,8 +34,7 @@ logi('app', 'boot');
 // subscription rather than another phase.
 onPassiveEntryLog((line) => logi('region', line));
 
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import { useColorScheme } from 'react-native';
+import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { useFonts } from 'expo-font';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -60,7 +59,6 @@ import { Platform } from 'react-native';
 // HomeScreen and the back button in explore.tsx. All panels (Home swipe, Climate & Location sheets) use
 // the core PanResponder system, so no GestureHandlerRootView is needed.
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   // Tesla's real typeface (see constants/fonts.ts).
   //
   // ⚠️ MUST be gated. This used to render regardless, on my assumption that "the
@@ -83,7 +81,13 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      {/* ALWAYS DarkTheme, never the device's colour scheme.
+          This app has no light mode — every screen hard-codes a dark root — so DefaultTheme was
+          never a valid choice here; it only ever supplied a near-white (rgb(242,242,242))
+          navigator background. That background is what a pushed screen shows until its own content
+          paints, which on Android made tapping Location flash the whole screen white before the
+          slide. The other screens hid it by rendering instantly; Location mounts a map. */}
+      <ThemeProvider value={DarkTheme}>
         <ToastProvider>
         <VehicleProvider>
           {/* Inside the provider, because the drain reads carLink to know whether
@@ -93,7 +97,11 @@ export default function RootLayout() {
               needs context gets mounted at the root. */}
           <ShareSupport />
           <AnimatedSplashOverlay />
-          <Stack screenOptions={{ headerShown: false }}>
+          {/* contentStyle is the screen container's own background, painted before the screen's
+              React tree has rendered anything. Pinning it to the app's base surface means a push
+              can never flash a colour the app does not use, whatever the theme resolves to and
+              however long the incoming screen takes to mount. */}
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#161618' } }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
             {/* gestureEnabled:false disables the iOS-26 native full-screen swipe-back (it responds to the whole
