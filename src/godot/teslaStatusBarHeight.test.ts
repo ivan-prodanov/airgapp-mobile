@@ -93,3 +93,27 @@ describe('the frame maths this feeds (target: iPhone18,4 @ 420x912)', () => {
     assert.equal(sbh + 60, 119);
   });
 });
+
+describe('Android', () => {
+  // Tesla's table is an iPhone allowlist, so every Android device falls through to
+  // the library fallback — which the deliberate-divergence note above already
+  // resolves to the REAL safe-area inset rather than the 20pt pre-notch default.
+  it('the Galaxy S22 gets its real inset, not a hardcoded iPhone value', () => {
+    assert.equal(teslaStatusBarHeight('SM-S901B', { width: 360, height: 780 }, 24), 24);
+  });
+
+  it('an Android phone at iPhone X dimensions does NOT collect a phantom notch', () => {
+    // The isIPhoneX test is pure dimensions; without the isApple guard this would
+    // return 44, and Climate bakes sbh into its height — silently rescaling the car.
+    assert.equal(teslaStatusBarHeight('SM-S901B', { width: 375, height: 812 }, 24), 24);
+    assert.equal(teslaStatusBarHeight('Pixel 9', { width: 414, height: 896 }, 30), 30);
+  });
+
+  it('a real iPhone X still gets 44 — the guard must not regress iOS', () => {
+    assert.equal(teslaStatusBarHeight('iPhone10,3', { width: 375, height: 812 }, 44), 44);
+  });
+
+  it('falls back to the pre-notch 20 only when there is no inset at all', () => {
+    assert.equal(teslaStatusBarHeight('SM-S901B', { width: 360, height: 780 }, 0), 20);
+  });
+});

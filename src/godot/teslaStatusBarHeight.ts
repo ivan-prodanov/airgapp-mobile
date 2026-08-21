@@ -46,9 +46,15 @@ export interface WindowSize {
 // routed BACK here (375x667 -> 20, correct), while the minis need exact
 // carve-outs because the library would wrongly call them an iPhone X (they are
 // also 375x812 -> 44, but their real inset is 50).
-function teslaLibraryFallback(win: WindowSize, insetTop: number): number {
+function teslaLibraryFallback(win: WindowSize, insetTop: number, isApple: boolean): number {
+  // ⚠️ ANDROID GUARD. The isIPhoneX test below is PURE DIMENSIONS — no platform
+  // check — because in Tesla's iOS-only app it never had to be. Android phones at
+  // 375x812 or 414x896 dp exist, and one would silently collect a 44pt phantom
+  // notch that Climate then bakes into its height, rescaling the car. Only let the
+  // heuristic run when the device id actually looks like an iPhone.
   const isIPhoneX =
-    (win.width === 375 && win.height === 812) || (win.width === 414 && win.height === 896);
+    isApple &&
+    ((win.width === 375 && win.height === 812) || (win.width === 414 && win.height === 896));
   if (isIPhoneX) return TESLA_SBH_IPHONE_X;
 
   // ⚠️ DELIBERATE DIVERGENCE FROM TESLA (findings §4 recommends it).
@@ -80,14 +86,18 @@ export function teslaStatusBarHeight(
   insetTop: number,
 ): number {
   const id = deviceId ?? '';
+  // Android reports e.g. 'SM-S901B'; every branch below is an iPhone identifier, so
+  // a non-Apple device falls straight through to the real safe-area inset — which is
+  // what the deliberate-divergence note above already argues is the right degrade.
+  const isApple = id.startsWith('iPhone') || id.startsWith('iPad') || id.startsWith('iPod');
   if (id === 'iPhone13,1') return TESLA_SBH_MINI; // 12 mini
   if (id.includes('iPhone13')) return TESLA_SBH_WIDE; // 12 / Pro / Pro Max
   if (id === 'iPhone14,4') return TESLA_SBH_MINI; // 13 mini
-  if (id === 'iPhone14,6') return teslaLibraryFallback(win, insetTop); // SE 3 -> 20
+  if (id === 'iPhone14,6') return teslaLibraryFallback(win, insetTop, isApple); // SE 3 -> 20
   if (id.includes('iPhone14')) return TESLA_SBH_WIDE; // 13 / 13 Pro / 14 / Plus
   if (id.includes('iPhone15')) return TESLA_SBH_TALL; // 14 Pro / 15
   if (id.includes('iPhone16')) return TESLA_SBH_TALL; // 15 Pro
   if (id.includes('iPhone17')) return TESLA_SBH_TALL; // 16 family
   if (id.includes('iPhone18')) return TESLA_SBH_TALL; // 17 / Air  (ours: iPhone18,4)
-  return teslaLibraryFallback(win, insetTop);
+  return teslaLibraryFallback(win, insetTop, isApple);
 }

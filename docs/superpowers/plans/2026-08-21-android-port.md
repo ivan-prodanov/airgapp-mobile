@@ -526,7 +526,7 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm remove expo-symbols expo-glass-effect
 
 The `tesla-design-system-row-typography` memory records the exact ladder: title `BodyLabel 14/20/500/ls0.1`, subtitle `CaptionLabel 12/16/500/ls0.1`, **Universal Sans via `fontFamily`, never `fontWeight`**. The four TTFs are already in `assets/fonts/`.
 
-- [ ] **Step 1: Confirm the fonts are loaded on Android**
+- [x] **Step 1: Confirm the fonts are loaded on Android**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && grep -rn "useFonts\|Font.loadAsync\|UniversalSans" src/app/_layout.tsx src/constants/*.ts
@@ -534,7 +534,7 @@ cd /Users/ivan/Work/airgapp/mobile && grep -rn "useFonts\|Font.loadAsync\|Univer
 
 If `_layout.tsx` loads them via `expo-font`'s `useFonts`, Android is already covered — `expo-font` supports it. Record which.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Extend `src/godot/teslaStatusBarHeight.test.ts`:
 
@@ -547,17 +547,17 @@ test('android status bar height comes from the measured inset, not the iOS const
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**
+- [x] **Step 3: Run it and watch it fail**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "teslaStatusBarHeight"
 ```
 
-- [ ] **Step 4: Add the platform parameter and the Android branch**
+- [x] **Step 4: Add the platform parameter and the Android branch**
 
 Read the current signature first; keep the iOS path byte-identical.
 
-- [ ] **Step 5: Fix `Fonts` in `theme.ts`**
+- [x] **Step 5: Fix `Fonts` in `theme.ts`**
 
 The `Platform.select` currently falls through to `{ sans: 'normal', ... }` on Android. Replace the `default` branch with the real family names:
 
@@ -570,17 +570,17 @@ default: {
 },
 ```
 
-- [ ] **Step 6: Enable `StatusBarFade` on Android**
+- [x] **Step 6: Enable `StatusBarFade` on Android**
 
 `src/components/StatusBarFade.tsx:52` has `if (Platform.OS !== 'ios') return null;`. Android has a translucent status bar too. Remove the guard and verify visually; if the Android gradient reads wrong, keep the guard and note why in a comment — do not leave it unexplained.
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm test 2>&1 | tail -4
 ```
 
-- [ ] **Step 8: Deploy and screenshot every screen**
+- [x] **Step 8: Deploy and screenshot every screen**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug && cd .. && adb install -r android/app/build/outputs/apk/debug/app-debug.apk
@@ -588,7 +588,7 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Walk Home / Controls / Climate / Charging / Security / Schedules / Location, screenshotting each with `adb exec-out screencap -p > /tmp/and-<screen>.png`. Compare against the iPhone. **Per the `tesla-parity-verify-dont-infer` memory: measure, don't infer.** When a delta survives "the values look identical", measure the inputs.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
@@ -599,6 +599,24 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
+
+
+> **Corrections found while executing (evidence over plan):**
+> - **Step 5 (`Fonts` in theme.ts) was wrong and was NOT applied.** `Fonts` is used in
+>   exactly one place — `themed-text.tsx:69` for `Fonts.mono` — and its Android default
+>   (`'monospace'`) is already correct. The app's real typography is `TeslaFonts`
+>   (`src/constants/fonts.ts`, 18 files), loaded via `expo-font`'s `useFonts`, which is
+>   cross-platform. `_layout.tsx:82` does `if (!fontsLoaded) return null`, and the app
+>   renders on Android — so all four Universal Sans faces registered successfully.
+> - **Step 6 (enable `StatusBarFade` on Android) was wrong and was NOT applied.** Its
+>   `Platform.OS !== 'ios'` guard is deliberate parity: Tesla's own component is iOS-only
+>   ("iOS-only, exactly as theirs is"). Removing it would *break* parity, not fix it.
+> - **The real Android bug was elsewhere:** `teslaLibraryFallback`'s `isIPhoneX` test is
+>   pure dimensions with no platform check, because in Tesla's iOS-only app it never
+>   needed one. An Android phone at 375x812 or 414x896 dp would collect a 44pt phantom
+>   notch, which Climate bakes into its height — silently rescaling the car. Fixed with
+>   an `isApple` guard on the device id, with tests for both the trap and the iOS
+>   non-regression.
 
 # Phase 2 — Storage, assets and data
 
