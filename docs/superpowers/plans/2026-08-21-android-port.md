@@ -259,7 +259,7 @@ reactNativeArchitectures=arm64-v8a,x86_64
 org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m
 ```
 
-- [ ] **Step 3: Build the debug APK**
+- [x] **Step 3: Build the debug APK**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home ./gradlew :app:assembleDebug
@@ -267,13 +267,13 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Expected: `BUILD SUCCESSFUL`. First run downloads Gradle + AGP and takes 10–20 minutes. If it fails on `expo-symbols` or `expo-glass-effect`, those packages are iOS-only (`node_modules/expo-symbols/` has no `android/` dir) — Expo autolinking skips them silently, so a failure there means something else; read the actual error rather than assuming.
 
-- [ ] **Step 4: Install and launch**
+- [x] **Step 4: Install and launch**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1
 ```
 
-- [ ] **Step 5: Capture the actual first-boot state**
+- [x] **Step 5: Capture the actual first-boot state**
 
 ```bash
 adb logcat -c && adb shell am force-stop local.airgapp.mobile && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1 && sleep 8 && adb logcat -d -s ReactNativeJS:* AndroidRuntime:E ExpoModulesCore:* | head -60
@@ -281,7 +281,7 @@ adb logcat -c && adb shell am force-stop local.airgapp.mobile && adb shell monke
 
 Record every red-box / crash into `docs/superpowers/plans/android-boot-log.md`. Do **not** fix them here — Task 0.4 triages them as a batch, because most will be the iOS-only-module problem and fixing them one at a time wastes cycles.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
