@@ -1627,9 +1627,9 @@ cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm 
 - Modify: `~/.claude/projects/-Users-ivan-Work-airgapp-mobile/memory/MEMORY.md`
 - Modify: `~/.claude/projects/-Users-ivan-Work-airgapp-mobile/memory/project_airgapp.md`
 
-- [ ] **Step 1: Write the Android memory** — the deploy runbook, the vendoring commands, the gotchas actually hit (not the ones anticipated), and the 16 KB page-size finding from Task 6.2.
-- [ ] **Step 2: Add the index line to `MEMORY.md`.**
-- [ ] **Step 3: Update `project_airgapp.md`** so the canonical project memory is no longer iOS-only.
+- [x] **Step 1: Write the Android memory** — the deploy runbook, the vendoring commands, the gotchas actually hit (not the ones anticipated), and the 16 KB page-size finding from Task 6.2.
+- [x] **Step 2: Add the index line to `MEMORY.md`.**
+- [x] **Step 3: Update `project_airgapp.md`** so the canonical project memory is no longer iOS-only.
 
 ---
 
