@@ -18,6 +18,7 @@ import { controlHaptic } from '@/state/controlHaptic';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { useToast } from '@/components/ToastHost';
 import { usePreferences, useVehicle } from '@/state/VehicleProvider';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 
 // Actions with no BLE command in our protocol yet (Light Show, Summon) — greyed, and can't be favourited.
 const isUnavailable = (id: ControlActionId) => CONTROL_ACTIONS[id].available === false;
@@ -50,6 +51,10 @@ export function CustomizeControlsSheet({ visible, onClose }: Props) {
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  // Android's system back closes the sheet instead of backgrounding the app — the
+  // same gap that made Controls minimise (see useAndroidBack).
+  useAndroidBack(visible, () => onCloseRef.current());
   // Drop onto a favourite slot. An unavailable action (Light Show / Summon) can't be favourited — it
   // shows a "not available" toast instead of taking the slot.
   const dropFavoriteRef = useRef((_slot: number, _id: ControlActionId) => {});

@@ -13,6 +13,7 @@ import { SnapshotDriver } from '@/godot/SnapshotDriver';
 import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 import { useActiveVehicleId, useFleet, useVehicle } from '@/state/VehicleProvider';
 import { AppIcon } from '../icons/AppIcon';
 
@@ -148,6 +149,12 @@ export default function Index() {
   const cardProgress = useRef(new Animated.Value(0)).current;
   // The pushed screen stays rendered until its fade-OUT finishes.
   const [renderedPush, setRenderedPush] = useState<'climate' | 'controls' | null>(null);
+
+  // Android's system back must pop the pushed card, exactly as the edgeBack strip does
+  // on iOS. Without this the OS backgrounds the app (see useAndroidBack for why the
+  // PanResponder above cannot see the gesture). Only while a card is actually pushed —
+  // at Home, backgrounding is the correct Android behaviour.
+  useAndroidBack(pushed !== null, () => goBack.current());
 
   useEffect(() => {
     if (pushed) setRenderedPush(pushed);

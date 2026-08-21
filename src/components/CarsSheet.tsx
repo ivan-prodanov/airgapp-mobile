@@ -35,6 +35,7 @@ import {
   type SeatCount,
 } from '@/state/carConfigurator';
 import { AppIcon } from '../icons/AppIcon';
+import { useAndroidBack } from '@/hooks/useAndroidBack';
 
 interface Props {
   visible: boolean;
@@ -84,6 +85,10 @@ export function CarsSheet({
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  // Android's system back closes the sheet instead of backgrounding the app — the
+  // same gap that made Controls minimise (see useAndroidBack).
+  useAndroidBack(visible, () => onCloseRef.current());
 
   useEffect(() => {
     if (visible) {

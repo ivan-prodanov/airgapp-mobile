@@ -39,6 +39,15 @@ This is a better starting position than the plan assumed. Everything below is a
 | ~~Whole screen washed gray~~ **FIXED 2026-08-21** | The Godot stub painted an opaque `#808080` across the full-bleed vehicle canvas. Reported on device as "light gray at the top, fading to the real colours as you scroll" — the fade is the content layer's scroll opacity working correctly *over* the slab. Stub is now `Color.TRANSPARENT` with a dimmed label, so it composites against the themed root and follows light/dark. | — |
 | ~~Text noticeably heavier than iOS~~ **MISDIAGNOSED** | Not a font bug. `useFonts` gates the whole render (`_layout.tsx:82` `if (!fontsLoaded) return null`) and the app renders, so all four Universal Sans faces DID register on Android. The strings that looked like Roboto (the `Controls` title, the Home header) genuinely carry `fontWeight` and no `fontFamily` — the system font is correct there on both platforms. `theme.ts`'s `Fonts` is used in exactly one place (`Fonts.mono`) and its Android default is already right. | — |
 
+## Second device-report round (2026-08-21)
+
+| Symptom | Cause | Status |
+|---|---|---|
+| Swipe-back on Controls/Climate **minimised the app** instead of returning Home | Controls/Climate are not router routes — they are camera modes on the single `index` route. The iOS back affordance is our own left-edge `PanResponder` strip (`index.tsx` `edgeBack`), a TOUCH handler; Android gesture-nav consumes the edge touch in the system and dispatches a back EVENT instead, which had nothing to pop and fell through to the OS. | **FIXED** — `useAndroidBack` hook consumes `hardwareBackPress` while a card is pushed. Verified: back in Controls → app Home; back at Home → launcher (still correct). |
+| Same gap on `CarsSheet` / `CustomizeControlsSheet` | Plain overlays, not RN `Modal`, so no `onRequestClose`. | **FIXED** — same hook. Verified on CarsSheet. |
+| Sheets built on `SlideUpSheet` (Pin, Parental, SpeedLimit) and `ScheduleSheet` / `LocationPickerSheet` | Already RN `Modal` with `onRequestClose`. | Already correct — no change. |
+| `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` | Detented map sheets, not modal dismissals. **Not verified**; consuming back there may be wrong. | Open — check during the Task 7.2 parity sweep. |
+
 ## Non-blocking warnings (pre-existing, both platforms)
 
 - `Require cycle: src/ble/transport.ts -> src/ble/teslaHostGuard.ts -> src/ble/transport.ts`
