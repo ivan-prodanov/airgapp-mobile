@@ -1587,15 +1587,15 @@ Then change the car colour in the app and confirm the render updates — that is
 **Interfaces:**
 - Produces: a JS-only deploy in seconds and a pck swap in ~2 minutes, mirroring the iOS paths documented in `AGENTS.md`.
 
-- [ ] **Step 1: Write `deploy-js.sh`.** Android's release APK embeds `index.android.bundle` in `assets/`, so a JS-only swap means re-signing the APK — slower than iOS's in-place bundle swap. **The faster path is a debug build with Metro**, or `adb push`ing the bundle to the app's files dir if the app is built to prefer it. Pick one, measure both, and document the actual timing rather than an assumed one. Source `.env.local` first — the `tomtom-charging-key` memory records that `expo export:embed` does **not** auto-load it.
+- [x] **Step 1: Write `deploy-js.sh`.** Android's release APK embeds `index.android.bundle` in `assets/`, so a JS-only swap means re-signing the APK — slower than iOS's in-place bundle swap. **The faster path is a debug build with Metro**, or `adb push`ing the bundle to the app's files dir if the app is built to prefer it. Pick one, measure both, and document the actual timing rather than an assumed one. Source `.env.local` first — the `tomtom-charging-key` memory records that `expo export:embed` does **not** auto-load it.
 
-- [ ] **Step 2: Write `deploy-godot.sh`** — re-export the pck from `/Users/ivan/Work/airgapp/godot` with the Android preset, push, restart.
+- [x] **Step 2: Write `deploy-godot.sh`** — re-export the pck from `/Users/ivan/Work/airgapp/godot` with the Android preset, push, restart.
 
-- [ ] **Step 3: Time both** and record the real numbers.
+- [x] **Step 3: Time both** and record the real numbers.
 
-- [ ] **Step 4: Add an Android section to `AGENTS.md`** in the same shape as the iOS one — deploy paths fastest-first, with the real measured timings. Note explicitly that **Android has no weekly provisioning-profile expiry**, which is the single biggest iOS friction this port removes.
+- [x] **Step 4: Add an Android section to `AGENTS.md`** in the same shape as the iOS one — deploy paths fastest-first, with the real measured timings. Note explicitly that **Android has no weekly provisioning-profile expiry**, which is the single biggest iOS friction this port removes.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
@@ -1604,19 +1604,19 @@ Then change the car colour in the app and confirm the render updates — that is
 **Files:**
 - Create: `docs/android-parity.md`
 
-- [ ] **Step 1: Walk every screen on both devices side by side**, screenshotting each. Home, Controls, Climate, Charging, Security, Schedules, Location, Explore, Navigate search, Cars sheet, Carlink debug.
+- [x] **Step 1: Walk every screen on both devices side by side**, screenshotting each. Home, Controls, Climate, Charging, Security, Schedules, Location, Explore, Navigate search, Cars sheet, Carlink debug.
 
-- [ ] **Step 2: Exercise every car action from Android** — lock, unlock, frunk, trunk, climate on/off, charge limit, speed limit, valet, send-to-car. Per the `frunk-actuate-is-a-toggle` memory, frunk is a toggle with no close command; verify the reconciler behaves the same.
+- [x] **Step 2: Exercise every car action from Android** — lock, unlock, frunk, trunk, climate on/off, charge limit, speed limit, valet, send-to-car. Per the `frunk-actuate-is-a-toggle` memory, frunk is a toggle with no close command; verify the reconciler behaves the same.
 
-- [ ] **Step 3: Record every remaining delta** in `docs/android-parity.md` with a cause and a decision (fix / accept / defer). The foreground-service notification from Task 4.1 is a known accepted delta.
+- [x] **Step 3: Record every remaining delta** in `docs/android-parity.md` with a cause and a decision (fix / accept / defer). The foreground-service notification from Task 4.1 is a known accepted delta.
 
-- [ ] **Step 4: Full green check**
+- [x] **Step 4: Full green check**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm test 2>&1 | tail -6 && git status --porcelain
 ```
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ---
 
