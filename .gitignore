@@ -76,6 +76,9 @@ assets/godot/*.aar
 # Restore per modules/expo-godot-view/ios/VENDORING.md. ** also covers engine/backup-*/ revert copies.
 modules/expo-godot-view/ios/engine/**/*.a
 modules/expo-godot-view/ios/*.pck
+# Vendored Godot Android engine — restore per modules/expo-godot-view/android/VENDORING.md
+modules/expo-godot-view/android/src/main/jniLibs/**/*.so
+
 
 # Local-only build artifacts
 *.log

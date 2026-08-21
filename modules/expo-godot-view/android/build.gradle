@@ -11,6 +11,22 @@ android {
   defaultConfig {
     versionCode 1
     versionName "0.1.0"
+    ndk {
+      // The device (arm64) and the emulator (x86_64). Unlike iOS — whose 2020 engine has no
+      // arm64-simulator slice — Godot's Android template ships x86_64, so the emulator can run
+      // the full app. armeabi-v7a/x86 would double the APK for hardware we do not target.
+      abiFilters 'arm64-v8a', 'x86_64'
+    }
+  }
+  sourceSets {
+    main {
+      jniLibs.srcDirs += ['src/main/jniLibs']
+    }
+  }
+  packagingOptions {
+    // React Native and the Godot AAR both ship libc++_shared.so. vendor-engine.sh does not copy
+    // Godot's, but keep the guard so a future re-vendor cannot break packaging.
+    pickFirst 'lib/**/libc++_shared.so'
   }
   lintOptions {
     abortOnError false
