@@ -3,10 +3,17 @@ import { Animated } from 'react-native';
 import * as Location from 'expo-location';
 import { AppIcon } from '../icons/AppIcon';
 
-// The arrow glyph is ANGLED: `arrow.up.right` visually points to 45° (NE) at rest. We subtract that so
-// a computed bearing of 0 makes the arrow point straight up. Swap the glyph → just change these two.
-const GLYPH = 'external' as const;
-const GLYPH_BASE_ANGLE = 45;
+// The compass glyph is `navigate-filled` — the SAME nav-heading arrow the Location
+// row shows at rest — so a known bearing just rotates the row's own icon to point at
+// the car. It points STRAIGHT UP (north) at rest, so bearing 0 needs no offset.
+//
+// (The icon refactor 126304d mapped the old SF `arrow.up.right` to `external` — an
+// external-LINK box, not an arrow — which is what turned the Location compass into a
+// little link icon. GLYPH_BASE_ANGLE was 45 for that old diagonal SF arrow; a glyph
+// that points straight up needs 0.) Swap the glyph → set the angle it points at rest
+// (these glyphs are 0=up, 90=right, 180=down, 270=left, clockwise from up).
+const GLYPH = 'navigate-filled' as const;
+const GLYPH_BASE_ANGLE = 0;
 
 interface Props {
   // Geographic bearing (deg, 0 = true north, clockwise) from the phone to the car. For the mock this is
