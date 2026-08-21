@@ -67,6 +67,7 @@ class GodotRenderer implements GLSurfaceView.Renderer {
 	}
 
 	public void onSurfaceChanged(GL10 gl, int width, int height) {
+		android.util.Log.i("GodotRenderer", "onSurfaceChanged " + width + "x" + height);
 		GodotLib.resize(width, height);
 		// PATCHED: the legacy Godot.SingletonBase array is gone from this embed's Godot.java.
 		// Engine singletons are registered through the modern GodotPlugin mechanism instead
@@ -77,6 +78,7 @@ class GodotRenderer implements GLSurfaceView.Renderer {
 	}
 
 	public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+		android.util.Log.i("GodotRenderer", "onSurfaceCreated -> newcontext(use_32=" + GLUtils.use_32 + ")");
 		GodotLib.newcontext(GLUtils.use_32);
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) {
 			plugin.onGLSurfaceCreated(gl, config);

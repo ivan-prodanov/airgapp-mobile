@@ -26,7 +26,17 @@ import {
   type MapRef,
 } from '@maplibre/maplibre-react-native';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { PixelRatio, StyleSheet, View } from 'react-native';
+
+/**
+ * MapLibre Android measures camera padding in DEVICE PIXELS, while every padding React Native
+ * hands us — location.tsx's `edgePadding`, the `mapPadding` prop — is in dp. On a 3x screen that
+ * makes the reserved space a third of what was asked for, so the bottom sheet covers the very
+ * marker the fit was supposed to reveal. Same points-vs-pixels trap as the Godot main-view frame.
+ */
+function toPx(dp: number): number {
+  return Math.round(PixelRatio.get() * dp);
+}
 
 import {
   boundsForCoordinates,
@@ -173,7 +183,9 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
       if (!bounds) return;
       const p = opts?.edgePadding;
       cameraRef.current?.fitBounds(bounds, {
-        padding: p ? { top: p.top, right: p.right, bottom: p.bottom, left: p.left } : undefined,
+        padding: p
+          ? { top: toPx(p.top), right: toPx(p.right), bottom: toPx(p.bottom), left: toPx(p.left) }
+          : undefined,
         duration: opts?.animated === false ? 0 : 400,
       });
     },
@@ -230,6 +242,7 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
       ref={mapRef}
       style={[StyleSheet.absoluteFill, style as object]}
       mapStyle={styleFor(mapType)}
+
       // The app draws its own chrome; MapLibre's built-in ornaments would double up.
       logo={false}
       attribution={false}
@@ -261,10 +274,10 @@ const MapSurface = forwardRef<unknown, SurfaceProps>(function MapSurface(
         padding={
           mapPadding
             ? {
-                top: mapPadding.top ?? 0,
-                right: mapPadding.right ?? 0,
-                bottom: mapPadding.bottom ?? 0,
-                left: mapPadding.left ?? 0,
+                top: toPx(mapPadding.top ?? 0),
+                right: toPx(mapPadding.right ?? 0),
+                bottom: toPx(mapPadding.bottom ?? 0),
+                left: toPx(mapPadding.left ?? 0),
               }
             : undefined
         }

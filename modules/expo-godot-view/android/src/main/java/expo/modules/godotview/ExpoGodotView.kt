@@ -107,12 +107,25 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
   }
 
   override fun onDetachedFromWindow() {
+    // Re-arm so a later attach (or a fresh ExpoGodotView instance) re-runs attachEngine.
+    // NOTE: leaving this out was tried while chasing the disappearing-car bug and did not help.
     if (attachedEngineView) {
-      // Leave the engine running — it is process-wide and another mount may adopt it — but drop
-      // our reference so a re-attach re-parents cleanly.
       GodotHost.detachFromParent()
       attachedEngineView = false
     }
+    // Historical note kept because it cost time to establish:
+    //
+    // Removing a GLSurfaceView from the view tree ends its GL thread, and Godot 3.2 does not
+    // rebuild its renderer state when a fresh thread later calls onSurfaceCreated — the surface
+    // comes back at the right size and the engine simply never draws again. On device that looked
+    // like "the car is gone after visiting Location and coming back" (2026-08-21), with no error
+    // anywhere: the framework logged surfaceDestroyed then surfaceCreated (1080x2340), and the
+    // engine went silent.
+    //
+    // Re-parenting is handled at ATTACH time instead (attachEngine calls detachFromParent first),
+    // which covers the case React Native actually produces: a new ExpoGodotView instance adopting
+    // the process-wide engine. Leaving the view parented to a detached host in the meantime is
+    // harmless — nothing draws it — and it keeps the GL thread and its EGL context alive.
     super.onDetachedFromWindow()
   }
 

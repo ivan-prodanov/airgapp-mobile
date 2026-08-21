@@ -53,6 +53,7 @@ function ShareSupport(): null {
   return null;
 }
 import { VehicleProvider } from '@/state/VehicleProvider';
+import { Platform } from 'react-native';
 
 // Home is the root screen; Explore is pushed on top (reached from the Home header, dismissed with its
 // own back button). The native tab bar was removed — see the messages-icon → Explore wiring in
