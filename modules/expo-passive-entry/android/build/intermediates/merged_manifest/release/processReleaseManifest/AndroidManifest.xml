@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="expo.modules.passiveentry" >
+
+    <uses-sdk android:minSdkVersion="26" />
+    <!--
+       Android 12+ split the install-time BLUETOOTH/BLUETOOTH_ADMIN pair into runtime
+       permissions. neverForLocation is load-bearing: WITHOUT it the platform also demands
+       ACCESS_FINE_LOCATION before delivering ANY scan result, and a scan missing that
+       permission returns zero results silently — indistinguishable from "the car isn't
+       nearby". We never derive location from a scan result.
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="true" />
+
+</manifest>

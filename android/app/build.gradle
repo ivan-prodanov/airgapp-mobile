@@ -113,6 +113,12 @@ android {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
+            // LOCAL TEST BUILD, not a store artifact. `release` here means "JS bundled in,
+            // runs without Metro" so the phone can be taken to the car untethered. Keeping it
+            // debuggable preserves `adb run-as`, which is the only way to read the app's own
+            // SQLite log (carlink-log.db) afterwards — and a BLE bring-up trip you cannot
+            // observe is a trip wasted. Flip this off for any real distribution build.
+            debuggable true
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
