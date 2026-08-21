@@ -638,7 +638,7 @@ Two distinct mechanisms are in play and they behave differently on Android:
 - `places.db` is **bundled** and imported via `SQLite.importDatabaseFromAssetAsync(PLACES_DB, { assetId: require('../../assets/places.db') })`. The `navigate-search-feature` memory records an iOS path quirk (`assets/assets/places.db`); Android resolves bundled assets differently again and must be verified, not assumed.
 - `chargers.db` is **pushed** into `Documents/` by a deploy script (`chargerSource.ts:49` passes `documentsDir()`). Android has no `Documents` — the equivalent is `FileSystem.documentDirectory`, which maps to the app's private `files/` dir.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/services/dbPaths.test.ts`:
 
@@ -657,23 +657,23 @@ test('android uses the app files dir, with no Documents subpath', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "dbPaths"
 ```
 
-- [ ] **Step 3: Extract `chargerDbDir` into `src/services/dbPaths.ts`**
+- [x] **Step 3: Extract `chargerDbDir` into `src/services/dbPaths.ts`**
 
 Move the existing `documentsDir()` logic out of `chargerSource.ts` into a pure, testable function taking `(os, documentDirectory)`. Keep `chargerSource.ts` calling it with `Platform.OS` and `FileSystem.documentDirectory`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | tail -4
 ```
 
-- [ ] **Step 5: Write `scripts/android/deploy-chargers.sh`**
+- [x] **Step 5: Write `scripts/android/deploy-chargers.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -695,7 +695,7 @@ echo "✓ chargers.db in place"
 
 `chmod +x scripts/android/deploy-chargers.sh`. Note: `run-as` requires a **debuggable** build. For release builds, the app must copy the DB itself from a bundled asset — record that in the script header rather than discovering it later.
 
-- [ ] **Step 6: Verify on device**
+- [x] **Step 6: Verify on device**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && bash scripts/android/deploy-chargers.sh && adb logcat -c && adb shell am force-stop local.airgapp.mobile && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1 && sleep 6 && adb logcat -d -s ReactNativeJS:* | grep -i "charger\|places\|sqlite" | head -20
@@ -703,11 +703,11 @@ cd /Users/ivan/Work/airgapp/mobile && bash scripts/android/deploy-chargers.sh &&
 
 Then open the Charging tab on the device and confirm stations appear. Per the `ev-charger-data-providers` memory, `chargerSource.ts` is the **sole** source — there is no bundled fallback, so an empty list means the DB genuinely did not land.
 
-- [ ] **Step 7: Verify `places.db` imports**
+- [x] **Step 7: Verify `places.db` imports**
 
 Open Navigate search, type three characters, confirm offline gazetteer hits appear. If `importDatabaseFromAssetAsync` throws, log the exact resolved path and fix the asset reference — do not guess at a path shape.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
@@ -733,7 +733,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 iOS's `beginBackgroundTask` buys ~30s of execution after backgrounding. Android's equivalent is a short-lived foreground service, but for a 25s command deadline a `WakeLock` is the honest, proportionate analogue — Android does not suspend a process the instant it backgrounds; it Dozes it later. Take a partial wake lock and release it on `end`.
 
-- [ ] **Step 1: Add android to the module config**
+- [x] **Step 1: Add android to the module config**
 
 `modules/expo-bg-task/expo-module.config.json`:
 
@@ -745,7 +745,7 @@ iOS's `beginBackgroundTask` buys ~30s of execution after backgrounding. Android'
 }
 ```
 
-- [ ] **Step 2: Write `modules/expo-bg-task/android/build.gradle`**
+- [x] **Step 2: Write `modules/expo-bg-task/android/build.gradle`**
 
 ```gradle
 plugins {
@@ -761,7 +761,7 @@ android {
 }
 ```
 
-- [ ] **Step 3: Write `BgTaskModule.kt`**
+- [x] **Step 3: Write `BgTaskModule.kt`**
 
 ```kotlin
 package expo.modules.bgtask
@@ -801,7 +801,7 @@ class BgTaskModule : Module() {
 }
 ```
 
-- [ ] **Step 4: Add the WAKE_LOCK permission**
+- [x] **Step 4: Add the WAKE_LOCK permission**
 
 Create `modules/expo-bg-task/android/src/main/AndroidManifest.xml`:
 
@@ -811,7 +811,7 @@ Create `modules/expo-bg-task/android/src/main/AndroidManifest.xml`:
 </manifest>
 ```
 
-- [ ] **Step 5: Build and verify autolinking picked it up**
+- [x] **Step 5: Build and verify autolinking picked it up**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug 2>&1 | grep -i "bgtask\|BUILD"
@@ -819,7 +819,7 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Expected: `BUILD SUCCESSFUL` and the module compiled.
 
-- [ ] **Step 6: Verify at runtime**
+- [x] **Step 6: Verify at runtime**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb shell dumpsys power | grep -i "airgapp" 
@@ -827,7 +827,7 @@ cd /Users/ivan/Work/airgapp/mobile && adb install -r android/app/build/outputs/a
 
 Trigger a car command from the app, background it, and confirm a `PARTIAL_WAKE_LOCK` named `airgapp:*` appears and then disappears.
 
-- [ ] **Step 7: Verify `expo-secure-store` works**
+- [x] **Step 7: Verify `expo-secure-store` works**
 
 `expo-secure-store` is cross-platform (Android Keystore-backed). The `share-extension-sends-natively` memory notes the service name `app:no-auth` — that is an iOS keychain concept. Confirm `src/ble/secureStoreSecretStore.ts` round-trips on Android:
 
@@ -837,7 +837,7 @@ adb logcat -c && adb shell monkey -p local.airgapp.mobile -c android.intent.cate
 
 Enroll a key in the app and confirm `deviceKeyFingerprint` is stable across a force-stop + relaunch.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
