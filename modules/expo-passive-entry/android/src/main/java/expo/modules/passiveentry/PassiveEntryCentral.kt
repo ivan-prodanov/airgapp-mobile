@@ -61,6 +61,18 @@ class PassiveEntryCentral(private val context: Context) {
     private const val DEFAULT_MTU = 23
     private const val REQUESTED_MTU = 517
     private const val RECONNECT_DELAY_MS = 2_000L
+
+    /**
+     * How long one scan window lasts before we give up and report it.
+     *
+     * A scan MUST be bounded. Android progressively throttles long-running scans and, past
+     * roughly half an hour, quietly stops delivering results altogether — the scanner still looks
+     * alive, it just never calls back. An unbounded scan therefore degrades into a permanent
+     * no-op that is indistinguishable from "no car nearby". 20s matches the JS connect budget in
+     * BridgedBleTransport, so the two time out together instead of the TS side blaming a scan
+     * that had silently stopped working.
+     */
+    private const val SCAN_WINDOW_MS = 20_000L
   }
 
   var onLog: ((String) -> Unit)? = null
@@ -79,6 +91,10 @@ class PassiveEntryCentral(private val context: Context) {
   private var scanning = false
 
   private val main = Handler(Looper.getMainLooper())
+  /** Distinct advertisers seen in the current scan window, for the end-of-window diagnostic. */
+  private val seenThisWindow = linkedSetOf<String>()
+  /** elapsedRealtime when the live scan window opened; 0 when no scan is running. */
+  private var scanStartedAt = 0L
   private val writeQueue = ConcurrentLinkedQueue<ByteArray>()
   private var writeInFlight = false
 
@@ -103,14 +119,30 @@ class PassiveEntryCentral(private val context: Context) {
   @SuppressLint("MissingPermission")
   fun start(vin: String) {
     val name = vehicleLocalName(vin)
-    // Idempotent ONLY while we are genuinely scanning or connected. A previous start that
-    // aborted on a missing permission or a disabled radio leaves the VIN armed but nothing
-    // running, and re-arming after the user grants the permission (or switches Bluetooth on)
-    // must not be swallowed as "already running" — that bug made the retry a no-op and looked
-    // exactly like the scan silently failing.
-    if (isRunning && targetName == name && (scanning || gatt != null)) {
-      log("start($name) — already running")
-      return
+    // Two ways to get this wrong, and we hit both on 2026-08-21:
+    //
+    //   Swallow too much — the original check treated "scanning" as "already running" with no
+    //   expiry, so a scan begun 30 minutes earlier still counted. Android stops delivering
+    //   results for long-running scans with no signal at all, so the enrol attempt at the car
+    //   timed out against a dead scanner and reported "car asleep/out of range" without ever
+    //   having looked.
+    //
+    //   Swallow too little — dropping the check entirely restarted the scan on every call, and
+    //   useCarLink polls start() about every 6s. Android blocks an app that starts 5 scans in
+    //   30s (SCAN_FAILED_SCANNING_TOO_FREQUENTLY), which would have been the same silent
+    //   emptiness by a different route.
+    //
+    // So: a live link is idempotent, and a scan is idempotent only while its window is still
+    // open. An expired window restarts.
+    if (isRunning && targetName == name) {
+      if (gatt != null) {
+        log("start($name) — link already up")
+        return
+      }
+      val age = android.os.SystemClock.elapsedRealtime() - scanStartedAt
+      if (scanning && age < SCAN_WINDOW_MS) {
+        return // window still open; say nothing, this is polled
+      }
     }
     targetName = name
     log("start vin=${vin.takeLast(6)} localName=$name")
@@ -162,21 +194,56 @@ class PassiveEntryCentral(private val context: Context) {
     val scanner = adapter?.bluetoothLeScanner ?: run { log("no BLE scanner"); return }
     if (scanning) return
     scanning = true
-    // Filter on the ADVERTISED 16-bit UUID, not the GATT service. Matching the local name too
-    // would be redundant here — we check it in the callback, where the name is authoritative.
-    val filters = listOf(ScanFilter.Builder().setServiceUuid(ADVERTISED_SERVICE).build())
+    // NO ScanFilter, deliberately.
+    //
+    // iOS filters on the advertised 16-bit service 1122 because CoreBluetooth FORBIDS a nil-scan
+    // in the background. Android has no such rule for a foreground scan, and a filter here buys
+    // nothing while risking everything: if the car's advertisement does not carry that service
+    // UUID in the exact form ScanFilter matches, the car is dropped before onScanResult and the
+    // failure is indistinguishable from "no car nearby". Matching on the VIN-derived local name
+    // (which is authoritative, and cross-checked byte-for-byte against bleScanName.ts) is both
+    // stricter and more robust. Unfiltered also means the end-of-window diagnostic can report
+    // what WAS advertising, which is the difference between a sleeping car and a bad filter.
+    //
+    // Phase 4's background scan will need a filter — revisit this there, with the advertisement
+    // actually captured from the car rather than assumed.
+    val filters = emptyList<ScanFilter>()
     val settings = ScanSettings.Builder()
       .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
       .build()
-    log("scanning for $targetName (adv service 1122)")
+    seenThisWindow.clear()
+    scanStartedAt = android.os.SystemClock.elapsedRealtime()
+    log("scanning for $targetName (unfiltered), ${SCAN_WINDOW_MS}ms window")
     runCatching { scanner.startScan(filters, settings, scanCallback) }
-      .onFailure { log("startScan threw: ${it.message}"); scanning = false }
+      .onFailure { log("startScan threw: ${it.message}"); scanning = false; return }
+    main.postDelayed(scanTimeout, SCAN_WINDOW_MS)
+  }
+
+  /**
+   * Ends the window and says what was actually seen. Reporting the observed device list is the
+   * difference between "the car is asleep" and "we were filtering it out" — two failures that
+   * look identical from the TS side.
+   */
+  private val scanTimeout = Runnable {
+    if (!scanning) return@Runnable
+    stopScan()
+    log(
+      if (seenThisWindow.isEmpty()) {
+        "scan window ended — NOTHING advertising at all nearby (Bluetooth off? car asleep?)"
+      } else {
+        "scan window ended — saw ${seenThisWindow.size} advertiser(s) " +
+          "[${seenThisWindow.joinToString(", ")}] but none named $targetName"
+      },
+    )
+    reportState()
   }
 
   @SuppressLint("MissingPermission")
   private fun stopScan() {
     if (!scanning) return
     scanning = false
+    scanStartedAt = 0L
+    main.removeCallbacks(scanTimeout)
     runCatching { adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
   }
 
@@ -185,7 +252,12 @@ class PassiveEntryCentral(private val context: Context) {
     override fun onScanResult(callbackType: Int, result: ScanResult) {
       val advName = result.scanRecord?.deviceName ?: runCatching { result.device.name }.getOrNull()
       val want = targetName ?: return
-      if (advName != want) return
+      if (advName != want) {
+        // Record rather than drop: if the car is advertising under a name we do not expect, the
+        // window summary shows it instead of us reporting a bare "nothing found".
+        seenThisWindow.add(advName ?: "(unnamed ${result.device.address})")
+        return
+      }
       log("discovered $advName rssi=${result.rssi} → connecting")
       stopScan()
       connect(result.device)
@@ -193,7 +265,16 @@ class PassiveEntryCentral(private val context: Context) {
 
     override fun onScanFailed(errorCode: Int) {
       scanning = false
-      log("scan FAILED code=$errorCode")
+      val why = when (errorCode) {
+        1 -> "ALREADY_STARTED"
+        2 -> "APPLICATION_REGISTRATION_FAILED"
+        3 -> "INTERNAL_ERROR"
+        4 -> "FEATURE_UNSUPPORTED"
+        // The throttle: 5 scan starts within 30s blocks the app for the next 30s.
+        6 -> "SCANNING_TOO_FREQUENTLY — backing off"
+        else -> "unknown"
+      }
+      log("scan FAILED code=$errorCode ($why)")
     }
   }
 

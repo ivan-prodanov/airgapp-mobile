@@ -219,6 +219,21 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		// would be invisible.
 		mView.setZOrderMediaOverlay(true);
 
+		// GodotLib.setup MUST run on the GL thread (see GodotLib.java's own doc comment), and the
+		// plugins MUST be registered AFTER it completes — that call is what actually publishes
+		// AndroidGodotInterface as an engine singleton. Skip it and
+		// `Engine.has_singleton("AndroidGodotInterface")` is false in MobileComm.gd and the whole
+		// RN<->Godot bridge is silently dead, with the scene still rendering perfectly.
+		final String[] argv = commandLine;
+		mView.queueEvent(() -> {
+			GodotLib.setup(argv);
+			for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) {
+				plugin.onRegisterPluginWithGodotNative();
+			}
+			setKeepScreenOn("True".equals(
+					GodotLib.getGlobal("display/window/energy_saving/keep_screen_on")));
+		});
+
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) {
 			View pluginView = plugin.onMainCreate(activity);
 			if (pluginView != null) containerLayout.addView(pluginView);
