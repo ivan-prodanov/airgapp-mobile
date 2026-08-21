@@ -8,6 +8,7 @@
 import * as SQLite from 'expo-sqlite';
 
 import { distanceMeters, type LatLng } from '@/state/mockLocation';
+import { pushedDbDir } from './dbPaths';
 import { OPEN_247_RANGE } from './osm';
 import type { Charger, ChargerSearchResult, ConnectorGroup, LatLngBounds } from './tomtom';
 
@@ -34,11 +35,11 @@ interface Row {
   open247: number;
 }
 
-// `defaultDatabaseDirectory` is `<container>/Documents/SQLite`; strip the SQLite suffix so we open (and the
-// push script targets) `Documents/chargers.db` — Documents always exists, so no directory-creation dance.
-function documentsDir(): string | undefined {
-  const dir = SQLite.defaultDatabaseDirectory as string | undefined;
-  return dir ? dir.replace(/\/SQLite\/?$/, '') : undefined;
+// Strip the `SQLite` suffix off expo-sqlite's default dir so we open (and the push scripts target) the
+// parent, which always exists — no directory-creation dance. iOS: `<container>/Documents`. Android:
+// `<filesDir>`. The derivation is pure and node-tested in dbPaths.ts.
+function pushedDbDirectory(): string | undefined {
+  return pushedDbDir(SQLite.defaultDatabaseDirectory as string | undefined);
 }
 
 // undefined = not yet tried; null = no usable DB (→ bundled fallback); else the open handle.
@@ -46,7 +47,7 @@ let db: SQLite.SQLiteDatabase | null | undefined;
 function getDb(): SQLite.SQLiteDatabase | null {
   if (db !== undefined) return db;
   try {
-    const handle = SQLite.openDatabaseSync(DB_NAME, undefined, documentsDir());
+    const handle = SQLite.openDatabaseSync(DB_NAME, undefined, pushedDbDirectory());
     const row = handle.getFirstSync<{ n: number }>('SELECT count(*) AS n FROM chargers');
     db = row && row.n > 0 ? handle : null;
   } catch {
