@@ -76,14 +76,15 @@ public class GodotView extends GLSurfaceView {
 	private final GodotRenderer godotRenderer;
 
 	public GodotView(Godot activity, XRMode xrMode, boolean p_use_gl3, boolean p_use_32_bits, boolean p_use_debug_opengl) {
-		super(activity);
+		// PATCHED: Godot is a Fragment in this embed, not a Context — take the hosting Context.
+		super(activity.requireContext());
 		GLUtils.use_gl3 = p_use_gl3;
 		GLUtils.use_32 = p_use_32_bits;
 		GLUtils.use_debug_opengl = p_use_debug_opengl;
 
 		this.activity = activity;
 		this.inputHandler = new GodotInputHandler(this);
-		this.detector = new GestureDetector(activity, new GodotGestureHandler(this));
+		this.detector = new GestureDetector(activity.requireContext(), new GodotGestureHandler(this));
 		this.godotRenderer = new GodotRenderer();
 		init(xrMode, false, 16, 0);
 	}

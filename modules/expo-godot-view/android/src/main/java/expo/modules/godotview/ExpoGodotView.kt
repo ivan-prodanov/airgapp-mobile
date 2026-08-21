@@ -104,7 +104,6 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
     engineView.layout(0, 0, width, height)
 
     attachedEngineView = true
-    GodotHost.onResume()
 
     // Force a DECOR-VIEW relayout after re-parenting the engine surface.
     //
@@ -132,6 +131,8 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
     // Re-arm so a later attach (or a fresh ExpoGodotView instance) re-runs attachEngine.
     // NOTE: leaving this out was tried while chasing the disappearing-car bug and did not help.
     d("onDetachedFromWindow attached=$attachedEngineView")
+    // Tried BOTH ways while chasing the disappearing car; neither fixes it, so keep the tidy one
+    // (a fresh ExpoGodotView instance then adopts a parentless view).
     if (attachedEngineView) {
       GodotHost.detachFromParent()
       attachedEngineView = false

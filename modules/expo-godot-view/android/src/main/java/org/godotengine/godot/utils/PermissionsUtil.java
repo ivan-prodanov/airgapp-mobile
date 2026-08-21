@@ -72,17 +72,17 @@ public final class PermissionsUtil {
 			return true;
 		}
 
-		if (name.equals("RECORD_AUDIO") && ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+		if (name.equals("RECORD_AUDIO") && ContextCompat.checkSelfPermission(activity.requireContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
 			activity.requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQUEST_RECORD_AUDIO_PERMISSION);
 			return false;
 		}
 
-		if (name.equals("CAMERA") && ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+		if (name.equals("CAMERA") && ContextCompat.checkSelfPermission(activity.requireContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
 			activity.requestPermissions(new String[] { Manifest.permission.CAMERA }, REQUEST_CAMERA_PERMISSION);
 			return false;
 		}
 
-		if (name.equals("VIBRATE") && ContextCompat.checkSelfPermission(activity, Manifest.permission.VIBRATE) != PackageManager.PERMISSION_GRANTED) {
+		if (name.equals("VIBRATE") && ContextCompat.checkSelfPermission(activity.requireContext(), Manifest.permission.VIBRATE) != PackageManager.PERMISSION_GRANTED) {
 			activity.requestPermissions(new String[] { Manifest.permission.VIBRATE }, REQUEST_VIBRATE_PERMISSION);
 			return false;
 		}
@@ -115,7 +115,7 @@ public final class PermissionsUtil {
 			try {
 				PermissionInfo permissionInfo = getPermissionInfo(activity, manifestPermission);
 				int protectionLevel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? permissionInfo.getProtection() : permissionInfo.protectionLevel;
-				if (protectionLevel == PermissionInfo.PROTECTION_DANGEROUS && ContextCompat.checkSelfPermission(activity, manifestPermission) != PackageManager.PERMISSION_GRANTED) {
+				if (protectionLevel == PermissionInfo.PROTECTION_DANGEROUS && ContextCompat.checkSelfPermission(activity.requireContext(), manifestPermission) != PackageManager.PERMISSION_GRANTED) {
 					dangerousPermissions.add(manifestPermission);
 				}
 			} catch (PackageManager.NameNotFoundException e) {
@@ -155,7 +155,7 @@ public final class PermissionsUtil {
 			try {
 				PermissionInfo permissionInfo = getPermissionInfo(activity, manifestPermission);
 				int protectionLevel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? permissionInfo.getProtection() : permissionInfo.protectionLevel;
-				if (protectionLevel == PermissionInfo.PROTECTION_DANGEROUS && ContextCompat.checkSelfPermission(activity, manifestPermission) == PackageManager.PERMISSION_GRANTED) {
+				if (protectionLevel == PermissionInfo.PROTECTION_DANGEROUS && ContextCompat.checkSelfPermission(activity.requireContext(), manifestPermission) == PackageManager.PERMISSION_GRANTED) {
 					dangerousPermissions.add(manifestPermission);
 				}
 			} catch (PackageManager.NameNotFoundException e) {

@@ -21,7 +21,8 @@
 /* WHY THE CLASS NAME AND PACKAGE ARE LOAD-BEARING:                      */
 /* java_godot_wrapper.cpp:44 does                                        */
 /*   FindClass("org/godotengine/godot/Godot")                            */
-/* and then GetMethodID for 17 exact signatures. Renaming the class, or  */
+/* and then GetMethodID for 17 exact signatures, PLUS getClassLoader     */
+/* resolved lazily at java_godot_wrapper.cpp:93 — 18 in total. Renaming  */
 /* dropping any of those 17 methods, breaks the native bridge at         */
 /* runtime with no compile-time warning. They are marked @Keep below.    */
 /*                                                                       */
@@ -46,7 +47,6 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.pm.ConfigurationInfo;
 import android.app.ActivityManager;
 import android.hardware.Sensor;
@@ -61,9 +61,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import android.view.LayoutInflater;
+import android.os.Bundle;
+
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
 
 import org.godotengine.godot.input.GodotEditText;
 import org.godotengine.godot.plugin.GodotPlugin;
@@ -72,12 +76,10 @@ import org.godotengine.godot.utils.GodotNetUtils;
 import org.godotengine.godot.utils.PermissionsUtil;
 import org.godotengine.godot.xr.XRMode;
 
-public class Godot extends ContextWrapper implements SensorEventListener {
+public class Godot extends Fragment implements SensorEventListener {
 	private static final String TAG = "Godot";
 
-	private final Activity activity;
-
-	/** The engine's view tree. The HOST attaches this — we never call setContentView. */
+	/** The engine's view tree, built by onVideoInit and returned from onCreateView. */
 	public FrameLayout containerLayout;
 	public GodotView mView;
 
@@ -97,23 +99,79 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 	private boolean activityResumed = false;
 	private boolean godotInitialized = false;
 
-	public Godot(Activity activity) {
-		super(activity);
-		this.activity = activity;
-	}
-
-	public Activity getActivity() {
-		return activity;
+	/**
+	 * FRAGMENT, not an Activity and not a ContextWrapper.
+	 *
+	 * Upstream 3.2.2 declares `Godot extends FragmentActivity`. The official Tesla app ships the
+	 * SAME engine binary (libgodot_android.so reports 3.2.2.stable.custom against our
+	 * 3.2.2.stable.official) with the Java layer patched so `Godot` is a Fragment — they backported
+	 * the 3.2.3+ refactor, and `com.tesla.godot.TMGodot extends Godot` is added with
+	 * `supportFragmentManager.add(tMGodot, "godot_fragment")`.
+	 *
+	 * That shape is load-bearing for an embed. A Fragment owns its view independently of the React
+	 * Native view tree, so navigating away and back does not tear the surface down. As a
+	 * ContextWrapper whose view RN detached and re-attached, the engine kept drawing into a stale
+	 * compositing layer that was never shown — the car silently vanished (see docs/android-parity.md).
+	 */
+	public Godot() {
+		super();
 	}
 
 	public void setCommandLine(String[] argv) {
 		this.commandLine = argv != null ? argv : new String[0];
 	}
 
-	// ── Activity-scoped forwarders (everything else comes from ContextWrapper) ──────
+	// ── Context / Activity delegators ───────────────────────────────────────────────
+	// Being a Fragment, this class is no longer a Context, but GodotIO, GodotNetUtils,
+	// PermissionsUtil and GodotView all treat it as one. Delegating keeps every one of those call
+	// sites byte-identical to upstream, which keeps the vendor diff small.
+
+	public Context getApplicationContext() {
+		return requireContext().getApplicationContext();
+	}
+
+	public android.content.pm.PackageManager getPackageManager() {
+		return requireContext().getPackageManager();
+	}
+
+	public String getPackageName() {
+		return requireContext().getPackageName();
+	}
+
+	public Object getSystemService(String name) {
+		return requireContext().getSystemService(name);
+	}
+
+	public android.content.ContentResolver getContentResolver() {
+		return requireContext().getContentResolver();
+	}
+
+	public android.content.res.AssetManager getAssets() {
+		return requireContext().getAssets();
+	}
+
+	public java.io.File getFilesDir() {
+		return requireContext().getFilesDir();
+	}
+
+	/**
+	 * The EIGHTEENTH JNI-bound method, and the one the 17-method init list does not mention.
+	 *
+	 * java_godot_wrapper.cpp:93 resolves `getClassLoader` LAZILY (not in the init block), and
+	 * GodotLib.setup() calls it while loading modules. ContextWrapper supplied it for free;
+	 * Fragment does not, so the Fragment port aborted the GL thread on first setup with
+	 * `NoSuchMethodError: no non-static method Godot.getClassLoader()`.
+	 */
+	public ClassLoader getClassLoader() {
+		return requireContext().getClassLoader();
+	}
+
+	public int checkSelfPermission(String permission) {
+		return androidx.core.content.ContextCompat.checkSelfPermission(requireContext(), permission);
+	}
 
 	public void runOnUiThread(Runnable action) {
-		activity.runOnUiThread(action);
+		requireActivity().runOnUiThread(action);
 	}
 
 	/**
@@ -127,21 +185,36 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		android.util.Log.i(TAG, "engine asked for orientation " + orientation + " — ignored; the host owns orientation");
 	}
 
-	public void requestPermissions(String[] permissions, int requestCode) {
-		ActivityCompat.requestPermissions(activity, permissions, requestCode);
-	}
+	// requestPermissions(String[], int) is inherited from Fragment and does exactly what the
+	// engine's callers expect — no delegator needed (and overriding it is a compile error).
 
 	public android.view.Window getWindow() {
-		return activity.getWindow();
+		return requireActivity().getWindow();
 	}
 
 	// ── lifecycle, driven by the host (GodotHost.kt) ───────────────────────────────
 
-	/** Upstream's onCreate, minus the window/Activity setup the host already owns. */
-	public void create() {
+	@Override
+	public void onCreate(@Nullable Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
 		mClipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
 		pluginRegistry = GodotPluginRegistry.initializePluginRegistry(this);
-		initializeGodot();
+	}
+
+	/**
+	 * Boots the engine and hands back its view.
+	 *
+	 * GodotLib.initialize calls back into onVideoInit on this same thread, which is what actually
+	 * builds containerLayout — so the engine must come up before we can return a view.
+	 */
+	@Override
+	@Nullable
+	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+			@Nullable Bundle savedInstanceState) {
+		if (!godotInitialized) {
+			initializeGodot();
+		}
+		return containerLayout;
 	}
 
 	private void initializeGodot() {
@@ -168,19 +241,25 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		}
 	}
 
+	@Override
 	public void onResume() {
+		super.onResume();
 		activityResumed = true;
 		if (mView != null) mView.onResume();
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) plugin.onMainResume();
 	}
 
+	@Override
 	public void onPause() {
+		super.onPause();
 		activityResumed = false;
 		if (mView != null) mView.onPause();
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) plugin.onMainPause();
 	}
 
+	@Override
 	public void onDestroy() {
+		super.onDestroy();
 		if (pluginRegistry != null) {
 			for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) plugin.onMainDestroy();
 		}
@@ -192,7 +271,7 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		return godotInitialized;
 	}
 
-	// ── the 17 methods java_godot_wrapper.cpp binds by name ────────────────────────
+	// ── the 18 methods java_godot_wrapper.cpp binds by name ────────────────────────
 	// Signatures are load-bearing. @Keep stops R8 stripping them: nothing in Java calls
 	// most of these, so a minifying build would otherwise consider them unreachable.
 
@@ -206,11 +285,11 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 	private void onVideoInit() {
 		final boolean useGl3 = getGLESVersionCode() >= 0x00030000;
 
-		containerLayout = new FrameLayout(this);
+		containerLayout = new FrameLayout(requireContext());
 		containerLayout.setLayoutParams(new FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-		GodotEditText edittext = new GodotEditText(this);
+		GodotEditText edittext = new GodotEditText(requireContext());
 		edittext.setLayoutParams(new ViewGroup.LayoutParams(
 				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 		containerLayout.addView(edittext);
@@ -242,7 +321,7 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		});
 
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) {
-			View pluginView = plugin.onMainCreate(activity);
+			View pluginView = plugin.onMainCreate(requireActivity());
 			if (pluginView != null) containerLayout.addView(pluginView);
 		}
 	}
@@ -419,9 +498,10 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		for (GodotPlugin plugin : pluginRegistry.getAllPlugins()) {
 			if (plugin.onMainBackPressed()) return;
 		}
-		activity.runOnUiThread(() -> {
+		final android.app.Activity host = requireActivity();
+		host.runOnUiThread(() -> {
 			//noinspection deprecation
-			activity.onBackPressed();
+			host.onBackPressed();
 		});
 	}
 

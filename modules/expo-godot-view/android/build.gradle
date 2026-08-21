@@ -37,3 +37,9 @@ android {
     abortOnError false
   }
 }
+
+dependencies {
+  // Godot is a Fragment in this embed (see Godot.java), so the module's own Kotlin needs to see
+  // the Fragment type, not just inherit it transitively.
+  implementation 'androidx.fragment:fragment-ktx:1.8.5'
+}

@@ -94,6 +94,21 @@ survive navigation churn. Our `Godot` is a `ContextWrapper` whose view RN detach
 and `setZOrderMediaOverlay()` is only honoured *before* the containing window is attached — so a
 re-attached surface keeps a stale compositing layer, drawing frames nobody shows.
 
-**The fix is to port the Fragment shape**, as Tesla did. The engine `.so` is unchanged, so the JNI
-contract (`FindClass("org/godotengine/godot/Godot")` + 17 methods) still holds; only `Godot.java`
-and `GodotView`'s `super(activity)` Context assumption need reworking. Well-scoped, a few hours.
+**The Fragment port is DONE** (`Godot extends Fragment`, added with
+`supportFragmentManager.add(godot, "godot_fragment").commitNow()`, view returned from
+`onCreateView`). It boots and renders correctly on first load — **but it does not fix the bug on
+its own**, because `ExpoGodotView` still re-parents the fragment's view into the React Native tree,
+and that re-parenting is what tears the surface down. Tried with and without detaching on
+`onDetachedFromWindow`; neither works.
+
+Worth recording from the port: the engine binds **18** methods on `Godot`, not 17.
+`getClassLoader()` is resolved LAZILY at `java_godot_wrapper.cpp:93` (outside the init list) and
+`GodotLib.setup()` calls it while loading modules. `ContextWrapper` supplied it for free; `Fragment`
+does not, and the omission aborted the GL thread with
+`NoSuchMethodError: no non-static method Godot.getClassLoader()`.
+
+**What remains:** stop React Native owning the engine view at all. In Tesla's app
+`TMGodotViewManager.createViewInstance` returns the *same cached* `FrameLayout` for every mount and
+`onDropViewInstance` is a no-op — RN never creates or destroys it. Our Expo module instead builds a
+fresh `ExpoGodotView` per mount and adopts the engine view into it. Closing that gap — or hosting
+the surface outside the RN tree entirely — is the remaining work.

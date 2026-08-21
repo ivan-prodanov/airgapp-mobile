@@ -2,6 +2,7 @@ package expo.modules.godotview
 
 import android.app.Activity
 import android.util.Log
+import androidx.fragment.app.FragmentActivity
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import java.io.File
@@ -11,15 +12,21 @@ import org.godotengine.godot.Godot
  * Boots and owns one Godot engine instance, and hands back a view to embed — the Android
  * counterpart of `ios/GodotHost.mm`.
  *
- * BOOT ORDER (this is the whole job, and it is order-sensitive):
- *   1. `Godot(activity)` + `setCommandLine(argv)` — argv is `{exe, --main-pack, <abs pck path>}`,
+ * BOOT ORDER (order-sensitive):
+ *   1. `Godot()` + `setCommandLine(argv)` — argv is `{exe, --main-pack, <abs pck>, --resolution}`,
  *      the same shape GodotHost.mm builds at its line 76.
- *   2. `godot.create()` on the MAIN thread → `GodotLib.initialize(...)`, which calls back into
- *      `onVideoInit()` and builds the GLSurfaceView.
- *   3. `onVideoInit` itself queues `GodotLib.setup(argv)` onto the GL thread and registers the
- *      plugins after it — see the comment there.
- * Doing (2) off the main thread, or reading `containerLayout` before it returns, gets you a null
- * view and no engine.
+ *   2. Add it to the FragmentManager with `commitNow()`. That synchronously runs `onCreateView`,
+ *      which calls `GodotLib.initialize(...)`, which calls back into `onVideoInit()` and builds
+ *      the GLSurfaceView.
+ *   3. `onVideoInit` queues `GodotLib.setup(argv)` onto the GL thread and registers the plugins
+ *      after it — see the comment there.
+ * `commit()` instead of `commitNow()` returns before the view exists.
+ *
+ * WHY A FRAGMENT: a Fragment owns its view independently of the React Native view tree, so RN can
+ * detach and re-attach around it without tearing the surface down. This mirrors the official Tesla
+ * app, which runs the SAME engine build (3.2.2.stable.custom vs our .official) with `TMGodot
+ * extends Godot` added as `godot_fragment`. As a plain view owned by RN, the re-attached surface
+ * kept a stale compositing layer and the car silently vanished after any navigation.
  *
  * ONE ENGINE PER PROCESS. Godot 3.2 keeps its state in process-wide C++ globals; a second
  * `GodotLib.initialize` in the same process does not give you a second engine, it corrupts the
@@ -31,6 +38,9 @@ object GodotHost {
 
   /** The pack, pushed next to the app's other data. Mirrors the iOS bundle path role. */
   const val PCK_NAME = "airgapp.pck"
+
+  /** Matches the tag the official Tesla app uses for the same fragment. */
+  private const val FRAGMENT_TAG = "godot_fragment"
 
   private var godot: Godot? = null
   private var started = false
@@ -48,7 +58,12 @@ object GodotHost {
    */
   @Synchronized
   fun start(activity: Activity, widthPx: Int, heightPx: Int): FrameLayout? {
-    godot?.let { return it.containerLayout }
+    godot?.let { return it.view as? FrameLayout }
+
+    if (activity !is FragmentActivity) {
+      Log.e(TAG, "host activity is not a FragmentActivity — cannot add the Godot fragment")
+      return null
+    }
 
     val pck = pckPath(activity)
     if (!File(pck).exists()) {
@@ -56,28 +71,32 @@ object GodotHost {
       return null
     }
 
-    val g = Godot(activity)
+    val g = Godot()
     // argv[0] is conventionally the executable; Godot only cares that it exists.
     //
-    // --resolution IS REQUIRED, and its absence is not a subtle bug. project.godot declares
-    // window/size 790x875 with no stretch mode, so Godot's default (stretch disabled) renders the
-    // viewport at exactly that size, anchored top-left, and simply ignores the rest of the
-    // surface. On device that looked like a tiny car in the corner (observed 2026-08-21).
-    //
-    // iOS never hits this because iphone_main(w, h, ...) seeds the OS window size BEFORE
-    // Main::setup() runs, so the project value is overridden at boot. GodotLib.setup() takes no
-    // size, and the later GodotLib.resize() only moves the OS window — with stretch disabled the
-    // viewport does not follow. --resolution is the equivalent seeding, applied by main.cpp:554
-    // while it parses argv, i.e. before the project settings are read.
+    // --resolution IS REQUIRED. project.godot declares window/size 790x875 with no stretch mode,
+    // so Godot's default renders the viewport at exactly that size anchored top-left and ignores
+    // the rest of the surface — on device, a tiny car in the corner. iOS never hits this because
+    // iphone_main(w, h, ...) seeds the window size before Main::setup(); GodotLib.setup() takes no
+    // size, and a later resize() only moves the OS window. main.cpp:554 applies --resolution while
+    // parsing argv, i.e. before the project settings are read.
     g.setCommandLine(
       arrayOf("airgapp", "--main-pack", pck, "--resolution", "${widthPx}x${heightPx}"),
     )
     Log.i(TAG, "booting engine, pck=$pck, resolution=${widthPx}x${heightPx}")
-    g.create()
 
-    val layout = g.containerLayout
+    // commitNow(), not commit(): we need getView() synchronously, and onCreateView is what boots
+    // the engine. Added WITHOUT a container id — the fragment owns the view, and the React Native
+    // host re-parents it. That ownership is the whole point of the Fragment shape: RN can detach
+    // and re-attach the view tree without the surface being torn down.
+    activity.supportFragmentManager
+      .beginTransaction()
+      .add(g, FRAGMENT_TAG)
+      .commitNow()
+
+    val layout = g.view as? FrameLayout
     if (layout == null) {
-      Log.e(TAG, "engine did not produce a view — onVideoInit was never called by the native layer")
+      Log.e(TAG, "fragment produced no view — onVideoInit was never called by the native layer")
       return null
     }
     godot = g
@@ -89,7 +108,7 @@ object GodotHost {
   /** Detach the engine's view from whatever currently holds it, so a new host can adopt it. */
   @Synchronized
   fun detachFromParent() {
-    val layout = godot?.containerLayout ?: return
+    val layout = godot?.view as? ViewGroup ?: return
     (layout.parent as? ViewGroup)?.removeView(layout)
   }
 
@@ -108,13 +127,6 @@ object GodotHost {
     g.runOnRenderThread { org.godotengine.godot.GodotLib.resize(widthPx, heightPx) }
   }
 
-  @Synchronized
-  fun onResume() {
-    godot?.onResume()
-  }
-
-  @Synchronized
-  fun onPause() {
-    godot?.onPause()
-  }
+  // onResume/onPause are the FragmentManager's job now — calling Fragment lifecycle methods by
+  // hand would double-invoke them. Kept out deliberately.
 }
