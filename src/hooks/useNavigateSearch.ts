@@ -3,7 +3,7 @@
 // LocationSheet search UI. `select` records a tapped place as a recent.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { appleSearch } from '@/services/appleSearch';
+import { onlineSearch } from '@/services/onlineSearch';
 import { normalizeQuery, type Place, type SearchRegion } from '@/services/place';
 import { initPlaceSources, searchLocal } from '@/services/placeSource';
 import { groupRecentsByDay, type RecentGroup } from '@/services/recents';
@@ -18,7 +18,9 @@ export function useNavigateSearch(region: SearchRegion) {
   const [recentGroups, setRecentGroups] = useState<RecentGroup[]>([]);
   const seq = useRef(0); // drop stale async responses
 
-  const deps: SearchDeps = useMemo(() => ({ appleSearch, localSearch: searchLocal }), []);
+  // `appleSearch` is the SearchDeps field name (Apple was the only online source when it was
+  // written); the value is now platform-chosen — Apple on iOS, Photon elsewhere.
+  const deps: SearchDeps = useMemo(() => ({ appleSearch: onlineSearch, localSearch: searchLocal }), []);
 
   const refreshRecents = useCallback(() => {
     setRecentGroups(groupRecentsByDay(loadRecents(), Date.now()));

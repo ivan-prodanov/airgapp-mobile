@@ -1293,17 +1293,17 @@ Then rebuild Android (MapLibre is a native dep — this needs a full `assembleDe
 
 Photon (`photon.komoot.io`) is a free, keyless OSM geocoder built for typeahead. It is the closest analogue to MKLocalSearch's completion API.
 
-- [ ] **Step 1: Write the failing test** with a stubbed `fetch`, asserting the Photon GeoJSON response maps to the same `Place` shape `appleComplete` produces — including `source: 'photon'`, `kind: 'poi'`, and `coordinate` present on search but the `id` format matching `appleSearch`'s `${source}:${i}:${title}` convention.
+- [x] **Step 1: Write the failing test** with a stubbed `fetch`, asserting the Photon GeoJSON response maps to the same `Place` shape `appleComplete` produces — including `source: 'photon'`, `kind: 'poi'`, and `coordinate` present on search but the `id` format matching `appleSearch`'s `${source}:${i}:${title}` convention.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement `photonSearch.ts`.** Photon returns GeoJSON — remember `[lon, lat]`. Send a descriptive `User-Agent`; the public instance asks for one.
+- [x] **Step 3: Implement `photonSearch.ts`.** Photon returns GeoJSON — remember `[lon, lat]`. Send a descriptive `User-Agent`; the public instance asks for one.
 
-- [ ] **Step 4: Platform-switch in `searchProvider.ts`** — `Platform.OS === 'ios' ? appleComplete : photonComplete`, etc. The offline gazetteer path is unchanged and remains the fallback on both platforms.
+- [x] **Step 4: Platform-switch in `searchProvider.ts`** — `Platform.OS === 'ios' ? appleComplete : photonComplete`, etc. The offline gazetteer path is unchanged and remains the fallback on both platforms.
 
-- [ ] **Step 5: Verify** — `pnpm test`, then search "Zagreb" on the device and confirm online results appear alongside gazetteer hits.
+- [x] **Step 5: Verify** — `pnpm test`, then search "Zagreb" on the device and confirm online results appear alongside gazetteer hits.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ---
 

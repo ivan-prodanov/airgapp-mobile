@@ -14,7 +14,7 @@ export interface Place {
   subtitle?: string;        // "BG", "Sofia, Bulgaria", category/context
   coordinate: { latitude: number; longitude: number } | null; // null for unresolved Apple completions
   kind: 'city' | 'charger' | 'poi' | 'address' | 'recent';
-  source: 'gazetteer' | 'charger' | 'recent' | 'apple';
+  source: 'gazetteer' | 'charger' | 'recent' | 'apple' | 'photon';
   population?: number;      // ranking hint (local results only)
 }
 
@@ -29,8 +29,16 @@ export function normalizeQuery(q: string): string {
   return foldAccents(q).trim();
 }
 
-// Source tiers: recents first, local place data next, Apple online results last.
-const TIER: Record<Place['source'], number> = { recent: 0, gazetteer: 1, charger: 1, apple: 2 };
+// Source tiers: recents first, local place data next, online geocoder results last. Photon shares
+// Apple's tier — it is the same role on a platform without MapKit, so it must rank identically or
+// the same search would order differently on Android than on iOS.
+const TIER: Record<Place['source'], number> = {
+  recent: 0,
+  gazetteer: 1,
+  charger: 1,
+  apple: 2,
+  photon: 2,
+};
 
 function inRegion(p: Place, r: SearchRegion): boolean {
   if (!p.coordinate) return false;
