@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { TeslaFonts } from '@/constants/fonts';
@@ -15,6 +14,7 @@ import {
 import { HoldRepeatButton } from './HoldRepeatButton';
 import { SlideUpSheet } from './SlideUpSheet';
 import { useDebouncedCallback } from './useDebouncedCallback';
+import { AppIcon } from '../icons/AppIcon';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
@@ -74,7 +74,7 @@ export function SpeedLimitSheet({
           {/* 25%-wide button, glyph centred — keeps the chevron off the screen edge. Tesla's arrow is a
               small thin glyph, so the SF chevron is sized to that, not to the 36px icon box. */}
           <HoldRepeatButton onStep={() => step(-1)} disabled={atMin} hitSlop={16} style={styles.stepBtn}>
-            <SymbolView name="chevron.left" tintColor={atMin ? DIM : 'white'} size={20} weight="regular" />
+            <AppIcon icon="chevron-270" color={atMin ? DIM : 'white'} size={20} />
           </HoldRepeatButton>
 
           <View style={styles.valueCol}>
@@ -83,7 +83,7 @@ export function SpeedLimitSheet({
           </View>
 
           <HoldRepeatButton onStep={() => step(1)} disabled={atMax} hitSlop={16} style={styles.stepBtn}>
-            <SymbolView name="chevron.right" tintColor={atMax ? DIM : 'white'} size={20} weight="regular" />
+            <AppIcon icon="chevron-90" color={atMax ? DIM : 'white'} size={20} />
           </HoldRepeatButton>
         </View>
       </View>

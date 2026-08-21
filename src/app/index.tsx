@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { recommendedColdPressure } from '@/ble/tirePressureText';
@@ -15,6 +14,7 @@ import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { useActiveVehicleId, useFleet, useVehicle } from '@/state/VehicleProvider';
+import { AppIcon } from '../icons/AppIcon';
 
 // Tesla home + sub-screens (climate / controls) over the embedded Godot car. Each view swaps the
 // bottom panel and camera; the back chevron returns to Home (parked).
@@ -231,7 +231,7 @@ export default function Index() {
                 actions.setCameraMode('PARKED');
               }}
             >
-              <SymbolView name="chevron.left" tintColor="#FFFFFF" size={22} weight="medium" />
+              <AppIcon icon="chevron-270" color="#FFFFFF" size={22} />
             </Pressable>
 
             <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">

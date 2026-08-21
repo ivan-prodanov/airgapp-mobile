@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
@@ -76,6 +75,7 @@ import { startPassiveEntry, onPassiveEntryLog, passiveEntrySealGolden, passiveEn
 // The Pi single-session orphan-recovery helpers are shared with useCarLink so
 // the 'auto'/'pi' modes here and the productized hook stay in lockstep.
 import { LAST_SESSION_KEY, wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
+import { AppIcon } from '../icons/AppIcon';
 
 // carlink.tsx — HARDWARE BRING-UP HARNESS, not polished UX.
 //
@@ -1437,7 +1437,7 @@ export default function CarLinkScreen() {
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
-            <SymbolView name="chevron.left" tintColor={theme.text} size={22} weight="medium" />
+            <AppIcon icon="chevron-270" color={theme.text} size={22} />
           </Pressable>
           <Text style={[styles.title, { color: theme.text }]}>Car Link (BLE bring-up)</Text>
         </View>

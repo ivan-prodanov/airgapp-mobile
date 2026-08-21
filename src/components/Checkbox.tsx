@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import { AppIcon } from '../icons/AppIcon';
 
 // Rounded-square checkbox used by the Customize Parental Controls panel: Tesla-blue fill + white check
 // when on, hollow outline when off.
@@ -19,7 +19,7 @@ export function Checkbox({
       onPress={onToggle}
       style={[styles.box, value ? styles.on : styles.off, disabled && styles.disabled]}
     >
-      {value ? <SymbolView name="checkmark" tintColor="white" size={13} weight="bold" /> : null}
+      {value ? <AppIcon icon="check" color="white" size={13} /> : null}
     </Pressable>
   );
 }

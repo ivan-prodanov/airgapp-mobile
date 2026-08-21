@@ -1,6 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppIcon } from '../icons/AppIcon';
 
 export interface LocationOption {
   key: string;
@@ -49,7 +49,7 @@ export function LocationPickerSheet({
           <Text style={styles.headerTitle}>Set Schedules</Text>
           <Pressable style={styles.headerLoc} hitSlop={8} onPress={onClose}>
             <Text style={styles.headerSub}>at {headerLabel} </Text>
-            <SymbolView name="chevron.up" tintColor="rgba(255,255,255,0.5)" size={12} weight="semibold" />
+            <AppIcon icon="chevron-0" color="rgba(255,255,255,0.5)" size={12} />
           </Pressable>
         </View>
 

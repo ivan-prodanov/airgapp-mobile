@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
@@ -210,7 +209,7 @@ export default function SecurityScreen() {
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
-            <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
+            <AppIcon icon="chevron-270" color="white" size={22} />
           </Pressable>
           <Text style={styles.title}>Security &amp; Drivers</Text>
         </View>
@@ -345,7 +344,7 @@ function NavRow({
         <Text style={styles.rowTitle}>{title}</Text>
         {subtitle ? <Text style={styles.rowSub}>{subtitle}</Text> : null}
       </View>
-      <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.35)" size={16} weight="semibold" />
+      <AppIcon icon="chevron-90" color="rgba(255,255,255,0.35)" size={16} />
     </Pressable>
   );
 }
@@ -408,7 +407,7 @@ function ToggleRow({
       </View>
       {onMore ? (
         <Pressable hitSlop={10} style={styles.more} onPress={onMore} disabled={disabled}>
-          <SymbolView name="ellipsis" tintColor="rgba(255,255,255,0.5)" size={20} weight="semibold" />
+          <AppIcon icon="ellipsis" color="rgba(255,255,255,0.5)" size={20} />
         </Pressable>
       ) : null}
       {/* pointerEvents rather than Toggle's own `disabled`: the row is already at 0.35 opacity and the

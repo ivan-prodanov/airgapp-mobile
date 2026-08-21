@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { appendPinDigit, deletePinDigit, maskPin, PIN_LENGTH } from '@/state/pinMask';
 import { SlideUpSheet } from './SlideUpSheet';
+import { AppIcon } from '../icons/AppIcon';
 
 // Layout below is the Tesla app's own PinInput StyleSheet resolved at Gutter = 10 (v4.58.0 bundle):
 //   container { paddingHorizontal: 3*G }  pinSection { alignItems:'center' }
@@ -108,7 +108,7 @@ export function PinSheet({
               ) : (
                 <Pressable key={i} style={styles.key} onPress={() => tapKey(k)}>
                   {k === 'del' ? (
-                    <SymbolView name="delete.left" tintColor="white" size={26} weight="regular" />
+                    <AppIcon icon="backspace" color="white" size={26} />
                   ) : (
                     <Text style={styles.keyText}>{k}</Text>
                   )}

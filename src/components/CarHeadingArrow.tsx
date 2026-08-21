@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Animated } from 'react-native';
 import * as Location from 'expo-location';
-import { SymbolView } from 'expo-symbols';
+import { AppIcon } from '../icons/AppIcon';
 
 // The arrow glyph is ANGLED: `arrow.up.right` visually points to 45° (NE) at rest. We subtract that so
 // a computed bearing of 0 makes the arrow point straight up. Swap the glyph → just change these two.
-const GLYPH = 'arrow.up.right' as const;
+const GLYPH = 'external' as const;
 const GLYPH_BASE_ANGLE = 45;
 
 interface Props {
@@ -21,7 +21,7 @@ interface Props {
 // Heading comes from expo-location (CLLocationManager), so it needs foreground location permission;
 // without it we fall back to heading 0 (arrow points at the raw geographic bearing, north-up).
 //
-// The rotation is driven through an Animated.Value on a wrapper View (SymbolView doesn't reliably apply
+// The rotation is driven through an Animated.Value on a wrapper View (the icon doesn't reliably apply
 // a transform on its own style) with the native driver, and the angle is kept CONTINUOUS (unwrapped) so
 // crossing north (359°→1°) animates the short way instead of spinning all the way around.
 export function CarHeadingArrow({ bearingToCar, size = 17, color = 'rgba(255,255,255,0.7)' }: Props) {
@@ -75,7 +75,7 @@ export function CarHeadingArrow({ bearingToCar, size = 17, color = 'rgba(255,255
   const rotate = rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] });
   return (
     <Animated.View style={{ transform: [{ rotate }] }}>
-      <SymbolView name={GLYPH} tintColor={color} size={size} />
+      <AppIcon icon={GLYPH} color={color} size={size} />
     </Animated.View>
   );
 }

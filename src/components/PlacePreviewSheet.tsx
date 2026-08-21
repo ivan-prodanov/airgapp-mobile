@@ -1,10 +1,11 @@
 import type { GestureResponderHandlers } from 'react-native';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { BottomSheet, SHEET_TALL_FRAC, type SheetScrollProps } from './BottomSheet';
 import type { LatLng } from '@/state/mockLocation';
+import { AppIcon } from '../icons/AppIcon';
+import type { TeslaIconName } from '../icons/TeslaIcon';
 
 // A point previewed on the map: either long-pressed (we render our own pin) or a tapped Apple map feature
 // (Apple already highlights its own marker, so we render none). Rich fields come from the tapped feature
@@ -75,13 +76,13 @@ function Body({
         <View style={styles.block}>
           <View style={styles.topRow}>
             <View style={styles.networkRow}>
-              <SymbolView name="mappin.circle.fill" tintColor={accent} size={16} />
+              <AppIcon icon="pin-filled" color={accent} size={16} />
               <Text style={styles.network} numberOfLines={1}>
                 {pin.category ?? 'Location'}
               </Text>
             </View>
             <Pressable hitSlop={10} onPress={onClose}>
-              <SymbolView name="xmark.circle.fill" tintColor="rgba(235,235,245,0.45)" size={26} />
+              <AppIcon icon="x-circle-filled" color="rgba(235,235,245,0.45)" size={26} />
             </Pressable>
           </View>
           <Text style={styles.title} numberOfLines={2}>
@@ -93,13 +94,13 @@ function Body({
           <>
             <View style={styles.divider} />
             <View style={styles.block}>
-              {address ? <InfoRow icon="mappin.and.ellipse" text={address} /> : null}
+              {address ? <InfoRow icon="pin-filled" text={address} /> : null}
               {pin.phone ? (
-                <InfoRow icon="phone.fill" text={pin.phone} onPress={() => Linking.openURL(`tel:${pin.phone}`)} />
+                <InfoRow icon="phone-filled" text={pin.phone} onPress={() => Linking.openURL(`tel:${pin.phone}`)} />
               ) : null}
               {pin.url ? (
                 <InfoRow
-                  icon="safari"
+                  icon="globe"
                   text="Website"
                   onPress={() => {
                     if (pin.url) Linking.openURL(pin.url);
@@ -114,10 +115,10 @@ function Body({
   );
 }
 
-function InfoRow({ icon, text, onPress }: { icon: SFSymbol; text: string; onPress?: () => void }) {
+function InfoRow({ icon, text, onPress }: { icon: TeslaIconName; text: string; onPress?: () => void }) {
   return (
     <Pressable style={({ pressed }) => [styles.infoRow, { opacity: pressed && onPress ? 0.6 : 1 }]} onPress={onPress} disabled={!onPress}>
-      <SymbolView name={icon} tintColor="rgba(255,255,255,0.55)" size={17} />
+      <AppIcon icon={icon} color="rgba(255,255,255,0.55)" size={17} />
       <Text style={[styles.infoText, onPress ? styles.infoLink : null]} numberOfLines={2}>
         {text}
       </Text>

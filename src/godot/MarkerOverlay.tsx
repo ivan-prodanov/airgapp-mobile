@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, PixelRatio, Pressable, StyleSheet, Text } from 'react-native';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { controlHaptic } from '../state/controlHaptic';
 import { useCarLinkStatus } from '../state/VehicleProvider';
@@ -8,6 +7,7 @@ import { useGodotBridge } from './bridgeContext';
 import { anchorToPoint, MARKER_CALIBRATION, overlayAnchorsPx, type OverlayKey } from './markerLayout';
 import { TeslaFonts } from '@/constants/fonts';
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
+import type { TeslaIconName } from '@/icons/TeslaIcon';
 import { BusyIcon } from '@/components/BusyIcon';
 import { frunkLabelDark } from './markerPaint';
 import { useContentFade } from './useContentFade';
@@ -100,7 +100,7 @@ export function MarkerOverlay({ state, actions }: Props) {
           anchorPx={anchors.lock}
           pixelRatio={pixelRatio}
           marker="lock"
-          symbol={state.locked ? 'lock.fill' : 'lock.open.fill'}
+          symbol={state.locked ? 'lock-filled' : 'unlock-filled'}
           size={34}
           tint="rgba(255,255,255,0.92)"
           pending={carLink.pending.has('locked')}
@@ -180,7 +180,7 @@ function IconButton({
   pixelRatio: number;
   marker: OverlayKey;
   // Either an SF Symbol (lock) or a Tesla vector glyph (charge port). glyph wins.
-  symbol?: SFSymbol;
+  symbol?: TeslaIconName;
   glyph?: IconRef;
   size: number;
   tint: string;
@@ -206,7 +206,7 @@ function IconButton({
       ) : glyph ? (
         <AppIcon icon={glyph} color={tint} size={size} />
       ) : symbol ? (
-        <SymbolView name={symbol} tintColor={tint} size={size} />
+        <AppIcon icon={symbol} color={tint} size={size} />
       ) : null}
     </Pressable>
   );

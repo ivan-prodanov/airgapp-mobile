@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { TeslaFonts } from '@/constants/fonts';
+import { AppIcon } from '../icons/AppIcon';
 
 // AmpStepper — the charging-current control, lifted out of app/charging.tsx so
 // the home charge panel uses the SAME one. Same reasoning as ChargeLimitSlider:
@@ -140,11 +140,10 @@ function Chevron({
       // repeat would keep running with nothing to stop it.
       onTouchCancel={onRelease}
     >
-      <SymbolView
-        name={dir === 'left' ? 'chevron.left' : 'chevron.right'}
-        tintColor={CHEVRON_COLOR}
+      <AppIcon
+        icon={dir === 'left' ? 'chevron-270' : 'chevron-90'}
+        color={CHEVRON_COLOR}
         size={22}
-        weight="medium"
       />
     </Pressable>
   );

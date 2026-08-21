@@ -1,6 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { TeslaFonts } from '@/constants/fonts';
 import { controlHaptic } from '@/state/controlHaptic';
@@ -14,6 +13,8 @@ import {
   MEDIA_TUNEIN_URI,
 } from '@/constants/mediaSourceIcons';
 import type { MediaNowPlaying } from '@/types/vehicleTypes';
+import { AppIcon } from '../icons/AppIcon';
+import type { TeslaIconName } from '../icons/TeslaIcon';
 
 // MediaCard — the home-screen "now playing" card.
 //
@@ -136,7 +137,7 @@ export function MediaCard({ media, artworkUri = null, onAction }: MediaCardProps
             // `color` and the artwork carries none, so monochrome IS the design.
             <Image source={{ uri: sourceUri }} style={styles.sourceGlyph} tintColor={ARTIST_COLOR} />
           ) : (
-            <SymbolView name="music.note" tintColor={ARTIST_COLOR} size={24} />
+            <AppIcon icon="music" color={ARTIST_COLOR} size={24} />
           )}
         </View>
         <View style={styles.details}>
@@ -157,20 +158,20 @@ export function MediaCard({ media, artworkUri = null, onAction }: MediaCardProps
 
       <View style={styles.bottomPanel}>
         <View style={styles.half}>
-          <MediaButton symbol="backward.end.fill" size={24} onPress={() => onAction('prev')} />
+          <MediaButton symbol="previous-filled" size={24} onPress={() => onAction('prev')} />
           {/* The glyph is the ACTION, not the state — show pause while playing. */}
           <MediaButton
-            symbol={playing ? 'pause.fill' : 'play.fill'}
+            symbol={playing ? 'pause-filled' : 'play-filled'}
             size={26}
             onPress={() => onAction('toggle')}
           />
-          <MediaButton symbol="forward.end.fill" size={24} onPress={() => onAction('next')} />
+          <MediaButton symbol="next-filled" size={24} onPress={() => onAction('next')} />
         </View>
         <View style={styles.volumeDivider} />
         <View style={styles.half}>
-          <MediaButton symbol="chevron.left" size={20} tint={ARTIST_COLOR} onPress={() => onAction('volumeDown')} />
-          <SymbolView name="speaker.wave.2.fill" tintColor={TITLE_COLOR} size={22} />
-          <MediaButton symbol="chevron.right" size={20} tint={ARTIST_COLOR} onPress={() => onAction('volumeUp')} />
+          <MediaButton symbol="chevron-270" size={20} tint={ARTIST_COLOR} onPress={() => onAction('volumeDown')} />
+          <AppIcon icon="speaker-filled-high" color={TITLE_COLOR} size={22} />
+          <MediaButton symbol="chevron-90" size={20} tint={ARTIST_COLOR} onPress={() => onAction('volumeUp')} />
         </View>
       </View>
     </View>
@@ -186,7 +187,7 @@ function MediaButton({
   tint = TITLE_COLOR,
   onPress,
 }: {
-  symbol: SFSymbol;
+  symbol: TeslaIconName;
   size: number;
   tint?: string;
   onPress: () => void;
@@ -200,7 +201,7 @@ function MediaButton({
       }}
       style={({ pressed }) => ({ opacity: pressed ? 0.45 : 1 })}
     >
-      <SymbolView name={symbol} tintColor={tint} size={size} />
+      <AppIcon icon={symbol} color={tint} size={size} />
     </Pressable>
   );
 }

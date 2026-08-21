@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
@@ -61,7 +60,7 @@ export default function ChargingScreen() {
               router.back();
             }}
           >
-            <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
+            <AppIcon icon="chevron-270" color="white" size={22} />
           </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Charging</Text>
@@ -149,7 +148,7 @@ function LinkRow({
         <AppIcon icon={symbol} color="white" size={20} />
       </View>
       <Text style={styles.linkTitle}>{title}</Text>
-      <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.4)" size={16} weight="semibold" />
+      <AppIcon icon="chevron-90" color="rgba(255,255,255,0.4)" size={16} />
     </Pressable>
   );
 }

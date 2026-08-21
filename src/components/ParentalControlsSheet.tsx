@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { TeslaFonts } from '@/constants/fonts';
@@ -18,6 +17,7 @@ import { Checkbox } from './Checkbox';
 import { HoldRepeatButton } from './HoldRepeatButton';
 import { SlideUpSheet } from './SlideUpSheet';
 import { useDebouncedCallback } from './useDebouncedCallback';
+import { AppIcon } from '../icons/AppIcon';
 
 const DIM = 'rgba(255,255,255,0.25)';
 
@@ -84,11 +84,10 @@ export function ParentalControlsSheet({
                 hitSlop={12}
                 style={styles.stepBtn}
               >
-                <SymbolView
-                  name="chevron.left"
-                  tintColor={kmh <= SPEED_LIMIT_MIN_KMH ? DIM : 'white'}
+                <AppIcon
+                  icon="chevron-270"
+                  color={kmh <= SPEED_LIMIT_MIN_KMH ? DIM : 'white'}
                   size={16}
-                  weight="regular"
                 />
               </HoldRepeatButton>
               <Text style={styles.stepValue}>{kmh} km/h</Text>
@@ -98,11 +97,10 @@ export function ParentalControlsSheet({
                 hitSlop={12}
                 style={styles.stepBtn}
               >
-                <SymbolView
-                  name="chevron.right"
-                  tintColor={kmh >= SPEED_LIMIT_MAX_KMH ? DIM : 'white'}
+                <AppIcon
+                  icon="chevron-90"
+                  color={kmh >= SPEED_LIMIT_MAX_KMH ? DIM : 'white'}
                   size={16}
-                  weight="regular"
                 />
               </HoldRepeatButton>
             </View>

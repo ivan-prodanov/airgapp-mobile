@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,6 +9,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { useFleet, useVehicle } from '@/state/VehicleProvider';
 // ⚠️ TEMPORARY — remove with the strip (one revert).
 import type { CameraMode, CarModel, LightingMode, ThemeMode, VehicleStateKey } from '@/types/vehicleTypes';
+import { AppIcon } from '../icons/AppIcon';
+import type { TeslaIconName } from '../icons/TeslaIcon';
 
 const ACCENT = '#3E6AE1'; // Tesla blue for the active state
 
@@ -92,7 +93,7 @@ export default function ExploreScreen() {
         onPress={goBack}
         hitSlop={8}
         style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.6 : 1 }]}>
-        <SymbolView name="chevron.left" tintColor={ACCENT} size={20} weight="semibold" />
+        <AppIcon icon="chevron-270" color={ACCENT} size={20} />
         <Text style={[styles.backLabel, { color: ACCENT }]}>Home</Text>
       </Pressable>
 
@@ -112,9 +113,9 @@ export default function ExploreScreen() {
               key={vehicle.id}
               style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
               <Pressable style={styles.vehicleSelect} onPress={() => fleet.setActiveVehicle(vehicle.id)}>
-                <SymbolView
-                  name={isActive ? 'largecircle.fill.circle' : 'circle'}
-                  tintColor={isActive ? ACCENT : theme.textSecondary}
+                <AppIcon
+                  icon={isActive ? 'radio-filled' : 'radio'}
+                  color={isActive ? ACCENT : theme.textSecondary}
                   size={22}
                 />
                 <Text style={[styles.rowLabel, { color: theme.text }]}>{vehicle.name}</Text>
@@ -123,9 +124,9 @@ export default function ExploreScreen() {
                 hitSlop={8}
                 disabled={fleet.vehicles.length === 1}
                 onPress={() => fleet.removeVehicle(vehicle.id)}>
-                <SymbolView
-                  name="trash"
-                  tintColor={fleet.vehicles.length === 1 ? theme.backgroundSelected : '#E5484D'}
+                <AppIcon
+                  icon="trash"
+                  color={fleet.vehicles.length === 1 ? theme.backgroundSelected : '#E5484D'}
                   size={20}
                 />
               </Pressable>
@@ -141,7 +142,7 @@ export default function ExploreScreen() {
                 styles.addButton,
                 { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
               ]}>
-              <SymbolView name="plus" tintColor={ACCENT} size={16} />
+              <AppIcon icon="plus" color={ACCENT} size={16} />
               <Text style={[styles.addButtonLabel, { color: theme.text }]}>{opt.label}</Text>
             </Pressable>
           ))}
@@ -153,7 +154,7 @@ export default function ExploreScreen() {
           <SegButton
             label="Awake"
             sublabel="Parked · online"
-            icon="sun.max.fill"
+            icon="sun-filled"
             active={state.awake}
             onPress={() => actions.patch({ awake: true })}
             theme={theme}
@@ -161,7 +162,7 @@ export default function ExploreScreen() {
           <SegButton
             label="Asleep"
             sublabel="Last seen · dimmed"
-            icon="moon.zzz.fill"
+            icon="moon-filled"
             active={!state.awake}
             onPress={() => actions.patch({ awake: false })}
             theme={theme}
@@ -181,44 +182,44 @@ export default function ExploreScreen() {
       <Section title="Closures">
         {/* actuateFrunk, not toggle: the demo row must send on every tap like the
             real control, and must not drive the optimistic value to closed. */}
-        <ToggleRow icon="car.side.front.open.fill" label="Frunk" stateKey="frunkOpen" value={state.frunkOpen} onToggle={() => actions.actuateFrunk()} theme={theme} />
-        <ToggleRow icon="car.side.rear.open.fill" label="Trunk" stateKey="trunkOpen" value={state.trunkOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.top.door.front.left.open.fill" label="Driver door" stateKey="driverFrontDoorOpen" value={state.driverFrontDoorOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.top.door.front.right.open.fill" label="Passenger door" stateKey="passengerFrontDoorOpen" value={state.passengerFrontDoorOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.top.door.rear.left.open.fill" label="Rear left door" stateKey="driverRearDoorOpen" value={state.driverRearDoorOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.top.door.rear.right.open.fill" label="Rear right door" stateKey="passengerRearDoorOpen" value={state.passengerRearDoorOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="frunk-filled" label="Frunk" stateKey="frunkOpen" value={state.frunkOpen} onToggle={() => actions.actuateFrunk()} theme={theme} />
+        <ToggleRow icon="trunk-filled" label="Trunk" stateKey="trunkOpen" value={state.trunkOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="doors-open-filled" label="Driver door" stateKey="driverFrontDoorOpen" value={state.driverFrontDoorOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="doors-open-filled" label="Passenger door" stateKey="passengerFrontDoorOpen" value={state.passengerFrontDoorOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="doors-open-filled" label="Rear left door" stateKey="driverRearDoorOpen" value={state.driverRearDoorOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="doors-open-filled" label="Rear right door" stateKey="passengerRearDoorOpen" value={state.passengerRearDoorOpen} onToggle={actions.toggle} theme={theme} />
       </Section>
 
       <Section
         title="Windows"
         action={<TextAction label={anyWindowOpen ? 'Close all' : 'Vent all'} onPress={ventAll} />}>
-        <ToggleRow icon="car.window.left" label="Front left" stateKey="leftFrontWindowOpen" value={state.leftFrontWindowOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.window.right" label="Front right" stateKey="rightFrontWindowOpen" value={state.rightFrontWindowOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.window.left" label="Rear left" stateKey="leftRearWindowOpen" value={state.leftRearWindowOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="car.window.right" label="Rear right" stateKey="rightRearWindowOpen" value={state.rightRearWindowOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="vent-windows-filled" label="Front left" stateKey="leftFrontWindowOpen" value={state.leftFrontWindowOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="vent-windows-filled" label="Front right" stateKey="rightFrontWindowOpen" value={state.rightFrontWindowOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="vent-windows-filled" label="Rear left" stateKey="leftRearWindowOpen" value={state.leftRearWindowOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="vent-windows-filled" label="Rear right" stateKey="rightRearWindowOpen" value={state.rightRearWindowOpen} onToggle={actions.toggle} theme={theme} />
       </Section>
 
       <Section title="Climate">
-        <ToggleRow icon="fanblades.fill" label="A/C" stateKey="climateOn" value={state.climateOn} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="windshield.front.and.heat.waves" label="Front defrost" stateKey="frontDefrostOn" value={state.frontDefrostOn} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="windshield.rear.and.heat.waves" label="Rear defrost" stateKey="rearDefrostOn" value={state.rearDefrostOn} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="fan-filled" label="A/C" stateKey="climateOn" value={state.climateOn} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="defrost-front-filled" label="Front defrost" stateKey="frontDefrostOn" value={state.frontDefrostOn} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="defrost-rear-filled" label="Rear defrost" stateKey="rearDefrostOn" value={state.rearDefrostOn} onToggle={actions.toggle} theme={theme} />
       </Section>
 
       <Section title="Charging">
-        <ToggleRow icon="ev.charger.fill" label="Charge port" stateKey="chargePortOpen" value={state.chargePortOpen} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="powerplug.fill" label="Cable connected" stateKey="cableAttached" value={state.cableAttached} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="bolt.fill" label="Charging" stateKey="charging" value={state.charging} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="charge-filled" label="Charge port" stateKey="chargePortOpen" value={state.chargePortOpen} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="power-filled" label="Cable connected" stateKey="cableAttached" value={state.cableAttached} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="bolt-filled" label="Charging" stateKey="charging" value={state.charging} onToggle={actions.toggle} theme={theme} />
       </Section>
 
       <Section title="Lights & drive">
-        <ToggleRow icon="headlight.low.beam.fill" label="Headlights" stateKey="headlightsOn" value={state.headlightsOn} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="light.beacon.max.fill" label="Brake lights" stateKey="brakeLightsOn" value={state.brakeLightsOn} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="steeringwheel" label="Drive mode (wheel spin)" stateKey="driving" value={state.driving} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="lights-filled" label="Headlights" stateKey="headlightsOn" value={state.headlightsOn} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="warning-filled" label="Brake lights" stateKey="brakeLightsOn" value={state.brakeLightsOn} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="steering-wheel" label="Drive mode (wheel spin)" stateKey="driving" value={state.driving} onToggle={actions.toggle} theme={theme} />
       </Section>
 
       <Section title="App state">
-        <ToggleRow icon={state.locked ? 'lock.fill' : 'lock.open.fill'} label="Locked" stateKey="locked" value={state.locked} onToggle={actions.toggle} theme={theme} />
-        <ToggleRow icon="play.fill" label="Media playing" stateKey="mediaPlaying" value={state.mediaPlaying} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon={state.locked ? 'lock-filled' : 'unlock-filled'} label="Locked" stateKey="locked" value={state.locked} onToggle={actions.toggle} theme={theme} />
+        <ToggleRow icon="play-filled" label="Media playing" stateKey="mediaPlaying" value={state.mediaPlaying} onToggle={actions.toggle} theme={theme} />
       </Section>
 
       <Section title="Appearance">
@@ -243,9 +244,9 @@ export default function ExploreScreen() {
             styles.row,
             { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
           ]}>
-          <SymbolView name="wifi" tintColor={ACCENT} size={22} />
+          <AppIcon icon="wifi" color={ACCENT} size={22} />
           <Text style={[styles.rowLabel, { color: theme.text }]}>Car Link (BLE bring-up)</Text>
-          <SymbolView name="chevron.right" tintColor={theme.textSecondary} size={16} weight="semibold" />
+          <AppIcon icon="chevron-90" color={theme.textSecondary} size={16} />
         </Pressable>
       </Section>
     </ScrollView>
@@ -315,7 +316,7 @@ function SegButton({
 }: {
   label: string;
   sublabel: string;
-  icon: SFSymbol;
+  icon: TeslaIconName;
   active: boolean;
   onPress: () => void;
   theme: Theme;
@@ -327,7 +328,7 @@ function SegButton({
         styles.seg,
         { backgroundColor: active ? ACCENT : theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
       ]}>
-      <SymbolView name={icon} tintColor={active ? 'white' : theme.textSecondary} size={28} />
+      <AppIcon icon={icon} color={active ? 'white' : theme.textSecondary} size={28} />
       <Text style={[styles.segLabel, { color: active ? 'white' : theme.text }]}>{label}</Text>
       <Text style={[styles.segSub, { color: active ? 'rgba(255,255,255,0.8)' : theme.textSecondary }]}>
         {sublabel}
@@ -344,7 +345,7 @@ function ToggleRow({
   onToggle,
   theme,
 }: {
-  icon: SFSymbol;
+  icon: TeslaIconName;
   label: string;
   stateKey: VehicleStateKey;
   value: boolean;
@@ -358,7 +359,7 @@ function ToggleRow({
         styles.row,
         { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
       ]}>
-      <SymbolView name={icon} tintColor={value ? ACCENT : theme.textSecondary} size={22} />
+      <AppIcon icon={icon} color={value ? ACCENT : theme.textSecondary} size={22} />
       <Text style={[styles.rowLabel, { color: theme.text }]}>{label}</Text>
       <View style={[styles.pill, { backgroundColor: value ? ACCENT : theme.backgroundSelected }]}>
         <Text style={[styles.pillText, { color: value ? 'white' : theme.textSecondary }]}>

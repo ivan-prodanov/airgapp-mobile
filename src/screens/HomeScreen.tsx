@@ -11,14 +11,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
 import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
-import { type IconRef } from '@/icons/AppIcon';
+import { AppIcon, type IconRef } from '@/icons/AppIcon';
 import { vehicleGlyphFor } from '@/icons/vehicleGlyph';
 import { useCarLinkStatus, useFleet, usePreferences } from '@/state/VehicleProvider';
 import { bearingBetween, type LatLng } from '@/state/mockLocation';
@@ -572,7 +571,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <View style={styles.headerLeft}>
             <Pressable style={styles.nameWrap} onPress={() => setCarsOpen(true)}>
               <Text style={styles.name}>{fleet.activeName}</Text>
-              <SymbolView name="chevron.down" tintColor="white" size={16} weight="semibold" />
+              <AppIcon icon="chevron-180" color="white" size={16} />
             </Pressable>
             <ChargeStatus
               batteryLevel={state.batteryLevel}
@@ -585,9 +584,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           </View>
           <View style={styles.headerIcons}>
             <Pressable hitSlop={10} onPress={() => router.push('/explore')}>
-              <SymbolView name="ellipsis.message" tintColor="white" size={22} />
+              <AppIcon icon="message" color="white" size={22} />
             </Pressable>
-            <SymbolView name="line.3.horizontal" tintColor="white" size={24} />
+            <AppIcon icon="menu" color="white" size={24} />
           </View>
         </View>
         {/* findings §C1: the whole status row is a TouchableOpacity ->
@@ -676,11 +675,11 @@ function QuickIcon({
   );
 }
 
-const CLIMATE_STATUS_SF: Record<ClimateStatusIcon, SFSymbol> = {
-  biohazard: 'microbe',
-  camp: 'tent.fill',
-  dog: 'pawprint.fill',
-  climate: 'fanblades.fill',
+const CLIMATE_STATUS_SF: Record<ClimateStatusIcon, TeslaIconName> = {
+  biohazard: 'biohazard',
+  camp: 'camp',
+  dog: 'dog',
+  climate: 'fan-filled',
 };
 
 function NavRow({
@@ -734,9 +733,9 @@ function NavRow({
           <Text style={styles.navSubtitle} numberOfLines={1}>
             {statusIcon ? (
               <Text>
-                <SymbolView
-                  name={CLIMATE_STATUS_SF[statusIcon]}
-                  tintColor="#FFFFFF"
+                <AppIcon
+                  icon={CLIMATE_STATUS_SF[statusIcon]}
+                  color="#FFFFFF"
                   size={14}
                   style={styles.navStatusIcon}
                 />
@@ -749,7 +748,7 @@ function NavRow({
           </Text>
         ) : null}
       </View>
-      <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.4)" size={16} />
+      <AppIcon icon="chevron-90" color="rgba(255,255,255,0.4)" size={16} />
     </Pressable>
   );
 }

@@ -11,7 +11,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 
 import { VehicleThumbnail } from '@/components/VehicleThumbnail';
@@ -35,6 +34,7 @@ import {
   type BodyGen,
   type SeatCount,
 } from '@/state/carConfigurator';
+import { AppIcon } from '../icons/AppIcon';
 
 interface Props {
   visible: boolean;
@@ -200,7 +200,7 @@ function CarList({
     <>
       <Pressable style={styles.headerRow} onPress={onClose}>
         <Text style={styles.title}>Cars</Text>
-        <SymbolView name="chevron.up" tintColor="rgba(255,255,255,0.55)" size={18} weight="semibold" />
+        <AppIcon icon="chevron-0" color="rgba(255,255,255,0.55)" size={18} />
       </Pressable>
 
       <ScrollView style={{ maxHeight: listMaxHeight }} showsVerticalScrollIndicator alwaysBounceVertical>
@@ -221,7 +221,7 @@ function CarList({
                 onPress={() =>
                   confirmRemoveVehicle({ name: v.name, isReal: v.vin != null, onRemove: () => onRemove(v.id) })
                 }>
-                <SymbolView name="xmark.circle.fill" tintColor="rgba(255,255,255,0.35)" size={24} />
+                <AppIcon icon="x-circle-filled" color="rgba(255,255,255,0.35)" size={24} />
               </Pressable>
             </View>
           );
@@ -231,7 +231,7 @@ function CarList({
       <View style={styles.divider} />
 
       <Pressable style={styles.addRow} onPress={onAdd}>
-        <SymbolView name="plus" tintColor="white" size={20} weight="semibold" style={styles.addPlus} />
+        <AppIcon icon="plus" color="white" size={20} style={styles.addPlus} />
         <Text style={styles.addLabel}>Add Car</Text>
       </Pressable>
     </>
@@ -300,7 +300,7 @@ function AddCar({
     <>
       <View style={styles.headerRow}>
         <Pressable onPress={onBack} hitSlop={10} style={styles.backBtn}>
-          <SymbolView name="chevron.left" tintColor="rgba(255,255,255,0.7)" size={20} weight="semibold" />
+          <AppIcon icon="chevron-270" color="rgba(255,255,255,0.7)" size={20} />
         </Pressable>
         <Text style={styles.title}>Add Car</Text>
       </View>

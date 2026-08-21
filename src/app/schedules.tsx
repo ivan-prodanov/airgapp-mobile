@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -28,6 +27,7 @@ import {
 import { useSchedules } from '@/state/useSchedules';
 import { useCarLinkStatus, useFleet } from '@/state/VehicleProvider';
 import { TeslaFonts } from '@/constants/fonts';
+import { AppIcon } from '../icons/AppIcon';
 
 // Sofia city centre — the same fallback the Location screen uses when GPS isn't available yet.
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -292,17 +292,16 @@ export default function SchedulesScreen() {
       <SafeAreaView edges={['top']} style={styles.safe}>
         <View style={styles.header}>
           <Pressable style={styles.back} hitSlop={10} onPress={() => router.back()}>
-            <SymbolView name="chevron.left" tintColor="white" size={22} weight="medium" />
+            <AppIcon icon="chevron-270" color="white" size={22} />
           </Pressable>
           <View style={styles.headerTitles}>
             <Text style={styles.title}>Set Schedules</Text>
             <Pressable style={styles.locRow} hitSlop={8} onPress={() => setPickerOpen((v) => !v)}>
               <Text style={styles.subtitle}>at {locLabel} </Text>
-              <SymbolView
-                name={pickerOpen ? 'chevron.up' : 'chevron.down'}
-                tintColor="rgba(255,255,255,0.5)"
+              <AppIcon
+                icon={pickerOpen ? 'chevron-0' : 'chevron-180'}
+                color="rgba(255,255,255,0.5)"
                 size={12}
-                weight="semibold"
               />
             </Pressable>
           </View>
@@ -405,7 +404,7 @@ function Section({
           <Text style={styles.sectionTitle}>{title}</Text>
           <Text style={styles.sectionSub}>{subtitle}</Text>
         </View>
-        <SymbolView name="plus" tintColor="white" size={24} weight="regular" />
+        <AppIcon icon="plus" color="white" size={24} />
       </Pressable>
       {children}
     </View>

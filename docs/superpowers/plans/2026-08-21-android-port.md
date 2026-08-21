@@ -404,7 +404,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 `TeslaIcon` already exists and already replaced SF Symbols for most of the app (718 design-system glyphs + 8 vehicle glyphs). What remains is 93 call sites across 25 files, mostly chrome: `chevron.left`, `chevron.right`, `chevron.down`, `ellipsis`, `plus`, `xmark.circle.fill`, `bolt.fill`, `mappin.circle.fill`, `iphone`, `line.3.horizontal`, `ellipsis.message`.
 
-- [ ] **Step 1: Enumerate the exact SF names still in use**
+- [x] **Step 1: Enumerate the exact SF names still in use**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && grep -rho 'name="[a-z0-9.]*"' src --include='*.tsx' | grep -oP '(?<=name=")[a-z0-9.]+' | sort | uniq -c | sort -rn
@@ -412,7 +412,7 @@ cd /Users/ivan/Work/airgapp/mobile && grep -rho 'name="[a-z0-9.]*"' src --includ
 
 Write the result into the test below. Do not guess the list — derive it.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `src/icons/sfFallback.test.ts`:
 
@@ -437,7 +437,7 @@ test('an unknown SF name maps to null rather than throwing', () => {
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**
+- [x] **Step 3: Run it and watch it fail**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -B2 -A8 "sfFallback"
@@ -445,7 +445,7 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -B2 -A8 "sfFallback"
 
 Expected: FAIL — `Cannot find module './sfFallback'`.
 
-- [ ] **Step 4: Write `src/icons/sfFallback.ts`**
+- [x] **Step 4: Write `src/icons/sfFallback.ts`**
 
 Populate `SF_NAMES_IN_USE` from Step 1 and map each to the nearest glyph in `teslaIcons.json`. Inspect the JSON's keys (`node -e "console.log(Object.keys(require('./src/icons/teslaIcons.json')).join('\n'))" | grep -i chevron`) — do not invent names.
 
@@ -464,7 +464,7 @@ export function sfToTesla(sf: string): TeslaIconName | null {
 }
 ```
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | tail -6
@@ -472,7 +472,7 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | tail -6
 
 Expected: `fail 0`.
 
-- [ ] **Step 6: Migrate the call sites, one file per commit**
+- [x] **Step 6: Migrate the call sites, one file per commit**
 
 For each of the 25 files, replace
 
@@ -490,7 +490,7 @@ with
 
 Commit after each file: `git commit -m "refactor(icons): <file> SymbolView → TeslaIcon"`.
 
-- [ ] **Step 7: Verify no `SymbolView` remains and iOS is unchanged**
+- [x] **Step 7: Verify no `SymbolView` remains and iOS is unchanged**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && grep -rn "SymbolView\|expo-symbols" src | grep -v "\.web\." ; npx tsc --noEmit -p tsconfig.json && pnpm test 2>&1 | tail -4
@@ -502,7 +502,7 @@ Expected: no matches (except `app-tabs.web.tsx` if it is web-only), clean tsc, `
 
 Deploy to the iPhone (`bash scripts/godot-ios/deploy-js.sh`) and to Android, and compare the same three screens. The glyphs will not be pixel-identical to SF Symbols — they are Tesla's own glyphs, which is the *intended* design per the `tesla-icons-react-native-svg` memory. Confirm nothing is missing or mis-sized.
 
-- [ ] **Step 9: Drop the now-unused dependencies**
+- [x] **Step 9: Drop the now-unused dependencies**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm remove expo-symbols expo-glass-effect

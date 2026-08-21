@@ -22,10 +22,10 @@
 
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 
 import { bondWedgeInstruction, type RecoveryRemedy } from '@/ble/bondWedge';
 import { TeslaFonts } from '@/constants/fonts';
+import { AppIcon } from '../icons/AppIcon';
 
 interface Props {
   remedy: RecoveryRemedy;
@@ -49,7 +49,7 @@ export function PhoneKeyRecoveryCard({ remedy, bleName, onRetry }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.icon}>
-        <SymbolView name="iphone" tintColor="rgba(255,255,255,0.85)" size={28} />
+        <AppIcon icon="smartphone" color="rgba(255,255,255,0.85)" size={28} />
       </View>
       <View style={styles.text}>
         {/* Always "Phone Key" — the official row's title never changes; the

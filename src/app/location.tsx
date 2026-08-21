@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -46,6 +45,8 @@ import type { Place } from '@/services/place';
 import { sharedLocationStore } from '@/state/sharedLocationStore';
 import { useSendToCar } from '@/hooks/useSendToCar';
 import { useShareLocation } from '@/hooks/useShareLocation';
+import { AppIcon } from '../icons/AppIcon';
+import type { TeslaIconName } from '../icons/TeslaIcon';
 
 // Fallback when location permission is denied / unavailable, so the map still renders (Sofia centre).
 const FALLBACK_COORD: LatLng = { latitude: 42.6977, longitude: 23.3219 };
@@ -624,9 +625,9 @@ export default function LocationView() {
         ) : null}
 
         <Marker coordinate={carCoord} anchor={{ x: 0.5, y: 0.5 }} flat>
-          <SymbolView
-            name="location.north.fill"
-            tintColor="#9A9AA0"
+          <AppIcon
+            icon="navigate-filled"
+            color="#9A9AA0"
             size={36}
             style={styles.carPin}
           />
@@ -659,7 +660,7 @@ export default function LocationView() {
       <SafeAreaView edges={['top']} style={styles.topBar} pointerEvents="box-none">
         <View style={styles.topRow} pointerEvents="box-none">
           <Pressable style={styles.iconButton} onPress={() => router.back()} hitSlop={6}>
-            <SymbolView name="chevron.left" tintColor="white" size={20} weight="semibold" />
+            <AppIcon icon="chevron-270" color="white" size={20} />
           </Pressable>
 
           {/* OURS, NOT THEIRS — deliberately. VehicleLocationScreen
@@ -691,11 +692,10 @@ export default function LocationView() {
               {carLink.wakeInFlight ? (
                 <BusyIcon size={15} />
               ) : (
-                <SymbolView
-                  name="arrow.clockwise"
-                  tintColor="rgba(255,255,255,0.85)"
+                <AppIcon
+                  icon="reload"
+                  color="rgba(255,255,255,0.85)"
                   size={15}
-                  weight="semibold"
                 />
               )}
               <Text style={styles.agoText}>{lastUpdatedLabel}</Text>
@@ -705,10 +705,10 @@ export default function LocationView() {
           )}
 
           <View style={styles.rightStack}>
-            <RoundButton icon="arrow.turn.up.right" onPress={onNavigate} />
-            <RoundButton icon="location.fill" onPress={onGoToVehicle} />
-            <RoundButton icon="globe.americas.fill" onPress={onToggleSatellite} active={mapType === 'hybrid'} />
-            <RoundButton icon="bolt.fill" onPress={onChargingTab} active={tab === 'charging'} />
+            <RoundButton icon="directions" onPress={onNavigate} />
+            <RoundButton icon="crosshair-filled" onPress={onGoToVehicle} />
+            <RoundButton icon="globe-filled" onPress={onToggleSatellite} active={mapType === 'hybrid'} />
+            <RoundButton icon="bolt-filled" onPress={onChargingTab} active={tab === 'charging'} />
           </View>
         </View>
       </SafeAreaView>
@@ -801,7 +801,7 @@ function ChargerPin({ badge, scale = 1 }: { badge: ChargerBadge; scale?: number 
           },
         ]}
       >
-        <SymbolView name="bolt.fill" tintColor="white" size={11 * s} />
+        <AppIcon icon="bolt-filled" color="white" size={11 * s} />
         <Text style={[styles.pinCount, { fontSize: 13 * s }]}>{badge.text}</Text>
       </View>
       <View
@@ -819,7 +819,7 @@ function RoundButton({
   onPress,
   active,
 }: {
-  icon: SFSymbol;
+  icon: TeslaIconName;
   onPress: () => void;
   active?: boolean;
 }) {
@@ -829,7 +829,7 @@ function RoundButton({
       hitSlop={4}
       style={({ pressed }) => [styles.iconButton, active && styles.iconButtonActive, { opacity: pressed ? 0.6 : 1 }]}
     >
-      <SymbolView name={icon} tintColor="white" size={19} weight="medium" />
+      <AppIcon icon={icon} color="white" size={19} />
     </Pressable>
   );
 }

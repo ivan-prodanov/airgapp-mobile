@@ -1,8 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 
 import { useSendToCar, type SendTarget } from '@/hooks/useSendToCar';
+import { AppIcon } from '../icons/AppIcon';
 
 // The single action on any place: the dropped pin, a tapped POI, a search result,
 // a charger.
@@ -24,7 +24,7 @@ export function SendToCarButton({ target, onSent, onShare }: { target: SendTarge
             style={({ pressed }) => [styles.shareButton, { opacity: pressed ? 0.6 : 1 }]}
             onPress={onShare}
           >
-            <SymbolView name="square.and.arrow.up" tintColor="white" size={20} weight="semibold" />
+            <AppIcon icon="share" color="white" size={20} />
           </Pressable>
         ) : null}
         <Pressable
@@ -34,7 +34,7 @@ export function SendToCarButton({ target, onSent, onShare }: { target: SendTarge
             onSent?.();
           }}
         >
-          <SymbolView name="arrow.turn.up.right" tintColor="white" size={17} weight="semibold" />
+          <AppIcon icon="directions" color="white" size={17} />
           <Text style={styles.label}>Send to Car</Text>
         </Pressable>
       </View>

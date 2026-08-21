@@ -3,13 +3,19 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Path, SvgXml } from 'react-native-svg';
 
 import ICONS from './teslaIcons.json';
+import EXTRA from './extraGlyphs.json';
 import VEHICLE from './teslaVehicleGlyphs.json';
 
 type IconName = keyof typeof ICONS;
+type ExtraName = keyof typeof EXTRA;
 type VehicleName = keyof typeof VEHICLE;
-export type TeslaIconName = IconName | VehicleName;
+export type TeslaIconName = IconName | ExtraName | VehicleName;
 
-const icons = ICONS as Record<string, { v: string; p: string[] }>;
+// EXTRA holds the handful of glyphs the extracted Tesla design set genuinely lacks
+// (currently just `backspace`, for the PIN keypad — SF's `delete.left`). Same
+// {viewBox, paths} shape as ICONS so the render path below is identical; kept in a
+// separate file so nobody mistakes hand-authored paths for extracted Tesla ones.
+const icons = { ...ICONS, ...EXTRA } as Record<string, { v: string; p: string[] }>;
 const vehicles = VEHICLE as Record<string, string>;
 
 // One component that renders either the 718 design-system glyphs (path data) or the 8 native

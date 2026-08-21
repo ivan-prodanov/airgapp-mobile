@@ -10,7 +10,6 @@ import {
   type GestureResponderHandlers,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { BottomSheet, SHEET_TALL_FRAC, type BottomSheetHandle, type SheetScrollProps } from './BottomSheet';
 
@@ -25,6 +24,8 @@ import {
   type ConnectorGroup,
   type StationAvailability,
 } from '@/services/tomtom';
+import { AppIcon } from '../icons/AppIcon';
+import type { TeslaIconName } from '../icons/TeslaIcon';
 
 export type LocationTab = 'location' | 'charging';
 export type ChargerSort = 'distance' | 'power';
@@ -289,7 +290,7 @@ function SearchField({
 }) {
   return (
     <View style={styles.searchField}>
-      <SymbolView name="magnifyingglass" tintColor="rgba(255,255,255,0.5)" size={18} />
+      <AppIcon icon="search" color="rgba(255,255,255,0.5)" size={18} />
       <View style={styles.searchInputWrap}>
         {query.length > 0 ? <Text style={styles.searchFloatLabel}>Navigate</Text> : null}
         <TextInput
@@ -308,7 +309,7 @@ function SearchField({
       </View>
       {focused ? (
         <Pressable hitSlop={10} onPress={onClear}>
-          <SymbolView name="xmark" tintColor="rgba(255,255,255,0.6)" size={18} weight="medium" />
+          <AppIcon icon="close" color="rgba(255,255,255,0.6)" size={18} />
         </Pressable>
       ) : null}
     </View>
@@ -332,7 +333,7 @@ function PlaceRow({ place, carCoord, onPress }: { place: Place; carCoord: LatLng
       </View>
       {km ? (
         <View style={styles.distancePill}>
-          <SymbolView name="mappin" tintColor="rgba(255,255,255,0.55)" size={18} />
+          <AppIcon icon="pin" color="rgba(255,255,255,0.55)" size={18} />
           <Text style={styles.distanceText}>{km}</Text>
         </View>
       ) : null}
@@ -366,7 +367,7 @@ function ChargingBody({
       <View style={styles.controlsRow}>
         <Pressable style={styles.sortButton} onPress={onOpenSort}>
           <Text style={styles.sortLabel}>Sort By</Text>
-          <SymbolView name="chevron.down" tintColor="rgba(255,255,255,0.6)" size={13} weight="semibold" />
+          <AppIcon icon="chevron-180" color="rgba(255,255,255,0.6)" size={13} />
         </Pressable>
         <BoltButton bolts={3} active={filter.dc} onPress={() => onFilterChange({ ...filter, dc: !filter.dc })} />
         <BoltButton bolts={1} active={filter.ac} onPress={() => onFilterChange({ ...filter, ac: !filter.ac })} />
@@ -420,7 +421,7 @@ function ChargerRow({ charger, badge, onPress }: { charger: Charger; badge: Char
 function AvailabilityBadge({ badge }: { badge: ChargerBadge }) {
   return (
     <View style={[styles.availBadge, { backgroundColor: badge.color }]}>
-      <SymbolView name="bolt.fill" tintColor="white" size={11} />
+      <AppIcon icon="bolt-filled" color="white" size={11} />
       <Text style={styles.availText}>{badge.text}</Text>
     </View>
   );
@@ -430,7 +431,7 @@ function BoltButton({ bolts, active, onPress }: { bolts: number; active: boolean
   return (
     <Pressable style={[styles.boltButton, active && styles.boltButtonActive]} onPress={onPress}>
       {Array.from({ length: bolts }).map((_, i) => (
-        <SymbolView key={i} name="bolt.fill" tintColor={active ? 'white' : 'rgba(255,255,255,0.5)'} size={15} />
+        <AppIcon key={i} icon="bolt-filled" color={active ? 'white' : 'rgba(255,255,255,0.5)'} size={15} />
       ))}
     </Pressable>
   );
@@ -475,13 +476,13 @@ function ChargerDetail({
           <View style={styles.detailBlock}>
             <View style={styles.detailTopRow}>
               <View style={styles.detailNetwork}>
-                <SymbolView name="bolt.fill" tintColor="#E5484D" size={15} />
+                <AppIcon icon="bolt-filled" color="#E5484D" size={15} />
                 <Text style={styles.detailNetworkText} numberOfLines={1}>
                   {charger.name}
                 </Text>
               </View>
               <Pressable hitSlop={10} onPress={onClose}>
-                <SymbolView name="xmark.circle.fill" tintColor="rgba(235,235,245,0.45)" size={26} />
+                <AppIcon icon="x-circle-filled" color="rgba(235,235,245,0.45)" size={26} />
               </Pressable>
             </View>
             <Text style={styles.detailTitle} numberOfLines={1}>
@@ -519,11 +520,11 @@ function ChargerDetail({
             <View style={styles.detailBlock}>
               {hours ? <InfoRow icon="clock" text={hours} /> : null}
               {charger.phone ? (
-                <InfoRow icon="phone.fill" text={charger.phone} onPress={() => Linking.openURL(`tel:${charger.phone}`)} />
+                <InfoRow icon="phone-filled" text={charger.phone} onPress={() => Linking.openURL(`tel:${charger.phone}`)} />
               ) : null}
               {charger.website ? (
                 <InfoRow
-                  icon="safari"
+                  icon="globe"
                   text="Website"
                   onPress={() => {
                     if (charger.website) Linking.openURL(charger.website);
@@ -547,7 +548,7 @@ function ChargerDetail({
             style={({ pressed }) => [styles.distancePill, { opacity: pressed ? 0.6 : 1 }]}
             onPress={() => onNavigate(charger)}
           >
-            <SymbolView name="arrow.turn.up.right" tintColor="rgba(255,255,255,0.7)" size={17} />
+            <AppIcon icon="directions" color="rgba(255,255,255,0.7)" size={17} />
             <Text style={styles.distanceText}>{formatKm(charger.distanceM / 1000)}</Text>
           </Pressable>
         </View>
@@ -561,7 +562,7 @@ function ConnectorRow({ group }: { group: ConnectorGroup }) {
   return (
     <View style={styles.connectorRow}>
       <View style={styles.connectorLeft}>
-        <SymbolView name="bolt.fill" tintColor={group.currentType === 'DC' ? '#E5484D' : '#8A8A8E'} size={13} />
+        <AppIcon icon="bolt-filled" color={group.currentType === 'DC' ? '#E5484D' : '#8A8A8E'} size={13} />
         <Text style={styles.connectorLabel}>
           {group.count}× {group.label}
         </Text>
@@ -574,14 +575,14 @@ function ConnectorRow({ group }: { group: ConnectorGroup }) {
 }
 
 // An info row: icon + label, tappable (with chevron) for Call / Website, static for Hours.
-function InfoRow({ icon, text, onPress }: { icon: SFSymbol; text: string; onPress?: () => void }) {
+function InfoRow({ icon, text, onPress }: { icon: TeslaIconName; text: string; onPress?: () => void }) {
   const inner = (
     <>
-      <SymbolView name={icon} tintColor="rgba(255,255,255,0.7)" size={19} />
+      <AppIcon icon={icon} color="rgba(255,255,255,0.7)" size={19} />
       <Text style={styles.infoText} numberOfLines={1}>
         {text}
       </Text>
-      {onPress ? <SymbolView name="chevron.right" tintColor="rgba(255,255,255,0.4)" size={15} /> : null}
+      {onPress ? <AppIcon icon="chevron-90" color="rgba(255,255,255,0.4)" size={15} /> : null}
     </>
   );
   return onPress ? (
@@ -606,7 +607,7 @@ function SubSheet({ title, onClose, children }: { title: string; onClose: () => 
       <View style={styles.subSheetHeader}>
         <Text style={styles.subSheetTitle}>{title}</Text>
         <Pressable hitSlop={10} onPress={onClose}>
-          <SymbolView name="xmark" tintColor="rgba(255,255,255,0.7)" size={20} weight="medium" />
+          <AppIcon icon="close" color="rgba(255,255,255,0.7)" size={20} />
         </Pressable>
       </View>
       <View style={styles.subList}>{children}</View>
@@ -618,9 +619,9 @@ function RadioRow({ label, selected, onPress }: { label: string; selected: boole
   return (
     <Pressable style={styles.optionRow} onPress={onPress}>
       <Text style={styles.optionLabel}>{label}</Text>
-      <SymbolView
-        name={selected ? 'largecircle.fill.circle' : 'circle'}
-        tintColor={selected ? '#3E6AE1' : 'rgba(255,255,255,0.35)'}
+      <AppIcon
+        icon={selected ? 'radio-filled' : 'radio'}
+        color={selected ? '#3E6AE1' : 'rgba(255,255,255,0.35)'}
         size={22}
       />
     </Pressable>
