@@ -18,6 +18,10 @@ declare class SharedIntakeModule {
   // call site so the iOS bundle, which registers the same component but never mounts it, is
   // unaffected.
   finishShare?(): Promise<void>;
+  // ANDROID ONLY. Fired when a share arrives at an already-mounted sheet. ShareActivity is
+  // singleTop, so a second share reuses the instance via onNewIntent and does NOT recreate the
+  // React surface — without this the sheet would sit on the previous share's verdict.
+  addListener?(event: 'onShareIntent', listener: () => void): { remove(): void };
 }
 
 // Optional: the Share Extension is an iOS target, so this is null on Android until the

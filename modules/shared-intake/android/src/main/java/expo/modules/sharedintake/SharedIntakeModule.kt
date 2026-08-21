@@ -1,6 +1,7 @@
 package expo.modules.sharedintake
 
 import android.content.Intent
+import androidx.core.os.bundleOf
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -27,6 +28,18 @@ class SharedIntakeModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("SharedIntake")
 
+    // Fired when a share arrives at an ALREADY-MOUNTED sheet. The React surface is not recreated
+    // on onNewIntent, so without this the component would stay on its previous verdict.
+    Events("onShareIntent")
+
+    OnCreate {
+      ShareIntentBus.onNewIntent = { sendEvent("onShareIntent", bundleOf()) }
+    }
+
+    OnDestroy {
+      ShareIntentBus.onNewIntent = null
+    }
+
     /**
      * Single-slot, consume-once — matching the iOS store's semantics.
      *
@@ -36,22 +49,31 @@ class SharedIntakeModule : Module() {
      * app is already running.
      */
     AsyncFunction("consumeSharedIntent") {
-      val activity = appContext.currentActivity ?: return@AsyncFunction null
-      val intent = activity.intent ?: return@AsyncFunction null
-      if (intent.action != Intent.ACTION_SEND) return@AsyncFunction null
-
-      val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-      if (text.isNullOrBlank()) return@AsyncFunction null
-
-      // Clear before returning: the iOS store's clear-before-send behaviour once LOST places, so
-      // clear-after-read is deliberate — we only drop it once JS is holding the value.
-      intent.removeExtra(Intent.EXTRA_TEXT)
-      intent.action = Intent.ACTION_MAIN
-      activity.intent = intent
-
-      // JS parses this as an Intent record; `raw` is the degraded path that runs the shared text
-      // through parseSharedLocation.
-      """{"raw":${quoteJson(text)}}"""
+      // ShareIntentBus FIRST. ShareActivity parks the text in onCreate/onNewIntent, before the
+      // React context knows the activity exists — which is what makes this work on a cold start of
+      // the :share process, where the sheet's JS asks almost immediately. Reading
+      // `appContext.currentActivity` first was a race that failed exactly then, reported as
+      // "Nothing was shared".
+      val fromBus = ShareIntentBus.consume()
+      if (fromBus != null) {
+        """{"raw":${quoteJson(fromBus)}}"""
+      } else {
+        // Fallback for a share delivered to some other activity (the pre-ShareActivity path, and
+        // anything that sets an ACTION_SEND intent on the current activity).
+        val activity = appContext.currentActivity
+        val intent = activity?.intent
+        val text = ShareIntentBus.textOf(intent)
+        if (activity == null || intent == null || text.isNullOrBlank()) {
+          null
+        } else {
+          // Clear AFTER reading: the iOS store's clear-before-send behaviour once LOST places, so
+          // we only drop it once JS is holding the value.
+          intent.removeExtra(Intent.EXTRA_TEXT)
+          intent.action = Intent.ACTION_MAIN
+          activity.intent = intent
+          """{"raw":${quoteJson(text)}}"""
+        }
+      }
     }
 
     AsyncFunction("readShareTrace") {

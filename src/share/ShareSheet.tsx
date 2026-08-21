@@ -17,7 +17,7 @@
 // The stage line is not decoration. Resolving a Google short link is a network round trip and
 // opening a cold BLE session is legitimately seconds of work; without it the sheet is a spinner
 // with no way to tell "working on it" from "hung".
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useFonts } from 'expo-font';
 
@@ -88,35 +88,61 @@ export default function ShareSheet() {
     title: 'Sharing to car',
     stage: 'Finding the location…',
   });
-  // Guards every terminal path: a resolver or a deadline firing twice must not overwrite a verdict
-  // that has already been shown, and must not schedule a second dismissal.
-  const settled = useRef(false);
-
   useEffect(() => {
     let disposed = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let dismiss: ReturnType<typeof setTimeout> | undefined;
     logi('share', 'sheet mounted');
 
-    const finish = (title: string, detail?: string, stage?: string) => {
-      if (settled.current || disposed) return;
-      settled.current = true;
+    // GENERATION, not a boolean. A second share restarts the flow while the FIRST one is still in
+    // flight — waiting on the BLE link, typically — and that old run goes on to call finish() from
+    // inside its awaits. With a shared `settled` flag it won the race and stamped its verdict (and
+    // its place name) over the new share, which is exactly what happened on device: share #2 was
+    // captured, the sheet restarted, and then share #1's "Couldn't reach your car" replaced it.
+    // Every run carries the generation it started in and can only settle if it is still the
+    // current one.
+    let generation = 0;
+    let settledGen = -1;
+
+    const finish = (gen: number, title: string, detail?: string, stage?: string) => {
+      if (disposed || gen !== generation || settledGen === gen) return;
+      settledGen = gen;
+      if (deadline) clearTimeout(deadline);
       setStatus((s) => ({ phase: 'done', title, detail: detail ?? s.detail, stage }));
-      setTimeout(() => SharedIntake?.finishShare?.(), TERMINAL_LINGER_MS);
+      dismiss = setTimeout(() => SharedIntake?.finishShare?.(), TERMINAL_LINGER_MS);
     };
 
-    // The sheet must not hang forever if a transport stalls. Names the stage it died in — "timed
-    // out" alone cannot tell a car that is not there from a link that never came up.
-    const deadline = setTimeout(() => {
-      setStatus((s) => {
-        logi('share', 'sheet timed out', { stage: s.stage });
-        return s;
-      });
-      finish('Timed out', undefined, 'Try sharing again');
-    }, SHEET_DEADLINE_MS);
+    const run = () => {
+      // Re-entered when a second share lands on this same mounted sheet (see the onShareIntent
+      // listener below). Everything the previous run left behind has to be cleared, or the new
+      // share inherits its verdict and its pending dismissal.
+      generation += 1;
+      const gen = generation;
+      if (deadline) clearTimeout(deadline);
+      if (dismiss) clearTimeout(dismiss);
+      setStatus({ phase: 'working', title: 'Sharing to car', stage: 'Finding the location…' });
 
-    void (async () => {
+      // The sheet must not hang forever if a transport stalls. Names the stage it died in — "timed
+      // out" alone cannot tell a car that is not there from a link that never came up.
+      deadline = setTimeout(() => {
+        setStatus((s) => {
+          logi('share', 'sheet timed out', { stage: s.stage });
+          return s;
+        });
+        finish(gen, 'Timed out', undefined, 'Try sharing again');
+      }, SHEET_DEADLINE_MS);
+
+      void flow(gen);
+    };
+
+    const flow = async (gen: number) => {
+      // Bail the moment this run is superseded — every await below is a place a newer share can
+      // arrive, and a stale run must not touch the UI again.
+      const stale = () => disposed || gen !== generation;
       try {
         const json = await SharedIntake?.consumeSharedIntent();
-        if (!json) return finish('Error', 'Nothing was shared');
+        if (stale()) return;
+        if (!json) return finish(gen, 'Error', 'Nothing was shared');
 
         let raw: string | undefined;
         let known: SharedLocation | null = null;
@@ -137,30 +163,31 @@ export default function ShareSheet() {
             known = { coordinate: { latitude: lat, longitude: lng }, name, address, source };
           }
         } catch {
-          return finish('Error', "Couldn't read that share");
+          return finish(gen, 'Error', "Couldn't read that share");
         }
 
         const loc = known ?? (raw ? await parseSharedLocation(raw, sharedLocationDeps) : null);
-        if (disposed) return;
-        if (!loc) return finish('Error', "Couldn't read that location");
+        if (stale()) return;
+        if (!loc) return finish(gen, 'Error', "Couldn't read that location");
 
         // Name the place the moment we know it: the most reassuring thing this sheet can show is
         // that it read the right location.
         const label = destinationTitle(loc);
+        if (stale()) return;
         setStatus((s) => ({ ...s, detail: label, stage: 'Trying Bluetooth…' }));
 
         const [carCfg, keys] = await Promise.all([loadCarConfig(store), loadDeviceKeys(store)]);
-        if (disposed) return;
+        if (stale()) return;
         if (!carCfg?.vin || !keys) {
-          return finish('Error', label, 'Open airgapp once to finish setup');
+          return finish(gen, 'Error', label, 'Open airgapp once to finish setup');
         }
 
         // The native central owns the link; BridgedBleTransport is a thin adapter over it, so it
         // has to be running before the gateway can open a session.
         foregroundBleLink.start(carCfg.vin);
-        const up = await waitFor(() => foregroundBleLink.isConnected(), LINK_WAIT_MS);
-        if (disposed) return;
-        if (!up) return finish('Error', label, "Couldn't reach your car — try again");
+        const up = await waitFor(() => foregroundBleLink.isConnected() || stale(), LINK_WAIT_MS);
+        if (stale()) return;
+        if (!up) return finish(gen, 'Error', label, "Couldn't reach your car — try again");
 
         const gw = createCarGateway({
           transport: new BridgedBleTransport(),
@@ -174,7 +201,7 @@ export default function ShareSheet() {
           lon: loc.coordinate.longitude,
           label,
         });
-        if (disposed) return;
+        if (stale()) return;
 
         // Exactly the reading the iOS sheet does. ok:true is the ROUTABLE layer accepting the
         // frame; the car's own answer is in carStatus, and its ABSENCE is not consent — reporting
@@ -183,6 +210,7 @@ export default function ShareSheet() {
           const refused = outcome.kind === 'fault';
           logi('share', 'send failed', { kind: outcome.kind, message: outcome.message });
           return finish(
+            gen,
             'Error',
             label,
             refused
@@ -192,25 +220,33 @@ export default function ShareSheet() {
         }
         if (outcome.carStatus?.ok === true) {
           logi('share', 'send accepted', { label });
-          return finish('Sent', label, undefined);
+          return finish(gen, 'Sent', label, undefined);
         }
         if (outcome.carStatus?.ok === false) {
           return finish(
+            gen,
             'Error',
             label,
             outcome.carStatus.reason ?? "Your car wouldn't accept that place",
           );
         }
-        return finish('Error', label, "Couldn't confirm — try again");
+        return finish(gen, 'Error', label, "Couldn't confirm — try again");
       } catch (err) {
         logi('share', 'sheet threw', { err: String(err) });
-        finish('Error', undefined, 'Something went wrong');
+        finish(gen, 'Error', undefined, 'Something went wrong');
       }
-    })();
+    };
+
+    run();
+    // ShareActivity is singleTop: a second share reuses the instance and does NOT recreate this
+    // surface, so native tells us to run again rather than us remounting.
+    const sub = SharedIntake?.addListener?.('onShareIntent', run);
 
     return () => {
       disposed = true;
-      clearTimeout(deadline);
+      if (deadline) clearTimeout(deadline);
+      if (dismiss) clearTimeout(dismiss);
+      sub?.remove();
     };
   }, []);
 

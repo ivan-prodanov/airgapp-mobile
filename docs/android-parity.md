@@ -170,6 +170,31 @@ A separate process gives the sheet its own React host — which is exactly the i
 the Share Extension is a separate process with its own JS engine. The cost is a ~5s cold start
 (measured: intent → `Running "shareSheet"`), the same cost iOS pays.
 
+### Reading the intent: not via `currentActivity`
+
+`consumeSharedIntent` reads a process-static slot (`ShareIntentBus`) that ShareActivity fills in
+`onCreate`/`onNewIntent`, not `appContext.currentActivity`. Two separate defects made the first
+version report **"Nothing was shared"**:
+
+- **Race.** `currentActivity` is only set once the React host resumes, and on a COLD start of the
+  `:share` process the sheet's JS runs almost immediately — so it could ask before the activity was
+  registered. Warm starts won, cold starts lost.
+- **Stale intent.** ShareActivity is `singleTop`, so a second share reuses the instance via
+  `onNewIntent` — and `Activity.onNewIntent` does NOT update `getIntent()`; RN's delegate does not
+  call `setIntent` either. The reused sheet re-read the previous intent, which this module neuters
+  after a successful read.
+
+`textOf` also falls back to `ClipData` when `EXTRA_TEXT` is absent, rather than calling a share with
+an obvious payload empty.
+
+### A second share into a live sheet needs a generation token
+
+The React surface is NOT recreated on `onNewIntent`, so native fires an `onShareIntent` event and
+the component re-runs its flow. Resetting a single `settled` boolean was not enough: the FIRST run
+is usually still in flight (waiting on the BLE link) and goes on to call `finish()` from inside its
+awaits, stamping its verdict and its place name over the new share. Measured exactly that on device.
+Each run now carries the generation it started in and can only touch the UI while it is current.
+
 ### Known risk: two BLE centrals
 
 The sheet calls `foregroundBleLink.start(vin)` in the `:share` process. If the app is also running

@@ -1,5 +1,6 @@
 package local.airgapp.mobile
 
+import android.content.Intent
 import android.os.Bundle
 
 import com.facebook.react.ReactActivity
@@ -8,6 +9,7 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 import expo.modules.ReactActivityDelegateWrapper
+import expo.modules.sharedintake.ShareIntentBus
 
 /**
  * The ACTION_SEND target — Android's answer to the iOS Share Extension's popup.
@@ -31,9 +33,31 @@ import expo.modules.ReactActivityDelegateWrapper
  */
 class ShareActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    // BEFORE super: the React surface starts inside the delegate's onCreate and the sheet's JS asks
+    // for the shared text almost immediately, so the text has to be parked where it can be read
+    // without waiting for the React context to learn about this activity. See ShareIntentBus.
+    ShareIntentBus.offer(intent)
     // null, matching MainActivity: React Native restores its own state, and handing back a saved
     // Bundle makes the delegate try to restore a view hierarchy that no longer exists.
     super.onCreate(null)
+  }
+
+  /**
+   * A second share while a sheet is already up.
+   *
+   * `launchMode="singleTop"` reuses this instance, and `Activity.onNewIntent` does NOT update
+   * `getIntent()` — React Native's delegate does not call `setIntent` either. Without the call
+   * below, anything reading `activity.intent` sees the PREVIOUS share, which has already been
+   * consumed, and the sheet reports "Nothing was shared".
+   *
+   * The React surface is not recreated on a new intent, so the mounted component would otherwise
+   * sit on its finished state; the bus callback is what tells it to run again.
+   */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    ShareIntentBus.offer(intent)
+    ShareIntentBus.onNewIntent?.invoke()
   }
 
   override fun getMainComponentName(): String = "shareSheet"
