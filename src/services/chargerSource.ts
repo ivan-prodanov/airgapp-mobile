@@ -9,6 +9,7 @@ import * as SQLite from 'expo-sqlite';
 
 import { distanceMeters, type LatLng } from '@/state/mockLocation';
 import { pushedDbDir } from './dbPaths';
+import { log } from './logbus';
 import { OPEN_247_RANGE } from './osm';
 import type { Charger, ChargerSearchResult, ConnectorGroup, LatLngBounds } from './tomtom';
 
@@ -42,16 +43,31 @@ function pushedDbDirectory(): string | undefined {
   return pushedDbDir(SQLite.defaultDatabaseDirectory as string | undefined);
 }
 
-// undefined = not yet tried; null = no usable DB (→ bundled fallback); else the open handle.
+// undefined = not yet tried; null = no usable DB; else the open handle.
+//
+// This is the SOLE charger source — there is no bundled fallback — so a failed open means the
+// map and list are simply empty, with no other symptom. That silence cost real debugging time
+// on the Android port (the DB was present and valid; the app just wasn't reading it), so the
+// outcome is logged either way. `dir` is the derivation from dbPaths.ts, which is exactly what
+// the deploy scripts must target.
 let db: SQLite.SQLiteDatabase | null | undefined;
 function getDb(): SQLite.SQLiteDatabase | null {
   if (db !== undefined) return db;
+  const dir = pushedDbDirectory();
   try {
-    const handle = SQLite.openDatabaseSync(DB_NAME, undefined, pushedDbDirectory());
+    const handle = SQLite.openDatabaseSync(DB_NAME, undefined, dir);
     const row = handle.getFirstSync<{ n: number }>('SELECT count(*) AS n FROM chargers');
     db = row && row.n > 0 ? handle : null;
-  } catch {
-    db = null; // no DB pushed yet, or it lacks the chargers table → fall back to the bundled extract
+    log(db ? 'info' : 'warn', 'chargers', db ? 'db opened' : 'db opened but empty', {
+      dir,
+      rows: row?.n ?? 0,
+    });
+  } catch (err) {
+    db = null;
+    log('warn', 'chargers', 'db open failed — discovery will be empty', {
+      dir,
+      err: err instanceof Error ? err.message : String(err),
+    });
   }
   return db;
 }

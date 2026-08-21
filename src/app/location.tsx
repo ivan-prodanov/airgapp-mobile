@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import MapView, { Marker, PROVIDER_DEFAULT, type MapType, type Region } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_DEFAULT, type MapType, type Region } from '@/components/MapSurface';
 
 import {
   LocationSheet,

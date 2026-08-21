@@ -48,6 +48,30 @@ This is a better starting position than the plan assumed. Everything below is a
 | Sheets built on `SlideUpSheet` (Pin, Parental, SpeedLimit) and `ScheduleSheet` / `LocationPickerSheet` | Already RN `Modal` with `onRequestClose`. | Already correct — no change. |
 | `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` | Detented map sheets, not modal dismissals. **Not verified**; consuming back there may be wrong. | Open — check during the Task 7.2 parity sweep. |
 
+## Third device-report round (2026-08-21) — the maps crash
+
+`react-native-maps` draws through Google Maps on Android and **kills the process** when no
+API key is present — not a red box, a native `FATAL EXCEPTION`:
+
+```
+FATAL EXCEPTION: androidmapsapi-ula-1
+java.lang.IllegalStateException: API key not found.
+```
+
+Location and Find Chargers were therefore app-killing. Google's Maps SDK for Android is $0
+for unlimited loads but still requires a GCP billing account, which this project deliberately
+does not have — so the fix is Phase 5's MapLibre + OpenFreeMap (keyless, accountless, MIT).
+
+**Interim:** `src/components/MapSurface.tsx` is now the map seam. iOS is a pure pass-through
+(no render change); `MapSurface.android.tsx` renders an inert placeholder and no-ops the five
+imperative methods `location.tsx` uses. Phase 5 replaces only the Android file.
+
+Known stub limitations, to re-check once MapLibre lands:
+- The charger list shows "No chargers in this area". The DB is fine — the app's own log
+  confirms `chargers | db opened | {dir: .../files, rows: 189194}` — but the stub has an
+  inert viewport and `fitToCoordinates` is a no-op, so nothing frames the chargers.
+- Pan/zoom, POI taps and long-press pin-drop do nothing.
+
 ## Non-blocking warnings (pre-existing, both platforms)
 
 - `Require cycle: src/ble/transport.ts -> src/ble/teslaHostGuard.ts -> src/ble/transport.ts`
