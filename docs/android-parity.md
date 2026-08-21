@@ -42,6 +42,7 @@ pre-existing code.
 |---|---|
 | **BLE command to the car** | Not yet done — needs the phone at the car with the key card. Everything up to discovery is verified; the car has not been in range during testing. Wake the car first (a sleeping Tesla stops advertising). |
 | **Phase 4** — background passive entry, geofence re-arm, CPD notification, native self-signing | Not built. The three crypto goldens deliberately return "not implemented" rather than a false pass. |
+| **Godot vanishes after visiting another route** | UNFIXED. See "The disappearing car" below. |
 | Charger list framing on entry | The map opens tighter than iOS, so the list can read empty until you zoom out. The DB and query are fine (proven by the populated list at wider zoom) — this is `fitToCoordinates` framing. |
 | `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` back behaviour | Not verified. They are detented map sheets rather than modal dismissals, so consuming Back there may be wrong. |
 | `expo-bg-task` wake lock at runtime | Compiles and autolinks; needs a real car command to exercise. |
@@ -52,3 +53,47 @@ pre-existing code.
 `src/components/ui/collapsible.tsx` and `src/components/app-tabs.web.tsx` — unreferenced Expo
 starter-template files dating from the initial commit, and the only two platform-object
 `SymbolView` call sites.
+
+## The disappearing car (unfixed, root cause identified)
+
+Navigate Home → any route → back, and the Godot render disappears. The app is otherwise fine.
+
+**Ruled out with evidence** (six attempts; recording these so nobody repeats them):
+
+| Hypothesis | Disproved by |
+|---|---|
+| GL context loss | With `enableScreens(false)` the context is never recreated — car still vanishes. |
+| Lost GPU resources / `reload_gfx` | `GodotRenderer.onDrawFrame` keeps stepping frames throughout (instrumented). |
+| MapLibre's second `GLSurfaceView` | A map-free route reproduces it. (An early "Controls works" test was INVALID — Controls is a card on the *same* route, so nothing is torn down.) |
+| The `rendererDim` overlay | It is only 0.5 alpha, and the car survives 55s with no navigation. |
+| The RN↔Godot message bridge | No messages are sent or needed across the transition. |
+| Re-attach failing | Instrumented: same `ExpoGodotView` instance, `onAttachedToWindow 1080x2340`, engine view re-parented, `children=1`. Re-attach is clean. |
+
+⚠️ `adb shell dumpsys activity top` dumps every task and **times out before reaching ours**, so it
+intermittently reports an empty view tree. Two of the six attempts were built on that false
+signal. Instrument the module instead (`GodotAttach` log tag).
+
+**Root cause, from the official Tesla app** (`~/Downloads/com.teslamotors.tesla_4.58.0-*`):
+
+Tesla solved this and their engine is the *same version we use* —
+`libgodot_android.so` reports **`3.2.2.stable.custom`** vs our `3.2.2.stable.official`. The
+engine is identical; **their Java layer is patched**:
+
+- `com.tesla.godot.TMGodot extends org.godotengine.godot.Godot`, and it is a **Fragment** —
+  added with `supportFragmentManager.beginTransaction().add(tMGodot, "godot_fragment").commit()`.
+  Stock 3.2.2 declares `Godot extends FragmentActivity`; Tesla backported the 3.2.3+ refactor that
+  turns it into a Fragment. `FullScreenGodotApp` in their dex confirms it.
+- `TMGodotViewManager.createViewInstance` returns a **cached** `mGodotFrameLayout` — the same
+  instance for every mount ("returning existing frame layout") — and **`onDropViewInstance` does
+  nothing**. The view is never torn down.
+- `onFragmentAttached` calls `fragment.getActivity().getWindow().getDecorView().requestLayout()`
+  — they hit the stale-surface problem too. (We now do this; it is necessary but not sufficient.)
+
+A Fragment owns its view independently of the React Native view tree, which is what lets it
+survive navigation churn. Our `Godot` is a `ContextWrapper` whose view RN detaches and re-attaches,
+and `setZOrderMediaOverlay()` is only honoured *before* the containing window is attached — so a
+re-attached surface keeps a stale compositing layer, drawing frames nobody shows.
+
+**The fix is to port the Fragment shape**, as Tesla did. The engine `.so` is unchanged, so the JNI
+contract (`FindClass("org/godotengine/godot/Godot")` + 17 methods) still holds; only `Godot.java`
+and `GodotView`'s `super(activity)` Context assumption need reworking. Well-scoped, a few hours.

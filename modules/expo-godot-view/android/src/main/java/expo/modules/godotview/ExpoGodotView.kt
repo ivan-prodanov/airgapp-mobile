@@ -25,6 +25,9 @@ import expo.modules.kotlin.views.ExpoView
  */
 class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
 
+  private val tag0 = "ExpoGodotView@" + Integer.toHexString(System.identityHashCode(this))
+  private fun d(m: String) = android.util.Log.i("GodotAttach", "$tag0 $m")
+
   private val placeholder = TextView(context).apply {
     gravity = Gravity.CENTER
     setTextColor(Color.argb(64, 255, 255, 255))
@@ -50,6 +53,7 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    d("onAttachedToWindow ${width}x$height attached=$attachedEngineView")
     attachEngine()
   }
 
@@ -69,19 +73,19 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
   }
 
   private fun attachEngine() {
-    if (attachedEngineView) return
-    if (width <= 0 || height <= 0) return // not laid out yet; onSizeChanged will call us back
-    val activity = appContext.currentActivity ?: return
+    if (attachedEngineView) { d("attachEngine SKIP: already attached"); return }
+    if (width <= 0 || height <= 0) { d("attachEngine SKIP: size ${width}x$height"); return }
+    val activity = appContext.currentActivity
+    if (activity == null) { d("attachEngine SKIP: no activity"); return }
+    d("attachEngine RUN ${width}x$height")
 
     // Detach first: the singleton engine view may still be parented to a previous instance of
     // this view (a remount). Adding a view that already has a parent throws.
     GodotHost.detachFromParent()
 
     val engineView = GodotHost.start(activity, width, height)
-    if (engineView == null) {
-      refreshPlaceholder()
-      return
-    }
+    if (engineView == null) { d("attachEngine: start() returned null"); refreshPlaceholder(); return }
+    d("attachEngine: got engine view, parent=${engineView.parent}")
     removeView(placeholder)
     addView(engineView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
@@ -101,6 +105,24 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
 
     attachedEngineView = true
     GodotHost.onResume()
+
+    // Force a DECOR-VIEW relayout after re-parenting the engine surface.
+    //
+    // Straight from the official Tesla app, which hits the same problem and solves it the same
+    // way: TMGodotViewManager registers a FragmentManager callback whose onFragmentAttached does
+    // exactly `fragment.getActivity().getWindow().getDecorView().requestLayout()`
+    // (com.tesla.godot.TMGodotViewManager, v4.58.0).
+    //
+    // Why it is needed: a SurfaceView renders into its own compositing layer, positioned when the
+    // surface is created. Re-parenting it during a screen transition leaves the layer stale — the
+    // view comes back VISIBLE and correctly sized while the framework never draws it again (its
+    // dump flags lose the `D`), so the engine keeps stepping frames into a layer nobody
+    // composites and the car silently disappears. Relayouting from the decor view down is what
+    // re-establishes it; requestLayout() on the view itself is not enough, because Fabric owns
+    // this view's layout and ignores it.
+    activity.window?.decorView?.requestLayout()
+
+    d("attachEngine DONE children=$childCount")
     // Re-assert the size once the engine has had a moment to finish Main::setup(); see
     // GodotHost.resize for why the surface-time resize alone is not enough.
     postDelayed({ GodotHost.resize(width, height) }, 1_500)
@@ -109,6 +131,7 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
   override fun onDetachedFromWindow() {
     // Re-arm so a later attach (or a fresh ExpoGodotView instance) re-runs attachEngine.
     // NOTE: leaving this out was tried while chasing the disappearing-car bug and did not help.
+    d("onDetachedFromWindow attached=$attachedEngineView")
     if (attachedEngineView) {
       GodotHost.detachFromParent()
       attachedEngineView = false
