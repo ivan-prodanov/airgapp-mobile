@@ -7,9 +7,10 @@ import { useRouter } from 'expo-router';
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
 import { Toggle } from '@/components/Toggle';
+import { BusyIcon } from '@/components/BusyIcon';
 import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
-import { useVehicle } from '@/state/VehicleProvider';
+import { useCarLinkStatus, useVehicle } from '@/state/VehicleProvider';
 import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
 import { TeslaFonts } from '@/constants/fonts';
 import type { VehicleStateKey } from '@/types/vehicleTypes';
@@ -34,6 +35,11 @@ import type { VehicleStateKey } from '@/types/vehicleTypes';
 export default function ChargingScreen() {
   const router = useRouter();
   const [state, actions] = useVehicle();
+  // Same in-flight signal the Security screen uses: each toggle's command claims
+  // its state key (see reconcile.ts), so pending membership swaps the switch for a
+  // spinner while the write is unresolved. Shared status context — no 2nd BLE link.
+  const carLink = useCarLinkStatus();
+  const pendingFor = (key: VehicleStateKey) => carLink.pending.has(key);
 
   // The slider's PanResponder is built ONCE (useRef), so it would capture the first render's
   // `actions` — and `actions` is rebuilt on every state change. Route the drag through a ref so it
@@ -147,12 +153,14 @@ export default function ChargingScreen() {
               subtitle="Disables energy consuming features when you are not in the vehicle"
               value={state.lowPowerMode}
               onToggle={() => toggle('lowPowerMode')}
+              pending={pendingFor('lowPowerMode')}
             />
             <SettingToggleRow
               title="Keep Accessory Power On"
               subtitle="Power remains active after exit. Vehicle consumes additional energy even without connected devices."
               value={state.keepAccessoryPower}
               onToggle={() => toggle('keepAccessoryPower')}
+              pending={pendingFor('keepAccessoryPower')}
             />
           </View>
         </ScrollView>
@@ -202,11 +210,16 @@ function SettingToggleRow({
   subtitle,
   value,
   onToggle,
+  pending,
 }: {
   title: string;
   subtitle: string;
   value: boolean;
   onToggle: () => void;
+  // While this row's command is in flight, the switch is replaced by a spinner in
+  // place — the same behaviour as the Security screen's ToggleRow (Sentry mid-write
+  // shows the spinner where the switch was).
+  pending?: boolean;
 }) {
   return (
     <View style={styles.toggleRow}>
@@ -217,8 +230,8 @@ function SettingToggleRow({
         </View>
         <Text style={styles.rowSub}>{subtitle}</Text>
       </View>
-      <View style={styles.toggleSlot}>
-        <Toggle value={value} onToggle={onToggle} />
+      <View style={styles.toggleSlot} pointerEvents={pending ? 'none' : 'auto'}>
+        {pending ? <BusyIcon size={28} /> : <Toggle value={value} onToggle={onToggle} />}
       </View>
     </View>
   );
