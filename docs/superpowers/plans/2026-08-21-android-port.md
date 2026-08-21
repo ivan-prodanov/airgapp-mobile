@@ -110,7 +110,7 @@ Thin Kotlin implementations of the same TS contracts (Phases 2, 5).
 - Consumes: nothing.
 - Produces: a clean working tree on `feat/ble-carlink` so every later task's diff is purely Android.
 
-- [ ] **Step 1: Confirm the baseline is green before committing**
+- [x] **Step 1: Confirm the baseline is green before committing**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm test 2>&1 | tail -6
@@ -118,7 +118,7 @@ cd /Users/ivan/Work/airgapp/mobile && npx tsc --noEmit -p tsconfig.json && pnpm 
 
 Expected: no tsc output; `pass 936`, `fail 0`.
 
-- [ ] **Step 2: Commit the WIP**
+- [x] **Step 2: Commit the WIP**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
@@ -128,7 +128,7 @@ git commit -m "wip(carlink): snapshot before Android port
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 3: Verify the tree is clean**
+- [x] **Step 3: Verify the tree is clean**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && git status --porcelain
@@ -149,7 +149,7 @@ Expected: empty output.
 - Consumes: nothing.
 - Produces: a buildable Gradle project at `android/`, package `local.airgapp.mobile`.
 
-- [ ] **Step 1: Snapshot `ios/` so the prebuild's blast radius is provable**
+- [x] **Step 1: Snapshot `ios/` so the prebuild's blast radius is provable**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && git rev-parse HEAD:ios
@@ -157,7 +157,7 @@ cd /Users/ivan/Work/airgapp/mobile && git rev-parse HEAD:ios
 
 Record the tree hash. Prebuild must not change it.
 
-- [ ] **Step 2: Add the android block to `app.json`**
+- [x] **Step 2: Add the android block to `app.json`**
 
 Insert into `expo.android`, alongside the existing `adaptiveIcon` and `predictiveBackGestureEnabled`:
 
@@ -189,7 +189,7 @@ And extend the `expo-build-properties` plugin entry (currently iOS-only) with:
 
 `minSdkVersion: 26` — Android 8.0. Below 26 there is no `startForegroundService`, which Phase 4 needs, and no device in scope is older.
 
-- [ ] **Step 3: Generate only the android project**
+- [x] **Step 3: Generate only the android project**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && npx expo prebuild --platform android --no-install
@@ -197,7 +197,7 @@ cd /Users/ivan/Work/airgapp/mobile && npx expo prebuild --platform android --no-
 
 Expected: creates `android/`, prints "Config synced". `--no-install` keeps it from re-running pnpm.
 
-- [ ] **Step 4: Prove `ios/` is untouched**
+- [x] **Step 4: Prove `ios/` is untouched**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && git status --porcelain ios/ && git rev-parse HEAD:ios
@@ -205,7 +205,7 @@ cd /Users/ivan/Work/airgapp/mobile && git status --porcelain ios/ && git rev-par
 
 Expected: **empty** porcelain output and the same tree hash as Step 1. If `ios/` changed, `git checkout -- ios/` immediately and investigate before continuing — this is the one irreversible hazard in the whole plan.
 
-- [ ] **Step 5: Un-ignore `android/` so it is hand-maintained like `ios/`**
+- [x] **Step 5: Un-ignore `android/` so it is hand-maintained like `ios/`**
 
 Check whether `.gitignore` has an `/android` entry (Expo's default template ignores it). If present, remove that line and add:
 
@@ -218,7 +218,7 @@ android/local.properties
 android/app/src/main/assets/airgapp.pck
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
@@ -242,7 +242,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: Task 0.2's `android/`.
 - Produces: a debug APK installed on `R3CT30Q7KYM`.
 
-- [ ] **Step 1: Point Gradle at the SDK and JDK**
+- [x] **Step 1: Point Gradle at the SDK and JDK**
 
 `ANDROID_HOME` is unset in this shell, so every gradle call needs it. Write `android/local.properties`:
 
@@ -250,7 +250,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 sdk.dir=/Users/ivan/Library/Android/sdk
 ```
 
-- [ ] **Step 2: Restrict ABIs to keep the build fast**
+- [x] **Step 2: Restrict ABIs to keep the build fast**
 
 In `android/gradle.properties`, set:
 
@@ -308,7 +308,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 `modules/expo-passive-entry/index.ts` and `modules/expo-bg-task/index.ts` already guard every call with `?.` and a fallback — that pattern is correct and must be replicated. `expo-apple-search` and `shared-intake` do a bare `export { default }`, which throws on import when the native module is missing.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `src/services/nativeModuleAbsence.test.ts`:
 
@@ -335,7 +335,7 @@ for (const m of MODULES) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "nativeModuleAbsence"
@@ -343,7 +343,7 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | grep -A6 "nativeModuleAbs
 
 Expected: FAIL on `expo-apple-search` and `shared-intake`.
 
-- [ ] **Step 3: Switch the two bare modules to optional native modules**
+- [x] **Step 3: Switch the two bare modules to optional native modules**
 
 In `modules/expo-apple-search/src/AppleSearchModule.ts` and `modules/shared-intake/src/SharedIntakeModule.ts`, replace `requireNativeModule('X')` with `requireOptionalNativeModule('X')` and widen the exported type to `| null`. Then in each `index.ts`, keep the re-export but make consumers tolerate null — `src/services/appleSearch.ts` and `src/hooks/useSharedLocationIntake.ts` already sit behind `searchProvider`'s try/catch degradation, so add an explicit early return:
 
@@ -354,7 +354,7 @@ if (!AppleSearch) throw new Error('AppleSearch unavailable on this platform');
 
 Throwing (rather than returning `[]`) is deliberate: `searchProvider` catches and degrades to the offline gazetteer, which is exactly the desired Android behaviour until Phase 5 gives it Photon.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | tail -6
@@ -362,7 +362,7 @@ cd /Users/ivan/Work/airgapp/mobile && pnpm test 2>&1 | tail -6
 
 Expected: `fail 0`, total count now 940.
 
-- [ ] **Step 5: Verify on device**
+- [x] **Step 5: Verify on device**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew :app:assembleDebug && cd .. && adb install -r android/app/build/outputs/apk/debug/app-debug.apk && adb logcat -c && adb shell monkey -p local.airgapp.mobile -c android.intent.category.LAUNCHER 1 && sleep 8 && adb exec-out screencap -p > /tmp/android-boot.png
@@ -370,7 +370,7 @@ cd /Users/ivan/Work/airgapp/mobile/android && ANDROID_HOME=$HOME/Library/Android
 
 Read `/tmp/android-boot.png`. Expected: the app renders a screen (icons may be missing — that's Phase 1).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/ivan/Work/airgapp/mobile
