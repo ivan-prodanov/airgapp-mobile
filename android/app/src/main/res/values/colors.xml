@@ -3,6 +3,8 @@
        before React Native has drawn. Matches the Godot scene background and the splash. -->
   <color name="windowBackground">#161718</color>
   <color name="splashscreen_background">#161718</color>
-  <color name="iconBackground">#E6F4FE</color>
+  <!-- The launcher icon's background, sampled from the iOS artwork
+       (ios/.../AppIcon.appiconset/icon.png). Was the Expo template's #E6F4FE. -->
+  <color name="iconBackground">#E31937</color>
   <color name="colorPrimary">#023c69</color>
 </resources>
