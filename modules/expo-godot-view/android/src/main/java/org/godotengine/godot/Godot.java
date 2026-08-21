@@ -116,8 +116,15 @@ public class Godot extends ContextWrapper implements SensorEventListener {
 		activity.runOnUiThread(action);
 	}
 
+	/**
+	 * PATCHED: no-op. Godot's project settings declare a landscape orientation, and upstream — which
+	 * owns the Activity — happily applies it. In the embed that rotated the ENTIRE React Native app
+	 * to landscape (observed 2026-08-21: mRotation=ROTATION_90 right after the engine booted).
+	 * Orientation is the host app's decision (app.json declares portrait); the engine only gets to
+	 * render into the surface it is given.
+	 */
 	public void setRequestedOrientation(int orientation) {
-		activity.setRequestedOrientation(orientation);
+		android.util.Log.i(TAG, "engine asked for orientation " + orientation + " — ignored; the host owns orientation");
 	}
 
 	public void requestPermissions(String[] permissions, int requestCode) {

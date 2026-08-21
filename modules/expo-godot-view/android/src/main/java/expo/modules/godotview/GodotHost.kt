@@ -47,7 +47,7 @@ object GodotHost {
    * engine with no content, which in Godot 3.2 is a hard native abort rather than an exception.
    */
   @Synchronized
-  fun start(activity: Activity): FrameLayout? {
+  fun start(activity: Activity, widthPx: Int, heightPx: Int): FrameLayout? {
     godot?.let { return it.containerLayout }
 
     val pck = pckPath(activity)
@@ -58,8 +58,21 @@ object GodotHost {
 
     val g = Godot(activity)
     // argv[0] is conventionally the executable; Godot only cares that it exists.
-    g.setCommandLine(arrayOf("airgapp", "--main-pack", pck))
-    Log.i(TAG, "booting engine, pck=$pck")
+    //
+    // --resolution IS REQUIRED, and its absence is not a subtle bug. project.godot declares
+    // window/size 790x875 with no stretch mode, so Godot's default (stretch disabled) renders the
+    // viewport at exactly that size, anchored top-left, and simply ignores the rest of the
+    // surface. On device that looked like a tiny car in the corner (observed 2026-08-21).
+    //
+    // iOS never hits this because iphone_main(w, h, ...) seeds the OS window size BEFORE
+    // Main::setup() runs, so the project value is overridden at boot. GodotLib.setup() takes no
+    // size, and the later GodotLib.resize() only moves the OS window — with stretch disabled the
+    // viewport does not follow. --resolution is the equivalent seeding, applied by main.cpp:554
+    // while it parses argv, i.e. before the project settings are read.
+    g.setCommandLine(
+      arrayOf("airgapp", "--main-pack", pck, "--resolution", "${widthPx}x${heightPx}"),
+    )
+    Log.i(TAG, "booting engine, pck=$pck, resolution=${widthPx}x${heightPx}")
     g.create()
 
     val layout = g.containerLayout
@@ -78,6 +91,21 @@ object GodotHost {
   fun detachFromParent() {
     val layout = godot?.containerLayout ?: return
     (layout.parent as? ViewGroup)?.removeView(layout)
+  }
+
+  /**
+   * Re-assert the display size on the render thread AFTER the engine has finished booting.
+   *
+   * GodotRenderer.onSurfaceChanged calls GodotLib.resize() as soon as the surface exists, which
+   * can land before Main::setup() has read the project settings — at which point the project's
+   * declared window/size (790x875 here) wins and the render occupies only part of the surface.
+   * Re-sending it once the engine is up is idempotent when the size already matches.
+   */
+  @Synchronized
+  fun resize(widthPx: Int, heightPx: Int) {
+    val g = godot ?: return
+    Log.i(TAG, "re-asserting display size ${widthPx}x${heightPx} post-setup")
+    g.runOnRenderThread { org.godotengine.godot.GodotLib.resize(widthPx, heightPx) }
   }
 
   @Synchronized

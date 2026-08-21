@@ -28,6 +28,11 @@ android {
     // Godot's, but keep the guard so a future re-vendor cannot break packaging.
     pickFirst 'lib/**/libc++_shared.so'
   }
+  // Ship the keep rules with the library so any consumer's release build inherits them — the
+  // engine's Java surface is reached only by JNI and reflection.
+  defaultConfig {
+    consumerProguardFiles 'proguard-rules.pro'
+  }
   lintOptions {
     abortOnError false
   }

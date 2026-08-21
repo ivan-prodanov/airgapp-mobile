@@ -4,6 +4,10 @@ import androidx.core.os.bundleOf
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
+/**
+ * JS <-> Godot bridge. Mirrors `ios/ExpoGodotViewModule.swift`; the JS contract
+ * (`sendMessageToGodot` + the `onGodotMessage` event) is identical on both platforms.
+ */
 class ExpoGodotViewModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ExpoGodotView")
@@ -17,9 +21,11 @@ class ExpoGodotViewModule : Module() {
 
     OnDestroy {
       GodotBridge.onMessageToHost = null
+      GodotBridge.clear()
     }
 
-    // Host → Godot. `message` is a JSON envelope string `{ "type": ..., "data": ... }`.
+    // Host → Godot. `message` is a JSON envelope string `{ "type": ..., "data": ... }`, drained by
+    // MobileComm.gd through AndroidGodotInterface.pendingMessagesCount()/getMessage().
     Function("sendMessageToGodot") { message: String ->
       GodotBridge.addMessage(message)
     }

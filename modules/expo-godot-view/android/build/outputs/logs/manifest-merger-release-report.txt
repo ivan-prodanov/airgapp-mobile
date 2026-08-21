@@ -1,9 +1,19 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:1:1-2:12
-INJECTED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:1:1-2:12
+ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:1:1-19:12
+INJECTED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:1:1-19:12
 	package
 		INJECTED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:1:11-69
+application
+ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:2:3-18:17
+meta-data#org.godotengine.plugin.v1.AndroidGodotInterface
+ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:15:5-17:72
+	android:value
+		ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:17:9-69
+	android:name
+		ADDED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml:16:9-71
 uses-sdk
 INJECTED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/android/src/main/AndroidManifest.xml

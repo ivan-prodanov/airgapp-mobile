@@ -1,2 +1,19 @@
-<manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!--
+      How the engine finds AndroidGodotInterface.
+
+      GodotPluginRegistry.loadPlugins() scans the APPLICATION meta-data for keys prefixed
+      `org.godotengine.plugin.v1.` and instantiates the named class reflectively via
+      getConstructor(Godot.class). The suffix after the prefix is the plugin name the registry
+      logs; the singleton name GDScript sees comes from getPluginName().
+
+      MobileComm.gd:25 checks Engine.has_singleton("AndroidGodotInterface"), so that string is
+      fixed on both sides. Because the class is only ever constructed by reflection, it also
+      needs the keep rule in proguard-rules.pro — nothing references it from Java/Kotlin.
+    -->
+    <meta-data
+        android:name="org.godotengine.plugin.v1.AndroidGodotInterface"
+        android:value="expo.modules.godotview.AndroidGodotInterface" />
+  </application>
 </manifest>
