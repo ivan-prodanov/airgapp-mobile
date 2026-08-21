@@ -35,16 +35,18 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="airgapp"/>
       </intent-filter>
-      <!--
-        Share intake. Android's answer to the iOS Share Extension: a shared place arrives as an
-        ACTION_SEND intent straight to this activity, in-process — no extension, no App Group
-        container. modules/shared-intake reads EXTRA_TEXT off the intent and hands it to JS as
-        {"raw": ...}, which useSharedLocationIntake already resolves.
+    </activity>
+    <!--
+      Share intake. Android's answer to the iOS Share Extension: a shared place arrives as an
+      ACTION_SEND intent, in-process — no extension, no App Group container. It lands HERE and not
+      on MainActivity, because a share must not open the app; ShareActivity renders the "shareSheet"
+      component over a transparent window and dismisses itself, matching the iOS popup.
 
-        launchMode=singleTask above means a share into a running app arrives via onNewIntent
-        rather than a second activity instance; ReactActivity calls setIntent(), which is what
-        lets the module read it either way.
-      -->
+      taskAffinity="" puts it in its own task so dismissing returns the user to the app they shared
+      from, and excludeFromRecents keeps a transient sheet out of recents. launchMode=singleTop so a
+      second share while the sheet is up arrives via onNewIntent instead of stacking a second sheet.
+    -->
+    <activity android:name=".ShareActivity" android:process=":share" android:theme="@style/Theme.App.ShareSheet" android:exported="true" android:taskAffinity="" android:excludeFromRecents="true" android:launchMode="singleTop" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.SEND"/>
         <category android:name="android.intent.category.DEFAULT"/>

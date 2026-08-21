@@ -24,7 +24,7 @@ pre-existing code.
 | Secure store | Device key persists across force-stop. |
 | BLE scan | Scanner starts, matches the VIN-derived name (byte-identical to `bleScanName.ts`), reports what it saw. |
 | System back | Pops Controls/Climate and the sheets; exits to launcher at the root. |
-| **Share intake** | `ACTION_SEND` text/plain → Location screen with the pin dropped and Send to Car. Verified with a Google Maps URL. |
+| **Share intake** | `ACTION_SEND` text/plain → a self-dismissing share sheet, NOT the app. See "The share sheet" below. |
 
 ## Accepted deltas (Android behaves differently by design)
 
@@ -46,6 +46,7 @@ pre-existing code.
 | Charger list framing on entry | The map opens tighter than iOS, so the list can read empty until you zoom out. The DB and query are fine (proven by the populated list at wider zoom) — this is `fitToCoordinates` framing. |
 | `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` back behaviour | Not verified. They are detented map sheets rather than modal dismissals, so consuming Back there may be wrong. |
 | `expo-bg-task` wake lock at runtime | Compiles and autolinks; needs a real car command to exercise. |
+| **Share sheet: visual + send** | The sheet's JS is confirmed running (`ReactNativeJS: Running "shareSheet"` in the `:share` process, followed by resolution and a BLE scan for the car), but the rendered sheet has NOT been seen: the test phone was PIN-locked for the whole session, so every screenshot is a black lock screen. The send leg needs the car in range. |
 | Godot snapshot thumbnails | `SnapshotDriver` not verified on Android; the Cars sheet currently shows the vehicle glyph. |
 
 ## Deleted as dead code
@@ -138,3 +139,41 @@ need to, because keeping the context alive means it is never reached.
 unhandled configuration change. The engine cannot survive that, and would need either a native
 `newcontext` patch (rebuild from `godot-src`) or a full engine re-boot on Activity recreate. Not hit
 in testing; recorded here because it is the one path left.
+
+## The share sheet (Android's Share Extension)
+
+Sharing a place into airgapp IS the decision, so a share must not open the app. It used to: the
+`ACTION_SEND` filter lived on MainActivity, so forwarding one coordinate booted the whole app —
+Godot engine included — and left the user on a Location screen they had not asked for.
+
+Now the filter is on `ShareActivity`, which renders one React component (`src/share/ShareSheet.tsx`,
+registered as `shareSheet` in `index.js`) over a transparent window and dismisses itself. The four
+states mirror `ShareViewController.swift` exactly: **Sharing to car → Sent | Error | Timed out**,
+with a live stage line ("Finding the location…", "Trying Bluetooth…") and the resolved place name.
+
+### Why it runs in its own process
+
+`android:process=":share"` is load-bearing, and it was NOT the first design. Two `ReactActivity`s
+sharing one React host does not work: with MainActivity alive, launching ShareActivity logs
+
+```
+ReactHost{0}.onHostResume(activity)
+ReactHost{0}.onHostPause(activity)     ← 4ms later
+```
+
+and **no `startSurface` ever runs**, so the sheet mounts nothing and the window is black. With the
+app force-stopped the same build logs `startSurface(surfaceId = 0)` and the component runs. RN's
+Bridgeless `ReactHost` tracks a single current activity, and MainActivity's pause immediately
+clobbers the sheet's resume.
+
+A separate process gives the sheet its own React host — which is exactly the iOS architecture, where
+the Share Extension is a separate process with its own JS engine. The cost is a ~5s cold start
+(measured: intent → `Running "shareSheet"`), the same cost iOS pays.
+
+### Known risk: two BLE centrals
+
+The sheet calls `foregroundBleLink.start(vin)` in the `:share` process. If the app is also running
+and holding the link, that is TWO BLE centrals in one app contending for the same car — the failure
+that broke passive entry on iOS (two `CBCentralManager`s cancelling each other). iOS avoids it by
+reading `CarPresence` and preferring the Pi when the app holds the link; the Android sheet has no Pi
+arm wired yet, so it always tries BLE. Unverified — the car was out of range all session.

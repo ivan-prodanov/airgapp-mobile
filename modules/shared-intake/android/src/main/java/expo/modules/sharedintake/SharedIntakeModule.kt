@@ -60,6 +60,24 @@ class SharedIntakeModule : Module() {
       "android: shares arrive as an ACTION_SEND intent in-process; there is no extension to trace"
     }
 
+    /**
+     * Dismiss the share sheet's activity once ShareSheet.tsx has shown its verdict.
+     *
+     * The iOS extension ends itself with extensionContext.completeRequest, which JS cannot reach;
+     * on Android the sheet IS an activity, so finishing it is the equivalent — and it has to come
+     * from JS, because only the sheet knows when the send resolved and when its 1.6s of showing
+     * the outcome is up.
+     *
+     * finish() must run on the UI thread. Guarded on ShareActivity by name so a stray call can
+     * never close MainActivity out from under the user.
+     */
+    AsyncFunction("finishShare") {
+      val activity = appContext.currentActivity
+      if (activity != null && activity.javaClass.simpleName == "ShareActivity") {
+        activity.runOnUiThread { activity.finish() }
+      }
+    }
+
     AsyncFunction("writeCarPresence") { _: Boolean ->
       // Advisory only, and only meaningful to the iOS extension deciding between BLE and the Pi.
       // Android has no second process to inform.

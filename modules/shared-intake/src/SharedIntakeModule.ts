@@ -12,6 +12,12 @@ declare class SharedIntakeModule {
   // Legacy single-slot intent, drained once on upgrade. The extension no longer
   // writes it — it is the store whose clear-before-send behaviour lost places.
   consumeSharedIntent(): Promise<string | null>;
+  // ANDROID ONLY. Dismisses the share sheet's own activity (ShareActivity) once the sheet has
+  // shown its verdict. There is no iOS equivalent: an extension ends itself through
+  // extensionContext.completeRequest, which is not reachable from JS. Optional-chained at every
+  // call site so the iOS bundle, which registers the same component but never mounts it, is
+  // unaffected.
+  finishShare?(): Promise<void>;
 }
 
 // Optional: the Share Extension is an iOS target, so this is null on Android until the

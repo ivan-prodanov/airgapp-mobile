@@ -11,4 +11,20 @@
     <item name="postSplashScreenTheme">@style/AppTheme</item>
     <item name="android:windowSplashScreenBehavior">icon_preferred</item>
   </style>
+  <!--
+    The share sheet's window. Transparent and non-floating: ShareSheet.tsx draws its own scrim and
+    card, so the window must contribute nothing of its own — a themed windowBackground here would
+    paint an opaque panel behind the sheet and hide the app the user shared from.
+  -->
+  <style name="Theme.App.ShareSheet" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:windowBackground">@android:color/transparent</item>
+    <item name="android:windowContentOverlay">@null</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowIsFloating">false</item>
+    <!-- The scrim is ours; the system dim would double it. -->
+    <item name="android:backgroundDimEnabled">false</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+  </style>
 </resources>
