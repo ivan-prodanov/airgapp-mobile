@@ -58,7 +58,15 @@ object GodotHost {
    */
   @Synchronized
   fun start(activity: Activity, widthPx: Int, heightPx: Int): FrameLayout? {
-    godot?.let { return it.view as? FrameLayout }
+    // containerLayout, NOT getView(). Fragment.onDestroyView() nulls the Fragment's own view
+    // reference when its host Activity goes away — and the Activity IS destroyed when the user
+    // backs out to the launcher while the process lives on. getView() then returns null, start()
+    // returned null, and the relaunched app showed no car at all ("start() returned null",
+    // measured 2026-08-21). Our containerLayout field survives that, and so does the GodotView
+    // inside it with its GL thread and EGL context — which is the whole point: re-parenting it
+    // into the new Activity's host gives it a fresh Surface on the SAME context, so
+    // GodotLib.newcontext() is never called a second time and the engine never notices.
+    godot?.let { return it.containerLayout }
 
     if (activity !is FragmentActivity) {
       Log.e(TAG, "host activity is not a FragmentActivity — cannot add the Godot fragment")
@@ -94,7 +102,7 @@ object GodotHost {
       .add(g, FRAGMENT_TAG)
       .commitNow()
 
-    val layout = g.view as? FrameLayout
+    val layout = g.containerLayout
     if (layout == null) {
       Log.e(TAG, "fragment produced no view — onVideoInit was never called by the native layer")
       return null
@@ -108,7 +116,7 @@ object GodotHost {
   /** Detach the engine's view from whatever currently holds it, so a new host can adopt it. */
   @Synchronized
   fun detachFromParent() {
-    val layout = godot?.view as? ViewGroup ?: return
+    val layout = godot?.containerLayout as? ViewGroup ?: return
     (layout.parent as? ViewGroup)?.removeView(layout)
   }
 

@@ -89,6 +89,45 @@ public class GodotView extends GLSurfaceView {
 		init(xrMode, false, 16, 0);
 	}
 
+	/**
+	 * PATCHED: keep the GL thread — and with it the EGL context — alive across a detach.
+	 *
+	 * This is the fix for "the car disappears after navigating to another route and back", and the
+	 * reason six earlier attempts in the Java layer all failed: the kill is in C++.
+	 *
+	 * GLSurfaceView.onDetachedFromWindow() calls mGLThread.requestExitAndWait(), which destroys the
+	 * EGL context. React Native detaches this view tree on every navigation, so coming back gives
+	 * the renderer a FRESH GL thread, and a fresh thread means GLSurfaceView calls
+	 * onSurfaceCreated() again, and that calls GodotLib.newcontext(). In Godot 3.2.2
+	 * (java_godot_lib_jni.cpp) newcontext does this when the engine is already running:
+	 *
+	 *     // GL context recreated because it was lost; restart app to let it reload everything
+	 *     os_android->main_loop_end();
+	 *     godot_java->restart(env);
+	 *     step = -1; // Ensure no further steps are attempted
+	 *
+	 * Upstream's answer to a lost context is to RESTART THE PROCESS. We cannot: restart() is a
+	 * no-op in this embed precisely because restarting would take the whole React Native app down
+	 * (see Godot.java's patch summary). So the engine ends its main loop, sets step = -1 and is
+	 * permanently dead — surface fine, view fine, frames "stepping", nothing drawn, and the host
+	 * message queue never drained again. Measured on device: the re-attach spawns a new GL thread
+	 * and logs `onSurfaceCreated -> newcontext` a second time (2026-08-21).
+	 *
+	 * Deliberately does NOT call super. GLSurfaceView's implementation is exactly the teardown we
+	 * are avoiding, and View's own onDetachedFromWindow is a cleanup hook whose work the framework
+	 * has already done in dispatchDetachedFromWindow. Skipping it leaves mDetached false, which is
+	 * what we want: onAttachedToWindow then does nothing rather than starting a SECOND GL thread.
+	 *
+	 * The Surface itself still goes away — the SurfaceHolder callback fires normally — but that
+	 * only costs the EGL *surface*. setPreserveEGLContextOnPause(true) above keeps the *context*,
+	 * so re-attaching binds a new EGL surface to the live context and onSurfaceCreated is never
+	 * called again. The engine never learns anything happened.
+	 */
+	@Override
+	protected void onDetachedFromWindow() {
+		// Intentionally empty — see above. Do not add a super call.
+	}
+
 	public void initInputDevices() {
 		this.inputHandler.initInputDevices();
 	}

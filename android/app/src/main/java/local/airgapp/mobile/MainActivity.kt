@@ -45,21 +45,32 @@ class MainActivity : ReactActivity() {
   }
 
   /**
-    * Align the back button behavior with Android S
-    * where moving root activities to background instead of finishing activities.
-    * @see <a href="https://developer.android.com/reference/android/app/Activity#onBackPressed()">onBackPressed</a>
-    */
+   * Root Back SUSPENDS the app; it never destroys the Activity.
+   *
+   * Two reasons, and the second is load-bearing:
+   *
+   * 1. Parity. On iOS the equivalent gesture backgrounds the app — it does not tear it down. A
+   *    non-root Back still pops the navigation stack; only Back at the root reaches here.
+   *
+   * 2. The Godot engine cannot survive Activity recreation. Godot 3.2 responds to a lost GL
+   *    context by ending its main loop and restarting the process (java_godot_lib_jni.cpp's
+   *    newcontext), and restart() is a no-op in this embed because restarting would take React
+   *    Native down with it — so the engine ends up permanently dead, with step = -1. Destroying
+   *    the Activity destroys the window, the surface and the fragment's view, and the relaunched
+   *    app came back with no car at all (measured 2026-08-21). Keeping the Activity alive keeps
+   *    the GL thread and its EGL context alive, which is the same thing that makes navigation
+   *    survivable (see GodotView.onDetachedFromWindow).
+   *
+   * The Expo template shipped this only for SDK <= R, on the reasoning that Android S+ "does more
+   * than moveTaskToBack". For a root activity on SDK 36 what it does is FINISH it, which is
+   * exactly what we cannot afford.
+   *
+   * moveTaskToBack(false) returns false when this is not the root of its task; the default
+   * implementation then finishes the activity as normal.
+   */
   override fun invokeDefaultOnBackPressed() {
-      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
-          if (!moveTaskToBack(false)) {
-              // For non-root activities, use the default implementation to finish them.
-              super.invokeDefaultOnBackPressed()
-          }
-          return
+      if (!moveTaskToBack(false)) {
+          super.invokeDefaultOnBackPressed()
       }
-
-      // Use the default back button implementation on Android S
-      // because it's doing more than [Activity.moveTaskToBack] in fact.
-      super.invokeDefaultOnBackPressed()
   }
 }

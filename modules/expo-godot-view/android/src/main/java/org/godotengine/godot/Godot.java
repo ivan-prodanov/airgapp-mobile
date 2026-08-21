@@ -300,10 +300,21 @@ public class Godot extends Fragment implements SensorEventListener {
 		edittext.setView(mView);
 		io.setEdit(edittext);
 
-		// Composite ABOVE the RN surface beneath us. A GLSurfaceView otherwise punches a hole
-		// through the window and anything RN draws on top (MarkerOverlay, TirePressureOverlay)
-		// would be invisible.
-		mView.setZOrderMediaOverlay(true);
+		// NO setZOrderMediaOverlay CALL HERE — deliberately, and it is load-bearing.
+		//
+		// This is what made the car vanish after navigating to another route and back. React Native
+		// detaches and re-attaches this view tree on navigation. setZOrderMediaOverlay() is only
+		// honoured while the surface's window attachment is being established, so a re-attached
+		// surface keeps the compositing layer it was given the first time — a stale one. The engine
+		// goes on stepping frames into a layer nobody composites, which is exactly what was measured:
+		// onDrawFrame kept running, the view came back VISIBLE at 1080x2340, and the screen showed
+		// nothing (2026-08-21).
+		//
+		// The official Tesla app runs this same engine (3.2.2.stable.custom vs our .official) with the
+		// same RN embed and never calls it — not in its Godot.java, not in its GodotView.init(). Their
+		// TMGodotViewManager hands the fragment's FrameLayout straight to RN as the view instance and
+		// lets it be re-parented freely. Without the flag the surface is a plain punch-through below
+		// the window, whose hole is re-cut on every draw pass, so re-attaching costs nothing.
 
 		// GodotLib.setup MUST run on the GL thread (see GodotLib.java's own doc comment), and the
 		// plugins MUST be registered AFTER it completes — that call is what actually publishes

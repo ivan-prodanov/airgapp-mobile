@@ -15,6 +15,7 @@ pre-existing code.
 | **Godot vehicle render** | Engine v3.2.2.stable boots from the pushed `.pck`; Model Y renders full-size with real paint, glass and wheels. Controls' top-down view and Climate's interior cutaway both correct. |
 | **RN ↔ Godot bridge** | `AndroidGodotInterface` registers as an engine singleton; `SHOW_PRODUCT`, `MOVE_CAMERA`, `GET_VEHICLE_MARKERS`, `SET_VEHICLE_LIGHTS` all round-trip. |
 | **Marker overlays** | Lock/closure markers on Controls and seat-heater markers on Climate land on the right parts of the car — the strongest evidence the points→pixels fix is right. |
+| **Godot survives navigation** | Home → Controls / Climate / Location / Charging / Explore → back, five further Location round trips, background/resume and root-Back/relaunch: the car is still there. `onSurfaceCreated` fires exactly ONCE for the process. See "The disappearing car" below. |
 | Icons | All 61 SF Symbols migrated to Tesla glyphs; no missing chrome. |
 | Fonts | Universal Sans loads via `expo-font` (render is gated on `fontsLoaded`). |
 | **Map** | MapLibre + OpenFreeMap dark vector tiles; pan/zoom, user-location puck, POI labels. |
@@ -42,7 +43,6 @@ pre-existing code.
 |---|---|
 | **BLE command to the car** | Not yet done — needs the phone at the car with the key card. Everything up to discovery is verified; the car has not been in range during testing. Wake the car first (a sleeping Tesla stops advertising). |
 | **Phase 4** — background passive entry, geofence re-arm, CPD notification, native self-signing | Not built. The three crypto goldens deliberately return "not implemented" rather than a false pass. |
-| **Godot vanishes after visiting another route** | UNFIXED. See "The disappearing car" below. |
 | Charger list framing on entry | The map opens tighter than iOS, so the list can read empty until you zoom out. The DB and query are fine (proven by the populated list at wider zoom) — this is `fitToCoordinates` framing. |
 | `BottomSheet`-based `PlacePreviewSheet` / `LocationSheet` back behaviour | Not verified. They are detented map sheets rather than modal dismissals, so consuming Back there may be wrong. |
 | `expo-bg-task` wake lock at runtime | Compiles and autolinks; needs a real car command to exercise. |
@@ -54,61 +54,87 @@ pre-existing code.
 starter-template files dating from the initial commit, and the only two platform-object
 `SymbolView` call sites.
 
-## The disappearing car (unfixed, root cause identified)
+## The disappearing car (FIXED 2026-08-21)
 
-Navigate Home → any route → back, and the Godot render disappears. The app is otherwise fine.
+Navigate Home → any route → back, and the Godot render disappeared. The app was otherwise fine.
 
-**Ruled out with evidence** (six attempts; recording these so nobody repeats them):
+**Root cause — it is in C++, which is why six attempts in the Java layer all failed.**
+`platform/android/java_godot_lib_jni.cpp` (3.2.2-stable):
+
+```c
+JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_newcontext(JNIEnv *env, jclass clazz, jboolean p_32_bits) {
+	if (os_android) {
+		if (step == 0) {
+			// During startup
+			os_android->set_context_is_16_bits(!p_32_bits);
+		} else {
+			// GL context recreated because it was lost; restart app to let it reload everything
+			os_android->main_loop_end();
+			godot_java->restart(env);
+			step = -1; // Ensure no further steps are attempted
+		}
+	}
+}
+```
+
+Upstream's answer to a lost GL context is **to restart the process**. This embed cannot: `restart()`
+is a no-op precisely because restarting would take React Native down with it. So the engine ended
+its main loop, set `step = -1`, and was permanently dead — surface fine, view fine, frames
+"stepping", nothing drawn, host message queue never drained again. No error anywhere.
+
+The trigger: React Native detaches the view tree on navigation, `GLSurfaceView.onDetachedFromWindow()`
+calls `mGLThread.requestExitAndWait()` which destroys the EGL context, and coming back gives the
+renderer a **fresh GL thread** — which means `onSurfaceCreated()` runs again, which calls
+`newcontext()`. Measured: the re-attach logged `onSurfaceCreated -> newcontext` a second time on a
+new thread id.
+
+**The fix is to never lose the context**, in three parts:
+
+| Change | Why |
+|---|---|
+| `GodotView.onDetachedFromWindow()` overridden to do nothing (no super call) | Skips GLSurfaceView's GL-thread teardown. `setPreserveEGLContextOnPause(true)` then keeps the context across the surface loss, so re-attaching binds a new EGL surface to the live context and `onSurfaceCreated` never fires again. Leaving `mDetached` false is deliberate — `onAttachedToWindow` then does nothing rather than starting a SECOND GL thread. |
+| `GodotHost` uses the retained `containerLayout`, not `Fragment.getView()` | `onDestroyView()` nulls the Fragment's own view when its host Activity goes away, so `start()` returned null and the relaunched app had no car. Our field survives, and so does the GodotView inside it. |
+| `MainActivity.invokeDefaultOnBackPressed()` moves the task to back for a root activity | Destroying the Activity destroys the window and the surface, which the engine cannot survive. Also the correct iOS parity behaviour. The Expo template shipped this for SDK ≤ R only; on SDK 36 the default FINISHES a root activity. |
+
+**Verified on device:** every route, five extra Location round trips, background/resume and
+root-Back/relaunch — `onSurfaceCreated` fires exactly once per process, zero crashes.
+
+**Ruled out with evidence** (six earlier attempts; recorded so nobody repeats them):
 
 | Hypothesis | Disproved by |
 |---|---|
-| GL context loss | With `enableScreens(false)` the context is never recreated — car still vanishes. |
+| GL context loss is *irrelevant* | It is the whole cause — but the damage is done in `newcontext`, not by the context loss itself. |
 | Lost GPU resources / `reload_gfx` | `GodotRenderer.onDrawFrame` keeps stepping frames throughout (instrumented). |
 | MapLibre's second `GLSurfaceView` | A map-free route reproduces it. (An early "Controls works" test was INVALID — Controls is a card on the *same* route, so nothing is torn down.) |
 | The `rendererDim` overlay | It is only 0.5 alpha, and the car survives 55s with no navigation. |
 | The RN↔Godot message bridge | No messages are sent or needed across the transition. |
 | Re-attach failing | Instrumented: same `ExpoGodotView` instance, `onAttachedToWindow 1080x2340`, engine view re-parented, `children=1`. Re-attach is clean. |
+| A stale compositing layer from `setZOrderMediaOverlay` | Removing the call entirely (Tesla never calls it) did NOT fix it. The flag was dropped anyway — see below. |
+| Hosting the surface outside the RN tree | Parking it in the Activity's content root DOES keep the car alive, but it takes the surface out of RN's layout, so it no longer slides with the push transition. Rejected: wrong behaviour, not a fix. |
 
 ⚠️ `adb shell dumpsys activity top` dumps every task and **times out before reaching ours**, so it
 intermittently reports an empty view tree. Two of the six attempts were built on that false
-signal. Instrument the module instead (`GodotAttach` log tag).
+signal. Instrument the module instead (`GodotAttach` log tag), and watch `GodotRenderer` — a second
+`onSurfaceCreated` for one process is the canary for this whole class of bug.
 
-**Root cause, from the official Tesla app** (`~/Downloads/com.teslamotors.tesla_4.58.0-*`):
+**What the official Tesla app told us** (`~/Downloads/com.teslamotors.tesla_4.58.0-*`, `classes10.dex`):
 
-Tesla solved this and their engine is the *same version we use* —
-`libgodot_android.so` reports **`3.2.2.stable.custom`** vs our `3.2.2.stable.official`. The
-engine is identical; **their Java layer is patched**:
+Their engine is the same version (`3.2.2.stable.custom` vs our `.official`) and their Java layer is
+a Fragment, which is why we ported ours to one — necessary, but not sufficient. Two further things
+their source settled:
 
-- `com.tesla.godot.TMGodot extends org.godotengine.godot.Godot`, and it is a **Fragment** —
-  added with `supportFragmentManager.beginTransaction().add(tMGodot, "godot_fragment").commit()`.
-  Stock 3.2.2 declares `Godot extends FragmentActivity`; Tesla backported the 3.2.3+ refactor that
-  turns it into a Fragment. `FullScreenGodotApp` in their dex confirms it.
-- `TMGodotViewManager.createViewInstance` returns a **cached** `mGodotFrameLayout` — the same
-  instance for every mount ("returning existing frame layout") — and **`onDropViewInstance` does
-  nothing**. The view is never torn down.
-- `onFragmentAttached` calls `fragment.getActivity().getWindow().getDecorView().requestLayout()`
-  — they hit the stale-surface problem too. (We now do this; it is necessary but not sufficient.)
+- `TMGodotViewManager.createViewInstance` returns a **cached** `mGodotFrameLayout` as the React view
+  instance, and `onDropViewInstance` does nothing. The FrameLayout lives IN the RN tree, so it
+  animates with the screen. Ours does the same via `ExpoGodotView` adopting the engine view.
+- Neither their `Godot.java` nor their `GodotView.init()` ever calls `setZOrderMediaOverlay`. Ours
+  did; the call is now gone. It was not the bug, but it is not needed either — RN's overlays are
+  window-layer views and composite on top regardless, and the flag would put our surface above
+  MapLibre's map.
 
-A Fragment owns its view independently of the React Native view tree, which is what lets it
-survive navigation churn. Our `Godot` is a `ContextWrapper` whose view RN detaches and re-attaches,
-and `setZOrderMediaOverlay()` is only honoured *before* the containing window is attached — so a
-re-attached surface keeps a stale compositing layer, drawing frames nobody shows.
+Their build is `.custom`, so they may also have patched the native `newcontext` path; we did not
+need to, because keeping the context alive means it is never reached.
 
-**The Fragment port is DONE** (`Godot extends Fragment`, added with
-`supportFragmentManager.add(godot, "godot_fragment").commitNow()`, view returned from
-`onCreateView`). It boots and renders correctly on first load — **but it does not fix the bug on
-its own**, because `ExpoGodotView` still re-parents the fragment's view into the React Native tree,
-and that re-parenting is what tears the surface down. Tried with and without detaching on
-`onDetachedFromWindow`; neither works.
-
-Worth recording from the port: the engine binds **18** methods on `Godot`, not 17.
-`getClassLoader()` is resolved LAZILY at `java_godot_wrapper.cpp:93` (outside the init list) and
-`GodotLib.setup()` calls it while loading modules. `ContextWrapper` supplied it for free; `Fragment`
-does not, and the omission aborted the GL thread with
-`NoSuchMethodError: no non-static method Godot.getClassLoader()`.
-
-**What remains:** stop React Native owning the engine view at all. In Tesla's app
-`TMGodotViewManager.createViewInstance` returns the *same cached* `FrameLayout` for every mount and
-`onDropViewInstance` is a no-op — RN never creates or destroys it. Our Expo module instead builds a
-fresh `ExpoGodotView` per mount and adopts the engine view into it. Closing that gap — or hosting
-the surface outside the RN tree entirely — is the remaining work.
+**Residual risk:** the system can still destroy the Activity under memory pressure or on an
+unhandled configuration change. The engine cannot survive that, and would need either a native
+`newcontext` patch (rebuild from `godot-src`) or a full engine re-boot on Activity recreate. Not hit
+in testing; recorded here because it is the one path left.
