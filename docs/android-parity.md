@@ -42,6 +42,7 @@ pre-existing code.
 
 | Item | Status |
 |---|---|
+| **BLE discovery: match the advertised service, not just the name** | Name-only matching never found the car: every 20s window saw 23-32 advertisers and none carried `S8d2eb01195e4f42bC`, while the derivation was verified correct. Tesla's 31-byte advertisement carries flags + the 16-bit service `1122`; an 18-character local name does not fit beside them, so it lives in the SCAN RESPONSE and `ScanRecord.getDeviceName()` does not reliably surface it. The matcher now accepts the advertised service (captured on-car, `advServices=[1122]`) as well, with the name still disqualifying a DIFFERENT Tesla when present. **Awaiting a car trip to confirm.** |
 | **BLE command to the car** | Not yet done — needs the phone at the car with the key card. Everything up to discovery is verified; the car has not been in range during testing. Wake the car first (a sleeping Tesla stops advertising). |
 | **Phase 4** — background passive entry, geofence re-arm, CPD notification, native self-signing | Not built. The three crypto goldens deliberately return "not implemented" rather than a false pass. |
 | `BottomSheet` back behaviour | The place-preview sheet's close button dismisses correctly (verified). Back-key behaviour on the detented sheets is still unverified. |

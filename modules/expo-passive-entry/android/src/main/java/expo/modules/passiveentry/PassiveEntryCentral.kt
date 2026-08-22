@@ -58,6 +58,13 @@ class PassiveEntryCentral(private val context: Context) {
      */
     val ADVERTISED_SERVICE: ParcelUuid = ParcelUuid.fromString("00001122-0000-1000-8000-00805f9b34fb")
 
+    /** Tesla's VIN-derived discovery token, `S<16 hex>C` — see src/ble/bleScanName.ts. */
+    private val DERIVED_NAME = Regex("^S[0-9A-Fa-f]{16}C$")
+
+    /** `0000abcd-0000-1000-8000-00805f9b34fb` -> `abcd`; anything else is left alone. */
+    fun shortUuid(u: String): String =
+      if (u.startsWith("0000") && u.endsWith("-0000-1000-8000-00805f9b34fb")) u.substring(4, 8) else u
+
     private const val DEFAULT_MTU = 23
     private const val REQUESTED_MTU = 517
     private const val RECONNECT_DELAY_MS = 2_000L
@@ -250,15 +257,46 @@ class PassiveEntryCentral(private val context: Context) {
   private val scanCallback = object : ScanCallback() {
     @SuppressLint("MissingPermission")
     override fun onScanResult(callbackType: Int, result: ScanResult) {
-      val advName = result.scanRecord?.deviceName ?: runCatching { result.device.name }.getOrNull()
       val want = targetName ?: return
-      if (advName != want) {
+      val record = result.scanRecord
+      val advName = record?.deviceName ?: runCatching { result.device.name }.getOrNull()
+      val uuids = record?.serviceUuids.orEmpty()
+      val advertisesTesla = uuids.any { it == ADVERTISED_SERVICE }
+
+      // MATCH ON THE NAME **OR** THE ADVERTISED SERVICE.
+      //
+      // Name-only matching is what left this unable to find the car at all. On device, every 20s
+      // window saw 23-32 advertisers and NONE carried the expected name, while the derivation was
+      // verified correct (sha1("XP7YGCELXTB844019")[0:8] -> S8d2eb01195e4f42bC, byte-identical to
+      // bleScanName.ts). The name simply is not in what Android hands us: Tesla's advertisement
+      // carries flags plus the 16-bit service, and an 18-character local name does not fit beside
+      // them in 31 bytes — it lives in the SCAN RESPONSE, which `ScanRecord.getDeviceName()` does
+      // not reliably surface.
+      //
+      // The advertised service is the signal we can actually depend on, and it was captured from
+      // this very car (`advServices=[1122]`, 2026-07-22) rather than assumed. It is also what iOS
+      // filters on, so this makes the two platforms agree.
+      //
+      // The name stays authoritative WHEN PRESENT: another Tesla in the car park advertises 1122
+      // too, so a name that is a valid S<16 hex>C token for a DIFFERENT vehicle disqualifies the
+      // result. A missing name, or a GAP name the OS has cached, does not.
+      val nameMatches = advName == want
+      val otherTesla = advName != null && advName != want && DERIVED_NAME.matches(advName)
+      if (!nameMatches && !(advertisesTesla && !otherTesla)) {
         // Record rather than drop: if the car is advertising under a name we do not expect, the
-        // window summary shows it instead of us reporting a bare "nothing found".
-        seenThisWindow.add(advName ?: "(unnamed ${result.device.address})")
+        // window summary shows it instead of us reporting a bare "nothing found". Service UUIDs go
+        // in too — without them a failure cannot tell "the car was not there" from "the car was
+        // there but unnamed", which is exactly the ambiguity that hid this bug.
+        val label = advName ?: "(unnamed ${result.device.address})"
+        val svc = if (uuids.isEmpty()) "" else uuids.joinToString("/") { shortUuid(it.uuid.toString()) }
+        seenThisWindow.add(if (svc.isEmpty()) label else "$label{$svc}")
         return
       }
-      log("discovered $advName rssi=${result.rssi} → connecting")
+
+      log(
+        "discovered ${advName ?: "(unnamed)"} rssi=${result.rssi} " +
+          "via ${if (nameMatches) "name" else "advertised service 1122"} → connecting",
+      )
       stopScan()
       connect(result.device)
     }
