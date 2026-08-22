@@ -68,6 +68,18 @@ export interface CarConfig {
   vehicleId?: string;
 }
 
+/**
+ * Every car this phone is enrolled with, plus which one the UI is showing.
+ *
+ * The selection is a UI concern ONLY — it never limits which cars hold a BLE link or which cars
+ * can be commanded. That split is taken from the official app, whose BLEService keeps a
+ * `Map<String, controller>` of connected cars alongside a separate `setSelectedVIN`.
+ */
+export interface EnrolledCars {
+  cars: CarConfig[];
+  selectedVin: string | null;
+}
+
 // PiConfig is one Pi forwarder's CREDENTIALS: base URL + bearer token (both
 // secret — the token is what proves this device is enrolled). Nothing about which
 // car; see CarConfig. Owned by config.ts (load/save/clear/parseEnrolUrl); kept

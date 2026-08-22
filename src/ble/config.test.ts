@@ -10,6 +10,10 @@ import {
   clearCarConfig,
   parseEnrolUrl,
   isValidVin,
+  loadEnrolledCars,
+  addCar,
+  removeCar,
+  selectCar,
 } from './config';
 import { createMemorySecretStore } from './__testutils__/memorySecretStore';
 
@@ -175,4 +179,69 @@ test('loadPiConfig rejects a legacy VIN-only blob as credentials', async () => {
 
 test('loadCarConfig returns null on a genuinely fresh install', async () => {
   assert.equal(await loadCarConfig(createMemorySecretStore()), null);
+});
+
+// ── Task 1: list-shaped car storage with migration ───────────────────────────
+// The old key held ONE CarConfig, so enrolling a second car overwrote the
+// first. loadEnrolledCars/addCar/removeCar/selectCar replace that with a list
+// plus a selected-VIN pointer; loadCarConfig keeps working unchanged by
+// returning the selected car.
+
+test('migrates a single-slot install into the list, selected', async () => {
+  const store = createMemorySecretStore();
+  await store.setItem('ble.carConfig.v1', JSON.stringify({ vin: 'VIN_A', nickname: 'Red' }));
+  const cars = await loadEnrolledCars(store);
+  assert.deepEqual(cars.cars.map((c) => c.vin), ['VIN_A']);
+  assert.equal(cars.selectedVin, 'VIN_A');
+  // The legacy caller still sees its car.
+  assert.equal((await loadCarConfig(store))?.vin, 'VIN_A');
+});
+
+test('adding a second car keeps the first and does not change the selection', async () => {
+  const store = createMemorySecretStore();
+  await addCar(store, { vin: 'VIN_A' });
+  const after = await addCar(store, { vin: 'VIN_B' });
+  assert.deepEqual(after.cars.map((c) => c.vin), ['VIN_A', 'VIN_B']);
+  assert.equal(after.selectedVin, 'VIN_A');
+});
+
+test('adding the same VIN twice updates it rather than duplicating', async () => {
+  const store = createMemorySecretStore();
+  await addCar(store, { vin: 'VIN_A' });
+  const after = await addCar(store, { vin: 'VIN_A', nickname: 'Renamed' });
+  assert.equal(after.cars.length, 1);
+  assert.equal(after.cars[0].nickname, 'Renamed');
+});
+
+test('removing the selected car selects another', async () => {
+  const store = createMemorySecretStore();
+  await addCar(store, { vin: 'VIN_A' });
+  await addCar(store, { vin: 'VIN_B' });
+  const after = await removeCar(store, 'VIN_A');
+  assert.deepEqual(after.cars.map((c) => c.vin), ['VIN_B']);
+  assert.equal(after.selectedVin, 'VIN_B');
+});
+
+test('removing the last car leaves no selection', async () => {
+  const store = createMemorySecretStore();
+  await addCar(store, { vin: 'VIN_A' });
+  const after = await removeCar(store, 'VIN_A');
+  assert.deepEqual(after.cars, []);
+  assert.equal(after.selectedVin, null);
+});
+
+test('selectCar switches the selection to an enrolled car', async () => {
+  const store = createMemorySecretStore();
+  await addCar(store, { vin: 'VIN_A' });
+  await addCar(store, { vin: 'VIN_B' });
+  const after = await selectCar(store, 'VIN_B');
+  assert.equal(after.selectedVin, 'VIN_B');
+  assert.equal((await loadCarConfig(store))?.vin, 'VIN_B');
+});
+
+test('selectCar ignores a VIN that is not enrolled', async () => {
+  const store = createMemorySecretStore();
+  await addCar(store, { vin: 'VIN_A' });
+  const after = await selectCar(store, 'VIN_NOPE');
+  assert.equal(after.selectedVin, 'VIN_A');
 });

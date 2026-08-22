@@ -26,22 +26,75 @@
 // hand-rolled, dependency-free query parser instead — also makes it trivially
 // node-testable with no DOM shim.
 
-import type { CarConfig, PiConfig, SecretStore } from './types';
+import type { CarConfig, EnrolledCars, PiConfig, SecretStore } from './types';
 
 const PI_CONFIG_STORAGE_KEY = 'ble.piConfig.v1';
 const CAR_CONFIG_STORAGE_KEY = 'ble.carConfig.v1';
+const CARS_STORAGE_KEY = 'ble.cars.v2';
 
 // ── Car identity ─────────────────────────────────────────────────────────────
-
-// loadCarConfig returns the paired car, or null if none.
 //
-// Falls back to a legacy PiConfig that still carries a `vin`, so an install from
-// before the split keeps working without a re-enrol. The fallback is read-only —
-// the next saveCarConfig writes the new key properly.
-export async function loadCarConfig(store: SecretStore): Promise<CarConfig | null> {
+// Storage grew from a single CarConfig slot (pre-2026-08-22) to a list of
+// enrolled cars plus a selected-VIN pointer (EnrolledCars) — the old key let a
+// second enrolment silently overwrite the first. loadEnrolledCars/addCar/
+// removeCar/selectCar are the new list-shaped API; loadCarConfig/saveCarConfig/
+// clearCarConfig are kept as thin wrappers over it so every existing caller
+// (which means "the car the user is looking at") keeps working unchanged.
+
+/**
+ * Every enrolled car, migrating a pre-v2 single-slot install on first read.
+ *
+ * The old key held ONE CarConfig, so enrolling a second car overwrote the first. It is still read
+ * here (and left in place, untouched) so a downgrade does not strand the car; the first write of
+ * the v2 key is what actually migrates.
+ */
+export async function loadEnrolledCars(store: SecretStore): Promise<EnrolledCars> {
+  const raw = await store.getItem(CARS_STORAGE_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw) as Partial<EnrolledCars>;
+    const cars = parsed.cars ?? [];
+    const selectedVin =
+      parsed.selectedVin && cars.some((c) => c.vin === parsed.selectedVin)
+        ? parsed.selectedVin
+        : (cars[0]?.vin ?? null);
+    return { cars, selectedVin };
+  }
+  const legacy = await loadLegacyCarConfig(store);
+  return legacy ? { cars: [legacy], selectedVin: legacy.vin } : { cars: [], selectedVin: null };
+}
+
+async function saveEnrolledCars(store: SecretStore, next: EnrolledCars): Promise<EnrolledCars> {
+  await store.setItem(CARS_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
+/** Add or update a car by VIN. Never changes the current selection. */
+export async function addCar(store: SecretStore, cfg: CarConfig): Promise<EnrolledCars> {
+  const cur = await loadEnrolledCars(store);
+  const i = cur.cars.findIndex((c) => c.vin === cfg.vin);
+  const cars = i === -1 ? [...cur.cars, cfg] : cur.cars.map((c, n) => (n === i ? cfg : c));
+  return saveEnrolledCars(store, { cars, selectedVin: cur.selectedVin ?? cfg.vin });
+}
+
+/** Forget a car. Destructive: the app can no longer reach it over BLE. */
+export async function removeCar(store: SecretStore, vin: string): Promise<EnrolledCars> {
+  const cur = await loadEnrolledCars(store);
+  const cars = cur.cars.filter((c) => c.vin !== vin);
+  const selectedVin = cur.selectedVin === vin ? (cars[0]?.vin ?? null) : cur.selectedVin;
+  return saveEnrolledCars(store, { cars, selectedVin });
+}
+
+/** Change which car the UI shows. Does not disconnect anything. */
+export async function selectCar(store: SecretStore, vin: string): Promise<EnrolledCars> {
+  const cur = await loadEnrolledCars(store);
+  if (!cur.cars.some((c) => c.vin === vin)) return cur;
+  return saveEnrolledCars(store, { ...cur, selectedVin: vin });
+}
+
+/** The legacy single-slot read, kept for the migration above only. */
+async function loadLegacyCarConfig(store: SecretStore): Promise<CarConfig | null> {
   const raw = await store.getItem(CAR_CONFIG_STORAGE_KEY);
   if (raw) return JSON.parse(raw) as CarConfig;
-
   const legacy = await store.getItem(PI_CONFIG_STORAGE_KEY);
   if (!legacy) return null;
   const parsed = JSON.parse(legacy) as { vin?: string; nickname?: string; vehicleId?: string };
@@ -49,14 +102,24 @@ export async function loadCarConfig(store: SecretStore): Promise<CarConfig | nul
   return { vin: parsed.vin, nickname: parsed.nickname, vehicleId: parsed.vehicleId };
 }
 
+/**
+ * The SELECTED car. Every existing caller means "the car the user is looking at", which is exactly
+ * this — so they keep working unchanged while the storage underneath grew a list.
+ */
+export async function loadCarConfig(store: SecretStore): Promise<CarConfig | null> {
+  const { cars, selectedVin } = await loadEnrolledCars(store);
+  return cars.find((c) => c.vin === selectedVin) ?? cars[0] ?? null;
+}
+
 export async function saveCarConfig(store: SecretStore, cfg: CarConfig): Promise<void> {
-  await store.setItem(CAR_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+  await addCar(store, cfg);
 }
 
 // clearCarConfig forgets the CAR — after this the app cannot find it over BLE at
 // all. Separate from clearPiConfig on purpose; this is the destructive one.
 export async function clearCarConfig(store: SecretStore): Promise<void> {
-  await store.removeItem(CAR_CONFIG_STORAGE_KEY);
+  const { cars } = await loadEnrolledCars(store);
+  for (const c of cars) await removeCar(store, c.vin);
 }
 
 // ── Forwarder credentials ────────────────────────────────────────────────────
