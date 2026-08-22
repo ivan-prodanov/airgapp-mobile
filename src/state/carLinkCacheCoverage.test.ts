@@ -72,11 +72,6 @@ const NOT_CACHED: Record<string, string> = {
   centerDisplay: 'VOLATILE: screen on/off state of the car this second.',
   activeRoute: 'VOLATILE: a finished route rendered as active would misroute the user.',
 
-  // ── GAP ───────────────────────────────────────────────────────────────────
-  // Steady-state values that a cold start could arguably show, but aren't cached
-  // yet. Listed here so the backlog is visible rather than silent.
-  homeCoord: "GAP: saved Home location; re-read from ChargeState each poll, so it's null until the first read.",
-  workCoord: 'GAP: saved Work location; same as homeCoord.',
 };
 
 test('every telemetry-written field is either cached or explicitly excused', () => {

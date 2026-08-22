@@ -25,7 +25,7 @@ export type { TransportErrorKind } from './transport';
 export { createSelectingTransport } from './transportSelector';
 export type { TransportCandidate } from './transportSelector';
 
-export { buildCommand } from './commands';
+export { buildCommand, commandNeedsAwake } from './commands';
 export type { CarCommand, BuiltCommand } from './commands';
 
 export { loadOrCreateDeviceKeys, loadDeviceKeys, deleteDeviceKeys, publicKeyBase64, deviceKeyFingerprint } from './keystore';

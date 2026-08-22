@@ -6,6 +6,8 @@ import { useRouter } from 'expo-router';
 
 import { AppIcon, type IconRef } from '@/icons/AppIcon';
 import { EdgeSwipeBack } from '@/components/EdgeSwipeBack';
+import { useNavigateOnce } from '@/hooks/useNavigateOnce';
+import { useScreenWake } from '@/hooks/useScreenWake';
 import { Toggle } from '@/components/Toggle';
 import { BusyIcon } from '@/components/BusyIcon';
 import { AMP_MAX, AMP_MIN } from '@/state/fleet';
@@ -34,11 +36,15 @@ import type { VehicleStateKey } from '@/types/vehicleTypes';
 // Port, no amp-hiding on DC, and none of the recovered spacing.
 export default function ChargingScreen() {
   const router = useRouter();
+  // Forward navigation goes through the double-tap guard (hooks/useNavigateOnce);
+  // router stays for back().
+  const nav = useNavigateOnce();
   const [state, actions] = useVehicle();
   // Same in-flight signal the Security screen uses: each toggle's command claims
   // its state key (see reconcile.ts), so pending membership swaps the switch for a
   // spinner while the write is unresolved. Shared status context — no 2nd BLE link.
   const carLink = useCarLinkStatus();
+  useScreenWake(); // pre-warm the main computer on entry so charge toggles don't stall on an asleep car
   const pendingFor = (key: VehicleStateKey) => carLink.pending.has(key);
 
   // The slider's PanResponder is built ONCE (useRef), so it would capture the first render's
@@ -135,12 +141,12 @@ export default function ChargingScreen() {
             <LinkRow
               symbol="charging-toggle"
               title="Find Chargers"
-              onPress={() => router.push({ pathname: '/location', params: { tab: 'charging' } })}
+              onPress={() => nav.push({ pathname: '/location', params: { tab: 'charging' } })}
             />
             <LinkRow
               symbol="schedule-charge"
               title="Schedule Charging"
-              onPress={() => router.push('/schedules')}
+              onPress={() => nav.push('/schedules')}
             />
           </View>
 

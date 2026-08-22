@@ -13,7 +13,7 @@
 // (Phase 3/4) surfaces it and Phase 4 hides the corresponding UI control for
 // live cars. See the P1d report for the full mapping table.
 
-import { honkAction, type ActionPayload } from './session';
+import { honkAction, DOMAIN_INFOTAINMENT, type ActionPayload } from './session';
 import type { Domain } from './types';
 import {
   addChargeScheduleAction,
@@ -367,6 +367,20 @@ export function buildCommand(cmd: CarCommand): BuiltCommand {
       const exhaustive: never = cmd;
       throw new Error(`unsupported over BLE: ${(exhaustive as { type: string }).type}`);
     }
+  }
+}
+
+// Does this command need the main vehicle computer awake? A command that targets the Infotainment domain
+// (sentry, valet, parental, speed-limit, PIN-to-Drive, climate, charge limit/amps, …) reaches the main
+// computer, which is asleep until woken — so the dispatch path must wake the car first. VCSEC-domain
+// commands (lock/unlock/frunk/trunk/charge-port/wake/…) reach the always-on security controller and work
+// while the car sleeps. Derived from the builder's OWN domain so it can never drift from buildCommand; an
+// unbuildable variant (throws) is treated as needing a wake, since it will fail at send regardless.
+export function commandNeedsAwake(cmd: CarCommand): boolean {
+  try {
+    return buildCommand(cmd).domain === DOMAIN_INFOTAINMENT;
+  } catch {
+    return true;
   }
 }
 

@@ -23,6 +23,7 @@ import {
 import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
 import { diffToCommands, revertFields } from '../ble/reconcile';
+import { securityChanged, securityFromState } from './securityStore';
 import {
   chargeScheduleToInput,
   preconditionScheduleToInput,
@@ -231,6 +232,13 @@ export function useFleetState(): {
     (update: (state: VehicleViewState) => VehicleViewState) => {
       const prev = current.state;
       const next = update(prev);
+      // Persist the enrolled car's PIN state (PIN-to-Drive + the four codes) to the Keychain the moment it
+      // changes, so it survives a restart. Only for the live car — a demo car's PINs are ephemeral and would
+      // otherwise be keyed to the enrolled VIN. The car never reports these over BLE, so this is the sole path
+      // by which they persist (see securityStore).
+      if (activeIsLive && securityChanged(securityFromState(prev), securityFromState(next))) {
+        carLink.persistSecurity(securityFromState(next));
+      }
       // Each command carries the fields IT owns. dispatch gets those keys, so:
       // the coalescer lanes per field, the grace window covers exactly them,
       // and a failure reverts only that command's fields (not every edit made
@@ -263,7 +271,7 @@ export function useFleetState(): {
         applyActive(update);
       }
     },
-    [dispatchToCar, applyActive, current.state, activeIsLive],
+    [dispatchToCar, applyActive, current.state, activeIsLive, carLink.persistSecurity],
   );
 
   // Frunk actuate. Lives here rather than in buildVehicleActions because it is
@@ -479,6 +487,7 @@ export function useFleetState(): {
       lastVehicleDataAt: carLink.lastVehicleDataAt,
       wakeInFlight: carLink.wakeInFlight,
       refresh: carLink.refresh,
+      wake: carLink.wake,
       sendWithOutcome: carLink.sendWithOutcome,
       readSchedules: carLink.readSchedules,
       readSecurity: carLink.readSecurity,
@@ -500,6 +509,7 @@ export function useFleetState(): {
       carLink.lastVehicleDataAt,
       carLink.wakeInFlight,
       carLink.refresh,
+      carLink.wake,
       carLink.pending,
       carLink.pendingCommands,
       carLink.recoveryRemedy,

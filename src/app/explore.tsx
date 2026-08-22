@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
+import { useNavigateOnce } from '@/hooks/useNavigateOnce';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useFleet, useVehicle } from '@/state/VehicleProvider';
@@ -65,6 +66,9 @@ export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
+  // Forward navigation goes through the double-tap guard (hooks/useNavigateOnce);
+  // router stays for back().
+  const nav = useNavigateOnce();
   const [state, actions] = useVehicle();
   const fleet = useFleet();
   const goBack = () => (router.canGoBack() ? router.back() : router.replace('/'));
@@ -239,7 +243,7 @@ export default function ExploreScreen() {
 
       <Section title="Developer">
         <Pressable
-          onPress={() => router.navigate('/carlink')}
+          onPress={() => nav.navigate('/carlink')}
           style={({ pressed }) => [
             styles.row,
             { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },

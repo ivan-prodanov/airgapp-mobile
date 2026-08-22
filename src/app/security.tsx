@@ -14,6 +14,7 @@ import { SpeedLimitSheet } from '@/components/SpeedLimitSheet';
 import { Toggle } from '@/components/Toggle';
 import { controlHaptic } from '@/state/controlHaptic';
 import { useCarLinkStatus, useFleet, useVehicle } from '@/state/VehicleProvider';
+import { useScreenWake } from '@/hooks/useScreenWake';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // The four "Customize Parental Controls" sub-settings we model (the app has 7, incl. Restricted-Apps
@@ -61,6 +62,7 @@ type PinPurpose = 'set' | 'verifyEnable' | 'verifyDisable' | 'clearVerify';
 // below PIN to Drive in the real app are intentionally dropped.
 export default function SecurityScreen() {
   const router = useRouter();
+  useScreenWake(); // pre-warm the main computer on entry so security toggles don't stall on an asleep car
   const [state, actions] = useVehicle();
   // The car's whitelist has no key for us (a genuine wipe, remedy 're-enroll-with-card') — the faithful
   // analog of the app's `phone_key_required`. A mere BT bond wedge ('forget-bluetooth-device') leaves the

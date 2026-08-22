@@ -13,7 +13,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
 import type { GestureResponderHandlers } from 'react-native';
 
 import { TeslaIcon, type TeslaIconName } from '@/icons/TeslaIcon';
@@ -38,6 +37,7 @@ import { vehicleStatusText } from '@/ble/vehicleStatusText';
 import { showNum } from '@/state/readProbe';
 import { CONTENT_FADE_MS } from '@/godot/useContentFade';
 import { CarHeadingArrow } from '@/components/CarHeadingArrow';
+import { useNavigateOnce } from '@/hooks/useNavigateOnce';
 import { PhoneKeyRecoveryCard } from '@/components/PhoneKeyRecoveryCard';
 import { recoveryView } from '@/ble/recoveryPresentation';
 import {
@@ -74,7 +74,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const fleet = useFleet();
-  const router = useRouter();
+  // Guarded router: a double-tap on any of these rows used to push the screen
+  // twice (see hooks/useNavigateOnce). One guard for the whole menu.
+  const nav = useNavigateOnce();
   const { favorites } = usePreferences();
   const carLink = useCarLinkStatus();
   // How much of the menu the phone-key problem takes over. With a Pi configured
@@ -525,7 +527,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             symbol="navigate-filled"
             title="Location"
             subtitle="Nearby"
-            onPress={() => router.push('/location')}
+            onPress={() => nav.push('/location')}
             leading={
               bearingToCar != null ? (
                 <CarHeadingArrow bearingToCar={bearingToCar} size={26} color="white" />
@@ -533,9 +535,9 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             }
           />
           <NavRow symbol="steering-wheel" title="Summon" disabled />
-          <NavRow symbol="charging-bolt" title="Charging" onPress={() => router.push('/charging')} />
-          <NavRow symbol="schedule-filled" title="Set Schedules" onPress={() => router.push('/schedules')} />
-          <NavRow symbol="security-filled" title="Security & Drivers" subtitle="Ivan P" onPress={() => router.push('/security')} />
+          <NavRow symbol="charging-bolt" title="Charging" onPress={() => nav.push('/charging')} />
+          <NavRow symbol="schedule-filled" title="Set Schedules" onPress={() => nav.push('/schedules')} />
+          <NavRow symbol="security-filled" title="Security & Drivers" subtitle="Ivan P" onPress={() => nav.push('/security')} />
           <NavRow symbol="service-filled" title="Service" disabled />
           <NavRow symbol="dashcam-filled" title="Dashcam Viewer" disabled />
           <NavRow symbol="photo-filled" title="Photobooth" disabled />
@@ -583,7 +585,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             />
           </View>
           <View style={styles.headerIcons}>
-            <Pressable hitSlop={10} onPress={() => router.push('/explore')}>
+            <Pressable hitSlop={10} onPress={() => nav.push('/explore')}>
               <AppIcon icon="message" color="white" size={22} />
             </Pressable>
             <AppIcon icon="menu" color="white" size={24} />

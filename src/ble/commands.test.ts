@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import { Action, VCSECUnsignedMessage, decodeMessage } from './proto';
 import { DOMAIN_INFOTAINMENT, DOMAIN_VEHICLE_SECURITY, FLAG_ENCRYPT_RESPONSE_BIT } from './session';
-import { buildCommand, type CarCommand } from './commands';
+import { buildCommand, commandNeedsAwake, type CarCommand } from './commands';
 import {
   addChargeScheduleAction,
   addPreconditionScheduleAction,
@@ -613,4 +613,47 @@ test('schedule removes carry the creation-epoch id the car keys on', () => {
   const rp = decodeAction(removePreconditionScheduleAction(1_722_000_001).bytes).vehicleAction
     ?.removePreconditionScheduleAction;
   assert.equal(Number(rp?.id), 1_722_000_001);
+});
+
+// commandNeedsAwake gates the dispatch-time vehicle wake: VCSEC-domain commands reach the always-on
+// security controller (no wake needed); Infotainment-domain commands reach the main computer (wake first).
+// This asserts the actual builder domains, so a builder that silently changes domain trips the test.
+test('commandNeedsAwake: VCSEC commands work asleep (false), infotainment commands need a wake (true)', () => {
+  const noWake: CarCommand[] = [
+    { type: 'lock' },
+    { type: 'unlock' },
+    { type: 'wake' },
+    { type: 'openFrunk' },
+    { type: 'openTrunk' },
+    { type: 'closeTrunk' },
+    { type: 'openChargePort' },
+    { type: 'closeChargePort' },
+    { type: 'unlatchDriverDoor' },
+  ];
+  for (const cmd of noWake) {
+    assert.equal(commandNeedsAwake(cmd), false, `${cmd.type} is VCSEC — should NOT need a wake`);
+    assert.equal(buildCommand(cmd).domain, DOMAIN_VEHICLE_SECURITY, `${cmd.type} domain`);
+  }
+
+  const needsWake: CarCommand[] = [
+    { type: 'sentry', on: true },
+    { type: 'valet', on: false },
+    { type: 'pinToDrive', on: false },
+    { type: 'speedLimit', action: 'deactivate', pin: '1234' },
+    { type: 'parental', action: 'deactivate', pin: '1234' },
+    { type: 'lowPowerMode', on: true },
+    { type: 'keepAccessoryPower', on: true },
+    { type: 'setChargeLimit', percent: 80 },
+    { type: 'setChargingAmps', amps: 16 },
+    { type: 'chargeStart' },
+    { type: 'chargeStop' },
+    { type: 'climateOn' },
+    { type: 'climateOff' },
+    { type: 'defrostOn' },
+    { type: 'seatHeater', seat: 'FL', level: 1 },
+  ];
+  for (const cmd of needsWake) {
+    assert.equal(commandNeedsAwake(cmd), true, `${cmd.type} is Infotainment — SHOULD need a wake`);
+    assert.equal(buildCommand(cmd).domain, DOMAIN_INFOTAINMENT, `${cmd.type} domain`);
+  }
 });

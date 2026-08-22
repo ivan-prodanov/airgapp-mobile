@@ -19,6 +19,7 @@ import { showNum } from '../state/readProbe';
 import { showsOverheatActivationTemp } from '../ble/climateDisplay';
 import { TeslaFonts } from '../constants/fonts';
 import { useCarLinkStatus } from '../state/VehicleProvider';
+import { useScreenWake } from '@/hooks/useScreenWake';
 import { vehicleStatusText } from '../ble/vehicleStatusText';
 import { StatusBarFade } from '../components/StatusBarFade';
 import { SHEET_SPRING } from '../godot/cardTransition';
@@ -63,6 +64,7 @@ const bump = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
 // drag up/down BY THE PANEL ITSELF (like the real app — swiping above it, on the car, does nothing).
 // Collapsed it shows the temp row; dragging up reveals Defrost / Bioweapon / Camp / Pet / Cabin Overheat.
 export function ClimateScreen({ state, actions }: Props) {
+  useScreenWake(); // pre-warm the main computer on entry so climate toggles don't stall on an asleep car
   // Dim the read-only cabin temps when the data is stale (cached, not fresh) —
   // the same §C3 fade the Home battery row uses.
   const carLink = useCarLinkStatus();

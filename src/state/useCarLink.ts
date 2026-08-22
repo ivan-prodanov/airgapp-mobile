@@ -38,6 +38,7 @@ import {
   loadCarConfig,
   loadOrCreateDeviceKeys,
   isCarLinkEnabled,
+  commandNeedsAwake,
   type CarCommand,
   type InfotainmentStateKey,
   type CarGateway,
@@ -58,6 +59,7 @@ import { foregroundBleLink } from '@/ble/foregroundBleLink';
 import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch, type RawSchedule } from '@/ble/telemetry';
+import { ensureAwake } from '@/ble/wakeGate';
 import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from '@/ble/vcsecPush';
 import { filterPatchUnderIntent, releaseIntent, GRACE_MS, SETTLE_GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
@@ -97,7 +99,8 @@ import {
   requestPassiveEntryAlwaysLocation,
 } from '../../modules/expo-passive-entry';
 import { appStorage } from './appStorage';
-import { loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
+import { cacheToStatePatch, loadCarLinkCache, makeCarLinkCacheSaver, type CarLinkCache } from './carLinkCache';
+import { loadSecurity, saveSecurity, securityToStatePatch, type SecurityPersist } from './securityStore';
 import type { VehicleStateKey, VehicleViewState } from '@/types/vehicleTypes';
 
 // Short scan budget for the 'auto' selector's BLE candidate so that when the
@@ -119,6 +122,9 @@ const LAST_TRANSPORT_KEY = 'ble.lastTransport.v1';
 // (VCSEC stays awake) so it's cheap and never wakes the car; 20s is frequent
 // enough for a live lock/awake/closures indicator without spamming the link.
 const POLL_MS = 20_000;
+// Throttle for the screen-entry wake (see wake()) so navigating in/out of the command screens can't spam the
+// link with wakes. A single wake is enough to warm the car for the whole visit.
+const SCREEN_WAKE_THROTTLE_MS = 15_000;
 
 // NOTE: the 15s passive-entry stand-down that used to live here is GONE.
 //
@@ -235,6 +241,9 @@ export interface CarLinkStatus {
   // Pull-to-refresh / tap-status: really wake the car and re-read it, like
   // their vehicleWakeUp(vin, PULL_DOWN_REFRESH). No-op for a demo/unlinked car.
   refresh: () => void;
+  // Screen-entry pre-warm (our SCREEN_REQUIRES_WAKE): a command screen calls this on mount to wake the main
+  // computer early, silently and throttled. No-op if already awake or demo/unlinked. See wake() in useCarLink.
+  wake: () => void;
   // Send ONE command and report the car's verdict, instead of fire-and-reconcile.
   //
   // For the share outbox, which must know whether the car actually accepted a
@@ -289,6 +298,9 @@ export interface CarLink extends CarLinkStatus {
   // affectedKeys are the VehicleStateKeys the user just changed — each is
   // stamped with a GRACE_MS intent window so the poll won't revert them.
   dispatch: (cmd: CarCommand, rollback: () => void, affectedKeys?: VehicleStateKey[]) => void;
+  // Persist the enrolled car's PIN state (PIN-to-Drive + the four codes) to the Keychain so it survives a
+  // restart. The fleet layer calls this when a PIN field changes; the car never reports these over BLE.
+  persistSecurity: (s: SecurityPersist) => void;
 }
 
 // M0 capture switch for the passive-entry project. ON during the capture
@@ -429,6 +441,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const [linked, setLinked] = useState(false);
   const [vin, setVin] = useState<string | null>(null);
   const [connection, setConnection] = useState<CarLinkStatus['connection']>('offline');
+  // Read the live connection inside command callbacks without adding it as a dep (mirrors getActiveStateRef).
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  const lastScreenWakeRef = useRef(0); // last screen-entry wake, for SCREEN_WAKE_THROTTLE_MS
   const [transport, setTransport] = useState<CarLinkStatus['transport']>(null);
   // Whether a Pi forwarder is configured. State (not just cfgRef) because Home
   // renders from it and the config loads asynchronously on mount.
@@ -608,50 +624,26 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // "Connecting" + a mock level (findings §B).
         if (carCfg?.vin) {
           saveCacheRef.current = makeCarLinkCacheSaver(appStorage, carCfg.vin);
-          const cached = await loadCarLinkCache(appStorage, carCfg.vin);
+          const [cached, sec] = await Promise.all([
+            loadCarLinkCache(appStorage, carCfg.vin),
+            // The PINs live in the Keychain, not the telemetry cache — never on the BLE wire, so a rehydrate is
+            // the ONLY thing that restores them; waking the car can't (see securityStore).
+            loadSecurity(store, carCfg.vin),
+          ]);
           if (cancelled) return;
           if (cached) {
             cacheRef.current = cached;
             setLastVehicleDataAt(cached.lastVehicleDataAt);
-            const patch: Partial<VehicleViewState> = {};
-            // `!= null` (loose) — a cache written under an older schema is
-            // missing today's keys, and `undefined !== null` would happily write
-            // undefined into state. That's how "NaN km" shipped.
-            if (cached.batteryLevel != null) patch.batteryLevel = cached.batteryLevel;
-            if (cached.rangeMiles != null) patch.rangeMiles = cached.rangeMiles;
-            if (cached.charging != null) patch.charging = cached.charging;
-            if (cached.awake != null) patch.awake = cached.awake;
-            if (cached.interiorTempC != null) patch.interiorTempC = cached.interiorTempC;
-            if (cached.exteriorTempC != null) patch.exteriorTempC = cached.exteriorTempC;
-            if (cached.targetTempC != null) patch.targetTempC = cached.targetTempC;
-            if (cached.chargeLimitPercent != null) patch.chargeLimitPercent = cached.chargeLimitPercent;
-            if (cached.chargingAmps != null) patch.chargingAmps = cached.chargingAmps;
-            // Guarded on finite coordinates, not just presence: a cache written
-            // under an older schema has no carLocation at all, and a malformed
-            // one would put the map pin at 0,0 in the Gulf of Guinea.
-            if (cached.tirePressures) patch.tirePressures = cached.tirePressures;
-            if (cached.media) patch.media = cached.media;
-            if (cached.chargingState != null) patch.chargingState = cached.chargingState;
-            if (cached.minutesToChargeLimit != null) patch.minutesToChargeLimit = cached.minutesToChargeLimit;
-            if (cached.chargerPowerKw != null) patch.chargerPowerKw = cached.chargerPowerKw;
-            if (cached.chargeRateMph != null) patch.chargeRateMph = cached.chargeRateMph;
-            if (cached.energyAddedKwh != null) patch.energyAddedKwh = cached.energyAddedKwh;
-            if (cached.fastCharging != null) patch.fastCharging = cached.fastCharging;
-            if (cached.chargerActualCurrentA != null)
-              patch.chargerActualCurrentA = cached.chargerActualCurrentA;
-            if (cached.chargerVoltageV != null) patch.chargerVoltageV = cached.chargerVoltageV;
-            if (cached.chargerPilotCurrentA != null)
-              patch.chargerPilotCurrentA = cached.chargerPilotCurrentA;
-            if (
-              cached.carLocation &&
-              Number.isFinite(cached.carLocation.lat) &&
-              Number.isFinite(cached.carLocation.lon)
-            ) {
-              patch.carLocation = cached.carLocation;
-              // Carried in the SAME branch as the position: a hydrated pin with
-              // no age would render "just now" for a fix that could be weeks old.
-              patch.carLocationAt = cached.carLocationAt;
-            }
+          }
+          {
+            // Restore EVERY cached telemetry field (data-driven — see cacheToStatePatch) AND the persisted PINs,
+            // so the last-known settings/toggles paint dimmed instead of snapping back to initialVehicleState
+            // defaults until the awake-gated read lands. The hand-written subset this replaces was the "defaults
+            // until the car is woken" bug.
+            const patch: Partial<VehicleViewState> = {
+              ...(cached ? cacheToStatePatch(cached) : {}),
+              ...(sec ? securityToStatePatch(sec) : {}),
+            };
             // Rehydrate via the UNGATED path: at cold start the active-is-live
             // gate is still false, so applyTelemetry would drop this and the
             // battery/temps would stay blank until the car connects.
@@ -1085,7 +1077,62 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       let superseded = false;
       return (async () => {
         try {
-          const outcome = await gw.runCommand(cmd, signal ? { signal } : undefined);
+          // Wake the main computer before an Infotainment-domain command (sentry/valet/parental/PIN/charge/
+          // Send as-is. The command screens pre-warm the car on entry (SCREEN_REQUIRES_WAKE — see wake()), so by
+          // the time a control is touched the main computer is usually up. This is the SAFETY NET: an Infotainment
+          // command to an online-but-asleep car gets no reply and times out; wake the main computer once and retry.
+          // (The Tesla app leaves this to its native transport, which wakes the car's buses as part of the send —
+          // our stack has no such native step, so we do it here on a timeout.) VCSEC commands (lock/frunk/charge-
+          // port/wake), offline/connecting connections, backgrounded sends, and superseded commands never retry.
+          let outcome = await gw.runCommand(cmd, signal ? { signal } : undefined);
+          if (
+            commandNeedsAwake(cmd) &&
+            connectionRef.current === 'online' &&
+            !outcome.ok &&
+            outcome.kind === 'timeout' &&
+            !signal?.aborted &&
+            AppState.currentState !== 'background'
+          ) {
+            // Keep the pending spinner alive across the wake+retry (its startTime was stamped at submit, and the
+            // wake can outlast the OPTIMISTIC_TIMEOUT_MS cap).
+            const restampT = Date.now();
+            setPendingCmdMap((prev) => {
+              if (!prev.has(cmd.type)) return prev;
+              const next = new Map(prev);
+              next.set(cmd.type, restampT);
+              return next;
+            });
+            if (keys) {
+              setPendingMap((prev) => {
+                const next = new Map(prev);
+                for (const key of keys) if (next.has(key)) next.set(key, restampT);
+                return next;
+              });
+            }
+            const woke = await ensureAwake({
+              // Fresh readiness — a VCSEC status read works while the car sleeps and reports its sleep state.
+              probeAwake: async () => {
+                try {
+                  const st = await gw.readVcsecStatus();
+                  return vcsecStatusToPatch(st, {}, Date.now()).patch.awake === true;
+                } catch {
+                  return false;
+                }
+              },
+              wake: async () => {
+                await gw.wake().catch(() => {});
+              },
+              sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+              now: Date.now,
+              signal: signal ?? undefined,
+            });
+            if (woke === 'awake') {
+              outcome = await gw.runCommand(cmd, signal ? { signal } : undefined);
+            } else if (woke === 'aborted') {
+              outcome = { ok: false, kind: 'cancelled', message: 'superseded during wake' };
+            }
+            // woke === 'timeout' → keep the original 'timeout' outcome (it never woke)
+          }
           logi('cmd', 'settle', {
             type: cmd.type,
             ms: Date.now() - t0,
@@ -1469,6 +1516,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       steeringWheelClimate: patch.steeringWheelClimate ?? base.steeringWheelClimate,
       carLocation: patch.carLocation ?? base.carLocation,
       carLocationAt: patch.carLocationAt ?? base.carLocationAt,
+      homeCoord: patch.homeCoord ?? base.homeCoord,
+      workCoord: patch.workCoord ?? base.workCoord,
       tirePressures: patch.tirePressures ?? base.tirePressures,
       media: patch.media ?? base.media,
       chargingState: patch.chargingState ?? base.chargingState,
@@ -1614,6 +1663,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         rightRearWindowOpen: null,
         seatClimateModes: null,
         steeringWheelClimate: null,
+        homeCoord: null,
+        workCoord: null,
       }),
       lastVehicleDataAt: at,
       awake: true,
@@ -1684,6 +1735,37 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     });
   }, []);
   handleVcsecPushRef.current = handleVcsecPush;
+
+  // wake: our SCREEN_REQUIRES_WAKE. A command screen (Charging/Security/Climate/Controls) calls this on entry to
+  // pre-warm the main computer, so it's already up by the time the user touches a control — exactly what the
+  // Tesla app does when you navigate INTO a live-vehicle feature screen (it does NOT wake on app open / Home /
+  // Status). Fire-and-forget and SILENT: no header spinner (unlike refresh's pull-to-refresh), no re-read — the
+  // 20s poll and the command safety-net pick up the awake state. Skips when the car is already awake, and
+  // throttles so navigating in/out can't spam the link. No-op for a demo/unlinked car; a wake on an offline car
+  // fails harmlessly. The wake itself is a VCSEC RKE action, so it reaches the car while the computer sleeps.
+  const wake = useCallback(() => {
+    const gw = getGateway();
+    if (!gw) return; // demo/unlinked
+    // Do NOT gate on the cached `awake` flag: it is a poll-stale VCSEC reading and can say "awake" while the
+    // main computer has actually drifted back to sleep — the on-device case where a Security toggle then wedged
+    // with no reply and no timeout, because this wake was wrongly skipped. Tesla's SCREEN_REQUIRES_WAKE fires on
+    // entry regardless of sleep state, gated only by its wake throttle. The wake is a VCSEC RKE action, so it
+    // reaches an asleep car and is a harmless no-op on an already-awake one — worth the redundancy for
+    // reliability. The throttle keeps navigating in/out from spamming the link.
+    const now = Date.now();
+    if (now - lastScreenWakeRef.current < SCREEN_WAKE_THROTTLE_MS) return;
+    lastScreenWakeRef.current = now;
+    void gw.wake().catch(() => {});
+  }, [getGateway]);
+
+  // Persist the enrolled car's PINs (PIN-to-Drive + the four codes) to the Keychain, keyed by VIN. Called by
+  // the fleet layer whenever a PIN field changes, so it survives a restart (the car never reports these, so a
+  // rehydrate is the only thing that restores them). No-op for a demo/unlinked car (no VIN to key against).
+  const persistSecurity = useCallback((s: SecurityPersist) => {
+    const vin = carCfgRef.current?.vin;
+    if (!vin) return;
+    void saveSecurity(store, vin, s).catch(() => {});
+  }, []);
 
   // refresh: the real pull-to-refresh. Wakes the car, then re-reads it — the
   // spinner runs for the whole round trip. Replaces a demo stub that only set
@@ -2104,11 +2186,13 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       piConfigured,
       vehicleBleName: bondWedge.bleName,
       dispatch,
+      persistSecurity,
       sendWithOutcome,
       refresh,
+      wake,
       readSchedules,
       readSecurity,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, sendWithOutcome, refresh, readSchedules, readSecurity],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, persistSecurity, sendWithOutcome, refresh, wake, readSchedules, readSecurity],
   );
 }

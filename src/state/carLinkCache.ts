@@ -7,6 +7,7 @@ import type {
   SeatClimateModes,
   SteeringWheelClimate,
   TirePressures,
+  VehicleViewState,
 } from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
 
@@ -114,6 +115,10 @@ export interface CarLinkCache {
   // Paired with carLocation and cached with it — a position with no age would
   // render as "just now" on every cold start, which is the opposite of true.
   carLocationAt: number | null;
+  // Saved Home / Work locations (Set Schedules dropdown). Re-read from ChargeState each poll, so they are null
+  // until the car is woken — cache them like carLocation so a cold start shows the last known instead of blank.
+  homeCoord: { lat: number; lon: number } | null;
+  workCoord: { lat: number; lon: number } | null;
   // TPMS. Cached for the same reason as everything else here: a cold start
   // should show what we last knew, dimmed, not "—".
   //
@@ -145,6 +150,86 @@ export function carLinkCacheKey(vin: string): string {
   return `carlink.cache.${vin}`;
 }
 
+// Turn the persisted cache into the cold-start REHYDRATE patch: for every field that survived the restart, apply
+// its last-known value so the UI shows it (dimmed) instead of the initialVehicleState default until the first
+// live read lands. Every CarLinkCache field maps 1:1 to the same-named VehicleViewState field, so this is the
+// exhaustive restore side of cacheInfotainment. It was previously a hand-written subset, which left the security
+// toggles, the energy toggles and every climate toggle SAVED but never RESTORED — they reverted to their defaults
+// (sentry off, speed limit "85 mph", Cabin Overheat "On, 40°C") until the awake-gated read repaired them. Now
+// data-driven and kept in lock-step with the interface by rehydrateCoverage.test.ts. Only lastVehicleDataAt is not
+// a VehicleViewState field (the header reads it separately) and is deliberately excluded there.
+export function cacheToStatePatch(c: CarLinkCache): Partial<VehicleViewState> {
+  const p: Partial<VehicleViewState> = {};
+  // `!= null` (loose): a cache written under an older schema is missing today's keys, and `undefined` must never
+  // reach vehicle state — that is how "NaN km" once shipped. The generic key constraint means only a field that
+  // exists on BOTH the cache and the state can be applied, so a typo can't compile.
+  const set = <K extends keyof CarLinkCache & keyof VehicleViewState>(k: K) => {
+    const v = c[k];
+    if (v != null) (p as Record<string, unknown>)[k] = v;
+  };
+  // Home + charge panel.
+  set('batteryLevel');
+  set('rangeMiles');
+  set('charging');
+  set('awake');
+  set('interiorTempC');
+  set('exteriorTempC');
+  set('targetTempC');
+  set('chargeLimitPercent');
+  set('chargingAmps');
+  set('chargingState');
+  set('minutesToChargeLimit');
+  set('chargerPowerKw');
+  set('chargeRateMph');
+  set('energyAddedKwh');
+  set('fastCharging');
+  set('chargerActualCurrentA');
+  set('chargerVoltageV');
+  set('chargerPilotCurrentA');
+  set('cableAttached');
+  set('odometerMiles');
+  set('tirePressures');
+  set('media');
+  // Security & Drivers + energy toggles + closures (windows). These were the "defaults until the car is awake"
+  // bug: cached, but the rehydrate never read them back.
+  set('locked');
+  set('sentryEnabled');
+  set('lowPowerMode');
+  set('keepAccessoryPower');
+  set('valetMode');
+  set('speedLimitMode');
+  set('speedLimitMph');
+  set('parentalControls');
+  set('parentalLimitSpeed');
+  set('parentalReduceAccel');
+  set('parentalRequireSafety');
+  set('parentalCurfewNotify');
+  set('leftFrontWindowOpen');
+  set('rightFrontWindowOpen');
+  set('leftRearWindowOpen');
+  set('rightRearWindowOpen');
+  // Climate toggles + seats + wheel.
+  set('climateOn');
+  set('frontDefrostOn');
+  set('rearDefrostOn');
+  set('bioweaponOn');
+  set('climateKeeper');
+  set('copActivelyCooling');
+  set('cabinOverheatMode');
+  set('cabinOverheatTemp');
+  set('seatClimateModes');
+  set('steeringWheelClimate');
+  // Car location: guarded on FINITE coords (a malformed 0,0 would drop the pin in the Gulf of Guinea), and its
+  // age rides in the SAME branch so a hydrated pin never renders "just now" for a fix that could be weeks old.
+  if (c.carLocation && Number.isFinite(c.carLocation.lat) && Number.isFinite(c.carLocation.lon)) {
+    p.carLocation = c.carLocation;
+    p.carLocationAt = c.carLocationAt;
+  }
+  set('homeCoord');
+  set('workCoord');
+  return p;
+}
+
 // NORMALISE on load. This is persisted across app versions, so a payload can
 // predate today's shape — `rangeKm` was renamed to `rangeMiles` in the Round-5
 // work, and the old key rehydrated as `undefined`, which then rendered "NaN km".
@@ -160,6 +245,12 @@ const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null)
 // that does not exist.
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
   typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+// A {lat,lon} coordinate, validated by finiteness like carLocation — a corrupt cache must not drop a pin at 0,0.
+const coord = (v: unknown): { lat: number; lon: number } | null => {
+  if (!v || typeof v !== 'object') return null;
+  const { lat, lon } = v as { lat?: unknown; lon?: unknown };
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat: lat as number, lon: lon as number } : null;
+};
 
 const SEATS = [
   'frontLeft',
@@ -324,6 +415,8 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     // and stamping it "now" on load would claim we had just seen the car there.
     // null reads as unknown, which is the truth.
     carLocationAt: num(cached?.carLocationAt),
+    homeCoord: coord(cached?.homeCoord),
+    workCoord: coord(cached?.workCoord),
   };
 }
 

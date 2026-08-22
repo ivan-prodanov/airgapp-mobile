@@ -8,6 +8,7 @@ import { TirePressureOverlay } from '../godot/TirePressureOverlay';
 import { CONTROL_ACTIONS, isControlActionPending, type ControlActionId } from '../state/controlActions';
 import { controlHaptic } from '../state/controlHaptic';
 import { useCarLinkStatus } from '../state/VehicleProvider';
+import { useScreenWake } from '@/hooks/useScreenWake';
 import { BusyIcon } from '../components/BusyIcon';
 import type { VehicleActions } from '../state/useVehicleState';
 import type { VehicleViewState } from '../types/vehicleTypes';
@@ -25,6 +26,7 @@ const BOTTOM_BAR_LIFT = 10;
 // Controls screen: the closure marker overlay (frunk/trunk Open · center lock · charge port) drawn
 // over the top-down car, plus the bottom action bar (Flash / Honk / Start / Vent).
 export function ControlsScreen({ state, actions }: Props) {
+  useScreenWake(); // pre-warm the main computer on entry so control commands don't stall on an asleep car
   // ⚠️ The bottom bar rides the CARD clock (479ms from the push), NOT the
   // markers' content clock — so it lands well before the markers do.
   //
