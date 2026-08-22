@@ -80,6 +80,13 @@ class PassiveEntryCentral(private val context: Context) {
      * that had silently stopped working.
      */
     private const val SCAN_WINDOW_MS = 20_000L
+
+    /**
+     * How long to let a standing connect run alone before ALSO scanning. Long enough that a car
+     * merely out of range is not treated as a stale MAC, short enough that a genuinely wrong
+     * remembered address does not wedge discovery.
+     */
+    private const val STANDING_CONNECT_FALLBACK_MS = 20_000L
   }
 
   var onLog: ((String) -> Unit)? = null
@@ -91,6 +98,9 @@ class PassiveEntryCentral(private val context: Context) {
 
   private var foregroundActive: Boolean = true
   private var targetName: String? = null
+  private var targetVin: String? = null
+  /** True while a standing (autoConnect) GATT connect is outstanding but not yet CONNECTED. */
+  private var standingConnect = false
   private var gatt: BluetoothGatt? = null
   private var txChar: BluetoothGattCharacteristic? = null
   private var rxChar: BluetoothGattCharacteristic? = null
@@ -152,6 +162,7 @@ class PassiveEntryCentral(private val context: Context) {
       }
     }
     targetName = name
+    targetVin = vin
     log("start vin=${vin.takeLast(6)} localName=$name")
     if (!BleGuards.hasScanPermissions(context)) {
       isRunning = false
@@ -167,7 +178,68 @@ class PassiveEntryCentral(private val context: Context) {
       return
     }
     isRunning = true
-    beginScan()
+    reestablish()
+  }
+
+  // ── re-establish: a STANDING CONNECT beats a scan ──────────────────────────
+
+  /**
+   * Get the link back up, preferring a remembered peripheral over a scan — a direct port of
+   * PassiveEntryCentral.swift's `reestablish()`.
+   *
+   * iOS measured this on-car (2026-07-25): re-scanning after every disconnect left the link DOWN
+   * 72% of the time, with reconnect gaps of 1-8 MINUTES, because scans get throttled and coalesced.
+   * Reconnecting to a KNOWN peripheral does not: `connectGatt(autoConnect = true)` is Android's
+   * equivalent of CoreBluetooth's pending connect — no timeout, not scan-throttled, and the OS
+   * delivers the connection the instant the car is in range. iOS stores the peripheral's UUID for
+   * exactly this; the official app does the same (`retrievePeripheralsWithIdentifiers:` in its
+   * binary). Android's stable handle is the MAC.
+   *
+   * Nothing was persisted here at all before, so EVERY reconnect needed a fresh scan — and Android
+   * blocks an app that starts 5 scans in 30s, which looks identical to "no car nearby".
+   *
+   * Scanning remains the first-ever-discovery path, and a fallback: a remembered MAC can go stale
+   * (a different car, a factory reset), so if the standing connect has not landed after
+   * STANDING_CONNECT_FALLBACK_MS we scan as well. The standing connect stays armed underneath —
+   * they are not exclusive, and whichever wins closes the other out.
+   */
+  @SuppressLint("MissingPermission")
+  private fun reestablish() {
+    if (!isRunning) return
+    if (gatt != null) return // connected, or a standing connect is already pending
+    val mac = rememberedMac()
+    val device = mac?.let { runCatching { adapter?.getRemoteDevice(it) }.getOrNull() }
+    if (device == null) {
+      beginScan() // never connected to this car before
+      return
+    }
+    stopScan() // a standing connect supersedes any in-flight scan
+    standingConnect = true
+    log("pending connect (standing, no scan) → $mac")
+    gatt = device.connectGatt(context, true, gattCallback, BluetoothDevice.TRANSPORT_LE)
+    main.postDelayed(standingConnectFallback, STANDING_CONNECT_FALLBACK_MS)
+  }
+
+  /** The remembered MAC never landed — the car may have changed. Scan too, keeping the connect armed. */
+  private val standingConnectFallback = Runnable {
+    if (isRunning && standingConnect) {
+      log("standing connect has not landed in ${STANDING_CONNECT_FALLBACK_MS}ms — scanning as well")
+      beginScan()
+    }
+  }
+
+  private fun prefs() = context.getSharedPreferences("passive_entry", android.content.Context.MODE_PRIVATE)
+
+  /** Keyed by VIN: a remembered MAC must never be reused for a different car. */
+  private fun macKey(): String? = targetVin?.let { "peripheral_mac_" + it }
+
+  private fun rememberedMac(): String? = macKey()?.let { prefs().getString(it, null) }
+
+  private fun rememberMac(mac: String) {
+    val k = macKey() ?: return
+    if (prefs().getString(k, null) == mac) return
+    prefs().edit().putString(k, mac).apply()
+    log("remembered peripheral $mac — future re-connects skip the scan")
   }
 
   @SuppressLint("MissingPermission")
@@ -175,6 +247,8 @@ class PassiveEntryCentral(private val context: Context) {
     log("stop")
     isRunning = false
     targetName = null
+    standingConnect = false
+    main.removeCallbacks(standingConnectFallback)
     stopScan()
     gatt?.let {
       runCatching { it.disconnect() }
@@ -320,6 +394,19 @@ class PassiveEntryCentral(private val context: Context) {
 
   @SuppressLint("MissingPermission")
   private fun connect(device: BluetoothDevice) {
+    // A scan can land while a standing connect is still pending (see reestablish's fallback).
+    // Drop that one first: two BluetoothGatt clients to the same car is how you get a phantom
+    // link that never delivers notifications. close() rather than disconnect() — the standing one
+    // was never connected, so there is nothing to tear down and no callback to wait for.
+    main.removeCallbacks(standingConnectFallback)
+    if (standingConnect) {
+      standingConnect = false
+      gatt?.let { runCatching { it.close() } }
+      gatt = null
+    }
+    // autoConnect = false here, deliberately: we have just SEEN this device advertising, so a
+    // direct connect is immediate. autoConnect is for the remembered-peripheral path, where the
+    // car may not be in range yet.
     gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
   }
 
@@ -328,6 +415,12 @@ class PassiveEntryCentral(private val context: Context) {
     override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
       if (newState == BluetoothProfile.STATE_CONNECTED) {
         log("CONNECTED — requesting MTU $REQUESTED_MTU")
+        standingConnect = false
+        main.removeCallbacks(standingConnectFallback)
+        stopScan() // we are in; a lingering scan only burns radio
+        // Remember it so every future re-establish is a standing connect rather than a throttled
+        // scan — see reestablish(). iOS stores the peripheral UUID at exactly this point.
+        rememberMac(g.device.address)
         // MTU BEFORE service discovery: the negotiated value decides our write chunk size, and
         // a late change would resize blockLength under TS mid-exchange.
         if (!g.requestMtu(REQUESTED_MTU)) {
@@ -344,8 +437,11 @@ class PassiveEntryCentral(private val context: Context) {
         runCatching { g.close() }
         gatt = null
         reportState()
-        // The car drops the link constantly (sleep, range). Re-acquire while armed.
-        if (isRunning) main.postDelayed({ if (isRunning) beginScan() }, RECONNECT_DELAY_MS)
+        standingConnect = false
+        main.removeCallbacks(standingConnectFallback)
+        // The car drops the link constantly (sleep, range). Re-acquire while armed — via the
+        // remembered peripheral when we have one, which is the whole point of reestablish().
+        if (isRunning) main.postDelayed({ if (isRunning) reestablish() }, RECONNECT_DELAY_MS)
       }
     }
 
