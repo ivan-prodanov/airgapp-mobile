@@ -289,8 +289,24 @@ class PassiveEntryCentral(private val context: Context) {
     // Phase 4's background scan will need a filter — revisit this there, with the advertisement
     // actually captured from the car rather than assumed.
     val filters = emptyList<ScanFilter>()
+    // setLegacy(FALSE) IS LOAD-BEARING. Its default is TRUE, which reports ONLY legacy
+    // (pre-Bluetooth-5) advertisements — a peripheral using BLE 5 extended advertising is then
+    // invisible to this scan entirely: no name, no service UUID, no entry at all.
+    //
+    // That is exactly what we measured. Sitting INSIDE the awake car, a 20s window reported 58
+    // advertisers, many with names AND service UUIDs (so merging works), yet neither the
+    // VIN-derived name nor the advertised service 1122 appeared. We were not mis-matching the car;
+    // we were never being handed its packets.
+    //
+    // CoreBluetooth draws no legacy/extended distinction and reports both with no flag, which is
+    // why iOS has always found this car on the first try and Android never did.
+    //
+    // PHY_LE_ALL_SUPPORTED goes with it: extended advertisements may be sent on the Coded PHY,
+    // which the 1M-only default would also miss.
     val settings = ScanSettings.Builder()
       .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+      .setLegacy(false)
+      .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
       .build()
     seenThisWindow.clear()
     scanStartedAt = android.os.SystemClock.elapsedRealtime()
@@ -363,7 +379,14 @@ class PassiveEntryCentral(private val context: Context) {
         // there but unnamed", which is exactly the ambiguity that hid this bug.
         val label = advName ?: "(unnamed ${result.device.address})"
         val svc = if (uuids.isEmpty()) "" else uuids.joinToString("/") { shortUuid(it.uuid.toString()) }
-        seenThisWindow.add(if (svc.isEmpty()) label else "$label{$svc}")
+        // `ext` marks a BLE 5 extended advertiser — one the old legacy-only scan could not see at
+        // all. If the car shows up tagged ext, that is the whole bug, confirmed.
+        val kind = if (result.isLegacy) "" else "!ext"
+        seenThisWindow.add(buildString {
+          append(label)
+          if (svc.isNotEmpty()) append("{").append(svc).append("}")
+          if (kind.isNotEmpty()) append(kind)
+        })
         return
       }
 
