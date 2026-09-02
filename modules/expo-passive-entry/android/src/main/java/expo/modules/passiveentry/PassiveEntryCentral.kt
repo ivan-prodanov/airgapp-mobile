@@ -81,6 +81,9 @@ class PassiveEntryCentral(private val context: Context) {
      */
     private const val SCAN_WINDOW_MS = 20_000L
 
+    /** One window in three runs unfiltered, so a failure stays diagnosable. See beginScan. */
+    private const val DIAGNOSTIC_WINDOW_EVERY = 3L
+
     /**
      * How long to let a standing connect run alone before ALSO scanning. Long enough that a car
      * merely out of range is not treated as a stale MAC, short enough that a genuinely wrong
@@ -98,6 +101,8 @@ class PassiveEntryCentral(private val context: Context) {
 
   private var foregroundActive: Boolean = true
   private var targetName: String? = null
+  /** Counts scan windows so every Nth one can run unfiltered for diagnosis. */
+  private var windowCount = 0L
   private var targetVin: String? = null
   /** True while a standing (autoConnect) GATT connect is outstanding but not yet CONNECTED. */
   private var standingConnect = false
@@ -275,20 +280,31 @@ class PassiveEntryCentral(private val context: Context) {
     val scanner = adapter?.bluetoothLeScanner ?: run { log("no BLE scanner"); return }
     if (scanning) return
     scanning = true
-    // NO ScanFilter, deliberately.
+    // FILTER, exactly like iOS — this is the fix for "the car is never in the scan results".
     //
-    // iOS filters on the advertised 16-bit service 1122 because CoreBluetooth FORBIDS a nil-scan
-    // in the background. Android has no such rule for a foreground scan, and a filter here buys
-    // nothing while risking everything: if the car's advertisement does not carry that service
-    // UUID in the exact form ScanFilter matches, the car is dropped before onScanResult and the
-    // failure is indistinguishable from "no car nearby". Matching on the VIN-derived local name
-    // (which is authoritative, and cross-checked byte-for-byte against bleScanName.ts) is both
-    // stricter and more robust. Unfiltered also means the end-of-window diagnostic can report
-    // what WAS advertising, which is the difference between a sleeping car and a bad filter.
+    // The previous comment here argued a ScanFilter "buys nothing while risking everything" and
+    // that matching the VIN-derived local name unfiltered was stricter AND more robust. Measured on
+    // device, that is backwards. Sitting in the awake car, windows reported 15-58 advertisers and
+    // the car was in NONE of them — no name, no 1122 — while 12 of 15 entries showed NO service
+    // UUIDs at all.
     //
-    // Phase 4's background scan will need a filter — revisit this there, with the advertisement
-    // actually captured from the car rather than assumed.
-    val filters = emptyList<ScanFilter>()
+    // That is the tell: an unfiltered Android scan hands us the ADVERTISEMENT, and Tesla's 31-byte
+    // advertisement cannot carry both the service UUID and an 18-character local name, so one of
+    // them lives in the SCAN RESPONSE. `ScanRecord` does not reliably merge that in for an
+    // unfiltered scan, so we were matching against half the data.
+    //
+    // A ScanFilter is matched in the BLUETOOTH CONTROLLER, against the advertisement AND the scan
+    // response. That is why the working iOS implementation has always found this car on the first
+    // try: `scanForPeripherals(withServices: [advertisedServiceUUID])` then match by name
+    // (PassiveEntryCentral.swift:332,376). CoreBluetooth merges before filtering; Android needs to
+    // be ASKED to look, and a filter is how you ask.
+    //
+    // TWO filters, OR'd by Android: the advertised service (captured on-car, advServices=[1122]),
+    // and the local name — so the car is found whichever of the two its advertisement carries.
+    val filters = listOf(
+      ScanFilter.Builder().setServiceUuid(ADVERTISED_SERVICE).build(),
+      ScanFilter.Builder().setDeviceName(targetName).build(),
+    )
     // setLegacy(FALSE) IS LOAD-BEARING. Its default is TRUE, which reports ONLY legacy
     // (pre-Bluetooth-5) advertisements — a peripheral using BLE 5 extended advertising is then
     // invisible to this scan entirely: no name, no service UUID, no entry at all.
@@ -308,10 +324,17 @@ class PassiveEntryCentral(private val context: Context) {
       .setLegacy(false)
       .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
       .build()
+    // Every DIAGNOSTIC_WINDOW_EVERY'th window runs UNFILTERED. A filtered scan that finds nothing
+    // cannot tell "the car is not here" from "the filter is wrong", and that ambiguity is what made
+    // this bug take four attempts. The unfiltered sweep costs one window in three and keeps the
+    // end-of-window census that named TeslaFSD-8FCBA4 in the first place.
+    windowCount += 1
+    val diagnostic = windowCount % DIAGNOSTIC_WINDOW_EVERY == 0L
+    val useFilters = if (diagnostic) emptyList() else filters
     seenThisWindow.clear()
     scanStartedAt = android.os.SystemClock.elapsedRealtime()
-    log("scanning for $targetName (unfiltered), ${SCAN_WINDOW_MS}ms window")
-    runCatching { scanner.startScan(filters, settings, scanCallback) }
+    log("scanning for $targetName (${if (diagnostic) "unfiltered census" else "filtered: service 1122 OR name"}), ${SCAN_WINDOW_MS}ms window")
+    runCatching { scanner.startScan(useFilters, settings, scanCallback) }
       .onFailure { log("startScan threw: ${it.message}"); scanning = false; return }
     main.postDelayed(scanTimeout, SCAN_WINDOW_MS)
   }
