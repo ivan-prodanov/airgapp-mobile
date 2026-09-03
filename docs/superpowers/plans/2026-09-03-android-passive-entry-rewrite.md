@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Execution status (2026-09-03):** Tasks 1–7 done on `feat/ble-carlink` (commits 5d83adc…5e6aa09). Device smoke ran with the phone PIN-locked, so the JS-driven steps of Task 6 (harness goldens/key check, `foregroundResponderActive=true`) still need the app opened once; everything reachable without JS (service, receiver, background scan, alarms, Bluetooth toggle, native→JS log mirror) is verified. **Task 8 (at the car) pending.**
+
 **Goal:** Replace `modules/expo-passive-entry/android` with a phone-key implementation that holds the car link in a foreground service, self-signs in the background, survives reboot, and identifies the car correctly — behind the unchanged TS contract.
 
 **Architecture:** An application-scoped `PassiveEntryRuntime` (built at `Application.onCreate` through an Expo `Package` hook) owns one `PassiveEntryCentral` — a single-`HandlerThread` GATT state machine (standing `autoConnect` to the remembered MAC, bounded filtered discovery scans, INDICATE subscription, one write in flight) — and a `PassiveEntryService` (`connectedDevice` foreground service) that keeps it alive. `VcsecResponder` + `VcsecSigner` are a byte-for-byte JCA port of the Swift responder. Receivers cover boot, a process-death-surviving `PendingIntent` scan, and alarms. The `:share` process runs the same central in an ephemeral mode. Spec: `docs/superpowers/specs/2026-09-03-android-native-parity-design.md`.
