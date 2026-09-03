@@ -18,7 +18,10 @@ android {
 }
 
 dependencies {
-  // EncryptedSharedPreferences for the device key — see KeystoreKey.kt for why the
-  // raw scalar cannot live in the Keystore itself.
-  implementation 'androidx.security:security-crypto:1.1.0'
+  // The device key is wrapped with an Android Keystore AES-GCM key directly (KeystoreKey.kt);
+  // androidx.security:security-crypto is deprecated and is deliberately not used.
+  //
+  // JVM unit tests for the pure classes (Proto, VcsecSigner, VehicleIdentity, FrameReassembler,
+  // VcsecResponder): `./gradlew :expo-passive-entry:testReleaseUnitTest`.
+  testImplementation 'junit:junit:4.13.2'
 }
