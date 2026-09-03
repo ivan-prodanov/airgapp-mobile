@@ -84,6 +84,15 @@ class PassiveEntryCentral(private val context: Context) {
     /** One window in three runs unfiltered, so a failure stays diagnosable. See beginScan. */
     private const val DIAGNOSTIC_WINDOW_EVERY = 3L
 
+    /** How long one candidate gets to connect and answer "do you have VCSEC?" before we move on. */
+    private const val PROBE_TIMEOUT_MS = 5_000L
+
+    /** Upper bound on candidates tried in a single pass, so a busy room cannot stall us forever. */
+    private const val MAX_PROBES_PER_PASS = 12
+
+    /** Cap on the remembered "definitely not the car" set — addresses rotate, so it must not grow. */
+    private const val NOT_THE_CAR_CAP = 256
+
     /**
      * How long to let a standing connect run alone before ALSO scanning. Long enough that a car
      * merely out of range is not treated as a stale MAC, short enough that a genuinely wrong
@@ -103,6 +112,17 @@ class PassiveEntryCentral(private val context: Context) {
   private var targetName: String? = null
   /** Counts scan windows so every Nth one can run unfiltered for diagnosis. */
   private var windowCount = 0L
+
+  // ── candidate probing ──────────────────────────────────────────────────────
+  // MACs seen advertising this window that were NOT the car by name or service.
+  private val candidateMacs = LinkedHashSet<String>()
+  // MACs we have connected to and confirmed do NOT expose the VCSEC service. Bounded, because
+  // privacy-rotating addresses would otherwise grow this without limit.
+  private val notTheCar = LinkedHashSet<String>()
+  private var probing = false
+  private var probeQueue = mutableListOf<String>()
+  private var probeGatt: BluetoothGatt? = null
+  private var probeMac: String? = null
   private var targetVin: String? = null
   /** True while a standing (autoConnect) GATT connect is outstanding but not yet CONNECTED. */
   private var standingConnect = false
@@ -249,6 +269,9 @@ class PassiveEntryCentral(private val context: Context) {
 
   @SuppressLint("MissingPermission")
   fun stop() {
+    probing = false
+    probeQueue.clear()
+    closeProbe()
     log("stop")
     isRunning = false
     targetName = null
@@ -278,7 +301,7 @@ class PassiveEntryCentral(private val context: Context) {
   @SuppressLint("MissingPermission")
   private fun beginScan() {
     val scanner = adapter?.bluetoothLeScanner ?: run { log("no BLE scanner"); return }
-    if (scanning) return
+    if (scanning || probing) return
     scanning = true
     // FILTER, exactly like iOS — this is the fix for "the car is never in the scan results".
     //
@@ -332,6 +355,7 @@ class PassiveEntryCentral(private val context: Context) {
     val diagnostic = windowCount % DIAGNOSTIC_WINDOW_EVERY == 0L
     val useFilters = if (diagnostic) emptyList() else filters
     seenThisWindow.clear()
+    candidateMacs.clear()
     scanStartedAt = android.os.SystemClock.elapsedRealtime()
     log("scanning for $targetName (${if (diagnostic) "unfiltered census" else "filtered: service 1122 OR name"}), ${SCAN_WINDOW_MS}ms window")
     runCatching { scanner.startScan(useFilters, settings, scanCallback) }
@@ -355,7 +379,127 @@ class PassiveEntryCentral(private val context: Context) {
           "[${seenThisWindow.joinToString(", ")}] but none named $targetName"
       },
     )
+    // Discovery found nothing AND we have never connected to this car, so there is no remembered
+    // address to fall back on. Ask the candidates directly — see startProbePass.
+    if (rememberedMac() == null && candidateMacs.isNotEmpty()) startProbePass()
     reportState()
+  }
+
+  /**
+   * Connect to each unidentified advertiser and ask whether it exposes the VCSEC service.
+   *
+   * WHY THIS EXISTS. This car stopped emitting a discoverable advertisement. The iPhone's own log
+   * proves it: 161 discoveries, every one `discovered S8d2eb01195e4f42bC advServices=[1122]`, and
+   * ALL of them dated 22-25 July. Since 2026-08-01 iOS has discovered the car ZERO times — it has
+   * made 428 standing connects in a single day instead, straight to a remembered peripheral
+   * (`pending connect (standing, no scan) → 🔑 CHUŠKOPEK`). iOS works because it never has to find
+   * the car; it has been coasting on a July connection for over a month.
+   *
+   * Android has never connected once, so it has no remembered address, so it must discover — and
+   * there is nothing discoverable to find. That is a deadlock no scan tuning can break, which is
+   * why the name matcher, the legacy/extended flag and the ScanFilter all failed to fix it.
+   *
+   * The car is still advertising something connectable (iOS reconnects to it constantly); it just
+   * carries neither the name nor service 1122 any more, so it lands in our census as one of the
+   * `(unnamed …)` rows. So we stop asking what it CLAIMS and ask what it HAS: connect, discover
+   * services, keep it if VCSEC is there, drop it otherwise. One hit stores the address and Android
+   * is in the same standing-connect regime as iOS from then on — this runs once, ever.
+   *
+   * Turning off the iPhone's Bluetooth did NOT restore discoverable advertising (tested on-car), so
+   * this is not contention for the car's advertising slot.
+   */
+  @SuppressLint("MissingPermission")
+  private fun startProbePass() {
+    if (probing || gatt != null) return
+    probeQueue = candidateMacs.filter { it !in notTheCar }.take(MAX_PROBES_PER_PASS).toMutableList()
+    if (probeQueue.isEmpty()) return
+    probing = true
+    log("no discoverable car — probing ${probeQueue.size} candidate(s) for VCSEC service")
+    probeNext()
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun probeNext() {
+    closeProbe()
+    if (!isRunning || probeQueue.isEmpty()) {
+      if (probing) log("probe pass finished — no candidate exposed VCSEC")
+      probing = false
+      return
+    }
+    val mac = probeQueue.removeAt(0)
+    probeMac = mac
+    val device = runCatching { adapter?.getRemoteDevice(mac) }.getOrNull()
+    if (device == null) { probeNext(); return }
+    probeGatt = device.connectGatt(context, false, probeCallback, BluetoothDevice.TRANSPORT_LE)
+    main.postDelayed(probeTimeout, PROBE_TIMEOUT_MS)
+  }
+
+  private val probeTimeout = Runnable {
+    if (!probing) return@Runnable
+    probeMac?.let { notTheCar.add(it) } // unreachable within the budget: treat as not the car
+    trimNotTheCar()
+    probeNext()
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun closeProbe() {
+    main.removeCallbacks(probeTimeout)
+    probeGatt?.let { runCatching { it.disconnect() }; runCatching { it.close() } }
+    probeGatt = null
+  }
+
+  private fun trimNotTheCar() {
+    while (notTheCar.size > NOT_THE_CAR_CAP) {
+      val oldest = notTheCar.first()
+      notTheCar.remove(oldest)
+    }
+  }
+
+  /**
+   * A probe connection only ever asks one question: is the VCSEC service here?
+   *
+   * Deliberately a SEPARATE callback from gattCallback. The real link's callback subscribes,
+   * negotiates MTU and pumps frames; running that against a stranger's speaker would be both wrong
+   * and hard to unwind. This one discovers services and hangs up.
+   */
+  private val probeCallback = object : BluetoothGattCallback() {
+    @SuppressLint("MissingPermission")
+    override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+      if (!probing) { runCatching { g.close() }; return }
+      if (newState == BluetoothProfile.STATE_CONNECTED) {
+        runCatching { g.discoverServices() }
+      } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+        main.post {
+          if (probing && probeGatt === g) {
+            probeMac?.let { notTheCar.add(it) }
+            trimNotTheCar()
+            probeNext()
+          }
+        }
+      }
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+      main.post {
+        if (!probing || probeGatt !== g) return@post
+        val mac = probeMac
+        val hasVcsec = runCatching { g.getService(SERVICE_UUID) != null }.getOrDefault(false)
+        if (hasVcsec && mac != null) {
+          log("PROBE HIT — $mac exposes VCSEC; remembering it as the car")
+          probing = false
+          probeQueue.clear()
+          closeProbe()
+          rememberMac(mac)
+          // Hand off to the real connect path, which owns MTU, subscription and the frame pump.
+          runCatching { adapter?.getRemoteDevice(mac) }.getOrNull()?.let { connect(it) }
+        } else {
+          mac?.let { notTheCar.add(it) }
+          trimNotTheCar()
+          probeNext()
+        }
+      }
+    }
   }
 
   @SuppressLint("MissingPermission")
@@ -400,6 +544,9 @@ class PassiveEntryCentral(private val context: Context) {
         // window summary shows it instead of us reporting a bare "nothing found". Service UUIDs go
         // in too — without them a failure cannot tell "the car was not there" from "the car was
         // there but unnamed", which is exactly the ambiguity that hid this bug.
+        // Keep the address: if discovery never yields the car, probeCandidates() connects to these
+        // one by one and asks each whether it exposes VCSEC. See startProbePass.
+        if (result.device.address !in notTheCar) candidateMacs.add(result.device.address)
         val label = advName ?: "(unnamed ${result.device.address})"
         val svc = if (uuids.isEmpty()) "" else uuids.joinToString("/") { shortUuid(it.uuid.toString()) }
         // `ext` marks a BLE 5 extended advertiser — one the old legacy-only scan could not see at
