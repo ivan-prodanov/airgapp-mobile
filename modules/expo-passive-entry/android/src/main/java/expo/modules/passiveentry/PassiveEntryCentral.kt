@@ -58,6 +58,32 @@ class PassiveEntryCentral(private val context: Context) {
      */
     val ADVERTISED_SERVICE: ParcelUuid = ParcelUuid.fromString("00001122-0000-1000-8000-00805f9b34fb")
 
+    /** Apple's Bluetooth company identifier — the manufacturer-data key an iBeacon lives under. */
+    private const val APPLE_COMPANY_ID = 0x004C
+
+    /**
+     * THE identifier that actually works on Android. The car's PRIMARY advertising packet is an
+     * Apple iBeacon; its local name (S<hex>C) and service 1122 ride in the SCAN RESPONSE. Android
+     * does not reliably deliver that scan response — so the name and 1122 never arrive, and matching
+     * on them (as iOS/bluez do, because THEY get the scan response) can never work here. The primary
+     * packet, though, Android delivers reliably. So match the car by its iBeacon.
+     *
+     * Captured byte-exact from this car on 2026-09-03 via the laptop's CoreBluetooth (the same
+     * go-ble stack teslamotors/vehicle-command uses), primary-PDU manufacturer data:
+     *   4c00 0215 74278bdab64445208f0c720eaf059935 0000 f3ab c5
+     *   └ Apple  └iBeacon  └ UUID 74278BDA-…-059935          └major 0 └minor 0xF3AB=62379 └tx
+     * The UUID is Tesla's fixed phone-key beacon UUID (also what iOS's CarRegionMonitor ranges); the
+     * minor is VIN-derived (see expectedBeaconMinor) and distinguishes THIS car from other Teslas.
+     */
+    private val BEACON_UUID_BYTES = byteArrayOf(
+      0x74, 0x27, 0x8B.toByte(), 0xDA.toByte(), 0xB6.toByte(), 0x44, 0x45, 0x20,
+      0x8F.toByte(), 0x0C, 0x72, 0x0E, 0xAF.toByte(), 0x05, 0x99.toByte(), 0x35,
+    )
+
+    /** ScanFilter payload "an iBeacon carrying our UUID": iBeacon type(02) len(15) + the 16 UUID bytes. */
+    private val BEACON_FILTER_DATA = byteArrayOf(0x02, 0x15) + BEACON_UUID_BYTES
+    private val BEACON_FILTER_MASK = ByteArray(BEACON_FILTER_DATA.size) { 0xFF.toByte() }
+
     /** Tesla's VIN-derived discovery token, `S<16 hex>C` — see src/ble/bleScanName.ts. */
     private val DERIVED_NAME = Regex("^S[0-9A-Fa-f]{16}C$")
 
@@ -325,6 +351,10 @@ class PassiveEntryCentral(private val context: Context) {
     // TWO filters, OR'd by Android: the advertised service (captured on-car, advServices=[1122]),
     // and the local name — so the car is found whichever of the two its advertisement carries.
     val filters = listOf(
+      // The car's PRIMARY packet — the one Android reliably delivers. This is the filter that
+      // actually surfaces the car; the two below only ever match the scan response, which does not
+      // reach us here.
+      ScanFilter.Builder().setManufacturerData(APPLE_COMPANY_ID, BEACON_FILTER_DATA, BEACON_FILTER_MASK).build(),
       ScanFilter.Builder().setServiceUuid(ADVERTISED_SERVICE).build(),
       ScanFilter.Builder().setDeviceName(targetName).build(),
     )
@@ -508,6 +538,26 @@ class PassiveEntryCentral(private val context: Context) {
       val advName = record?.deviceName ?: runCatching { result.device.name }.getOrNull()
       val uuids = record?.serviceUuids.orEmpty()
       val advertisesTesla = uuids.any { it == ADVERTISED_SERVICE }
+
+      // THE iBEACON — the car's primary packet, and the only identifier Android reliably receives.
+      val mfg = record?.getManufacturerSpecificData(APPLE_COMPANY_ID)
+      if (mfg != null && mfg.size >= 22 && mfg[0] == 0x02.toByte() && mfg[1] == 0x15.toByte() &&
+        BEACON_UUID_BYTES.indices.all { mfg[2 + it] == BEACON_UUID_BYTES[it] }
+      ) {
+        val major = ((mfg[18].toInt() and 0xFF) shl 8) or (mfg[19].toInt() and 0xFF)
+        val minor = ((mfg[20].toInt() and 0xFF) shl 8) or (mfg[21].toInt() and 0xFF)
+        val expected = expectedBeaconMinor(targetVin ?: "")
+        if (expected != null && minor == expected) {
+          // Positive identity (VIN-derived minor). This device advertises the iBeacon in its primary
+          // PDU AND the VCSEC GATT + scan-response name from the same radio, so its address is the
+          // one to dial. MAC is remembered on CONNECTED, not here (an RPA that never completes must
+          // not become a standing-connect target).
+          log("BEACON MATCH — iBeacon major=$major minor=$minor is our car → connecting ${result.device.address} rssi=${result.rssi}")
+          stopScan()
+          connect(result.device)
+          return
+        }
+      }
 
       // MATCH ON THE NAME **OR** THE ADVERTISED SERVICE.
       //
@@ -788,6 +838,19 @@ class PassiveEntryCentral(private val context: Context) {
  * vehicle-command Go SDK): `"S" + lower_hex(sha1(utf8(VIN))[0:8]) + "C"`, 18 chars. Matched by
  * EXACT string equality against the advertisement's local name.
  */
+/**
+ * The iBeacon minor this VIN advertises, mirroring iOS's CarRegionMonitor.expectedMajorMinor.
+ * Last 5 VIN chars, leading digits (NSString.integerValue style), byte-swap the low 16 bits.
+ * Confirmed against the live advertisement: VIN …844019 -> minor 62379 (0xF3AB), major 0.
+ */
+fun expectedBeaconMinor(vin: String): Int? {
+  if (vin.length < 5) return null
+  val leadingDigits = vin.takeLast(5).takeWhile { it.isDigit() }
+  val v = leadingDigits.toLongOrNull() ?: 0L
+  val lower = (v and 0xFFFF).toInt()
+  return ((lower and 0xFF) shl 8) or ((lower shr 8) and 0xFF)
+}
+
 fun vehicleLocalName(vin: String): String {
   val digest = MessageDigest.getInstance("SHA-1").digest(vin.toByteArray(Charsets.UTF_8))
   val hex = digest.take(8).joinToString("") { "%02x".format(it) }
