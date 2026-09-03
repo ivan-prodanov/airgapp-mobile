@@ -187,6 +187,9 @@ object PassiveEntryRuntime {
         central.onBluetoothOn()
         return
       }
+      // The Bluetooth service drops every scan registration with the radio: forget ours, or the next
+      // arm trusts a registration that no longer exists until the 25-minute restart alarm.
+      handler.post { backgroundScanArmedAt = 0L }
       central.onBluetoothOff()
       if (store.vin == null || store.btOffRepeatScheduled) return
       // Like iOS: one reminder per off-episode plus a repeat every few hours. Five seconds of grace,
