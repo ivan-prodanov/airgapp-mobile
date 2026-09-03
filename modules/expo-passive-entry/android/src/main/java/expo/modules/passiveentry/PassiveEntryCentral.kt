@@ -161,6 +161,8 @@ class PassiveEntryCentral(private val context: Context) {
   private val main = Handler(Looper.getMainLooper())
   /** Distinct advertisers seen in the current scan window, for the end-of-window diagnostic. */
   private val seenThisWindow = linkedSetOf<String>()
+  /** DIAGNOSTIC: log the car iBeacon at most once per scan window (removable after at-car verify). */
+  private var beaconLoggedThisWindow = false
   /** elapsedRealtime when the live scan window opened; 0 when no scan is running. */
   private var scanStartedAt = 0L
   private val writeQueue = ConcurrentLinkedQueue<ByteArray>()
@@ -374,6 +376,7 @@ class PassiveEntryCentral(private val context: Context) {
     val diagnostic = windowCount % DIAGNOSTIC_WINDOW_EVERY == 0L
     val useFilters = if (diagnostic) emptyList() else filters
     seenThisWindow.clear()
+    beaconLoggedThisWindow = false
     candidateMacs.clear()
     scanStartedAt = android.os.SystemClock.elapsedRealtime()
     log("scanning for $targetName (${if (diagnostic) "unfiltered census" else "filtered: service 1122 OR name"}), ${SCAN_WINDOW_MS}ms window")
@@ -547,6 +550,11 @@ class PassiveEntryCentral(private val context: Context) {
         val major = ((mfg[18].toInt() and 0xFF) shl 8) or (mfg[19].toInt() and 0xFF)
         val minor = ((mfg[20].toInt() and 0xFF) shl 8) or (mfg[21].toInt() and 0xFF)
         val expected = expectedBeaconMinor(targetVin ?: "")
+        // DIAGNOSTIC (once per window): prove the car's primary PDU reaches Android at all.
+        if (!beaconLoggedThisWindow) {
+          beaconLoggedThisWindow = true
+          log("iBeacon UUID seen — major=$major minor=$minor (want $expected) rssi=${result.rssi} ${result.device.address}")
+        }
         if (expected != null && minor == expected) {
           // Positive identity (VIN-derived minor). This device advertises the iBeacon in its primary
           // PDU AND the VCSEC GATT + scan-response name from the same radio, so its address is the
