@@ -23,7 +23,7 @@ pre-existing code.
 | **Charger DB** | 189,194 rows open from `files/chargers.db`; list populates with real distances. |
 | Gazetteer / recents / log sink | `expo-sqlite` working; `files/SQLite/` populated. |
 | Secure store | Device key persists across force-stop. |
-| BLE scan | Scanner starts, matches the VIN-derived name (byte-identical to `bleScanName.ts`), reports what it saw. |
+| **Phone key (BLE)** | Rewritten 2026-09-03 (spec: `docs/superpowers/specs/2026-09-03-android-native-parity-design.md`). Foreground service (`connectedDevice`) holds the link; standing `autoConnect` to the remembered address; bounded filtered discovery (iBeacon + `1122` + name); **indications** on 0213 (what the official app and `vehicle-command` use); native self-signing in the background (`VcsecResponder`, byte-for-byte port of the Swift, JVM-tested); warm session; boot receiver + a process-death-surviving `PendingIntent` beacon scan for the wake; BT-off reminder (+4 h repeat); CPD alert. Verified on device 2026-09-03 without JS: package-replaced receiver → foreground service (`isForeground=true`, type `connectedDevice`, notification 333) → background scan registered with the three hardware filters + REINIT/SCAN_RESTART alarms. **At-car verification pending** (Task 8 of the plan). |
 | System back | Pops Controls/Climate and the sheets; exits to launcher at the root. |
 | **Share intake** | `ACTION_SEND` text/plain → a self-dismissing share sheet, NOT the app. See "The share sheet" below. |
 
@@ -35,16 +35,16 @@ pre-existing code.
 | **No satellite imagery** | OpenFreeMap serves no imagery, so the map-type toggle keeps the dark vector style rather than pretending. Needs a separately-vetted tile source to close. |
 | **Online search is Photon, not Apple MKLocalSearch** | No MapKit off Apple platforms. Same `Place` shape, same offline-gazetteer fallback. |
 | **`StatusBarFade` is iOS-only** | Deliberate: Tesla's own component is iOS-only. Enabling it on Android would *break* parity. |
-| **Background passive entry will need a foreground-service notification** | iOS uses CoreBluetooth state restoration; Android has no equivalent. Unavoidable and visible. (Phase 4, not yet built.) |
+| **A persistent "Phone Key" notification while armed** | Android has no CoreBluetooth state restoration; a `connectedDevice` foreground service is the only way to hold a link while backgrounded (the official Tesla app does exactly this — `BLEService`, notification 333). Low-importance channel, silent, tap opens the app. |
+| **Reboot wake = boot receiver + background scan, not a geofence** | iOS needs Location Always for its beacon/circular regions; Android's `BOOT_COMPLETED` receiver and a hardware-filtered `PendingIntent` scan cover reboot and process death with no location permission. A geofence leg is optional (spec §5 Q2). |
+| **`bondRemoved` never fires** | Nothing bonds with the car on Android (neither the official app nor `vehicle-command`), so there is no LE bond to lose. |
 | **The `Controls` title renders in Roboto** | Its style carries `fontWeight` and no `fontFamily`, so the system font is correct on both platforms — SF Pro on iOS, Roboto here. Not a bug. |
 
 ## Open / unverified
 
 | Item | Status |
 |---|---|
-| **BLE discovery: match the advertised service, not just the name** | Name-only matching never found the car: every 20s window saw 23-32 advertisers and none carried `S8d2eb01195e4f42bC`, while the derivation was verified correct. Tesla's 31-byte advertisement carries flags + the 16-bit service `1122`; an 18-character local name does not fit beside them, so it lives in the SCAN RESPONSE and `ScanRecord.getDeviceName()` does not reliably surface it. The matcher now accepts the advertised service (captured on-car, `advServices=[1122]`) as well, with the name still disqualifying a DIFFERENT Tesla when present. **Awaiting a car trip to confirm.** |
-| **BLE command to the car** | Not yet done — needs the phone at the car with the key card. Everything up to discovery is verified; the car has not been in range during testing. Wake the car first (a sleeping Tesla stops advertising). |
-| **Phase 4** — background passive entry, geofence re-arm, CPD notification, native self-signing | Not built. The three crypto goldens deliberately return "not implemented" rather than a false pass. |
+| **Phone key at the car** | Connect → MTU → indications → foreground command through the pipe → background walk-up (`HANDSHAKE ✓`, `standing DRIVE asserted`, unlock). Needs the phone at the car with the official app's Bluetooth OFF (it does its own passive entry). Pull both logs with `bash scripts/android/pull-logs.sh`. |
 | `BottomSheet` back behaviour | The place-preview sheet's close button dismisses correctly (verified). Back-key behaviour on the detented sheets is still unverified. |
 | `expo-bg-task` wake lock at runtime | Compiles and autolinks; needs a real car command to exercise. |
 | **Share sheet: send** | The sheet is verified end to end visually — spinner → "Sharing to car" + place + "Trying Bluetooth…" → "Error / Couldn't reach your car — try again" → auto-dismiss back to the sharing app. Only the SEND leg is unverified; it needs the car in range. |
@@ -255,10 +255,6 @@ is usually still in flight (waiting on the BLE link) and goes on to call `finish
 awaits, stamping its verdict and its place name over the new share. Measured exactly that on device.
 Each run now carries the generation it started in and can only touch the UI while it is current.
 
-### Known risk: two BLE centrals
+### The share sheet's BLE arm
 
-The sheet calls `foregroundBleLink.start(vin)` in the `:share` process. If the app is also running
-and holding the link, that is TWO BLE centrals in one app contending for the same car — the failure
-that broke passive entry on iOS (two `CBCentralManager`s cancelling each other). iOS avoids it by
-reading `CarPresence` and preferring the Pi when the app holds the link; the Android sheet has no Pi
-arm wired yet, so it always tries BLE. Unverified — the car was out of range all session.
+The `:share` process runs the same `PassiveEntryCentral` in EPHEMERAL mode — the iOS `BleBytePipe.swift` shape: no service, no persistence, no responder; a direct connect to the remembered address plus a 3 s discovery scan, closed when the sheet's activity is destroyed. Two GATT clients from two processes share one ACL on Android (the Bluetooth process owns the link), exactly as two `CBCentralManager`s do across processes on iOS, so this is not the in-process two-central contention that broke passive entry on iOS.

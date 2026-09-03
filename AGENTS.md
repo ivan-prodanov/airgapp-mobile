@@ -46,10 +46,14 @@ finds nothing. Pull it with:
 
 ```bash
 adb shell "run-as local.airgapp.mobile cat files/SQLite/carlink-log.db" > /tmp/cl.db
-node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/tmp/cl.db');for(const r of db.prepare('select * from log order by rowid desc limit 40').all().reverse())console.log([r.level,r.cat,r.msg,r.data].filter(Boolean).join(' | '))"
+node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/tmp/cl.db');for(const r of db.prepare('select * from log order by t desc limit 40').all().reverse())console.log([r.level,r.cat,r.msg,r.data].filter(Boolean).join(' | '))"
 ```
 
-Native BLE and Godot logs **do** go to logcat: `adb logcat -s PassiveEntry:* GodotHost:* godot:*`.
+(`order by t`, not rowid/seq — the JS seq counter restarts per boot and a new boot's rows replace the
+oldest ones.) Native BLE and Godot logs **do** go to logcat: `adb logcat -s PassiveEntry:* GodotHost:* godot:*`.
+
+The passive-entry service also writes its own `files/airgapp-native.log` (survives process death and
+reboot — the only record of a boot/background wake). `bash scripts/android/pull-logs.sh` pulls both.
 
 ## Gotchas that cost real time
 

@@ -154,7 +154,7 @@ import org.junit.Test
 /**
  * The three goldens are the same fixed inputs as ios/VcsecSigner.swift and the TS oracle
  * (scripts/gen-routable-golden.ts / gen-ecdh-golden.ts). src/ble/nativeGoldens.test.ts pins the hex
- * constants in the Kotlin source to ios/*.golden.json, so a drift on either side fails a test.
+ * constants in the Kotlin source to the ios golden JSON fixtures, so a drift on either side fails a test.
  */
 class VcsecSignerTest {
   @Test fun routableSealGoldenMatches() {
@@ -2830,6 +2830,9 @@ object PassiveEntryRuntime {
         central.onBluetoothOn()
         return
       }
+      // The Bluetooth service drops every scan registration with the radio: forget ours, or the next
+      // arm trusts a registration that no longer exists until the 25-minute restart alarm.
+      handler.post { backgroundScanArmedAt = 0L }
       central.onBluetoothOff()
       if (store.vin == null || store.btOffRepeatScheduled) return
       // Like iOS: one reminder per off-episode plus a repeat every few hours. Five seconds of grace,
@@ -3405,8 +3408,8 @@ Expected: `1` or more (the reminder posted).
 Run: `adb shell svc bluetooth enable; sleep 6; adb shell dumpsys notification --noredact 2>/dev/null | grep -c "Bluetooth Disabled"; adb logcat -d -s PassiveEntry:* | tail -3`
 Expected: `0` and a `bluetooth on` reestablish line.
 
-Run: `adb shell am kill local.airgapp.mobile; sleep 2; adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -n local.airgapp.mobile/expo.modules.passiveentry.PassiveEntryBootReceiver; sleep 4; adb shell dumpsys activity services local.airgapp.mobile | grep -c "isForeground=true"; adb logcat -d -s PassiveEntry:* | grep "startIfConfigured" | tail -1`
-Expected: `1` and `startIfConfigured(BOOT_COMPLETED): armed for vin=…844019`.
+Run (the shell may not send the protected `BOOT_COMPLETED` broadcast on One UI — a reinstall fires the same receiver through `MY_PACKAGE_REPLACED`, which is also an exempt foreground-service trigger): `adb install -r android/app/build/outputs/apk/release/app-release.apk; sleep 12; adb shell dumpsys activity services local.airgapp.mobile | grep -c "isForeground=true"; adb logcat -d -s 'PassiveEntry:*' | grep -E "startIfConfigured|service: foreground" | tail -2`
+Expected: `1`, `startIfConfigured(MY_PACKAGE_REPLACED): armed for vin=…844019` and `service: foreground (reason=MY_PACKAGE_REPLACED)`. (Measured 2026-09-03: also `background discovery armed (PendingIntent scan, low-power)` when no address is remembered, and `dumpsys alarm` lists `expo.modules.passiveentry.REINIT` + `SCAN_RESTART`.)
 
 Reopen the app.
 Run: `adb logcat -d -s PassiveEntry:* | grep "foregroundResponderActive" | tail -1`
@@ -3535,14 +3538,20 @@ mkdir -p "$OUT"
 adb get-state >/dev/null 2>&1 || { echo "ERROR: no adb device attached." >&2; exit 1; }
 
 echo "=== app log (SQLite ring) ==="
-adb shell "run-as $PKG cat files/SQLite/carlink-log.db" > "$OUT/carlink-log.db" 2>/dev/null
+# The ring is in WAL mode: without the -wal/-shm sidecars the newest rows are invisible.
+for f in carlink-log.db carlink-log.db-wal carlink-log.db-shm; do
+  adb shell "run-as $PKG cat files/SQLite/$f" > "$OUT/$f" 2>/dev/null || true
+  [ -s "$OUT/$f" ] || rm -f "$OUT/$f"
+done
 if [ -s "$OUT/carlink-log.db" ]; then
   node -e '
     const { DatabaseSync } = require("node:sqlite");
     const [db, limit, cat] = [new DatabaseSync(process.argv[1]), process.argv[2], process.argv[3]];
     const where = cat ? `where cat = ${JSON.stringify(cat)}` : "";
     const lim = limit === "all" ? "" : `limit ${Number(limit)}`;
-    const rows = db.prepare(`select t, level, cat, msg, data from log ${where} order by seq desc ${lim}`).all().reverse();
+    // ORDER BY t, not seq: `seq` is the JS logbus counter and restarts at 0 on every app boot,
+    // so a fresh boot writes LOW seq values that replace the oldest rows — the ring wraps.
+    const rows = db.prepare(`select t, level, cat, msg, data from log ${where} order by t desc ${lim}`).all().reverse();
     for (const r of rows) console.log([new Date(r.t).toISOString(), r.level, r.cat, r.msg, r.data].filter(Boolean).join(" | "));
   ' "$OUT/carlink-log.db" "$LIMIT" "$CAT"
 else
