@@ -9,5 +9,32 @@
                    android:usesPermissionFlags="neverForLocation"
                    tools:targetApi="s" />
   <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <!-- The foreground service that replaces CoreBluetooth state restoration. connectedDevice is
+       the type the official Tesla app declares (foregroundServiceType=0x10). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
+  <application>
+    <service
+        android:name="expo.modules.passiveentry.PassiveEntryService"
+        android:exported="false"
+        android:foregroundServiceType="connectedDevice" />
+    <!-- Exported: BOOT_COMPLETED / MY_PACKAGE_REPLACED are protected system broadcasts, nothing
+         else can send them. Internal actions go to the non-exported receiver below. -->
+    <receiver
+        android:name="expo.modules.passiveentry.PassiveEntryBootReceiver"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+    <receiver
+        android:name="expo.modules.passiveentry.PassiveEntryReceiver"
+        android:exported="false" />
+  </application>
 </manifest>
