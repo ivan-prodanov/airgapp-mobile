@@ -90,6 +90,12 @@ class PassiveEntryCentral(
   private val windowAdvertisers = HashSet<String>()
   private var windowOtherTesla: String? = null
   private var windowWeakSighting: String? = null
+  private val windowSightings = HashSet<String>()
+  /** Addresses that have identified as the car at any point — an unfiltered diagnostic window logs every event from them. */
+  private val carAddresses = HashSet<String>()
+  private var windowUnfiltered = false
+  private var windowHadConnectableCar = false
+  private var lastUnfilteredWindowAt = 0L
   private val scanStarts = ArrayDeque<Long>()
   private var standingSince = 0L
   private var consecutiveErrors = 0
@@ -208,6 +214,18 @@ class PassiveEntryCentral(
   /** The filters the runtime's PendingIntent scan uses — identical to the foreground ones. */
   fun backgroundScanFilters(): List<ScanFilter> = buildFilters(store.vin ?: vin)
 
+  /**
+   * Scan settings that report EXTENDED (Bluetooth 5) advertisements as well as legacy ones.
+   * Measured in the car 2026-09-04: the only legacy event the car sends is a scannable,
+   * NON-connectable iBeacon (name in its scan response) — the connectable advertisement is an
+   * extended one, which a default legacy-only scan never reports while iOS and macOS see both.
+   */
+  fun scanSettings(scanMode: Int): ScanSettings {
+    val b = ScanSettings.Builder().setScanMode(scanMode)
+    if (adapter?.isLeExtendedAdvertisingSupported == true) b.setLegacy(false).setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+    return b.build()
+  }
+
   // ── arm / disarm / reestablish ─────────────────────────────────────────────
 
   private fun armLocked(vin: String) {
@@ -298,13 +316,16 @@ class PassiveEntryCentral(
       ScanFilter.Builder().setServiceUuid(ParcelUuid(VehicleIdentity.ADVERTISED_SERVICE)).build(),
       ScanFilter.Builder().setDeviceName(VehicleIdentity.localName(forVin)).build(),
     )
+    // The official app's fourth identity: a 128-bit UUID from VIN bytes 1..16, carried in the
+    // connectable advertisement's own payload (the beacon event above is not connectable).
+    VehicleIdentity.perVinServiceUuid(forVin)?.let { filters.add(ScanFilter.Builder().setServiceUuid(ParcelUuid(it)).build()) }
     store.rememberedMac(forVin)?.let { mac ->
       runCatching { ScanFilter.Builder().setDeviceAddress(mac).build() }.getOrNull()?.let(filters::add)
     }
     return filters
   }
 
-  private fun beginDiscovery(reason: String) {
+  private fun beginDiscovery(reason: String, unfiltered: Boolean = false) {
     if (!armed) return
     if (scanCallback != null) return
     val ad = adapter ?: return
@@ -322,10 +343,11 @@ class PassiveEntryCentral(
     }
     scanStarts.addLast(now)
     val lowLatency = visible() || mode == Mode.EPHEMERAL
-    val settings = ScanSettings.Builder()
-      .setScanMode(if (lowLatency) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_LOW_POWER)
-      .build()
-    val filters = buildFilters(vin)
+    val settings = scanSettings(if (lowLatency) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_LOW_POWER)
+    val filters = if (unfiltered) emptyList() else buildFilters(vin)
+    windowUnfiltered = unfiltered
+    windowHadConnectableCar = false
+    if (unfiltered) lastUnfilteredWindowAt = SystemClock.elapsedRealtime()
     val cb = object : ScanCallback() {
       override fun onScanResult(callbackType: Int, result: ScanResult) {
         post { if (scanCallback === this) handleScanResult(result, external = false) }
@@ -342,6 +364,7 @@ class PassiveEntryCentral(
     windowAdvertisers.clear()
     windowOtherTesla = null
     windowWeakSighting = null
+    windowSightings.clear()
     try {
       scanner.startScan(filters, settings, cb)
     } catch (e: Exception) {
@@ -354,7 +377,8 @@ class PassiveEntryCentral(
       mode == Mode.EPHEMERAL -> 10_000L
       else -> SCAN_WINDOW_MS
     }
-    log("scanning ($reason): beacon|1122|name${if (filters.size == 4) "|address" else ""}, ${windowMs}ms window, ${if (lowLatency) "low-latency" else "low-power"}")
+    val what = if (unfiltered) "UNFILTERED (diagnostic: logging every event from the car's address)" else "beacon|1122|name|vinUuid${if (filters.size == 5) "|address" else ""}"
+    log("scanning ($reason): $what, ${windowMs}ms window, ${if (lowLatency) "low-latency" else "low-power"}, legacyOnly=${settings.legacy}")
     handler.removeCallbacks(scanWindowEnd)
     handler.postDelayed(scanWindowEnd, windowMs)
     if (state == State.IDLE) setState(State.DISCOVERING)
@@ -376,12 +400,20 @@ class PassiveEntryCentral(
     }
     log("scan window ended — ${windowAdvertisers.size} advertiser(s), no car$extra")
     if (!armed) return
+    // Heard the car but only on non-connectable events: look once, wide open, so the log shows
+    // exactly what else the car sends (bounded to one unfiltered window per 5 minutes).
+    val heardButUnreachable = windowSightings.isNotEmpty() && !windowHadConnectableCar
+    val diagnoseNext = heardButUnreachable && !windowUnfiltered && visible() &&
+      SystemClock.elapsedRealtime() - lastUnfilteredWindowAt > UNFILTERED_WINDOW_INTERVAL_MS
     when (mode) {
       Mode.EPHEMERAL -> if (state == State.DISCOVERING) {
         setState(State.IDLE)
         log("ephemeral: car not found")
       }
-      Mode.PERSISTENT -> if (state == State.DISCOVERING && visible()) handler.postDelayed(scanRestart, SCAN_PAUSE_MS)
+      Mode.PERSISTENT -> if (state == State.DISCOVERING && visible()) {
+        if (diagnoseNext) handler.postDelayed({ if (armed && state == State.DISCOVERING && visible()) beginDiscovery("car heard but not connectable", unfiltered = true) }, SCAN_PAUSE_MS)
+        else handler.postDelayed(scanRestart, SCAN_PAUSE_MS)
+      }
     }
   }
 
@@ -409,6 +441,13 @@ class PassiveEntryCentral(
     val uuids = record?.serviceUuids?.map { it.uuid } ?: emptyList()
     val name = record?.deviceName
     val match = VehicleIdentity.classify(apple, uuids, name, vin)
+    if (windowUnfiltered && (addr in carAddresses || match != VehicleIdentity.Match.NONE)) {
+      val svc = uuids.joinToString(",") { it.toString() }.ifEmpty { "-" }
+      val key = "raw/$addr/${result.isConnectable}/$svc/${name ?: "-"}/${apple != null}"
+      if (windowSightings.add(key)) {
+        log("car event: $addr connectable=${result.isConnectable} legacy=${result.isLegacy} phy=${result.primaryPhy}/${result.secondaryPhy} rssi=${result.rssi} svc=[$svc] name=${name ?: "-"} appleMfg=${apple?.size ?: 0}B match=$match")
+      }
+    }
     if (match == VehicleIdentity.Match.NONE) {
       windowAdvertisers.add(addr)
       if (windowOtherTesla == null) {
@@ -418,6 +457,17 @@ class PassiveEntryCentral(
       }
       return
     }
+    // One line per (address, match, connectable) per window: enough to see which advertising event
+    // the car is actually reachable on.
+    val connectable = result.isConnectable
+    carAddresses.add(addr)
+    if (connectable) windowHadConnectableCar = true
+    if (windowSightings.add("$addr/$match/$connectable")) {
+      log("car sighting: $match at $addr connectable=$connectable legacy=${result.isLegacy} phy=${result.primaryPhy}/${result.secondaryPhy} rssi=${result.rssi}${if (name != null) " name=$name" else ""}")
+    }
+    // A non-connectable event (the iBeacon frame is one) cannot be dialled — the connectable
+    // advertisement follows on its own event; the official app checks isConnectable the same way.
+    if (!connectable) return
     // Official-app rule for a BACKGROUND sighting: do not dial a car at the edge of range.
     if (!visible() && result.rssi <= BACKGROUND_RSSI_GATE) {
       if (windowWeakSighting == null) windowWeakSighting = "$match rssi=${result.rssi}"
@@ -455,8 +505,12 @@ class PassiveEntryCentral(
 
   // ── connecting ─────────────────────────────────────────────────────────────
 
+  // Any PHY: the car's connectable advertisement is extended and may sit on 2M or Coded. (The mask
+  // is ignored for autoConnect — the controller's allow list handles that path.)
+  private val anyPhy = BluetoothDevice.PHY_LE_1M_MASK or BluetoothDevice.PHY_LE_2M_MASK or BluetoothDevice.PHY_LE_CODED_MASK
+
   private fun connectGatt(device: BluetoothDevice, autoConnect: Boolean): BluetoothGatt? =
-    device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE, BluetoothDevice.PHY_LE_1M_MASK, handler)
+    device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE, anyPhy, handler)
 
   /** We have just SEEN the car: a direct connect is immediate. */
   private fun directConnect(device: BluetoothDevice, why: String) {
@@ -806,5 +860,6 @@ class PassiveEntryCentral(
     const val DELAY_AFTER_ERROR = 2_000L
     const val ERROR_STORM_PAUSE_MS = 15_000L
     const val BRINGUP_LOCK_MS = 15_000L
+    const val UNFILTERED_WINDOW_INTERVAL_MS = 5L * 60 * 1000
   }
 }

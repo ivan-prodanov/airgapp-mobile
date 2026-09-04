@@ -28,6 +28,18 @@ object VehicleIdentity {
   val RX_CHAR: UUID = UUID.fromString("00000213-b2d1-43f0-9b88-960cebf8b91e") // indicate
   val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
+  /**
+   * The 128-bit service UUID the official Android app also filters on (BLEService: z0.a(vin)):
+   * VIN bytes 1..16 read as a big-endian UUID. Fits the connectable advertisement's own 31-byte
+   * payload beside the flags, which is where a hardware scan filter looks.
+   */
+  fun perVinServiceUuid(vin: String): UUID? {
+    val b = vin.toByteArray(Charsets.US_ASCII)
+    if (b.size != 17) return null
+    val bb = ByteBuffer.wrap(b, 1, 16)
+    return UUID(bb.long, bb.long)
+  }
+
   /** ScanFilter payload "an iBeacon carrying our UUID": type(02) len(15) + the 16 UUID bytes. */
   val BEACON_FILTER_DATA: ByteArray = byteArrayOf(0x02, 0x15) + BEACON_UUID_BYTES
   val BEACON_FILTER_MASK: ByteArray = ByteArray(BEACON_FILTER_DATA.size) { 0xFF.toByte() }
@@ -78,6 +90,8 @@ object VehicleIdentity {
     if (advName == want) return Match.NAME
     if (advName != null && DERIVED_NAME.matches(advName)) return Match.NONE // a different Tesla's token
     if (ADVERTISED_SERVICE in serviceUuids) return Match.SERVICE
+    val perVin = perVinServiceUuid(vin)
+    if (perVin != null && perVin in serviceUuids) return Match.SERVICE
     return Match.NONE
   }
 

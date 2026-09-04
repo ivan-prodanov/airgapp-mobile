@@ -249,11 +249,7 @@ object PassiveEntryRuntime {
       if (!BleGuards.hasScanPermissions(app)) return
       val scanner = adapter()?.bluetoothLeScanner ?: return
       if (backgroundScanArmedAt != 0L && SystemClock.elapsedRealtime() - backgroundScanArmedAt < BACKGROUND_SCAN_RESTART_MS - 60_000L) return
-      val settings = ScanSettings.Builder()
-        .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
-        .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-        .setReportDelay(0)
-        .build()
+      val settings = central.scanSettings(ScanSettings.SCAN_MODE_LOW_POWER)
       val pi = PassiveEntryReceiver.pending(app, PassiveEntryReceiver.ACTION_SCAN_RESULTS, mutable = true)
       val rc = runCatching { scanner.startScan(central.backgroundScanFilters(), settings, pi) }.getOrElse { -1 }
       if (rc == 0) {

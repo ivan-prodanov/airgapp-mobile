@@ -1893,6 +1893,7 @@ class PassiveEntryCentral(
   private val windowAdvertisers = HashSet<String>()
   private var windowOtherTesla: String? = null
   private var windowWeakSighting: String? = null
+  private val windowSightings = HashSet<String>()
   private val scanStarts = ArrayDeque<Long>()
   private var standingSince = 0L
   private var consecutiveErrors = 0
@@ -2011,6 +2012,18 @@ class PassiveEntryCentral(
   /** The filters the runtime's PendingIntent scan uses — identical to the foreground ones. */
   fun backgroundScanFilters(): List<ScanFilter> = buildFilters(store.vin ?: vin)
 
+  /**
+   * Scan settings that report EXTENDED (Bluetooth 5) advertisements as well as legacy ones.
+   * Measured in the car 2026-09-04: the only legacy event the car sends is a scannable,
+   * NON-connectable iBeacon (name in its scan response) — the connectable advertisement is an
+   * extended one, which a default legacy-only scan never reports while iOS and macOS see both.
+   */
+  fun scanSettings(scanMode: Int): ScanSettings {
+    val b = ScanSettings.Builder().setScanMode(scanMode)
+    if (adapter?.isLeExtendedAdvertisingSupported == true) b.setLegacy(false).setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+    return b.build()
+  }
+
   // ── arm / disarm / reestablish ─────────────────────────────────────────────
 
   private fun armLocked(vin: String) {
@@ -2125,9 +2138,7 @@ class PassiveEntryCentral(
     }
     scanStarts.addLast(now)
     val lowLatency = visible() || mode == Mode.EPHEMERAL
-    val settings = ScanSettings.Builder()
-      .setScanMode(if (lowLatency) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_LOW_POWER)
-      .build()
+    val settings = scanSettings(if (lowLatency) ScanSettings.SCAN_MODE_LOW_LATENCY else ScanSettings.SCAN_MODE_LOW_POWER)
     val filters = buildFilters(vin)
     val cb = object : ScanCallback() {
       override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -2145,6 +2156,7 @@ class PassiveEntryCentral(
     windowAdvertisers.clear()
     windowOtherTesla = null
     windowWeakSighting = null
+    windowSightings.clear()
     try {
       scanner.startScan(filters, settings, cb)
     } catch (e: Exception) {
@@ -2221,6 +2233,15 @@ class PassiveEntryCentral(
       }
       return
     }
+    // One line per (address, match, connectable) per window: enough to see which advertising event
+    // the car is actually reachable on.
+    val connectable = result.isConnectable
+    if (windowSightings.add("$addr/$match/$connectable")) {
+      log("car sighting: $match at $addr connectable=$connectable legacy=${result.isLegacy} phy=${result.primaryPhy}/${result.secondaryPhy} rssi=${result.rssi}${if (name != null) " name=$name" else ""}")
+    }
+    // A non-connectable event (the iBeacon frame is one) cannot be dialled — the connectable
+    // advertisement follows on its own event; the official app checks isConnectable the same way.
+    if (!connectable) return
     // Official-app rule for a BACKGROUND sighting: do not dial a car at the edge of range.
     if (!visible() && result.rssi <= BACKGROUND_RSSI_GATE) {
       if (windowWeakSighting == null) windowWeakSighting = "$match rssi=${result.rssi}"
@@ -2258,8 +2279,12 @@ class PassiveEntryCentral(
 
   // ── connecting ─────────────────────────────────────────────────────────────
 
+  // Any PHY: the car's connectable advertisement is extended and may sit on 2M or Coded. (The mask
+  // is ignored for autoConnect — the controller's allow list handles that path.)
+  private val anyPhy = BluetoothDevice.PHY_LE_1M_MASK or BluetoothDevice.PHY_LE_2M_MASK or BluetoothDevice.PHY_LE_CODED_MASK
+
   private fun connectGatt(device: BluetoothDevice, autoConnect: Boolean): BluetoothGatt? =
-    device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE, BluetoothDevice.PHY_LE_1M_MASK, handler)
+    device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE, anyPhy, handler)
 
   /** We have just SEEN the car: a direct connect is immediate. */
   private fun directConnect(device: BluetoothDevice, why: String) {
@@ -2894,11 +2919,7 @@ object PassiveEntryRuntime {
       if (!BleGuards.hasScanPermissions(app)) return
       val scanner = adapter()?.bluetoothLeScanner ?: return
       if (backgroundScanArmedAt != 0L && SystemClock.elapsedRealtime() - backgroundScanArmedAt < BACKGROUND_SCAN_RESTART_MS - 60_000L) return
-      val settings = ScanSettings.Builder()
-        .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
-        .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-        .setReportDelay(0)
-        .build()
+      val settings = central.scanSettings(ScanSettings.SCAN_MODE_LOW_POWER)
       val pi = PassiveEntryReceiver.pending(app, PassiveEntryReceiver.ACTION_SCAN_RESULTS, mutable = true)
       val rc = runCatching { scanner.startScan(central.backgroundScanFilters(), settings, pi) }.getOrElse { -1 }
       if (rc == 0) {

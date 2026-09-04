@@ -1,13 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
   <!-- Android 12+ split the install-time BLUETOOTH/BLUETOOTH_ADMIN pair into runtime
-       permissions. neverForLocation is load-bearing: WITHOUT it the platform also demands
-       ACCESS_FINE_LOCATION before delivering ANY scan result, and a scan missing that
-       permission returns zero results silently — indistinguishable from "the car isn't
-       nearby". We never derive location from a scan result. -->
-  <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-                   android:usesPermissionFlags="neverForLocation"
-                   tools:targetApi="s" />
+       permissions. BLUETOOTH_SCAN is declared WITHOUT usesPermissionFlags="neverForLocation",
+       deliberately (measured in the car 2026-09-04): with that flag the Bluetooth service drops
+       every scan result whose record carries a location-class beacon — the iBeacon/Eddystone
+       denylist in GattService — and the car's advertisement ALWAYS carries its iBeacon, so the
+       controller matched our 1122 filter ~10×/s while the app received nothing at all. The price
+       is ACCESS_FINE_LOCATION (which the app holds anyway) plus Location Services being on, which
+       is exactly what the official Tesla app requires before it scans (BLEService.A0). -->
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
   <!-- The foreground service that replaces CoreBluetooth state restoration. connectedDevice is
        the type the official Tesla app declares (foregroundServiceType=0x10). -->

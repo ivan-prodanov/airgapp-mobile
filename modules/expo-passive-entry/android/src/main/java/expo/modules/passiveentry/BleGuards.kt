@@ -11,13 +11,17 @@ import androidx.core.content.ContextCompat
  * cannot drift.
  *
  * This exists as an explicit precondition because the failure it prevents is INVISIBLE: on Android
- * 12+, starting a scan without BLUETOOTH_SCAN neither throws nor warns — it returns zero results
- * forever, indistinguishable from "the car isn't nearby". Better a clear refusal in the log.
+ * 12+, starting a scan without BLUETOOTH_SCAN (or, for a scanner that has not disavowed location,
+ * without ACCESS_FINE_LOCATION) neither throws nor warns — it returns zero results forever,
+ * indistinguishable from "the car isn't nearby". Better a clear refusal in the log.
  */
 object BleGuards {
+  // ACCESS_FINE_LOCATION on 31+ as well: BLUETOOTH_SCAN is declared WITHOUT neverForLocation (see
+  // the module manifest — with the flag, Android drops every result that carries the car's
+  // iBeacon), and a scan without fine location then returns zero results silently.
   fun requiredPermissions(): List<String> =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+      listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION)
     } else {
       listOf(Manifest.permission.ACCESS_FINE_LOCATION)
     }

@@ -60,6 +60,13 @@ class VehicleIdentityTest {
     assertEquals(Match.NONE, VehicleIdentity.classify(null, emptyList(), null, vin))
   }
 
+  @Test fun perVinServiceUuidIsVinBytes1To16() {
+    // "P7YGCELXTB844019" as ASCII → 50375947-4345-4c58-5442-383434303139 (official app z0.a)
+    assertEquals("50375947-4345-4c58-5442-383434303139", VehicleIdentity.perVinServiceUuid(vin).toString())
+    assertNull(VehicleIdentity.perVinServiceUuid("SHORT"))
+    assertEquals(Match.SERVICE, VehicleIdentity.classify(null, listOf(VehicleIdentity.perVinServiceUuid(vin)!!), null, vin))
+  }
+
   @Test fun beaconFilterPayloadIsTypeLenUuid() {
     assertEquals("021574278bdab64445208f0c720eaf059935", VcsecSigner.hex(VehicleIdentity.BEACON_FILTER_DATA))
     assertEquals(18, VehicleIdentity.BEACON_FILTER_MASK.size)
