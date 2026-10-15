@@ -389,10 +389,15 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           />
         }
       >
-        {/* car shows through here. box-only + the PanResponder handlers: captures horizontal swipes
-            to switch vehicles while staying visually transparent (car still shows through) and
-            letting vertical drags scroll this menu. */}
-        <View style={{ height: carBand }} pointerEvents="box-only" {...swipeHandlers} />
+        {/* car shows through here. The Pressable adds tap-to-refresh ON THE CAR — the same wake +
+            re-read and Medium haptic as the "last seen" status tap (onRefresh), which the official app
+            does too. The inner box-only view keeps the PanResponder untouched: a horizontal drag switches
+            vehicles, a vertical drag scrolls this menu (both take the responder away from the Pressable so
+            they don't fire a tap), and a plain tap falls through to onPress. All stay visually transparent
+            so the car still shows through. */}
+        <Pressable style={{ height: carBand }} onPress={onRefresh}>
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-only" {...swipeHandlers} />
+        </Pressable>
 
         {/* transparent menu — no background */}
         <View style={styles.menu}>
