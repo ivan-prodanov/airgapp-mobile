@@ -16,6 +16,8 @@ import {
   type VehicleStateKey,
   type VehicleViewState,
 } from '../types/vehicleTypes';
+import { vinToModelLine } from '../ble/vinDecode';
+import type { CarConfig } from '../ble/types';
 
 export interface Vehicle {
   id: string;
@@ -47,13 +49,21 @@ const MODEL_BASE_NAME: Record<CarModel, string> = {
   modelX7Seat: 'Model X (7-seat)',
 };
 
+// The persisted appearance of one car — the fields the user picks in onboarding
+// (model line is VIN-derivable; everything else is a build option, stored). Used
+// to materialize a Vehicle from config on launch.
+export interface VehicleConfig {
+  carModel: CarModel;
+  exteriorColor: string | null;
+  wheelType: string | null;
+  interiorTrim: string | null;
+  performance: boolean | null;
+}
+
+// The app starts with NO car. Onboarding adds the first one (real or demo), which
+// persists. An empty fleet is the onboarding signal — activeVehicle is undefined.
 export function createInitialFleet(): FleetState {
-  return {
-    vehicles: [
-      { id: 'veh_1', name: 'Red Velvet', state: { ...initialVehicleState } },
-    ],
-    activeId: 'veh_1',
-  };
+  return { vehicles: [], activeId: '' };
 }
 
 // bindVehicleVin marks one vehicle as the enrolled car. Idempotent, and it
@@ -75,8 +85,39 @@ export function activeIndex(fleet: FleetState): number {
   return index === -1 ? 0 : index;
 }
 
-export function activeVehicle(fleet: FleetState): Vehicle {
+export function activeVehicle(fleet: FleetState): Vehicle | undefined {
   return fleet.vehicles[activeIndex(fleet)];
+}
+
+// Build a Vehicle straight from a stored appearance config (the onboarding /
+// persistence path). vin is set only for the real, enrolled car.
+export function vehicleFromConfig(id: string, name: string, config: VehicleConfig, vin?: string): Vehicle {
+  return {
+    id,
+    name,
+    ...(vin ? { vin } : {}),
+    state: {
+      ...initialVehicleState,
+      carModel: config.carModel,
+      exteriorColor: config.exteriorColor,
+      wheelType: config.wheelType,
+      interiorTrim: config.interiorTrim,
+      performance: config.performance,
+    },
+  };
+}
+
+// Materialize an enrolled car from its CarConfig: model line from the VIN (falling
+// back to Model Y when the VIN can't be decoded), default appearance, name from the
+// nickname or the model's base name.
+export function vehicleFromCarConfig(id: string, cfg: CarConfig): Vehicle {
+  const model = (vinToModelLine(cfg.vin) ?? 'modelY') as CarModel; // base line is a valid CarModel
+  return vehicleFromConfig(
+    id,
+    cfg.nickname?.trim() || MODEL_BASE_NAME[model],
+    { carModel: model, exteriorColor: null, wheelType: null, interiorTrim: null, performance: null },
+    cfg.vin,
+  );
 }
 
 function nextId(fleet: FleetState): string {
@@ -126,7 +167,7 @@ export function addVehicle(
   const requested = opts?.name?.trim();
   const base = requested && requested.length > 0 ? requested : MODEL_BASE_NAME[model];
   const name = uniqueName(base, fleet.vehicles.map((v) => v.name));
-  const inheritFrom = activeVehicle(fleet).state;
+  const inheritFrom = activeVehicle(fleet)?.state ?? initialVehicleState;
   const vehicle: Vehicle = {
     id,
     name,
@@ -141,20 +182,26 @@ export function addVehicle(
   return { vehicles: [...fleet.vehicles, vehicle], activeId: id };
 }
 
+// Like addVehicle, but binds a VIN to the new car — the enrollment path for the
+// real car. Reuses addVehicle's naming / id / de-dup, then stamps the vin on the
+// freshly-added (now active) vehicle.
+export function addVehicleWithVin(
+  fleet: FleetState, vin: string, model: CarModel, opts?: Parameters<typeof addVehicle>[2],
+): FleetState {
+  const added = addVehicle(fleet, model, opts);        // reuses naming/id/dedup
+  // Route through bindVehicleVin so the single-VIN invariant holds: any
+  // previously-enrolled car has its vin cleared — only ONE vehicle is ever live.
+  return bindVehicleVin(added, added.activeId, vin);
+}
+
+// Removing the LAST car empties the fleet (→ onboarding). No floor: the empty
+// fleet is a first-class state now, not an error.
 export function removeVehicle(fleet: FleetState, id: string): FleetState {
-  if (fleet.vehicles.length <= 1) {
-    return fleet;
-  }
   const index = fleet.vehicles.findIndex((v) => v.id === id);
-  if (index === -1) {
-    return fleet;
-  }
+  if (index === -1) return fleet;
   const vehicles = fleet.vehicles.filter((v) => v.id !== id);
-  let activeId = fleet.activeId;
-  if (id === fleet.activeId) {
-    const neighbor = vehicles[index - 1] ?? vehicles[index] ?? vehicles[0];
-    activeId = neighbor.id;
-  }
+  const activeId =
+    id === fleet.activeId ? ((vehicles[index - 1] ?? vehicles[index] ?? vehicles[0])?.id ?? '') : fleet.activeId;
   return { vehicles, activeId };
 }
 
@@ -163,11 +210,13 @@ export function setActiveVehicle(fleet: FleetState, id: string): FleetState {
 }
 
 export function nextVehicleId(fleet: FleetState): string {
+  if (fleet.vehicles.length === 0) return fleet.activeId; // empty fleet → the current ('') id
   const i = activeIndex(fleet);
   return fleet.vehicles[Math.min(i + 1, fleet.vehicles.length - 1)].id;
 }
 
 export function prevVehicleId(fleet: FleetState): string {
+  if (fleet.vehicles.length === 0) return fleet.activeId; // empty fleet → the current ('') id
   const i = activeIndex(fleet);
   return fleet.vehicles[Math.max(i - 1, 0)].id;
 }
@@ -177,25 +226,29 @@ export function updateActiveVehicleState(
   update: (state: VehicleViewState) => VehicleViewState,
 ): FleetState {
   const index = activeIndex(fleet);
+  if (!fleet.vehicles[index]) return fleet; // empty fleet → nothing to update
   const vehicles = fleet.vehicles.slice();
   vehicles[index] = { ...vehicles[index], state: update(vehicles[index].state) };
   return { ...fleet, vehicles };
 }
 
-// Update the ENROLLED car's state — always vehicles[0], the real car by the
-// app's single-enrolled-car assumption (see bindVehicleVin). Used ONLY for the
+// Update the ENROLLED car's state — the one vehicle carrying a vin, the real car
+// by the app's single-enrolled-car assumption (see bindVehicleVin). With the
+// hardcoded seed gone the enrolled car is no longer "always index 0": the fleet
+// may hold demo cars added before enrollment, or be empty. Used ONLY for the
 // launch-time cache rehydrate, which must seed the enrolled car with its own
 // persisted telemetry regardless of which car is on screen or whether the live
 // link is up yet — bypassing the "active-is-live" gate that live telemetry uses
 // (that gate exists to stop live reads bleeding into a demo car; a rehydrate of
-// the car's OWN last-known values is not that).
+// the car's OWN last-known values is not that). No vin bound yet → no-op.
 export function updateEnrolledVehicleState(
   fleet: FleetState,
   update: (state: VehicleViewState) => VehicleViewState,
 ): FleetState {
-  if (!fleet.vehicles[0]) return fleet;
+  const i = fleet.vehicles.findIndex((v) => v.vin); // the (single, v1) real car
+  if (i === -1) return fleet;
   const vehicles = fleet.vehicles.slice();
-  vehicles[0] = { ...vehicles[0], state: update(vehicles[0].state) };
+  vehicles[i] = { ...vehicles[i], state: update(vehicles[i].state) };
   return { ...fleet, vehicles };
 }
 

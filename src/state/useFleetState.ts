@@ -178,7 +178,7 @@ export function useFleetState(): {
     getActiveState: () => activeStateRef.current,
   });
 
-  const current = activeVehicle(fleet);
+  const current = activeVehicle(fleet) ?? { id: '', name: '', state: initialVehicleState };
   activeStateRef.current = current.state;
 
   // ── P3.T1: which vehicle IS the enrolled car? ────────────────────────────

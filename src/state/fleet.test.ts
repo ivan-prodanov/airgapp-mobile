@@ -10,6 +10,9 @@ import {
   setClimateOnState,
   activeVehicle,
   addVehicle,
+  addVehicleWithVin,
+  vehicleFromConfig,
+  vehicleFromCarConfig,
   AMP_MAX,
   AMP_MIN,
   clampSpeedLimitKmh,
@@ -41,17 +44,14 @@ import {
 } from './fleet';
 import { climateCapabilitiesFor, initialVehicleState, vehicleConfigs } from '../types/vehicleTypes';
 
-test('initial fleet is a single Model Y named Red Velvet, active', () => {
-  const fleet = createInitialFleet();
-  assert.equal(fleet.vehicles.length, 1);
-  assert.equal(fleet.vehicles[0].id, 'veh_1');
-  assert.equal(fleet.vehicles[0].name, 'Red Velvet');
-  assert.equal(fleet.vehicles[0].state.carModel, 'modelY');
-  assert.equal(fleet.activeId, 'veh_1');
-});
+// The hardcoded seed is gone (createInitialFleet() is now empty — see the
+// "createInitialFleet is empty" test). Tests that assumed a free first car
+// reproduce exactly the old seed's shape (Model Y "Red Velvet" = veh_1, active)
+// via this helper, so their veh_1/veh_2 ids and assertions are unchanged.
+const oneCar = () => addVehicle(createInitialFleet(), 'modelY', { name: 'Red Velvet' });
 
 test('addVehicle appends a fresh car of the chosen model and makes it active', () => {
-  const fleet = addVehicle(createInitialFleet(), 'model3');
+  const fleet = addVehicle(oneCar(), 'model3');
   assert.equal(fleet.vehicles.length, 2);
   const added = fleet.vehicles[1];
   assert.equal(added.id, 'veh_2');
@@ -62,7 +62,7 @@ test('addVehicle appends a fresh car of the chosen model and makes it active', (
 });
 
 test('addVehicle uses a provided name (trimmed + de-duped), else the model base name', () => {
-  let fleet = addVehicle(createInitialFleet(), 'model3', { name: '  Blue Steel  ' });
+  let fleet = addVehicle(oneCar(), 'model3', { name: '  Blue Steel  ' });
   assert.equal(activeVehicle(fleet).name, 'Blue Steel');
   // Blank / whitespace-only names fall back to the model base name.
   fleet = addVehicle(fleet, 'modelX', { name: '   ' });
@@ -73,7 +73,7 @@ test('addVehicle uses a provided name (trimmed + de-duped), else the model base 
 });
 
 test('addVehicle stores per-car color / wheel / interior / performance overrides in state', () => {
-  const fleet = addVehicle(createInitialFleet(), 'modelY', {
+  const fleet = addVehicle(oneCar(), 'modelY', {
     exteriorColor: 'DeepBlue',
     wheelType: 'Induction20Black',
     interiorTrim: 'Cream',
@@ -87,7 +87,7 @@ test('addVehicle stores per-car color / wheel / interior / performance overrides
 });
 
 test('addVehicle without overrides leaves all config overrides null (model default renders)', () => {
-  const added = activeVehicle(addVehicle(createInitialFleet(), 'modelX')).state;
+  const added = activeVehicle(addVehicle(oneCar(), 'modelX')).state;
   assert.equal(added.exteriorColor, null);
   assert.equal(added.wheelType, null);
   assert.equal(added.interiorTrim, null);
@@ -95,7 +95,7 @@ test('addVehicle without overrides leaves all config overrides null (model defau
 });
 
 test('addVehicle de-dups names for the same model', () => {
-  let fleet = createInitialFleet();
+  let fleet = oneCar();
   fleet = addVehicle(fleet, 'model3');
   fleet = addVehicle(fleet, 'model3');
   assert.deepEqual(
@@ -104,19 +104,8 @@ test('addVehicle de-dups names for the same model', () => {
   );
 });
 
-test('updateEnrolledVehicleState always targets vehicles[0], even when another car is active', () => {
-  // The launch-time cache rehydrate must land on the enrolled car (index 0)
-  // regardless of which car is on screen — swipe to a demo car, rehydrate still
-  // seeds the real car.
-  let fleet = addVehicle(createInitialFleet(), 'model3'); // demo car becomes active
-  assert.notEqual(fleet.activeId, fleet.vehicles[0].id); // active is NOT the enrolled car
-  fleet = updateEnrolledVehicleState(fleet, (s) => ({ ...s, batteryLevel: 46 }));
-  assert.equal(fleet.vehicles[0].state.batteryLevel, 46); // enrolled car got it
-  assert.equal(activeVehicle(fleet).state.batteryLevel, null); // active demo car untouched
-});
-
 test('new vehicle inherits theme and lightingMode from the active car', () => {
-  let fleet = createInitialFleet();
+  let fleet = oneCar();
   fleet = updateActiveVehicleState(fleet, (s) => ({ ...s, theme: 'light', lightingMode: 'ambient_fill' }));
   fleet = addVehicle(fleet, 'modelX');
   const added = activeVehicle(fleet).state;
@@ -124,13 +113,8 @@ test('new vehicle inherits theme and lightingMode from the active car', () => {
   assert.equal(added.lightingMode, 'ambient_fill');
 });
 
-test('removeVehicle is a no-op when only one car remains', () => {
-  const fleet = createInitialFleet();
-  assert.deepEqual(removeVehicle(fleet, 'veh_1'), fleet);
-});
-
 test('removing the active car selects the previous neighbor', () => {
-  let fleet = createInitialFleet();
+  let fleet = oneCar();
   fleet = addVehicle(fleet, 'model3'); // veh_2, active
   fleet = addVehicle(fleet, 'modelX'); // veh_3, active
   fleet = setActiveVehicle(fleet, 'veh_2');
@@ -140,14 +124,14 @@ test('removing the active car selects the previous neighbor', () => {
 });
 
 test('removing the active first car selects the next neighbor', () => {
-  let fleet = addVehicle(createInitialFleet(), 'model3'); // veh_2
+  let fleet = addVehicle(oneCar(), 'model3'); // veh_2
   fleet = setActiveVehicle(fleet, 'veh_1');
   fleet = removeVehicle(fleet, 'veh_1');
   assert.equal(fleet.activeId, 'veh_2');
 });
 
 test('next/prev vehicle id clamps at the ends', () => {
-  let fleet = addVehicle(createInitialFleet(), 'model3'); // veh_1, veh_2; active veh_2
+  let fleet = addVehicle(oneCar(), 'model3'); // veh_1, veh_2; active veh_2
   fleet = setActiveVehicle(fleet, 'veh_1');
   assert.equal(prevVehicleId(fleet), 'veh_1'); // clamp at start
   assert.equal(nextVehicleId(fleet), 'veh_2');
@@ -156,7 +140,7 @@ test('next/prev vehicle id clamps at the ends', () => {
 });
 
 test('updateActiveVehicleState mutates only the active car', () => {
-  let fleet = addVehicle(createInitialFleet(), 'model3'); // active veh_2
+  let fleet = addVehicle(oneCar(), 'model3'); // active veh_2
   fleet = setActiveVehicle(fleet, 'veh_1');
   fleet = updateActiveVehicleState(fleet, (s) => toggleState(s, 'locked'));
   assert.equal(fleet.vehicles[0].state.locked, false); // veh_1 toggled
@@ -359,7 +343,7 @@ test('the comfort toggles flip via toggleState (the generic path the sheet rows 
 });
 
 test('setpoints are per-vehicle: editing the active car leaves the others alone', () => {
-  const fleet = addVehicle(createInitialFleet(), 'model3'); // veh_2 active
+  const fleet = addVehicle(oneCar(), 'model3'); // veh_2 active
   const edited = updateActiveVehicleState(fleet, (s) => setChargeLimitState(s, 100));
   assert.equal(activeVehicle(edited).state.chargeLimitPercent, 100);
   assert.equal(edited.vehicles[0].state.chargeLimitPercent, 80); // veh_1 untouched
@@ -367,7 +351,7 @@ test('setpoints are per-vehicle: editing the active car leaves the others alone'
 
 // ── P3.T1: which vehicle is the enrolled car? ──────────────────────────────
 test('bindVehicleVin marks one vehicle as the live car', () => {
-  const fleet = addVehicle(createInitialFleet(), 'modelS');
+  const fleet = addVehicle(oneCar(), 'modelS');
   const bound = bindVehicleVin(fleet, fleet.vehicles[0].id, '5YJ...123');
   assert.equal(bound.vehicles[0].vin, '5YJ...123');
   assert.equal(bound.vehicles[1].vin, undefined, 'a demo car must never carry a vin');
@@ -376,7 +360,7 @@ test('bindVehicleVin marks one vehicle as the live car', () => {
 test('bindVehicleVin CLEARS the vin from every other vehicle — "live" must be unambiguous', () => {
   // Two vins would silently share one gateway (useCarLink's single-gateway
   // invariant: session.ts's _domainCache is keyed on domain only, not VIN).
-  let fleet = addVehicle(createInitialFleet(), 'modelS');
+  let fleet = addVehicle(oneCar(), 'modelS');
   fleet = bindVehicleVin(fleet, fleet.vehicles[0].id, 'VIN_A');
   fleet = bindVehicleVin(fleet, fleet.vehicles[1].id, 'VIN_B');
   assert.equal(fleet.vehicles[0].vin, undefined);
@@ -385,12 +369,12 @@ test('bindVehicleVin CLEARS the vin from every other vehicle — "live" must be 
 });
 
 test('bindVehicleVin is idempotent — returns the same object when nothing changes', () => {
-  const fleet = bindVehicleVin(createInitialFleet(), 'veh_1', 'VIN_A');
+  const fleet = bindVehicleVin(oneCar(), 'veh_1', 'VIN_A');
   assert.equal(bindVehicleVin(fleet, 'veh_1', 'VIN_A'), fleet, 'must not churn state each render');
 });
 
 test('a fresh fleet has no vin — nothing is live until enrollment binds one', () => {
-  assert.equal(createInitialFleet().vehicles[0].vin, undefined);
+  assert.equal(oneCar().vehicles[0].vin, undefined);
 });
 
 // The rule useFleetState applies. Pinned here because getting it wrong sends a
@@ -528,4 +512,73 @@ test('switching a keeper mode off clears the seats the same way', () => {
   const started = setClimateKeeperState(initialVehicleState, 'camp');
   assert.equal(started.climateOn, true);
   assert.deepEqual(started.seatClimateModes, initialVehicleState.seatClimateModes);
+});
+
+// ── Car onboarding: empty fleet + config-driven builders + removable-to-empty ──
+
+test('createInitialFleet is empty — no hardcoded car', () => {
+  const f = createInitialFleet();
+  assert.deepEqual(f.vehicles, []);
+  assert.equal(f.activeId, '');
+  assert.equal(activeVehicle(f), undefined);
+});
+
+test('vehicleFromConfig builds state from the stored appearance', () => {
+  const v = vehicleFromConfig('veh_1', 'Mine', {
+    carModel: 'modelX', exteriorColor: 'DeepBlue', wheelType: 'Turbine', interiorTrim: 'White', performance: true,
+  }, '5YJXCBE22HF000000');
+  assert.equal(v.vin, '5YJXCBE22HF000000');
+  assert.equal(v.state.carModel, 'modelX');
+  assert.equal(v.state.exteriorColor, 'DeepBlue');
+  assert.equal(v.state.performance, true);
+});
+
+test('vehicleFromCarConfig materializes an enrolled car with default appearance + VIN-derived model', () => {
+  const v = vehicleFromCarConfig('veh_2', { vin: '5YJ3E1EA7LF000000' });
+  assert.equal(v.vin, '5YJ3E1EA7LF000000');
+  assert.equal(v.state.carModel, 'model3'); // from vinToModelLine
+  assert.equal(v.state.exteriorColor, null);
+  assert.equal(v.name, 'Model 3');
+});
+
+test('addVehicleWithVin appends a real car and makes it active', () => {
+  const f = addVehicleWithVin(createInitialFleet(), '5YJYGDEE9PF000000', 'modelY', { name: 'Y' });
+  assert.equal(f.vehicles.length, 1);
+  assert.equal(f.vehicles[0].vin, '5YJYGDEE9PF000000');
+  assert.equal(f.activeId, f.vehicles[0].id);
+});
+
+test('removeVehicle can empty the fleet (last car → onboarding)', () => {
+  const f = addVehicle(createInitialFleet(), 'model3'); // veh_1, active
+  const empty = removeVehicle(f, f.activeId);
+  assert.deepEqual(empty.vehicles, []);
+  assert.equal(empty.activeId, '');
+});
+
+test('updateEnrolledVehicleState targets the vin-bound car, not the active car', () => {
+  let f = addVehicle(createInitialFleet(), 'model3');                 // veh_1 demo, active
+  f = addVehicleWithVin(f, '5YJYGDEE9PF000000', 'modelY', {});        // veh_2 real, now active
+  f = setActiveVehicle(f, 'veh_1');                                   // make the DEMO car active
+  const out = updateEnrolledVehicleState(f, (s) => ({ ...s, locked: false }));
+  assert.equal(out.vehicles[0].state.locked, true);  // active demo untouched (default locked:true)
+  assert.equal(out.vehicles[1].state.locked, false); // enrolled car updated though NOT active
+});
+
+// The empty fleet this task introduces must not make the sibling pure helpers throw.
+test('updateActiveVehicleState is a no-op on an empty fleet', () => {
+  const f = createInitialFleet();
+  assert.deepEqual(updateActiveVehicleState(f, (s) => ({ ...s, locked: false })), f);
+});
+
+test('nextVehicleId/prevVehicleId return the current id on an empty fleet', () => {
+  const f = createInitialFleet();
+  assert.equal(nextVehicleId(f), '');
+  assert.equal(prevVehicleId(f), '');
+});
+
+test('addVehicleWithVin clears any prior car vin (single-vin invariant)', () => {
+  let f = addVehicleWithVin(createInitialFleet(), '5YJ3E1EA7LF000000', 'modelS', {}); // veh_1 real
+  f = addVehicleWithVin(f, '5YJYGDEE9PF000000', 'modelY', {});                         // veh_2 real
+  assert.equal(f.vehicles[0].vin, undefined);
+  assert.equal(f.vehicles[1].vin, '5YJYGDEE9PF000000');
 });
