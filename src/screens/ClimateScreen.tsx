@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   Animated,
@@ -60,6 +60,15 @@ const overDrag = (y: number, expanded: number, collapsed: number) => {
 const tap = () => Haptics.selectionAsync().catch(() => {});
 const bump = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
+// Temperature stepper hold-to-repeat — same timing and Light detent as AmpStepper, the
+// charging-current stepper, so the two steppers feel identical. A tap steps once; holding
+// waits TEMP_REPEAT_DELAY_MS (so a tap is never mistaken for a hold) then repeats at a steady
+// TEMP_REPEAT_RATE_MS. Like AmpStepper, a hold changes a LOCAL value and sends the car ONE
+// setpoint on release — running LO→HI must not fire ~26 sealed BLE setpoints down the link.
+const TEMP_STEP = 0.5; // the dial's 0.5° grid (fleet.ts clamps + snaps to it)
+const TEMP_REPEAT_DELAY_MS = 450;
+const TEMP_REPEAT_RATE_MS = 90;
+
 // Climate controls — RN build of the Tesla climate sheet. The bar is a bottom-anchored panel that you
 // drag up/down BY THE PANEL ITSELF (like the real app — swiping above it, on the car, does nothing).
 // Collapsed it shows the temp row; dragging up reveals Defrost / Bioweapon / Camp / Pet / Cabin Overheat.
@@ -79,7 +88,7 @@ export function ClimateScreen({ state, actions }: Props) {
   // pending (key-based, like the official app — pressing Defrost, which also turns
   // climate on, spins BOTH the Defrost button and the power button). Buttons swap
   // their content for a spinner; the Cabin-Overheat segmented group dims + disables
-  // with one spinner on top. Steppers (temp) are left alone — they fire per-step.
+  // with one spinner on top. The temp stepper is left alone — it commits one setpoint on release.
   const pendingAny = (...keys: VehicleStateKey[]) => keys.some((k) => carLink.pending.has(k));
   const climatePending = pendingAny('climateOn');
   const ventPending = pendingAny(
@@ -181,10 +190,67 @@ export function ClimateScreen({ state, actions }: Props) {
     state.leftRearWindowOpen ||
     state.rightRearWindowOpen;
 
-  // setTargetTemp clamps + snaps to the 0.5° grid, so the raw sum is safe to pass.
-  const adjustTemp = (delta: number) => {
-    tap();
-    actions.setTargetTemp(state.targetTempC + delta);
+  // Temperature stepper. Mirrors AmpStepper: a local `liveTempC` tracks the press so the
+  // number moves per step, and the car hears ONE setpoint on release — not one per 0.5° while
+  // you hold. `shownTempRef` is read synchronously inside the repeat, so it is synced in an
+  // effect (writing it in render is a render-phase ref mutation) AND set eagerly in stepTemp so
+  // the next tick sees the fresh value before React re-renders.
+  const [liveTempC, setLiveTempC] = useState<number | null>(null);
+  const shownTempC = liveTempC ?? state.targetTempC;
+  // At the bound the chevron GLYPH disappears — like the amps stepper and the real app, which
+  // shows no arrow in the direction you cannot go (not a dimmed one). We hide only the glyph and
+  // keep the 36×36 Pressable mounted: it preserves the centring slot, and — critically — it means
+  // onPressOut/releaseTemp still fires if you hold down to the bound and lift (an UNMOUNTED
+  // pressable may never fire its release, which would strand the settled value uncommitted).
+  const atLo = shownTempC <= LO_TEMP;
+  const atHi = shownTempC >= HI_TEMP;
+  const shownTempRef = useRef(shownTempC);
+  useEffect(() => {
+    shownTempRef.current = shownTempC;
+  }, [shownTempC]);
+  const tempTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTempTimer = () => {
+    if (tempTimer.current) {
+      clearTimeout(tempTimer.current);
+      tempTimer.current = null;
+    }
+  };
+  // Never leave a repeat running if the sheet unmounts mid-hold.
+  useEffect(() => clearTempTimer, []);
+
+  // One 0.5° step from the live value, clamped + snapped to the dial grid. Returns false (and
+  // stops any repeat) at the bound, so a hold stops stepping — and stops buzzing — at LO/HI.
+  const stepTemp = (dir: 1 | -1) => {
+    const raw = shownTempRef.current + dir * TEMP_STEP;
+    const next = Math.min(HI_TEMP, Math.max(LO_TEMP, Math.round(raw * 2) / 2));
+    if (next === shownTempRef.current) {
+      clearTempTimer();
+      return false;
+    }
+    bump();
+    shownTempRef.current = next;
+    setLiveTempC(next);
+    return true;
+  };
+
+  const pressTemp = (dir: 1 | -1) => {
+    if (!stepTemp(dir)) return;
+    const run = (delay: number) => {
+      tempTimer.current = setTimeout(() => {
+        if (stepTemp(dir)) run(TEMP_REPEAT_RATE_MS);
+      }, delay);
+    };
+    run(TEMP_REPEAT_DELAY_MS);
+  };
+
+  // On release the settled value is the only thing that talks to the car (setTargetTemp
+  // dispatches the setpoint command). A press cancelled by a drag-off must settle too, or the
+  // repeat would keep running with nothing to stop it — hence onTouchCancel on the chevrons.
+  const releaseTemp = () => {
+    clearTempTimer();
+    const settled = shownTempRef.current;
+    setLiveTempC(null);
+    if (settled !== state.targetTempC) actions.setTargetTemp(settled);
   };
 
   // "Vent" lowers all windows a little; "Close" raises them. Drives the four window flags the Godot
@@ -361,9 +427,11 @@ export function ClimateScreen({ state, actions }: Props) {
             <Pressable
               style={[styles.arrow, styles.arrowDecrease]}
               hitSlop={16}
-              onPress={() => adjustTemp(-0.5)}
+              onPressIn={() => pressTemp(-1)}
+              onPressOut={releaseTemp}
+              onTouchCancel={releaseTemp}
             >
-              <AppIcon icon="chevron-small-270" color={TEXT_DIM} size={CHEVRON_SIZE} />
+              {atLo ? null : <AppIcon icon="chevron-small-270" color={TEXT_DIM} size={CHEVRON_SIZE} />}
             </Pressable>
             {/* BRIGHT when climate is on, DIM when off — visible across Ivan's
                 first two screenshots, which differ only by the AC state: the
@@ -384,12 +452,12 @@ export function ClimateScreen({ state, actions }: Props) {
                   does not jump when you drive the dial to either end. */}
               <Text style={[styles.tempDegree, styles.tempDegreeGhost]}>°</Text>
               <Text style={[styles.temp, state.climateOn ? styles.tempOn : styles.tempOff]}>
-                {formatTemp(state.targetTempC)}
+                {formatTemp(shownTempC)}
               </Text>
               <Text
                 style={[
                   styles.tempDegree,
-                  hasDegree(state.targetTempC)
+                  hasDegree(shownTempC)
                     ? state.climateOn
                       ? styles.tempOn
                       : styles.tempOff
@@ -402,9 +470,11 @@ export function ClimateScreen({ state, actions }: Props) {
             <Pressable
               style={[styles.arrow, styles.arrowIncrease]}
               hitSlop={16}
-              onPress={() => adjustTemp(0.5)}
+              onPressIn={() => pressTemp(1)}
+              onPressOut={releaseTemp}
+              onTouchCancel={releaseTemp}
             >
-              <AppIcon icon="chevron-small-90" color={TEXT_DIM} size={CHEVRON_SIZE} />
+              {atHi ? null : <AppIcon icon="chevron-small-90" color={TEXT_DIM} size={CHEVRON_SIZE} />}
             </Pressable>
           </View>
 
