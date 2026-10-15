@@ -97,3 +97,6 @@ assets/places.db
 
 # generated JSC bundle for the Share Extension (rebuild with npm run build:extension-bundle)
 modules/shared-intake/ios/AirgappEngine.js
+
+# Local preview dev-server config (Claude Code browser preview)
+.claude/launch.json
