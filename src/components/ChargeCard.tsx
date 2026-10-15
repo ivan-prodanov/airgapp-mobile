@@ -129,6 +129,13 @@ export interface ChargeCardProps {
   chargerVoltageV: number | null;
   chargerPilotCurrentA: number | null;
   chargingAmps: number;
+  /**
+   * ChargeState.charge_cable_unlatched (159) / charge_port_cold_weather_mode (136). Drives
+   * ChargeRow's chargeTipRow: "Charge port latch not engaged" + the frozen/obstruction line.
+   * null = not reported (no tip).
+   */
+  chargeCableUnlatched?: boolean | null;
+  chargePortColdWeatherMode?: boolean | null;
   ampMin: number;
   ampMax: number;
   useMiles: boolean;
@@ -163,6 +170,8 @@ export function ChargeCard({
   chargerVoltageV,
   chargerPilotCurrentA,
   chargingAmps,
+  chargeCableUnlatched = null,
+  chargePortColdWeatherMode = null,
   ampMin,
   ampMax,
   onSetChargeLimit,
@@ -309,6 +318,19 @@ export function ChargeCard({
       {/* controlsDivider is a real sibling View in theirs. It was safe to fold
           into a border only while the card had a uniform `gap`; the card now
           uses per-child margins, so the sibling form is both faithful and free. */}
+      {/* ChargeRow's chargeTipRow (@4599860): rendered iff `chargeCableUnlatched`. Header
+          `charging_not_engaged`; body `charging_frozen` in cold-weather mode, else
+          `charging_obstruction`. Recovered strings, verbatim. */}
+      {chargeCableUnlatched === true ? (
+        <View style={styles.tipRow}>
+          <Text style={styles.tipHeader}>Charge port latch not engaged</Text>
+          <Text style={styles.tipBody}>
+            {chargePortColdWeatherMode === true
+              ? 'Latch may be frozen - Fully insert cable or try defrosting through app'
+              : 'Fully insert charge cable or check for obstruction'}
+          </Text>
+        </View>
+      ) : null}
       <View style={styles.controlsDivider} />
       <View style={styles.controls}>
         {/* HIDDEN, not disabled, when there is no cable — start/stop is not a
@@ -464,6 +486,25 @@ const styles = StyleSheet.create({
   // controlsDivider — a real 1pt View painted in Themes[DARK].backgroundColor,
   // i.e. the PAGE colour, which is why Ivan read it as transparent. Ours was
   // rgba(255,255,255,0.12): LIGHTER than the card it sat on, the exact opposite.
+  // chargeTipRow / chargeTipHeader — the latch tip, in the status face.
+  tipRow: {
+    marginHorizontal: 1.5 * GUTTER,
+    marginBottom: GUTTER,
+  },
+  tipHeader: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT,
+  },
+  tipBody: {
+    fontFamily: TeslaFonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    color: TEXT_LIGHT,
+  },
   controlsDivider: {
     height: 1,
     backgroundColor: PAGE_BG,

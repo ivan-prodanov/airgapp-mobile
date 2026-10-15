@@ -29,3 +29,17 @@ test('VCSEC.UnsignedMessage decodes the known-good VCSEC_GET_STATUS_HEX fixture'
     assert.ok(decoded.InformationRequest);
   });
 });
+
+test('AlertState round-trips a named charging alert and GetVehicleData.getAlertState is field 20', () => {
+  const vd = pb.CarServer.VehicleData.create({
+    alertState: { chargingAlerts: [{ alertName: 93, alertType: 1 }] },
+  });
+  const decoded = pb.CarServer.VehicleData.decode(pb.CarServer.VehicleData.encode(vd).finish());
+  assert.equal(decoded.alertState?.chargingAlerts?.[0]?.alertName, 93);
+  assert.equal(decoded.alertState?.chargingAlerts?.[0]?.alertType, 1);
+  assert.equal(pb.CarServer.ChargingAlertName.PCS_A054_CHGINPUTVDROPTOOHIGH, 93);
+  assert.equal(pb.CarServer.ChargingAlertType.WARNING, 1);
+  // Field 20, length-delimited, empty marker: tag (20<<3)|2 = 162 = 0xa2 0x01, then len 0.
+  const req = pb.CarServer.GetVehicleData.encode(pb.CarServer.GetVehicleData.create({ getAlertState: {} })).finish();
+  assert.deepEqual([...req], [0xa2, 0x01, 0x00]);
+});

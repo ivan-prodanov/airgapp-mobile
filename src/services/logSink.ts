@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 import { setSink, type LogEntry } from './logbus';
+import { seqBaseFrom, storedSeq } from './logSeq';
 
 // The persistent sink for logbus, backed by expo-sqlite.
 //
@@ -31,6 +32,9 @@ const MAX_ROWS_HARD = 200_000;
 const FLUSH_MS = 1000;
 
 let db: SQLite.SQLiteDatabase | null = null;
+// Stored seq = seqBase + the boot-local logbus seq — see logSeq.ts for why the
+// boot-local number alone deleted every new boot's poll rows.
+let seqBase = 0;
 let queue: LogEntry[] = [];
 let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -40,6 +44,10 @@ async function open(): Promise<SQLite.SQLiteDatabase> {
     'PRAGMA journal_mode=WAL;' +
       'CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY, t INTEGER, level TEXT, cat TEXT, msg TEXT, data TEXT);',
   );
+  // Continue numbering after whatever the ring already holds, so this boot's rows never
+  // collide with — or trim below — an earlier boot's.
+  const row = await handle.getFirstAsync<{ m: number | null }>('SELECT MAX(seq) AS m FROM log');
+  seqBase = seqBaseFrom(row?.m ?? null);
   return handle;
 }
 
@@ -51,7 +59,7 @@ async function flush(): Promise<void> {
     await db.withTransactionAsync(async () => {
       for (const e of batch) {
         await db!.runAsync('INSERT OR REPLACE INTO log (seq, t, level, cat, msg, data) VALUES (?,?,?,?,?,?)', [
-          e.seq,
+          storedSeq(seqBase, e.seq),
           e.t,
           e.level,
           e.cat,

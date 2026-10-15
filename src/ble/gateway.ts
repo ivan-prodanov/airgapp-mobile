@@ -48,6 +48,7 @@ import {
   getClosuresStateAction,
   getParentalControlsStateAction,
   getChargeScheduleStateAction,
+  getAlertStateAction,
   getPreconditioningScheduleStateAction,
   getMediaStateAction,
   getMediaDetailStateAction,
@@ -167,7 +168,27 @@ export type InfotainmentStateKey =
   | "closures"
   | "parental"
   | "chargeSchedule"
-  | "preconditionSchedule";
+  | "preconditionSchedule"
+  // VehicleData.alert_state — named charging faults (ble/chargingAlerts.ts).
+  | "alerts";
+
+// The 60s sync's default read set. Exported so the poll can ADD a slice (alerts while a
+// cable is seated) without re-listing this.
+export const DEFAULT_SYNC_STATES: readonly InfotainmentStateKey[] = [
+  "charge",
+  "climate",
+  "drive",
+  "location",
+  // closures_state carries sentry/valet/speed-limit-mode + locked/windows —
+  // the parse existed but was never fed because no default read requested it,
+  // so those indicators (incl. Home's sentry) never reflected the car. One
+  // extra round trip per 60s tick, the cost the throttle already bounds.
+  // parental_controls_state is NOT here: it matters only on the Security
+  // screen, which fetches it on demand via readSecurity.
+  "closures",
+  "media",
+  "mediaDetail",
+];
 
 export interface CarGateway {
   // `opts.signal` (C3) lets a superseding command stop this one's retry loop.
@@ -899,6 +920,7 @@ export function createCarGateway({
       parental: getParentalControlsStateAction,
       chargeSchedule: getChargeScheduleStateAction,
       preconditionSchedule: getPreconditioningScheduleStateAction,
+      alerts: getAlertStateAction,
     };
     // Media joins the DEFAULT set (the 60s background sync + pull-to-refresh),
     // deliberately NOT the fast screen-keyed poll. Two more round trips per tick
@@ -906,23 +928,7 @@ export function createCarGateway({
     // few minutes, so it has no business on a 1650ms cadence competing with the
     // unlock path. Whether it earns a faster poll is a question for after we
     // have seen what a parked car actually returns.
-    const keys =
-      opts?.states ??
-      ([
-        "charge",
-        "climate",
-        "drive",
-        "location",
-        // closures_state carries sentry/valet/speed-limit-mode + locked/windows —
-        // the parse existed but was never fed because no default read requested it,
-        // so those indicators (incl. Home's sentry) never reflected the car. One
-        // extra round trip per 60s tick, the cost the throttle already bounds.
-        // parental_controls_state is NOT here: it matters only on the Security
-        // screen, which fetches it on demand via readSecurity.
-        "closures",
-        "media",
-        "mediaDetail",
-      ] as InfotainmentStateKey[]);
+    const keys = opts?.states ?? [...DEFAULT_SYNC_STATES];
     if (keys.length === 0)
       throw new Error("awakeSync: states must not be empty");
     const reads: ActionPayload[] = keys.map((k) => byKey[k]());

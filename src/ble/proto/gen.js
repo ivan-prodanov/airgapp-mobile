@@ -4548,6 +4548,7 @@ $root.CarServer = (function() {
          * @property {CarServer.GetMediaDetailState.$Properties|null} [getMediaDetailState] GetVehicleData getMediaDetailState
          * @property {CarServer.GetSoftwareUpdateState.$Properties|null} [getSoftwareUpdateState] GetVehicleData getSoftwareUpdateState
          * @property {CarServer.GetParentalControlsState.$Properties|null} [getParentalControlsState] GetVehicleData getParentalControlsState
+         * @property {CarServer.GetAlertState.$Properties|null} [getAlertState] GetVehicleData getAlertState
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
 
@@ -4676,6 +4677,14 @@ $root.CarServer = (function() {
         GetVehicleData.prototype.getParentalControlsState = null;
 
         /**
+         * GetVehicleData getAlertState.
+         * @member {CarServer.GetAlertState.$Properties|null|undefined} getAlertState
+         * @memberof CarServer.GetVehicleData
+         * @instance
+         */
+        GetVehicleData.prototype.getAlertState = null;
+
+        /**
          * Creates a new GetVehicleData instance using the specified properties.
          * @function create
          * @memberof CarServer.GetVehicleData
@@ -4731,6 +4740,8 @@ $root.CarServer = (function() {
                 $root.CarServer.GetSoftwareUpdateState.encode(message.getSoftwareUpdateState, writer.uint32(/* id 17, wireType 2 =*/138).fork(), _depth + 1).ldelim();
             if (message.getParentalControlsState != null && $Object.hasOwnProperty.call(message, "getParentalControlsState"))
                 $root.CarServer.GetParentalControlsState.encode(message.getParentalControlsState, writer.uint32(/* id 19, wireType 2 =*/154).fork(), _depth + 1).ldelim();
+            if (message.getAlertState != null && $Object.hasOwnProperty.call(message, "getAlertState"))
+                $root.CarServer.GetAlertState.encode(message.getAlertState, writer.uint32(/* id 20, wireType 2 =*/162).fork(), _depth + 1).ldelim();
             if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                 for (var i = 0; i < message.$unknowns.length; ++i)
                     writer.raw(message.$unknowns[i]);
@@ -4850,6 +4861,12 @@ $root.CarServer = (function() {
                         message.getParentalControlsState = $root.CarServer.GetParentalControlsState.decode(reader, reader.uint32(), $undefined, _depth + 1, message.getParentalControlsState);
                         continue;
                     }
+                case 20: {
+                        if (wireType !== 2)
+                            break;
+                        message.getAlertState = $root.CarServer.GetAlertState.decode(reader, reader.uint32(), $undefined, _depth + 1, message.getAlertState);
+                        continue;
+                    }
                 }
                 reader.skipType(wireType, _depth, tag);
                 if (!reader.discardUnknown) {
@@ -4953,6 +4970,11 @@ $root.CarServer = (function() {
                 if (error)
                     return "getParentalControlsState." + error;
             }
+            if (message.getAlertState != null && $Object.hasOwnProperty.call(message, "getAlertState")) {
+                var error = $root.CarServer.GetAlertState.verify(message.getAlertState, _depth + 1);
+                if (error)
+                    return "getAlertState." + error;
+            }
             return null;
         };
 
@@ -5034,6 +5056,11 @@ $root.CarServer = (function() {
                     throw $TypeError(".CarServer.GetVehicleData.getParentalControlsState: object expected");
                 message.getParentalControlsState = $root.CarServer.GetParentalControlsState.fromObject(object.getParentalControlsState, _depth + 1);
             }
+            if (object.getAlertState != null) {
+                if (!$util.isObject(object.getAlertState))
+                    throw $TypeError(".CarServer.GetVehicleData.getAlertState: object expected");
+                message.getAlertState = $root.CarServer.GetAlertState.fromObject(object.getAlertState, _depth + 1);
+            }
             return message;
         };
 
@@ -5067,6 +5094,7 @@ $root.CarServer = (function() {
                 object.getMediaDetailState = null;
                 object.getSoftwareUpdateState = null;
                 object.getParentalControlsState = null;
+                object.getAlertState = null;
             }
             if (message.getChargeState != null && $Object.hasOwnProperty.call(message, "getChargeState"))
                 object.getChargeState = $root.CarServer.GetChargeState.toObject(message.getChargeState, options, _depth + 1);
@@ -5092,6 +5120,8 @@ $root.CarServer = (function() {
                 object.getSoftwareUpdateState = $root.CarServer.GetSoftwareUpdateState.toObject(message.getSoftwareUpdateState, options, _depth + 1);
             if (message.getParentalControlsState != null && $Object.hasOwnProperty.call(message, "getParentalControlsState"))
                 object.getParentalControlsState = $root.CarServer.GetParentalControlsState.toObject(message.getParentalControlsState, options, _depth + 1);
+            if (message.getAlertState != null && $Object.hasOwnProperty.call(message, "getAlertState"))
+                object.getAlertState = $root.CarServer.GetAlertState.toObject(message.getAlertState, options, _depth + 1);
             return object;
         };
 
@@ -5121,6 +5151,225 @@ $root.CarServer = (function() {
         };
 
         return GetVehicleData;
+    })();
+
+    CarServer.GetAlertState = (function() {
+
+        /**
+         * Properties of a GetAlertState.
+         * @typedef {Object} CarServer.GetAlertState.$Properties
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+
+        /**
+         * Properties of a GetAlertState.
+         * @memberof CarServer
+         * @interface IGetAlertState
+         * @augments CarServer.GetAlertState.$Properties
+         * @deprecated Use CarServer.GetAlertState.$Properties instead.
+         */
+
+        /**
+         * Shape of a GetAlertState.
+         * @typedef {CarServer.GetAlertState.$Properties} CarServer.GetAlertState.$Shape
+         */
+
+        /**
+         * Constructs a new GetAlertState.
+         * @memberof CarServer
+         * @classdesc Represents a GetAlertState.
+         * @constructor
+         * @param {CarServer.GetAlertState.$Properties=} [properties] Properties to set
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+        var GetAlertState = function (properties) {
+            if (properties)
+                for (var keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        };
+
+        /**
+         * Creates a new GetAlertState instance using the specified properties.
+         * @function create
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {CarServer.GetAlertState.$Properties=} [properties] Properties to set
+         * @returns {CarServer.GetAlertState} GetAlertState instance
+         * @type {{
+         *   (properties: CarServer.GetAlertState.$Shape): CarServer.GetAlertState & CarServer.GetAlertState.$Shape;
+         *   (properties?: CarServer.GetAlertState.$Properties): CarServer.GetAlertState;
+         * }}
+         */
+        GetAlertState.create = function(properties) {
+            return new GetAlertState(properties);
+        };
+
+        /**
+         * Encodes the specified GetAlertState message. Does not implicitly {@link CarServer.GetAlertState.verify|verify} messages.
+         * @function encode
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {CarServer.GetAlertState.$Properties} message GetAlertState message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetAlertState.encode = function (message, writer, _depth) {
+            if (!writer)
+                writer = $Writer.create();
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                for (var i = 0; i < message.$unknowns.length; ++i)
+                    writer.raw(message.$unknowns[i]);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified GetAlertState message, length delimited. Does not implicitly {@link CarServer.GetAlertState.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {CarServer.GetAlertState.$Properties} message GetAlertState message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        GetAlertState.encodeDelimited = function(message, writer) {
+            return this.encode(message, (writer || $Writer.create()).fork()).ldelim();
+        };
+
+        /**
+         * Decodes a GetAlertState message from the specified reader or buffer.
+         * @function decode
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {CarServer.GetAlertState & CarServer.GetAlertState.$Shape} GetAlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetAlertState.decode = function (reader, length, _end, _depth, _target) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $Reader.recursionLimit)
+                throw $Error("max depth exceeded");
+            var end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.CarServer.GetAlertState();
+            while (reader.pos < end) {
+                var start = reader.pos;
+                var tag = reader.tag();
+                if (tag === _end) {
+                    _end = $undefined;
+                    break;
+                }
+                reader.skipType(tag & 7, _depth, tag);
+                if (!reader.discardUnknown) {
+                    $util.makeProp(message, "$unknowns", false);
+                    (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                }
+            }
+            if (_end !== $undefined)
+                throw $Error("missing end group");
+            return message;
+        };
+
+        /**
+         * Decodes a GetAlertState message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {CarServer.GetAlertState & CarServer.GetAlertState.$Shape} GetAlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        GetAlertState.decodeDelimited = function(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a GetAlertState message.
+         * @function verify
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        GetAlertState.verify = function (message, _depth) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                return "max depth exceeded";
+            return null;
+        };
+
+        /**
+         * Creates a GetAlertState message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {CarServer.GetAlertState} GetAlertState
+         */
+        GetAlertState.fromObject = function (object, _depth) {
+            if (object instanceof $root.CarServer.GetAlertState)
+                return object;
+            if (!$util.isObject(object))
+                throw $TypeError(".CarServer.GetAlertState: object expected");
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            return new $root.CarServer.GetAlertState();
+        };
+
+        /**
+         * Creates a plain object from a GetAlertState message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {CarServer.GetAlertState} message GetAlertState
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        GetAlertState.toObject = function () {
+            return {};
+        };
+
+        /**
+         * Converts this GetAlertState to JSON.
+         * @function toJSON
+         * @memberof CarServer.GetAlertState
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        GetAlertState.prototype.toJSON = function() {
+            return GetAlertState.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the type url for GetAlertState
+         * @function getTypeUrl
+         * @memberof CarServer.GetAlertState
+         * @static
+         * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns {string} The type url
+         */
+        GetAlertState.getTypeUrl = function(prefix) {
+            if (prefix === $undefined)
+                prefix = "type.googleapis.com";
+            return prefix + "/CarServer.GetAlertState";
+        };
+
+        return GetAlertState;
     })();
 
     CarServer.GetTirePressureState = (function() {
@@ -31289,6 +31538,7 @@ $root.CarServer = (function() {
          * @property {CarServer.MediaDetailState.$Properties|null} [mediaDetailState] VehicleData mediaDetailState
          * @property {CarServer.SoftwareUpdateState.$Properties|null} [softwareUpdateState] VehicleData softwareUpdateState
          * @property {CarServer.ParentalControlsState.$Properties|null} [parentalControlsState] VehicleData parentalControlsState
+         * @property {CarServer.AlertState.$Properties|null} [alertState] VehicleData alertState
          * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
          */
 
@@ -31317,6 +31567,7 @@ $root.CarServer = (function() {
          *   mediaDetailState?: CarServer.MediaDetailState.$Shape|null;
          *   softwareUpdateState?: CarServer.SoftwareUpdateState.$Shape|null;
          *   parentalControlsState?: CarServer.ParentalControlsState.$Shape|null;
+         *   alertState?: CarServer.AlertState.$Shape|null;
          *   $unknowns?: Array.<Uint8Array>;
          * }} CarServer.VehicleData.$Shape
          */
@@ -31451,6 +31702,14 @@ $root.CarServer = (function() {
         VehicleData.prototype.parentalControlsState = null;
 
         /**
+         * VehicleData alertState.
+         * @member {CarServer.AlertState.$Properties|null|undefined} alertState
+         * @memberof CarServer.VehicleData
+         * @instance
+         */
+        VehicleData.prototype.alertState = null;
+
+        /**
          * Creates a new VehicleData instance using the specified properties.
          * @function create
          * @memberof CarServer.VehicleData
@@ -31509,6 +31768,8 @@ $root.CarServer = (function() {
                 $root.CarServer.SoftwareUpdateState.encode(message.softwareUpdateState, writer.uint32(/* id 23, wireType 2 =*/186).fork(), _depth + 1).ldelim();
             if (message.parentalControlsState != null && $Object.hasOwnProperty.call(message, "parentalControlsState"))
                 $root.CarServer.ParentalControlsState.encode(message.parentalControlsState, writer.uint32(/* id 24, wireType 2 =*/194).fork(), _depth + 1).ldelim();
+            if (message.alertState != null && $Object.hasOwnProperty.call(message, "alertState"))
+                $root.CarServer.AlertState.encode(message.alertState, writer.uint32(/* id 25, wireType 2 =*/202).fork(), _depth + 1).ldelim();
             if (message.piiKeyResponse != null && message.piiKeyResponse.length)
                 for (var i = 0; i < message.piiKeyResponse.length; ++i)
                     $root.CarServer.PiiKeyResponse.encode(message.piiKeyResponse[i], writer.uint32(/* id 900, wireType 2 =*/7202).fork(), _depth + 1).ldelim();
@@ -31647,6 +31908,12 @@ $root.CarServer = (function() {
                         message.parentalControlsState = $root.CarServer.ParentalControlsState.decode(reader, reader.uint32(), $undefined, _depth + 1, message.parentalControlsState);
                         continue;
                     }
+                case 25: {
+                        if (wireType !== 2)
+                            break;
+                        message.alertState = $root.CarServer.AlertState.decode(reader, reader.uint32(), $undefined, _depth + 1, message.alertState);
+                        continue;
+                    }
                 }
                 reader.skipType(wireType, _depth, tag);
                 if (!reader.discardUnknown) {
@@ -31768,6 +32035,11 @@ $root.CarServer = (function() {
                 if (error)
                     return "parentalControlsState." + error;
             }
+            if (message.alertState != null && $Object.hasOwnProperty.call(message, "alertState")) {
+                var error = $root.CarServer.AlertState.verify(message.alertState, _depth + 1);
+                if (error)
+                    return "alertState." + error;
+            }
             return null;
         };
 
@@ -31869,6 +32141,11 @@ $root.CarServer = (function() {
                     throw $TypeError(".CarServer.VehicleData.parentalControlsState: object expected");
                 message.parentalControlsState = $root.CarServer.ParentalControlsState.fromObject(object.parentalControlsState, _depth + 1);
             }
+            if (object.alertState != null) {
+                if (!$util.isObject(object.alertState))
+                    throw $TypeError(".CarServer.VehicleData.alertState: object expected");
+                message.alertState = $root.CarServer.AlertState.fromObject(object.alertState, _depth + 1);
+            }
             return message;
         };
 
@@ -31906,6 +32183,7 @@ $root.CarServer = (function() {
                 object.mediaDetailState = null;
                 object.softwareUpdateState = null;
                 object.parentalControlsState = null;
+                object.alertState = null;
             }
             if (message.chargeState != null && $Object.hasOwnProperty.call(message, "chargeState"))
                 object.chargeState = $root.CarServer.ChargeState.toObject(message.chargeState, options, _depth + 1);
@@ -31936,6 +32214,8 @@ $root.CarServer = (function() {
                 object.softwareUpdateState = $root.CarServer.SoftwareUpdateState.toObject(message.softwareUpdateState, options, _depth + 1);
             if (message.parentalControlsState != null && $Object.hasOwnProperty.call(message, "parentalControlsState"))
                 object.parentalControlsState = $root.CarServer.ParentalControlsState.toObject(message.parentalControlsState, options, _depth + 1);
+            if (message.alertState != null && $Object.hasOwnProperty.call(message, "alertState"))
+                object.alertState = $root.CarServer.AlertState.toObject(message.alertState, options, _depth + 1);
             if (message.piiKeyResponse && message.piiKeyResponse.length) {
                 object.piiKeyResponse = $Array(message.piiKeyResponse.length);
                 for (var j = 0; j < message.piiKeyResponse.length; ++j)
@@ -56154,6 +56434,1428 @@ $root.CarServer = (function() {
         values[valuesById[34] = "MediaSourceType_HomeApps"] = 34;
         values[valuesById[35] = "MediaSourceType_Search"] = 35;
         return values;
+    })();
+
+    /**
+     * ChargingAlertName enum.
+     * @name CarServer.ChargingAlertName
+     * @enum {number}
+     * @property {number} INVALID_ALERT_NAME=0 INVALID_ALERT_NAME value
+     * @property {number} BMS_A007_SW_SLOWED_CHG_BATT_COLD_OBSOLETE=1 BMS_A007_SW_SLOWED_CHG_BATT_COLD_OBSOLETE value
+     * @property {number} BMS_A076_SW_DCH_WHILE_CHARGING=2 BMS_A076_SW_DCH_WHILE_CHARGING value
+     * @property {number} CC_A001_GNDMONINTRPTLINESIDE=3 CC_A001_GNDMONINTRPTLINESIDE value
+     * @property {number} CC_A002_GNDMONINTRPTLOADSIDE=4 CC_A002_GNDMONINTRPTLOADSIDE value
+     * @property {number} CC_A003_CCIDTRIPPED=5 CC_A003_CCIDTRIPPED value
+     * @property {number} CC_A004_CCIDSELFTESTFAULT=6 CC_A004_CCIDSELFTESTFAULT value
+     * @property {number} CC_A005_GROUNDEDNEUTRAL=7 CC_A005_GROUNDEDNEUTRAL value
+     * @property {number} CC_A006_INPUTOVERCURRENT=8 CC_A006_INPUTOVERCURRENT value
+     * @property {number} CC_A007_INPUTOVERVOLTAGE=9 CC_A007_INPUTOVERVOLTAGE value
+     * @property {number} CC_A008_INPUTUNDERVOLTAGE=10 CC_A008_INPUTUNDERVOLTAGE value
+     * @property {number} CC_A009_INPUTMISWIRED=11 CC_A009_INPUTMISWIRED value
+     * @property {number} CC_A010_CONTACTORWELDED=12 CC_A010_CONTACTORWELDED value
+     * @property {number} CC_A011_AMBIENTOT=13 CC_A011_AMBIENTOT value
+     * @property {number} CC_A012_WALLPLUGOT=14 CC_A012_WALLPLUGOT value
+     * @property {number} CC_A013_VEHCONNOT=15 CC_A013_VEHCONNOT value
+     * @property {number} CC_A014_MCUSELFTESTFAULT=16 CC_A014_MCUSELFTESTFAULT value
+     * @property {number} CC_A015_PILOTAFAULT=17 CC_A015_PILOTAFAULT value
+     * @property {number} CC_A016_PILOTBFAULT=18 CC_A016_PILOTBFAULT value
+     * @property {number} CC_A017_PILOTCFAULT=19 CC_A017_PILOTCFAULT value
+     * @property {number} CC_A018_PILOTDFAULT=20 CC_A018_PILOTDFAULT value
+     * @property {number} CC_A019_PROXDISCONNECTED=21 CC_A019_PROXDISCONNECTED value
+     * @property {number} CC_A020_3VRAILINCORRECT=22 CC_A020_3VRAILINCORRECT value
+     * @property {number} CC_A021_CB_NOMASTER=23 CC_A021_CB_NOMASTER value
+     * @property {number} CC_A022_CB_TOOMANYMASTERS=24 CC_A022_CB_TOOMANYMASTERS value
+     * @property {number} CC_A023_CB_TOOMANYSLAVES=25 CC_A023_CB_TOOMANYSLAVES value
+     * @property {number} CC_A024_CB_MASTERISETTOOLOW=26 CC_A024_CB_MASTERISETTOOLOW value
+     * @property {number} CC_A025_EVSETEMP=27 CC_A025_EVSETEMP value
+     * @property {number} CC_A026_WALLPLUGTEMP=28 CC_A026_WALLPLUGTEMP value
+     * @property {number} CC_A027_VEHICLEHANDLETEMP=29 CC_A027_VEHICLEHANDLETEMP value
+     * @property {number} CC_A028_CB_ROTARYSELECT=30 CC_A028_CB_ROTARYSELECT value
+     * @property {number} CC_A029_PILOTFFAULT=31 CC_A029_PILOTFFAULT value
+     * @property {number} CC_A030_MASTERSLAVEMISMATCH=32 CC_A030_MASTERSLAVEMISMATCH value
+     * @property {number} CC_A041_INPUTWIRINGFOLDBACK=33 CC_A041_INPUTWIRINGFOLDBACK value
+     * @property {number} CC_A042_PCBATEMPFOLDBACK=34 CC_A042_PCBATEMPFOLDBACK value
+     * @property {number} CC_A043_CONFIGURATIONREQUIRED=35 CC_A043_CONFIGURATIONREQUIRED value
+     * @property {number} CP_A004_PROXIMITYRATIONALITY=36 CP_A004_PROXIMITYRATIONALITY value
+     * @property {number} CP_A010_PILOTRATIONALITY=37 CP_A010_PILOTRATIONALITY value
+     * @property {number} CP_A046_LOSTCOMMSEVSE=38 CP_A046_LOSTCOMMSEVSE value
+     * @property {number} CP_A049_MULTIPLECABLESDETECTED=39 CP_A049_MULTIPLECABLESDETECTED value
+     * @property {number} CP_A052_CHADEMONOTSUPPORTED=40 CP_A052_CHADEMONOTSUPPORTED value
+     * @property {number} CP_A053_PROXLATCHEDNOPILOT=41 CP_A053_PROXLATCHEDNOPILOT value
+     * @property {number} CP_A055_CHARGESTOPPEDNOPILOT=42 CP_A055_CHARGESTOPPEDNOPILOT value
+     * @property {number} CP_A058_ACCHARGINGBLOCKED=43 CP_A058_ACCHARGINGBLOCKED value
+     * @property {number} CP_A062_SCOUTOFSERVICE=44 CP_A062_SCOUTOFSERVICE value
+     * @property {number} CP_A063_SCUPDATEINPROGRESS=45 CP_A063_SCUPDATEINPROGRESS value
+     * @property {number} CP_A064_SUPERCHARGINGBLOCKED=46 CP_A064_SUPERCHARGINGBLOCKED value
+     * @property {number} CP_A066_PROXLATCHEDIDLEPILOT=47 CP_A066_PROXLATCHEDIDLEPILOT value
+     * @property {number} CP_A067_GBDCCONNFAULT=48 CP_A067_GBDCCONNFAULT value
+     * @property {number} CP_A074_FAILEDTOESTABLISHV2GCOMM=49 CP_A074_FAILEDTOESTABLISHV2GCOMM value
+     * @property {number} CP_A091_WRONGSUPERCHARGERHANDLE=50 CP_A091_WRONGSUPERCHARGERHANDLE value
+     * @property {number} CP_A101_WCFOLDBACKACTIVE=51 CP_A101_WCFOLDBACKACTIVE value
+     * @property {number} CP_A102_WCOVERTEMPFAULT=52 CP_A102_WCOVERTEMPFAULT value
+     * @property {number} CP_A108_CHADEMOOVERTEMPFAULT=53 CP_A108_CHADEMOOVERTEMPFAULT value
+     * @property {number} CP_A110_THERMALVELOCITYHIGH=54 CP_A110_THERMALVELOCITYHIGH value
+     * @property {number} CP_A120_COMBOADAPTERFOLDBACK=55 CP_A120_COMBOADAPTERFOLDBACK value
+     * @property {number} CP_A131_EVSECOMMTIMEOUT=56 CP_A131_EVSECOMMTIMEOUT value
+     * @property {number} CP_A132_CONTRACTAUTHTIMEOUT=57 CP_A132_CONTRACTAUTHTIMEOUT value
+     * @property {number} CP_A133_PROXNEVERLATCHED=58 CP_A133_PROXNEVERLATCHED value
+     * @property {number} CP_A135_SDPATTEMPTSFAILED=59 CP_A135_SDPATTEMPTSFAILED value
+     * @property {number} CP_A139_PILOTFAULTED=60 CP_A139_PILOTFAULTED value
+     * @property {number} CP_A140_SUPERCHARGERFAULTED=61 CP_A140_SUPERCHARGERFAULTED value
+     * @property {number} CP_A141_CHADEMOADAPTERFAULT=62 CP_A141_CHADEMOADAPTERFAULT value
+     * @property {number} CP_A142_GBDCSCCONNFAULT=63 CP_A142_GBDCSCCONNFAULT value
+     * @property {number} CP_A143_UNSUPPORTEDCHARGEADAPTER=64 CP_A143_UNSUPPORTEDCHARGEADAPTER value
+     * @property {number} CP_A146_CCSEVSEMALFUNCTION=65 CP_A146_CCSEVSEMALFUNCTION value
+     * @property {number} CP_A151_BADPILOTDIODEDETECTED=66 CP_A151_BADPILOTDIODEDETECTED value
+     * @property {number} CP_A152_PILOTEDGEDETECTIONFAILED=67 CP_A152_PILOTEDGEDETECTIONFAILED value
+     * @property {number} FC_A141_CA_VEHCONN_OT=68 FC_A141_CA_VEHCONN_OT value
+     * @property {number} FC_A142_CA_EVSECONN_OT=69 FC_A142_CA_EVSECONN_OT value
+     * @property {number} FC_A143_CA_PCB_OT=70 FC_A143_CA_PCB_OT value
+     * @property {number} FC_A151_CA_VEHTOEVSEDELTALO=71 FC_A151_CA_VEHTOEVSEDELTALO value
+     * @property {number} FC_A154_CA_VEHTOPCBDELTALO=72 FC_A154_CA_VEHTOPCBDELTALO value
+     * @property {number} FC_A161_CA_VEHTEMPHIFOLDBK=73 FC_A161_CA_VEHTEMPHIFOLDBK value
+     * @property {number} FC_A162_CA_EVSETEMPHIFOLDBK=74 FC_A162_CA_EVSETEMPHIFOLDBK value
+     * @property {number} FC_A163_CA_PCBTEMPHIFOLDBK=75 FC_A163_CA_PCBTEMPHIFOLDBK value
+     * @property {number} FC_A266_GB_NEGPIN_OT=76 FC_A266_GB_NEGPIN_OT value
+     * @property {number} FC_A267_GB_POSPIN_OT=77 FC_A267_GB_POSPIN_OT value
+     * @property {number} FC_A268_GB_PCB_OT=78 FC_A268_GB_PCB_OT value
+     * @property {number} FC_A272_GB_NEGTOPOSDELTAHI=79 FC_A272_GB_NEGTOPOSDELTAHI value
+     * @property {number} FC_A273_GB_NEGTOPOSDELTALO=80 FC_A273_GB_NEGTOPOSDELTALO value
+     * @property {number} FC_A274_GB_NEGTOPCBDELTAHI=81 FC_A274_GB_NEGTOPCBDELTAHI value
+     * @property {number} FC_A282_GB_NEGTEMPHIFOLDBK=82 FC_A282_GB_NEGTEMPHIFOLDBK value
+     * @property {number} FC_A283_GB_POSTEMPHIFOLDBK=83 FC_A283_GB_POSTEMPHIFOLDBK value
+     * @property {number} FC_A284_GB_PCBTEMPHIFOLDBK=84 FC_A284_GB_PCBTEMPHIFOLDBK value
+     * @property {number} FC_A286_GB_EVSECONNUNLOCKED=85 FC_A286_GB_EVSECONNUNLOCKED value
+     * @property {number} PCS_A007_CHGPHASETEMPHOT=86 PCS_A007_CHGPHASETEMPHOT value
+     * @property {number} PCS_A016_CHGALLPHASESFAULTED=87 PCS_A016_CHGALLPHASESFAULTED value
+     * @property {number} PCS_A017_CHGWALLPOWERREMOVAL=88 PCS_A017_CHGWALLPOWERREMOVAL value
+     * @property {number} PCS_A019_ACCHARGEPOWERLIMITED=89 PCS_A019_ACCHARGEPOWERLIMITED value
+     * @property {number} PCS_A032_EXCESSIVEGRIDTRANSIENTSDETECTED=90 PCS_A032_EXCESSIVEGRIDTRANSIENTSDETECTED value
+     * @property {number} PCS_A052_ACVOLTAGENOTPRESENT=91 PCS_A052_ACVOLTAGENOTPRESENT value
+     * @property {number} PCS_A053_CHGINPUTVDROPHIGH=92 PCS_A053_CHGINPUTVDROPHIGH value
+     * @property {number} PCS_A054_CHGINPUTVDROPTOOHIGH=93 PCS_A054_CHGINPUTVDROPTOOHIGH value
+     * @property {number} PCS_A055_CHGLINEIMPEDANCEHIGH=94 PCS_A055_CHGLINEIMPEDANCEHIGH value
+     * @property {number} PCS_A056_CHGLINEIMPEDANCETOOHIGH=95 PCS_A056_CHGLINEIMPEDANCETOOHIGH value
+     * @property {number} PCS_A059_CHGINPUTOVRMS=96 PCS_A059_CHGINPUTOVRMS value
+     * @property {number} PCS_A073_UNEXPECTEDACINPUTVOLTAGE=97 PCS_A073_UNEXPECTEDACINPUTVOLTAGE value
+     * @property {number} PCS_A078_CHGSTOPDCDCTOOHOT=98 PCS_A078_CHGSTOPDCDCTOOHOT value
+     * @property {number} PCS_A088_GRIDFREQDROOPDETECTED=99 PCS_A088_GRIDFREQDROOPDETECTED value
+     * @property {number} PCS_A090_EXPECTEDACVOLTAGESOURCEMISSING=100 PCS_A090_EXPECTEDACVOLTAGESOURCEMISSING value
+     * @property {number} PCS_A096_MICROGRIDOVERLOADED=101 PCS_A096_MICROGRIDOVERLOADED value
+     * @property {number} PCS2_A019_DCACADCTEMPTOOHIGH=102 PCS2_A019_DCACADCTEMPTOOHIGH value
+     * @property {number} PCS2_A020_DCACBDCTEMPTOOHIGH=103 PCS2_A020_DCACBDCTEMPTOOHIGH value
+     * @property {number} PCS2_A024_DCACATXTEMPTOOHIGH=104 PCS2_A024_DCACATXTEMPTOOHIGH value
+     * @property {number} PCS2_A025_DCACBTXTEMPTOOHIGH=105 PCS2_A025_DCACBTXTEMPTOOHIGH value
+     * @property {number} PCS2_A062_ACVOLTAGENOTPRESENT=106 PCS2_A062_ACVOLTAGENOTPRESENT value
+     * @property {number} PCS2_A063_CHGUNKNOWNGRIDCONFIG=107 PCS2_A063_CHGUNKNOWNGRIDCONFIG value
+     * @property {number} PCS2_A112_CHGINPUTVDROPTOOHIGH=108 PCS2_A112_CHGINPUTVDROPTOOHIGH value
+     * @property {number} PCS2_A115_CHGWALLPOWERREMOVAL=109 PCS2_A115_CHGWALLPOWERREMOVAL value
+     * @property {number} PCS2_A116_CHGPERSISTENTFAULT=110 PCS2_A116_CHGPERSISTENTFAULT value
+     * @property {number} UMC_A001_GNDMONINTRPTLINESIDE=111 UMC_A001_GNDMONINTRPTLINESIDE value
+     * @property {number} UMC_A002_GFCITRIPPED=112 UMC_A002_GFCITRIPPED value
+     * @property {number} UMC_A003_GFCISELFTESTFAULT=113 UMC_A003_GFCISELFTESTFAULT value
+     * @property {number} UMC_A004_INPUTOVERVOLTAGE=114 UMC_A004_INPUTOVERVOLTAGE value
+     * @property {number} UMC_A005_INPUTUNDERVOLTAGE=115 UMC_A005_INPUTUNDERVOLTAGE value
+     * @property {number} UMC_A006_CONTACTORWELDED=116 UMC_A006_CONTACTORWELDED value
+     * @property {number} UMC_A007_PCBAOT=117 UMC_A007_PCBAOT value
+     * @property {number} UMC_A008_WALLPLUGOT=118 UMC_A008_WALLPLUGOT value
+     * @property {number} UMC_A009_VEHCONNOT=119 UMC_A009_VEHCONNOT value
+     * @property {number} UMC_A010_INPUTOT=120 UMC_A010_INPUTOT value
+     * @property {number} UMC_A011_PROXDISCONNECTED=121 UMC_A011_PROXDISCONNECTED value
+     * @property {number} UMC_A012_PILOTFAULT=122 UMC_A012_PILOTFAULT value
+     * @property {number} UMC_A013_SA_TEMPERATURE=123 UMC_A013_SA_TEMPERATURE value
+     * @property {number} UMC_A014_SA_GENEALOGY=124 UMC_A014_SA_GENEALOGY value
+     * @property {number} UMC_A015_SA_CONNECTION=125 UMC_A015_SA_CONNECTION value
+     * @property {number} UMC_A016_PCBAOTFOLDBACK=126 UMC_A016_PCBAOTFOLDBACK value
+     * @property {number} UMC_A017_WALLPLUGOTFOLDBACK=127 UMC_A017_WALLPLUGOTFOLDBACK value
+     * @property {number} UMC_A018_VEHCONNOTFOLDBACK=128 UMC_A018_VEHCONNOTFOLDBACK value
+     * @property {number} UMC_A019_INPUTOTFOLDBACK=129 UMC_A019_INPUTOTFOLDBACK value
+     */
+    CarServer.ChargingAlertName = (function() {
+        var valuesById = $Object.create(null), values = $Object.create(valuesById);
+        values[valuesById[0] = "INVALID_ALERT_NAME"] = 0;
+        values[valuesById[1] = "BMS_A007_SW_SLOWED_CHG_BATT_COLD_OBSOLETE"] = 1;
+        values[valuesById[2] = "BMS_A076_SW_DCH_WHILE_CHARGING"] = 2;
+        values[valuesById[3] = "CC_A001_GNDMONINTRPTLINESIDE"] = 3;
+        values[valuesById[4] = "CC_A002_GNDMONINTRPTLOADSIDE"] = 4;
+        values[valuesById[5] = "CC_A003_CCIDTRIPPED"] = 5;
+        values[valuesById[6] = "CC_A004_CCIDSELFTESTFAULT"] = 6;
+        values[valuesById[7] = "CC_A005_GROUNDEDNEUTRAL"] = 7;
+        values[valuesById[8] = "CC_A006_INPUTOVERCURRENT"] = 8;
+        values[valuesById[9] = "CC_A007_INPUTOVERVOLTAGE"] = 9;
+        values[valuesById[10] = "CC_A008_INPUTUNDERVOLTAGE"] = 10;
+        values[valuesById[11] = "CC_A009_INPUTMISWIRED"] = 11;
+        values[valuesById[12] = "CC_A010_CONTACTORWELDED"] = 12;
+        values[valuesById[13] = "CC_A011_AMBIENTOT"] = 13;
+        values[valuesById[14] = "CC_A012_WALLPLUGOT"] = 14;
+        values[valuesById[15] = "CC_A013_VEHCONNOT"] = 15;
+        values[valuesById[16] = "CC_A014_MCUSELFTESTFAULT"] = 16;
+        values[valuesById[17] = "CC_A015_PILOTAFAULT"] = 17;
+        values[valuesById[18] = "CC_A016_PILOTBFAULT"] = 18;
+        values[valuesById[19] = "CC_A017_PILOTCFAULT"] = 19;
+        values[valuesById[20] = "CC_A018_PILOTDFAULT"] = 20;
+        values[valuesById[21] = "CC_A019_PROXDISCONNECTED"] = 21;
+        values[valuesById[22] = "CC_A020_3VRAILINCORRECT"] = 22;
+        values[valuesById[23] = "CC_A021_CB_NOMASTER"] = 23;
+        values[valuesById[24] = "CC_A022_CB_TOOMANYMASTERS"] = 24;
+        values[valuesById[25] = "CC_A023_CB_TOOMANYSLAVES"] = 25;
+        values[valuesById[26] = "CC_A024_CB_MASTERISETTOOLOW"] = 26;
+        values[valuesById[27] = "CC_A025_EVSETEMP"] = 27;
+        values[valuesById[28] = "CC_A026_WALLPLUGTEMP"] = 28;
+        values[valuesById[29] = "CC_A027_VEHICLEHANDLETEMP"] = 29;
+        values[valuesById[30] = "CC_A028_CB_ROTARYSELECT"] = 30;
+        values[valuesById[31] = "CC_A029_PILOTFFAULT"] = 31;
+        values[valuesById[32] = "CC_A030_MASTERSLAVEMISMATCH"] = 32;
+        values[valuesById[33] = "CC_A041_INPUTWIRINGFOLDBACK"] = 33;
+        values[valuesById[34] = "CC_A042_PCBATEMPFOLDBACK"] = 34;
+        values[valuesById[35] = "CC_A043_CONFIGURATIONREQUIRED"] = 35;
+        values[valuesById[36] = "CP_A004_PROXIMITYRATIONALITY"] = 36;
+        values[valuesById[37] = "CP_A010_PILOTRATIONALITY"] = 37;
+        values[valuesById[38] = "CP_A046_LOSTCOMMSEVSE"] = 38;
+        values[valuesById[39] = "CP_A049_MULTIPLECABLESDETECTED"] = 39;
+        values[valuesById[40] = "CP_A052_CHADEMONOTSUPPORTED"] = 40;
+        values[valuesById[41] = "CP_A053_PROXLATCHEDNOPILOT"] = 41;
+        values[valuesById[42] = "CP_A055_CHARGESTOPPEDNOPILOT"] = 42;
+        values[valuesById[43] = "CP_A058_ACCHARGINGBLOCKED"] = 43;
+        values[valuesById[44] = "CP_A062_SCOUTOFSERVICE"] = 44;
+        values[valuesById[45] = "CP_A063_SCUPDATEINPROGRESS"] = 45;
+        values[valuesById[46] = "CP_A064_SUPERCHARGINGBLOCKED"] = 46;
+        values[valuesById[47] = "CP_A066_PROXLATCHEDIDLEPILOT"] = 47;
+        values[valuesById[48] = "CP_A067_GBDCCONNFAULT"] = 48;
+        values[valuesById[49] = "CP_A074_FAILEDTOESTABLISHV2GCOMM"] = 49;
+        values[valuesById[50] = "CP_A091_WRONGSUPERCHARGERHANDLE"] = 50;
+        values[valuesById[51] = "CP_A101_WCFOLDBACKACTIVE"] = 51;
+        values[valuesById[52] = "CP_A102_WCOVERTEMPFAULT"] = 52;
+        values[valuesById[53] = "CP_A108_CHADEMOOVERTEMPFAULT"] = 53;
+        values[valuesById[54] = "CP_A110_THERMALVELOCITYHIGH"] = 54;
+        values[valuesById[55] = "CP_A120_COMBOADAPTERFOLDBACK"] = 55;
+        values[valuesById[56] = "CP_A131_EVSECOMMTIMEOUT"] = 56;
+        values[valuesById[57] = "CP_A132_CONTRACTAUTHTIMEOUT"] = 57;
+        values[valuesById[58] = "CP_A133_PROXNEVERLATCHED"] = 58;
+        values[valuesById[59] = "CP_A135_SDPATTEMPTSFAILED"] = 59;
+        values[valuesById[60] = "CP_A139_PILOTFAULTED"] = 60;
+        values[valuesById[61] = "CP_A140_SUPERCHARGERFAULTED"] = 61;
+        values[valuesById[62] = "CP_A141_CHADEMOADAPTERFAULT"] = 62;
+        values[valuesById[63] = "CP_A142_GBDCSCCONNFAULT"] = 63;
+        values[valuesById[64] = "CP_A143_UNSUPPORTEDCHARGEADAPTER"] = 64;
+        values[valuesById[65] = "CP_A146_CCSEVSEMALFUNCTION"] = 65;
+        values[valuesById[66] = "CP_A151_BADPILOTDIODEDETECTED"] = 66;
+        values[valuesById[67] = "CP_A152_PILOTEDGEDETECTIONFAILED"] = 67;
+        values[valuesById[68] = "FC_A141_CA_VEHCONN_OT"] = 68;
+        values[valuesById[69] = "FC_A142_CA_EVSECONN_OT"] = 69;
+        values[valuesById[70] = "FC_A143_CA_PCB_OT"] = 70;
+        values[valuesById[71] = "FC_A151_CA_VEHTOEVSEDELTALO"] = 71;
+        values[valuesById[72] = "FC_A154_CA_VEHTOPCBDELTALO"] = 72;
+        values[valuesById[73] = "FC_A161_CA_VEHTEMPHIFOLDBK"] = 73;
+        values[valuesById[74] = "FC_A162_CA_EVSETEMPHIFOLDBK"] = 74;
+        values[valuesById[75] = "FC_A163_CA_PCBTEMPHIFOLDBK"] = 75;
+        values[valuesById[76] = "FC_A266_GB_NEGPIN_OT"] = 76;
+        values[valuesById[77] = "FC_A267_GB_POSPIN_OT"] = 77;
+        values[valuesById[78] = "FC_A268_GB_PCB_OT"] = 78;
+        values[valuesById[79] = "FC_A272_GB_NEGTOPOSDELTAHI"] = 79;
+        values[valuesById[80] = "FC_A273_GB_NEGTOPOSDELTALO"] = 80;
+        values[valuesById[81] = "FC_A274_GB_NEGTOPCBDELTAHI"] = 81;
+        values[valuesById[82] = "FC_A282_GB_NEGTEMPHIFOLDBK"] = 82;
+        values[valuesById[83] = "FC_A283_GB_POSTEMPHIFOLDBK"] = 83;
+        values[valuesById[84] = "FC_A284_GB_PCBTEMPHIFOLDBK"] = 84;
+        values[valuesById[85] = "FC_A286_GB_EVSECONNUNLOCKED"] = 85;
+        values[valuesById[86] = "PCS_A007_CHGPHASETEMPHOT"] = 86;
+        values[valuesById[87] = "PCS_A016_CHGALLPHASESFAULTED"] = 87;
+        values[valuesById[88] = "PCS_A017_CHGWALLPOWERREMOVAL"] = 88;
+        values[valuesById[89] = "PCS_A019_ACCHARGEPOWERLIMITED"] = 89;
+        values[valuesById[90] = "PCS_A032_EXCESSIVEGRIDTRANSIENTSDETECTED"] = 90;
+        values[valuesById[91] = "PCS_A052_ACVOLTAGENOTPRESENT"] = 91;
+        values[valuesById[92] = "PCS_A053_CHGINPUTVDROPHIGH"] = 92;
+        values[valuesById[93] = "PCS_A054_CHGINPUTVDROPTOOHIGH"] = 93;
+        values[valuesById[94] = "PCS_A055_CHGLINEIMPEDANCEHIGH"] = 94;
+        values[valuesById[95] = "PCS_A056_CHGLINEIMPEDANCETOOHIGH"] = 95;
+        values[valuesById[96] = "PCS_A059_CHGINPUTOVRMS"] = 96;
+        values[valuesById[97] = "PCS_A073_UNEXPECTEDACINPUTVOLTAGE"] = 97;
+        values[valuesById[98] = "PCS_A078_CHGSTOPDCDCTOOHOT"] = 98;
+        values[valuesById[99] = "PCS_A088_GRIDFREQDROOPDETECTED"] = 99;
+        values[valuesById[100] = "PCS_A090_EXPECTEDACVOLTAGESOURCEMISSING"] = 100;
+        values[valuesById[101] = "PCS_A096_MICROGRIDOVERLOADED"] = 101;
+        values[valuesById[102] = "PCS2_A019_DCACADCTEMPTOOHIGH"] = 102;
+        values[valuesById[103] = "PCS2_A020_DCACBDCTEMPTOOHIGH"] = 103;
+        values[valuesById[104] = "PCS2_A024_DCACATXTEMPTOOHIGH"] = 104;
+        values[valuesById[105] = "PCS2_A025_DCACBTXTEMPTOOHIGH"] = 105;
+        values[valuesById[106] = "PCS2_A062_ACVOLTAGENOTPRESENT"] = 106;
+        values[valuesById[107] = "PCS2_A063_CHGUNKNOWNGRIDCONFIG"] = 107;
+        values[valuesById[108] = "PCS2_A112_CHGINPUTVDROPTOOHIGH"] = 108;
+        values[valuesById[109] = "PCS2_A115_CHGWALLPOWERREMOVAL"] = 109;
+        values[valuesById[110] = "PCS2_A116_CHGPERSISTENTFAULT"] = 110;
+        values[valuesById[111] = "UMC_A001_GNDMONINTRPTLINESIDE"] = 111;
+        values[valuesById[112] = "UMC_A002_GFCITRIPPED"] = 112;
+        values[valuesById[113] = "UMC_A003_GFCISELFTESTFAULT"] = 113;
+        values[valuesById[114] = "UMC_A004_INPUTOVERVOLTAGE"] = 114;
+        values[valuesById[115] = "UMC_A005_INPUTUNDERVOLTAGE"] = 115;
+        values[valuesById[116] = "UMC_A006_CONTACTORWELDED"] = 116;
+        values[valuesById[117] = "UMC_A007_PCBAOT"] = 117;
+        values[valuesById[118] = "UMC_A008_WALLPLUGOT"] = 118;
+        values[valuesById[119] = "UMC_A009_VEHCONNOT"] = 119;
+        values[valuesById[120] = "UMC_A010_INPUTOT"] = 120;
+        values[valuesById[121] = "UMC_A011_PROXDISCONNECTED"] = 121;
+        values[valuesById[122] = "UMC_A012_PILOTFAULT"] = 122;
+        values[valuesById[123] = "UMC_A013_SA_TEMPERATURE"] = 123;
+        values[valuesById[124] = "UMC_A014_SA_GENEALOGY"] = 124;
+        values[valuesById[125] = "UMC_A015_SA_CONNECTION"] = 125;
+        values[valuesById[126] = "UMC_A016_PCBAOTFOLDBACK"] = 126;
+        values[valuesById[127] = "UMC_A017_WALLPLUGOTFOLDBACK"] = 127;
+        values[valuesById[128] = "UMC_A018_VEHCONNOTFOLDBACK"] = 128;
+        values[valuesById[129] = "UMC_A019_INPUTOTFOLDBACK"] = 129;
+        return values;
+    })();
+
+    /**
+     * ChargingAlertType enum.
+     * @name CarServer.ChargingAlertType
+     * @enum {number}
+     * @property {number} INVALID_ALERT_TYPE=0 INVALID_ALERT_TYPE value
+     * @property {number} WARNING=1 WARNING value
+     * @property {number} NOTIFICATION=2 NOTIFICATION value
+     */
+    CarServer.ChargingAlertType = (function() {
+        var valuesById = $Object.create(null), values = $Object.create(valuesById);
+        values[valuesById[0] = "INVALID_ALERT_TYPE"] = 0;
+        values[valuesById[1] = "WARNING"] = 1;
+        values[valuesById[2] = "NOTIFICATION"] = 2;
+        return values;
+    })();
+
+    CarServer.ChargingAlert = (function() {
+
+        /**
+         * Properties of a ChargingAlert.
+         * @typedef {Object} CarServer.ChargingAlert.$Properties
+         * @property {CarServer.ChargingAlertName|null} [alertName] ChargingAlert alertName
+         * @property {CarServer.ChargingAlertType|null} [alertType] ChargingAlert alertType
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+
+        /**
+         * Properties of a ChargingAlert.
+         * @memberof CarServer
+         * @interface IChargingAlert
+         * @augments CarServer.ChargingAlert.$Properties
+         * @deprecated Use CarServer.ChargingAlert.$Properties instead.
+         */
+
+        /**
+         * Shape of a ChargingAlert.
+         * @typedef {CarServer.ChargingAlert.$Properties} CarServer.ChargingAlert.$Shape
+         */
+
+        /**
+         * Constructs a new ChargingAlert.
+         * @memberof CarServer
+         * @classdesc Represents a ChargingAlert.
+         * @constructor
+         * @param {CarServer.ChargingAlert.$Properties=} [properties] Properties to set
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+        var ChargingAlert = function (properties) {
+            if (properties)
+                for (var keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        };
+
+        /**
+         * ChargingAlert alertName.
+         * @member {CarServer.ChargingAlertName} alertName
+         * @memberof CarServer.ChargingAlert
+         * @instance
+         */
+        ChargingAlert.prototype.alertName = 0;
+
+        /**
+         * ChargingAlert alertType.
+         * @member {CarServer.ChargingAlertType} alertType
+         * @memberof CarServer.ChargingAlert
+         * @instance
+         */
+        ChargingAlert.prototype.alertType = 0;
+
+        /**
+         * Creates a new ChargingAlert instance using the specified properties.
+         * @function create
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {CarServer.ChargingAlert.$Properties=} [properties] Properties to set
+         * @returns {CarServer.ChargingAlert} ChargingAlert instance
+         * @type {{
+         *   (properties: CarServer.ChargingAlert.$Shape): CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape;
+         *   (properties?: CarServer.ChargingAlert.$Properties): CarServer.ChargingAlert;
+         * }}
+         */
+        ChargingAlert.create = function(properties) {
+            return new ChargingAlert(properties);
+        };
+
+        /**
+         * Encodes the specified ChargingAlert message. Does not implicitly {@link CarServer.ChargingAlert.verify|verify} messages.
+         * @function encode
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {CarServer.ChargingAlert.$Properties} message ChargingAlert message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChargingAlert.encode = function (message, writer, _depth) {
+            if (!writer)
+                writer = $Writer.create();
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            if (message.alertName != null && $Object.hasOwnProperty.call(message, "alertName") && message.alertName !== 0)
+                writer.uint32(/* id 1, wireType 0 =*/8).int32(message.alertName);
+            if (message.alertType != null && $Object.hasOwnProperty.call(message, "alertType") && message.alertType !== 0)
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.alertType);
+            if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                for (var i = 0; i < message.$unknowns.length; ++i)
+                    writer.raw(message.$unknowns[i]);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified ChargingAlert message, length delimited. Does not implicitly {@link CarServer.ChargingAlert.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {CarServer.ChargingAlert.$Properties} message ChargingAlert message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        ChargingAlert.encodeDelimited = function(message, writer) {
+            return this.encode(message, (writer || $Writer.create()).fork()).ldelim();
+        };
+
+        /**
+         * Decodes a ChargingAlert message from the specified reader or buffer.
+         * @function decode
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape} ChargingAlert
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChargingAlert.decode = function (reader, length, _end, _depth, _target) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $Reader.recursionLimit)
+                throw $Error("max depth exceeded");
+            var end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.CarServer.ChargingAlert(), value;
+            while (reader.pos < end) {
+                var start = reader.pos;
+                var tag = reader.tag();
+                if (tag === _end) {
+                    _end = $undefined;
+                    break;
+                }
+                var wireType = tag & 7;
+                switch (tag >>>= 3) {
+                case 1: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.alertName = value;
+                        else
+                            delete message.alertName;
+                        continue;
+                    }
+                case 2: {
+                        if (wireType !== 0)
+                            break;
+                        if (value = reader.int32())
+                            message.alertType = value;
+                        else
+                            delete message.alertType;
+                        continue;
+                    }
+                }
+                reader.skipType(wireType, _depth, tag);
+                if (!reader.discardUnknown) {
+                    $util.makeProp(message, "$unknowns", false);
+                    (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                }
+            }
+            if (_end !== $undefined)
+                throw $Error("missing end group");
+            return message;
+        };
+
+        /**
+         * Decodes a ChargingAlert message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape} ChargingAlert
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        ChargingAlert.decodeDelimited = function(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a ChargingAlert message.
+         * @function verify
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        ChargingAlert.verify = function (message, _depth) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                return "max depth exceeded";
+            if (message.alertName != null && $Object.hasOwnProperty.call(message, "alertName"))
+                if (typeof message.alertName !== "number" || (message.alertName | 0) !== message.alertName)
+                    return "alertName: enum value expected";
+            if (message.alertType != null && $Object.hasOwnProperty.call(message, "alertType"))
+                if (typeof message.alertType !== "number" || (message.alertType | 0) !== message.alertType)
+                    return "alertType: enum value expected";
+            return null;
+        };
+
+        /**
+         * Creates a ChargingAlert message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {CarServer.ChargingAlert} ChargingAlert
+         */
+        ChargingAlert.fromObject = function (object, _depth) {
+            if (object instanceof $root.CarServer.ChargingAlert)
+                return object;
+            if (!$util.isObject(object))
+                throw $TypeError(".CarServer.ChargingAlert: object expected");
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var message = new $root.CarServer.ChargingAlert();
+            if (object.alertName !== 0 && (typeof object.alertName !== "string" || $root.CarServer.ChargingAlertName[object.alertName] !== 0))
+                switch (object.alertName) {
+                case "INVALID_ALERT_NAME":
+                case 0:
+                    message.alertName = 0;
+                    break;
+                case "BMS_A007_SW_SLOWED_CHG_BATT_COLD_OBSOLETE":
+                case 1:
+                    message.alertName = 1;
+                    break;
+                case "BMS_A076_SW_DCH_WHILE_CHARGING":
+                case 2:
+                    message.alertName = 2;
+                    break;
+                case "CC_A001_GNDMONINTRPTLINESIDE":
+                case 3:
+                    message.alertName = 3;
+                    break;
+                case "CC_A002_GNDMONINTRPTLOADSIDE":
+                case 4:
+                    message.alertName = 4;
+                    break;
+                case "CC_A003_CCIDTRIPPED":
+                case 5:
+                    message.alertName = 5;
+                    break;
+                case "CC_A004_CCIDSELFTESTFAULT":
+                case 6:
+                    message.alertName = 6;
+                    break;
+                case "CC_A005_GROUNDEDNEUTRAL":
+                case 7:
+                    message.alertName = 7;
+                    break;
+                case "CC_A006_INPUTOVERCURRENT":
+                case 8:
+                    message.alertName = 8;
+                    break;
+                case "CC_A007_INPUTOVERVOLTAGE":
+                case 9:
+                    message.alertName = 9;
+                    break;
+                case "CC_A008_INPUTUNDERVOLTAGE":
+                case 10:
+                    message.alertName = 10;
+                    break;
+                case "CC_A009_INPUTMISWIRED":
+                case 11:
+                    message.alertName = 11;
+                    break;
+                case "CC_A010_CONTACTORWELDED":
+                case 12:
+                    message.alertName = 12;
+                    break;
+                case "CC_A011_AMBIENTOT":
+                case 13:
+                    message.alertName = 13;
+                    break;
+                case "CC_A012_WALLPLUGOT":
+                case 14:
+                    message.alertName = 14;
+                    break;
+                case "CC_A013_VEHCONNOT":
+                case 15:
+                    message.alertName = 15;
+                    break;
+                case "CC_A014_MCUSELFTESTFAULT":
+                case 16:
+                    message.alertName = 16;
+                    break;
+                case "CC_A015_PILOTAFAULT":
+                case 17:
+                    message.alertName = 17;
+                    break;
+                case "CC_A016_PILOTBFAULT":
+                case 18:
+                    message.alertName = 18;
+                    break;
+                case "CC_A017_PILOTCFAULT":
+                case 19:
+                    message.alertName = 19;
+                    break;
+                case "CC_A018_PILOTDFAULT":
+                case 20:
+                    message.alertName = 20;
+                    break;
+                case "CC_A019_PROXDISCONNECTED":
+                case 21:
+                    message.alertName = 21;
+                    break;
+                case "CC_A020_3VRAILINCORRECT":
+                case 22:
+                    message.alertName = 22;
+                    break;
+                case "CC_A021_CB_NOMASTER":
+                case 23:
+                    message.alertName = 23;
+                    break;
+                case "CC_A022_CB_TOOMANYMASTERS":
+                case 24:
+                    message.alertName = 24;
+                    break;
+                case "CC_A023_CB_TOOMANYSLAVES":
+                case 25:
+                    message.alertName = 25;
+                    break;
+                case "CC_A024_CB_MASTERISETTOOLOW":
+                case 26:
+                    message.alertName = 26;
+                    break;
+                case "CC_A025_EVSETEMP":
+                case 27:
+                    message.alertName = 27;
+                    break;
+                case "CC_A026_WALLPLUGTEMP":
+                case 28:
+                    message.alertName = 28;
+                    break;
+                case "CC_A027_VEHICLEHANDLETEMP":
+                case 29:
+                    message.alertName = 29;
+                    break;
+                case "CC_A028_CB_ROTARYSELECT":
+                case 30:
+                    message.alertName = 30;
+                    break;
+                case "CC_A029_PILOTFFAULT":
+                case 31:
+                    message.alertName = 31;
+                    break;
+                case "CC_A030_MASTERSLAVEMISMATCH":
+                case 32:
+                    message.alertName = 32;
+                    break;
+                case "CC_A041_INPUTWIRINGFOLDBACK":
+                case 33:
+                    message.alertName = 33;
+                    break;
+                case "CC_A042_PCBATEMPFOLDBACK":
+                case 34:
+                    message.alertName = 34;
+                    break;
+                case "CC_A043_CONFIGURATIONREQUIRED":
+                case 35:
+                    message.alertName = 35;
+                    break;
+                case "CP_A004_PROXIMITYRATIONALITY":
+                case 36:
+                    message.alertName = 36;
+                    break;
+                case "CP_A010_PILOTRATIONALITY":
+                case 37:
+                    message.alertName = 37;
+                    break;
+                case "CP_A046_LOSTCOMMSEVSE":
+                case 38:
+                    message.alertName = 38;
+                    break;
+                case "CP_A049_MULTIPLECABLESDETECTED":
+                case 39:
+                    message.alertName = 39;
+                    break;
+                case "CP_A052_CHADEMONOTSUPPORTED":
+                case 40:
+                    message.alertName = 40;
+                    break;
+                case "CP_A053_PROXLATCHEDNOPILOT":
+                case 41:
+                    message.alertName = 41;
+                    break;
+                case "CP_A055_CHARGESTOPPEDNOPILOT":
+                case 42:
+                    message.alertName = 42;
+                    break;
+                case "CP_A058_ACCHARGINGBLOCKED":
+                case 43:
+                    message.alertName = 43;
+                    break;
+                case "CP_A062_SCOUTOFSERVICE":
+                case 44:
+                    message.alertName = 44;
+                    break;
+                case "CP_A063_SCUPDATEINPROGRESS":
+                case 45:
+                    message.alertName = 45;
+                    break;
+                case "CP_A064_SUPERCHARGINGBLOCKED":
+                case 46:
+                    message.alertName = 46;
+                    break;
+                case "CP_A066_PROXLATCHEDIDLEPILOT":
+                case 47:
+                    message.alertName = 47;
+                    break;
+                case "CP_A067_GBDCCONNFAULT":
+                case 48:
+                    message.alertName = 48;
+                    break;
+                case "CP_A074_FAILEDTOESTABLISHV2GCOMM":
+                case 49:
+                    message.alertName = 49;
+                    break;
+                case "CP_A091_WRONGSUPERCHARGERHANDLE":
+                case 50:
+                    message.alertName = 50;
+                    break;
+                case "CP_A101_WCFOLDBACKACTIVE":
+                case 51:
+                    message.alertName = 51;
+                    break;
+                case "CP_A102_WCOVERTEMPFAULT":
+                case 52:
+                    message.alertName = 52;
+                    break;
+                case "CP_A108_CHADEMOOVERTEMPFAULT":
+                case 53:
+                    message.alertName = 53;
+                    break;
+                case "CP_A110_THERMALVELOCITYHIGH":
+                case 54:
+                    message.alertName = 54;
+                    break;
+                case "CP_A120_COMBOADAPTERFOLDBACK":
+                case 55:
+                    message.alertName = 55;
+                    break;
+                case "CP_A131_EVSECOMMTIMEOUT":
+                case 56:
+                    message.alertName = 56;
+                    break;
+                case "CP_A132_CONTRACTAUTHTIMEOUT":
+                case 57:
+                    message.alertName = 57;
+                    break;
+                case "CP_A133_PROXNEVERLATCHED":
+                case 58:
+                    message.alertName = 58;
+                    break;
+                case "CP_A135_SDPATTEMPTSFAILED":
+                case 59:
+                    message.alertName = 59;
+                    break;
+                case "CP_A139_PILOTFAULTED":
+                case 60:
+                    message.alertName = 60;
+                    break;
+                case "CP_A140_SUPERCHARGERFAULTED":
+                case 61:
+                    message.alertName = 61;
+                    break;
+                case "CP_A141_CHADEMOADAPTERFAULT":
+                case 62:
+                    message.alertName = 62;
+                    break;
+                case "CP_A142_GBDCSCCONNFAULT":
+                case 63:
+                    message.alertName = 63;
+                    break;
+                case "CP_A143_UNSUPPORTEDCHARGEADAPTER":
+                case 64:
+                    message.alertName = 64;
+                    break;
+                case "CP_A146_CCSEVSEMALFUNCTION":
+                case 65:
+                    message.alertName = 65;
+                    break;
+                case "CP_A151_BADPILOTDIODEDETECTED":
+                case 66:
+                    message.alertName = 66;
+                    break;
+                case "CP_A152_PILOTEDGEDETECTIONFAILED":
+                case 67:
+                    message.alertName = 67;
+                    break;
+                case "FC_A141_CA_VEHCONN_OT":
+                case 68:
+                    message.alertName = 68;
+                    break;
+                case "FC_A142_CA_EVSECONN_OT":
+                case 69:
+                    message.alertName = 69;
+                    break;
+                case "FC_A143_CA_PCB_OT":
+                case 70:
+                    message.alertName = 70;
+                    break;
+                case "FC_A151_CA_VEHTOEVSEDELTALO":
+                case 71:
+                    message.alertName = 71;
+                    break;
+                case "FC_A154_CA_VEHTOPCBDELTALO":
+                case 72:
+                    message.alertName = 72;
+                    break;
+                case "FC_A161_CA_VEHTEMPHIFOLDBK":
+                case 73:
+                    message.alertName = 73;
+                    break;
+                case "FC_A162_CA_EVSETEMPHIFOLDBK":
+                case 74:
+                    message.alertName = 74;
+                    break;
+                case "FC_A163_CA_PCBTEMPHIFOLDBK":
+                case 75:
+                    message.alertName = 75;
+                    break;
+                case "FC_A266_GB_NEGPIN_OT":
+                case 76:
+                    message.alertName = 76;
+                    break;
+                case "FC_A267_GB_POSPIN_OT":
+                case 77:
+                    message.alertName = 77;
+                    break;
+                case "FC_A268_GB_PCB_OT":
+                case 78:
+                    message.alertName = 78;
+                    break;
+                case "FC_A272_GB_NEGTOPOSDELTAHI":
+                case 79:
+                    message.alertName = 79;
+                    break;
+                case "FC_A273_GB_NEGTOPOSDELTALO":
+                case 80:
+                    message.alertName = 80;
+                    break;
+                case "FC_A274_GB_NEGTOPCBDELTAHI":
+                case 81:
+                    message.alertName = 81;
+                    break;
+                case "FC_A282_GB_NEGTEMPHIFOLDBK":
+                case 82:
+                    message.alertName = 82;
+                    break;
+                case "FC_A283_GB_POSTEMPHIFOLDBK":
+                case 83:
+                    message.alertName = 83;
+                    break;
+                case "FC_A284_GB_PCBTEMPHIFOLDBK":
+                case 84:
+                    message.alertName = 84;
+                    break;
+                case "FC_A286_GB_EVSECONNUNLOCKED":
+                case 85:
+                    message.alertName = 85;
+                    break;
+                case "PCS_A007_CHGPHASETEMPHOT":
+                case 86:
+                    message.alertName = 86;
+                    break;
+                case "PCS_A016_CHGALLPHASESFAULTED":
+                case 87:
+                    message.alertName = 87;
+                    break;
+                case "PCS_A017_CHGWALLPOWERREMOVAL":
+                case 88:
+                    message.alertName = 88;
+                    break;
+                case "PCS_A019_ACCHARGEPOWERLIMITED":
+                case 89:
+                    message.alertName = 89;
+                    break;
+                case "PCS_A032_EXCESSIVEGRIDTRANSIENTSDETECTED":
+                case 90:
+                    message.alertName = 90;
+                    break;
+                case "PCS_A052_ACVOLTAGENOTPRESENT":
+                case 91:
+                    message.alertName = 91;
+                    break;
+                case "PCS_A053_CHGINPUTVDROPHIGH":
+                case 92:
+                    message.alertName = 92;
+                    break;
+                case "PCS_A054_CHGINPUTVDROPTOOHIGH":
+                case 93:
+                    message.alertName = 93;
+                    break;
+                case "PCS_A055_CHGLINEIMPEDANCEHIGH":
+                case 94:
+                    message.alertName = 94;
+                    break;
+                case "PCS_A056_CHGLINEIMPEDANCETOOHIGH":
+                case 95:
+                    message.alertName = 95;
+                    break;
+                case "PCS_A059_CHGINPUTOVRMS":
+                case 96:
+                    message.alertName = 96;
+                    break;
+                case "PCS_A073_UNEXPECTEDACINPUTVOLTAGE":
+                case 97:
+                    message.alertName = 97;
+                    break;
+                case "PCS_A078_CHGSTOPDCDCTOOHOT":
+                case 98:
+                    message.alertName = 98;
+                    break;
+                case "PCS_A088_GRIDFREQDROOPDETECTED":
+                case 99:
+                    message.alertName = 99;
+                    break;
+                case "PCS_A090_EXPECTEDACVOLTAGESOURCEMISSING":
+                case 100:
+                    message.alertName = 100;
+                    break;
+                case "PCS_A096_MICROGRIDOVERLOADED":
+                case 101:
+                    message.alertName = 101;
+                    break;
+                case "PCS2_A019_DCACADCTEMPTOOHIGH":
+                case 102:
+                    message.alertName = 102;
+                    break;
+                case "PCS2_A020_DCACBDCTEMPTOOHIGH":
+                case 103:
+                    message.alertName = 103;
+                    break;
+                case "PCS2_A024_DCACATXTEMPTOOHIGH":
+                case 104:
+                    message.alertName = 104;
+                    break;
+                case "PCS2_A025_DCACBTXTEMPTOOHIGH":
+                case 105:
+                    message.alertName = 105;
+                    break;
+                case "PCS2_A062_ACVOLTAGENOTPRESENT":
+                case 106:
+                    message.alertName = 106;
+                    break;
+                case "PCS2_A063_CHGUNKNOWNGRIDCONFIG":
+                case 107:
+                    message.alertName = 107;
+                    break;
+                case "PCS2_A112_CHGINPUTVDROPTOOHIGH":
+                case 108:
+                    message.alertName = 108;
+                    break;
+                case "PCS2_A115_CHGWALLPOWERREMOVAL":
+                case 109:
+                    message.alertName = 109;
+                    break;
+                case "PCS2_A116_CHGPERSISTENTFAULT":
+                case 110:
+                    message.alertName = 110;
+                    break;
+                case "UMC_A001_GNDMONINTRPTLINESIDE":
+                case 111:
+                    message.alertName = 111;
+                    break;
+                case "UMC_A002_GFCITRIPPED":
+                case 112:
+                    message.alertName = 112;
+                    break;
+                case "UMC_A003_GFCISELFTESTFAULT":
+                case 113:
+                    message.alertName = 113;
+                    break;
+                case "UMC_A004_INPUTOVERVOLTAGE":
+                case 114:
+                    message.alertName = 114;
+                    break;
+                case "UMC_A005_INPUTUNDERVOLTAGE":
+                case 115:
+                    message.alertName = 115;
+                    break;
+                case "UMC_A006_CONTACTORWELDED":
+                case 116:
+                    message.alertName = 116;
+                    break;
+                case "UMC_A007_PCBAOT":
+                case 117:
+                    message.alertName = 117;
+                    break;
+                case "UMC_A008_WALLPLUGOT":
+                case 118:
+                    message.alertName = 118;
+                    break;
+                case "UMC_A009_VEHCONNOT":
+                case 119:
+                    message.alertName = 119;
+                    break;
+                case "UMC_A010_INPUTOT":
+                case 120:
+                    message.alertName = 120;
+                    break;
+                case "UMC_A011_PROXDISCONNECTED":
+                case 121:
+                    message.alertName = 121;
+                    break;
+                case "UMC_A012_PILOTFAULT":
+                case 122:
+                    message.alertName = 122;
+                    break;
+                case "UMC_A013_SA_TEMPERATURE":
+                case 123:
+                    message.alertName = 123;
+                    break;
+                case "UMC_A014_SA_GENEALOGY":
+                case 124:
+                    message.alertName = 124;
+                    break;
+                case "UMC_A015_SA_CONNECTION":
+                case 125:
+                    message.alertName = 125;
+                    break;
+                case "UMC_A016_PCBAOTFOLDBACK":
+                case 126:
+                    message.alertName = 126;
+                    break;
+                case "UMC_A017_WALLPLUGOTFOLDBACK":
+                case 127:
+                    message.alertName = 127;
+                    break;
+                case "UMC_A018_VEHCONNOTFOLDBACK":
+                case 128:
+                    message.alertName = 128;
+                    break;
+                case "UMC_A019_INPUTOTFOLDBACK":
+                case 129:
+                    message.alertName = 129;
+                    break;
+                default:
+                    if (typeof object.alertName === "number" && (object.alertName | 0) === object.alertName)
+                        message.alertName = object.alertName;
+                }
+            if (object.alertType !== 0 && (typeof object.alertType !== "string" || $root.CarServer.ChargingAlertType[object.alertType] !== 0))
+                switch (object.alertType) {
+                case "INVALID_ALERT_TYPE":
+                case 0:
+                    message.alertType = 0;
+                    break;
+                case "WARNING":
+                case 1:
+                    message.alertType = 1;
+                    break;
+                case "NOTIFICATION":
+                case 2:
+                    message.alertType = 2;
+                    break;
+                default:
+                    if (typeof object.alertType === "number" && (object.alertType | 0) === object.alertType)
+                        message.alertType = object.alertType;
+                }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a ChargingAlert message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {CarServer.ChargingAlert} message ChargingAlert
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        ChargingAlert.toObject = function (message, options, _depth) {
+            if (!options)
+                options = {};
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var object = {};
+            if (options.defaults) {
+                object.alertName = options.enums === $String ? "INVALID_ALERT_NAME" : 0;
+                object.alertType = options.enums === $String ? "INVALID_ALERT_TYPE" : 0;
+            }
+            if (message.alertName != null && $Object.hasOwnProperty.call(message, "alertName"))
+                object.alertName = options.enums === $String ? $root.CarServer.ChargingAlertName[message.alertName] === $undefined ? message.alertName : $root.CarServer.ChargingAlertName[message.alertName] : message.alertName;
+            if (message.alertType != null && $Object.hasOwnProperty.call(message, "alertType"))
+                object.alertType = options.enums === $String ? $root.CarServer.ChargingAlertType[message.alertType] === $undefined ? message.alertType : $root.CarServer.ChargingAlertType[message.alertType] : message.alertType;
+            return object;
+        };
+
+        /**
+         * Converts this ChargingAlert to JSON.
+         * @function toJSON
+         * @memberof CarServer.ChargingAlert
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        ChargingAlert.prototype.toJSON = function() {
+            return ChargingAlert.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the type url for ChargingAlert
+         * @function getTypeUrl
+         * @memberof CarServer.ChargingAlert
+         * @static
+         * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns {string} The type url
+         */
+        ChargingAlert.getTypeUrl = function(prefix) {
+            if (prefix === $undefined)
+                prefix = "type.googleapis.com";
+            return prefix + "/CarServer.ChargingAlert";
+        };
+
+        return ChargingAlert;
+    })();
+
+    CarServer.AlertState = (function() {
+
+        /**
+         * Properties of an AlertState.
+         * @typedef {Object} CarServer.AlertState.$Properties
+         * @property {Array.<CarServer.ChargingAlert.$Properties>|null} [chargingAlerts] AlertState chargingAlerts
+         * @property {google.protobuf.Timestamp.$Properties|null} [timestamp] AlertState timestamp
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+
+        /**
+         * Properties of an AlertState.
+         * @memberof CarServer
+         * @interface IAlertState
+         * @augments CarServer.AlertState.$Properties
+         * @deprecated Use CarServer.AlertState.$Properties instead.
+         */
+
+        /**
+         * Shape of an AlertState.
+         * @typedef {CarServer.AlertState.$Properties} CarServer.AlertState.$Shape
+         */
+
+        /**
+         * Constructs a new AlertState.
+         * @memberof CarServer
+         * @classdesc Represents an AlertState.
+         * @constructor
+         * @param {CarServer.AlertState.$Properties=} [properties] Properties to set
+         * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+         */
+        var AlertState = function (properties) {
+            this.chargingAlerts = [];
+            if (properties)
+                for (var keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                        this[keys[i]] = properties[keys[i]];
+        };
+
+        /**
+         * AlertState chargingAlerts.
+         * @member {Array.<CarServer.ChargingAlert.$Properties>} chargingAlerts
+         * @memberof CarServer.AlertState
+         * @instance
+         */
+        AlertState.prototype.chargingAlerts = $util.emptyArray;
+
+        /**
+         * AlertState timestamp.
+         * @member {google.protobuf.Timestamp.$Properties|null|undefined} timestamp
+         * @memberof CarServer.AlertState
+         * @instance
+         */
+        AlertState.prototype.timestamp = null;
+
+        /**
+         * Creates a new AlertState instance using the specified properties.
+         * @function create
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {CarServer.AlertState.$Properties=} [properties] Properties to set
+         * @returns {CarServer.AlertState} AlertState instance
+         * @type {{
+         *   (properties: CarServer.AlertState.$Shape): CarServer.AlertState & CarServer.AlertState.$Shape;
+         *   (properties?: CarServer.AlertState.$Properties): CarServer.AlertState;
+         * }}
+         */
+        AlertState.create = function(properties) {
+            return new AlertState(properties);
+        };
+
+        /**
+         * Encodes the specified AlertState message. Does not implicitly {@link CarServer.AlertState.verify|verify} messages.
+         * @function encode
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {CarServer.AlertState.$Properties} message AlertState message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        AlertState.encode = function (message, writer, _depth) {
+            if (!writer)
+                writer = $Writer.create();
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            if (message.chargingAlerts != null && message.chargingAlerts.length)
+                for (var i = 0; i < message.chargingAlerts.length; ++i)
+                    $root.CarServer.ChargingAlert.encode(message.chargingAlerts[i], writer.uint32(/* id 1, wireType 2 =*/10).fork(), _depth + 1).ldelim();
+            if (message.timestamp != null && $Object.hasOwnProperty.call(message, "timestamp"))
+                $root.google.protobuf.Timestamp.encode(message.timestamp, writer.uint32(/* id 2000, wireType 2 =*/16002).fork(), _depth + 1).ldelim();
+            if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                for (var i = 0; i < message.$unknowns.length; ++i)
+                    writer.raw(message.$unknowns[i]);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified AlertState message, length delimited. Does not implicitly {@link CarServer.AlertState.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {CarServer.AlertState.$Properties} message AlertState message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        AlertState.encodeDelimited = function(message, writer) {
+            return this.encode(message, (writer || $Writer.create()).fork()).ldelim();
+        };
+
+        /**
+         * Decodes an AlertState message from the specified reader or buffer.
+         * @function decode
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {CarServer.AlertState & CarServer.AlertState.$Shape} AlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        AlertState.decode = function (reader, length, _end, _depth, _target) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $Reader.recursionLimit)
+                throw $Error("max depth exceeded");
+            var end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.CarServer.AlertState(), value;
+            while (reader.pos < end) {
+                var start = reader.pos;
+                var tag = reader.tag();
+                if (tag === _end) {
+                    _end = $undefined;
+                    break;
+                }
+                var wireType = tag & 7;
+                switch (tag >>>= 3) {
+                case 1: {
+                        if (wireType !== 2)
+                            break;
+                        if (!(message.chargingAlerts && message.chargingAlerts.length))
+                            message.chargingAlerts = [];
+                        message.chargingAlerts.push($root.CarServer.ChargingAlert.decode(reader, reader.uint32(), $undefined, _depth + 1));
+                        continue;
+                    }
+                case 2000: {
+                        if (wireType !== 2)
+                            break;
+                        message.timestamp = $root.google.protobuf.Timestamp.decode(reader, reader.uint32(), $undefined, _depth + 1, message.timestamp);
+                        continue;
+                    }
+                }
+                reader.skipType(wireType, _depth, tag);
+                if (!reader.discardUnknown) {
+                    $util.makeProp(message, "$unknowns", false);
+                    (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                }
+            }
+            if (_end !== $undefined)
+                throw $Error("missing end group");
+            return message;
+        };
+
+        /**
+         * Decodes an AlertState message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {CarServer.AlertState & CarServer.AlertState.$Shape} AlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        AlertState.decodeDelimited = function(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an AlertState message.
+         * @function verify
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        AlertState.verify = function (message, _depth) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                return "max depth exceeded";
+            if (message.chargingAlerts != null && $Object.hasOwnProperty.call(message, "chargingAlerts")) {
+                if (!$Array.isArray(message.chargingAlerts))
+                    return "chargingAlerts: array expected";
+                for (var i = 0; i < message.chargingAlerts.length; ++i) {
+                    var error = $root.CarServer.ChargingAlert.verify(message.chargingAlerts[i], _depth + 1);
+                    if (error)
+                        return "chargingAlerts." + error;
+                }
+            }
+            if (message.timestamp != null && $Object.hasOwnProperty.call(message, "timestamp")) {
+                var error = $root.google.protobuf.Timestamp.verify(message.timestamp, _depth + 1);
+                if (error)
+                    return "timestamp." + error;
+            }
+            return null;
+        };
+
+        /**
+         * Creates an AlertState message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {CarServer.AlertState} AlertState
+         */
+        AlertState.fromObject = function (object, _depth) {
+            if (object instanceof $root.CarServer.AlertState)
+                return object;
+            if (!$util.isObject(object))
+                throw $TypeError(".CarServer.AlertState: object expected");
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var message = new $root.CarServer.AlertState();
+            if (object.chargingAlerts) {
+                if (!$Array.isArray(object.chargingAlerts))
+                    throw $TypeError(".CarServer.AlertState.chargingAlerts: array expected");
+                message.chargingAlerts = $Array(object.chargingAlerts.length);
+                for (var i = 0; i < object.chargingAlerts.length; ++i) {
+                    if (!$util.isObject(object.chargingAlerts[i]))
+                        throw $TypeError(".CarServer.AlertState.chargingAlerts: object expected");
+                    message.chargingAlerts[i] = $root.CarServer.ChargingAlert.fromObject(object.chargingAlerts[i], _depth + 1);
+                }
+            }
+            if (object.timestamp != null) {
+                if (!$util.isObject(object.timestamp))
+                    throw $TypeError(".CarServer.AlertState.timestamp: object expected");
+                message.timestamp = $root.google.protobuf.Timestamp.fromObject(object.timestamp, _depth + 1);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an AlertState message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {CarServer.AlertState} message AlertState
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        AlertState.toObject = function (message, options, _depth) {
+            if (!options)
+                options = {};
+            if (_depth === $undefined)
+                _depth = 0;
+            if (_depth > $util.recursionLimit)
+                throw $Error("max depth exceeded");
+            var object = {};
+            if (options.arrays || options.defaults)
+                object.chargingAlerts = [];
+            if (options.defaults)
+                object.timestamp = null;
+            if (message.chargingAlerts && message.chargingAlerts.length) {
+                object.chargingAlerts = $Array(message.chargingAlerts.length);
+                for (var j = 0; j < message.chargingAlerts.length; ++j)
+                    object.chargingAlerts[j] = $root.CarServer.ChargingAlert.toObject(message.chargingAlerts[j], options, _depth + 1);
+            }
+            if (message.timestamp != null && $Object.hasOwnProperty.call(message, "timestamp"))
+                object.timestamp = $root.google.protobuf.Timestamp.toObject(message.timestamp, options, _depth + 1);
+            return object;
+        };
+
+        /**
+         * Converts this AlertState to JSON.
+         * @function toJSON
+         * @memberof CarServer.AlertState
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        AlertState.prototype.toJSON = function() {
+            return AlertState.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the type url for AlertState
+         * @function getTypeUrl
+         * @memberof CarServer.AlertState
+         * @static
+         * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns {string} The type url
+         */
+        AlertState.getTypeUrl = function(prefix) {
+            if (prefix === $undefined)
+                prefix = "type.googleapis.com";
+            return prefix + "/CarServer.AlertState";
+        };
+
+        return AlertState;
     })();
 
     /**

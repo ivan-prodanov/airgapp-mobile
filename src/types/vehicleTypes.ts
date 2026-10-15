@@ -117,6 +117,22 @@ export interface CarLocation {
   heading: number | null;
 }
 
+// ── Charge port latch + charging alerts (2026-09-05) ─────────────────────────
+// ChargeState.charge_port_latch (35): SNA / Disengaged / Engaged / Blocking, lower-cased.
+export type ChargePortLatch = 'sna' | 'disengaged' | 'engaged' | 'blocking';
+// Which lever can clear a charging alert, keyed on Tesla's own remedy wording
+// (see ble/chargingAlerts.ts alertFamily). 'info' = a reduced-rate notice, not a stop.
+export type ChargingAlertFamily = 'info' | 'replug' | 'voltage-drop' | 'thermal' | 'power' | 'equipment' | 'dc' | 'other';
+export type ChargingAlertKind = 'warning' | 'notification' | 'unknown';
+export interface ChargingAlertInfo {
+  n: number;
+  name: string;
+  title: string;
+  subtitle: string;
+  family: ChargingAlertFamily;
+  kind: ChargingAlertKind;
+}
+
 export interface VehicleViewState {
   frunkOpen: boolean;
   trunkOpen: boolean;
@@ -287,6 +303,17 @@ export interface VehicleViewState {
   chargerPilotCurrentA: number | null;
   chargeRateMph: number | null;
   chargingAmps: number;
+  // ── Charge port latch + charging alerts ─────────────────────────────────────
+  // ChargeState fields the car always sent and we never read (2026-09-05). Null
+  // = not reported on the last read. The restart macro gates on the latch pair.
+  chargePortLatch: ChargePortLatch | null;
+  chargeCableUnlatched: boolean | null;
+  chargeEnableRequest: boolean | null;
+  userChargeEnableRequest: boolean | null;
+  chargerPhases: number | null;
+  chargePortColdWeatherMode: boolean | null;
+  // VehicleData.alert_state — the car's named charging faults, Tesla's text attached.
+  chargingAlerts: ChargingAlertInfo[];
 }
 
 export type VehicleStateKey = keyof VehicleViewState;
@@ -384,6 +411,13 @@ export const initialVehicleState: VehicleViewState = {
   chargerPilotCurrentA: null,
   chargeRateMph: null,
   chargingAmps: 16, // AMP_MAX — a fresh car reports the max the cable/charger allows
+  chargePortLatch: null,
+  chargeCableUnlatched: null,
+  chargeEnableRequest: null,
+  userChargeEnableRequest: null,
+  chargerPhases: null,
+  chargePortColdWeatherMode: null,
+  chargingAlerts: [],
 };
 
 export interface SeatClimateCapability {

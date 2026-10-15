@@ -623,6 +623,19 @@ export function getChargeScheduleStateAction(): ActionPayload {
     bytes: encodeInfotainmentAction({ getVehicleData: { getChargeScheduleState: {} } }),
   };
 }
+
+// getAlertStateAction — VehicleData.alert_state (GetVehicleData 20 → response 25): the
+// car's NAMED charging faults (ChargingAlertName + WARNING/NOTIFICATION). Served locally
+// by the car; the official app never requests it over BLE, its cloud path feeds the same
+// data into the ChargingAlerts home row. Read on the 60s sync while a cable is seated and
+// by the restart macro before/after every attempt. Decoded by ble/chargingAlerts.ts.
+export function getAlertStateAction(): ActionPayload {
+  return {
+    domain: DOMAIN_INFOTAINMENT,
+    flags: FLAG_ENCRYPT_RESPONSE_BIT,
+    bytes: encodeInfotainmentAction({ getVehicleData: { getAlertState: {} } }),
+  };
+}
 export function getPreconditioningScheduleStateAction(): ActionPayload {
   return {
     domain: DOMAIN_INFOTAINMENT,

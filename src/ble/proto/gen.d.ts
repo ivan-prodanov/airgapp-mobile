@@ -1244,6 +1244,9 @@ export namespace CarServer {
         /** GetVehicleData getParentalControlsState. */
         getParentalControlsState?: (CarServer.GetParentalControlsState.$Properties|null);
 
+        /** GetVehicleData getAlertState. */
+        getAlertState?: (CarServer.GetAlertState.$Properties|null);
+
         /**
          * Creates a new GetVehicleData instance using the specified properties.
          * @param [properties] Properties to set
@@ -1364,12 +1367,126 @@ export namespace CarServer {
             /** GetVehicleData getParentalControlsState */
             getParentalControlsState?: (CarServer.GetParentalControlsState.$Properties|null);
 
+            /** GetVehicleData getAlertState */
+            getAlertState?: (CarServer.GetAlertState.$Properties|null);
+
             /** Unknown fields preserved while decoding when enabled */
             $unknowns?: Uint8Array[];
         }
 
         /** Shape of a GetVehicleData. */
         type $Shape = CarServer.GetVehicleData.$Properties;
+    }
+
+    /**
+     * Properties of a GetAlertState.
+     * @deprecated Use CarServer.GetAlertState.$Properties instead.
+     */
+    interface IGetAlertState extends CarServer.GetAlertState.$Properties {
+    }
+
+    /** Represents a GetAlertState. */
+    class GetAlertState {
+
+        /**
+         * Constructs a new GetAlertState.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: CarServer.GetAlertState.$Properties);
+
+        /** Unknown fields preserved while decoding when enabled */
+        $unknowns?: Uint8Array[];
+
+        /**
+         * Creates a new GetAlertState instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns GetAlertState instance
+         */
+        static create(properties: CarServer.GetAlertState.$Shape): CarServer.GetAlertState & CarServer.GetAlertState.$Shape;
+        static create(properties?: CarServer.GetAlertState.$Properties): CarServer.GetAlertState;
+
+        /**
+         * Encodes the specified GetAlertState message. Does not implicitly {@link CarServer.GetAlertState.verify|verify} messages.
+         * @param message GetAlertState message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encode(message: CarServer.GetAlertState.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified GetAlertState message, length delimited. Does not implicitly {@link CarServer.GetAlertState.verify|verify} messages.
+         * @param message GetAlertState message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encodeDelimited(message: CarServer.GetAlertState.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a GetAlertState message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns {CarServer.GetAlertState & CarServer.GetAlertState.$Shape} GetAlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): CarServer.GetAlertState & CarServer.GetAlertState.$Shape;
+
+        /**
+         * Decodes a GetAlertState message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns {CarServer.GetAlertState & CarServer.GetAlertState.$Shape} GetAlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): CarServer.GetAlertState & CarServer.GetAlertState.$Shape;
+
+        /**
+         * Verifies a GetAlertState message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a GetAlertState message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns GetAlertState
+         */
+        static fromObject(object: { [k: string]: any }): CarServer.GetAlertState;
+
+        /**
+         * Creates a plain object from a GetAlertState message. Also converts values to other types if specified.
+         * @param message GetAlertState
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        static toObject(message: CarServer.GetAlertState, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this GetAlertState to JSON.
+         * @returns JSON object
+         */
+        toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the type url for GetAlertState
+         * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns The type url
+         */
+        static getTypeUrl(prefix?: string): string;
+    }
+
+    namespace GetAlertState {
+
+        /** Properties of a GetAlertState. */
+        interface $Properties {
+
+            /** Unknown fields preserved while decoding when enabled */
+            $unknowns?: Uint8Array[];
+        }
+
+        /** Shape of a GetAlertState. */
+        type $Shape = CarServer.GetAlertState.$Properties;
     }
 
     /**
@@ -12598,6 +12715,9 @@ export namespace CarServer {
         /** VehicleData parentalControlsState. */
         parentalControlsState?: (CarServer.ParentalControlsState.$Properties|null);
 
+        /** VehicleData alertState. */
+        alertState?: (CarServer.AlertState.$Properties|null);
+
         /**
          * Creates a new VehicleData instance using the specified properties.
          * @param [properties] Properties to set
@@ -12724,6 +12844,9 @@ export namespace CarServer {
             /** VehicleData parentalControlsState */
             parentalControlsState?: (CarServer.ParentalControlsState.$Properties|null);
 
+            /** VehicleData alertState */
+            alertState?: (CarServer.AlertState.$Properties|null);
+
             /** Unknown fields preserved while decoding when enabled */
             $unknowns?: Uint8Array[];
         }
@@ -12744,6 +12867,7 @@ export namespace CarServer {
           mediaDetailState?: CarServer.MediaDetailState.$Shape|null;
           softwareUpdateState?: CarServer.SoftwareUpdateState.$Shape|null;
           parentalControlsState?: CarServer.ParentalControlsState.$Shape|null;
+          alertState?: CarServer.AlertState.$Shape|null;
           $unknowns?: Uint8Array[];
         };
     }
@@ -21611,6 +21735,659 @@ export namespace CarServer {
 
         /** MediaSourceType_Search value */
         MediaSourceType_Search = 35
+    }
+
+    /** ChargingAlertName enum. */
+    enum ChargingAlertName {
+
+        /** INVALID_ALERT_NAME value */
+        INVALID_ALERT_NAME = 0,
+
+        /** BMS_A007_SW_SLOWED_CHG_BATT_COLD_OBSOLETE value */
+        BMS_A007_SW_SLOWED_CHG_BATT_COLD_OBSOLETE = 1,
+
+        /** BMS_A076_SW_DCH_WHILE_CHARGING value */
+        BMS_A076_SW_DCH_WHILE_CHARGING = 2,
+
+        /** CC_A001_GNDMONINTRPTLINESIDE value */
+        CC_A001_GNDMONINTRPTLINESIDE = 3,
+
+        /** CC_A002_GNDMONINTRPTLOADSIDE value */
+        CC_A002_GNDMONINTRPTLOADSIDE = 4,
+
+        /** CC_A003_CCIDTRIPPED value */
+        CC_A003_CCIDTRIPPED = 5,
+
+        /** CC_A004_CCIDSELFTESTFAULT value */
+        CC_A004_CCIDSELFTESTFAULT = 6,
+
+        /** CC_A005_GROUNDEDNEUTRAL value */
+        CC_A005_GROUNDEDNEUTRAL = 7,
+
+        /** CC_A006_INPUTOVERCURRENT value */
+        CC_A006_INPUTOVERCURRENT = 8,
+
+        /** CC_A007_INPUTOVERVOLTAGE value */
+        CC_A007_INPUTOVERVOLTAGE = 9,
+
+        /** CC_A008_INPUTUNDERVOLTAGE value */
+        CC_A008_INPUTUNDERVOLTAGE = 10,
+
+        /** CC_A009_INPUTMISWIRED value */
+        CC_A009_INPUTMISWIRED = 11,
+
+        /** CC_A010_CONTACTORWELDED value */
+        CC_A010_CONTACTORWELDED = 12,
+
+        /** CC_A011_AMBIENTOT value */
+        CC_A011_AMBIENTOT = 13,
+
+        /** CC_A012_WALLPLUGOT value */
+        CC_A012_WALLPLUGOT = 14,
+
+        /** CC_A013_VEHCONNOT value */
+        CC_A013_VEHCONNOT = 15,
+
+        /** CC_A014_MCUSELFTESTFAULT value */
+        CC_A014_MCUSELFTESTFAULT = 16,
+
+        /** CC_A015_PILOTAFAULT value */
+        CC_A015_PILOTAFAULT = 17,
+
+        /** CC_A016_PILOTBFAULT value */
+        CC_A016_PILOTBFAULT = 18,
+
+        /** CC_A017_PILOTCFAULT value */
+        CC_A017_PILOTCFAULT = 19,
+
+        /** CC_A018_PILOTDFAULT value */
+        CC_A018_PILOTDFAULT = 20,
+
+        /** CC_A019_PROXDISCONNECTED value */
+        CC_A019_PROXDISCONNECTED = 21,
+
+        /** CC_A020_3VRAILINCORRECT value */
+        CC_A020_3VRAILINCORRECT = 22,
+
+        /** CC_A021_CB_NOMASTER value */
+        CC_A021_CB_NOMASTER = 23,
+
+        /** CC_A022_CB_TOOMANYMASTERS value */
+        CC_A022_CB_TOOMANYMASTERS = 24,
+
+        /** CC_A023_CB_TOOMANYSLAVES value */
+        CC_A023_CB_TOOMANYSLAVES = 25,
+
+        /** CC_A024_CB_MASTERISETTOOLOW value */
+        CC_A024_CB_MASTERISETTOOLOW = 26,
+
+        /** CC_A025_EVSETEMP value */
+        CC_A025_EVSETEMP = 27,
+
+        /** CC_A026_WALLPLUGTEMP value */
+        CC_A026_WALLPLUGTEMP = 28,
+
+        /** CC_A027_VEHICLEHANDLETEMP value */
+        CC_A027_VEHICLEHANDLETEMP = 29,
+
+        /** CC_A028_CB_ROTARYSELECT value */
+        CC_A028_CB_ROTARYSELECT = 30,
+
+        /** CC_A029_PILOTFFAULT value */
+        CC_A029_PILOTFFAULT = 31,
+
+        /** CC_A030_MASTERSLAVEMISMATCH value */
+        CC_A030_MASTERSLAVEMISMATCH = 32,
+
+        /** CC_A041_INPUTWIRINGFOLDBACK value */
+        CC_A041_INPUTWIRINGFOLDBACK = 33,
+
+        /** CC_A042_PCBATEMPFOLDBACK value */
+        CC_A042_PCBATEMPFOLDBACK = 34,
+
+        /** CC_A043_CONFIGURATIONREQUIRED value */
+        CC_A043_CONFIGURATIONREQUIRED = 35,
+
+        /** CP_A004_PROXIMITYRATIONALITY value */
+        CP_A004_PROXIMITYRATIONALITY = 36,
+
+        /** CP_A010_PILOTRATIONALITY value */
+        CP_A010_PILOTRATIONALITY = 37,
+
+        /** CP_A046_LOSTCOMMSEVSE value */
+        CP_A046_LOSTCOMMSEVSE = 38,
+
+        /** CP_A049_MULTIPLECABLESDETECTED value */
+        CP_A049_MULTIPLECABLESDETECTED = 39,
+
+        /** CP_A052_CHADEMONOTSUPPORTED value */
+        CP_A052_CHADEMONOTSUPPORTED = 40,
+
+        /** CP_A053_PROXLATCHEDNOPILOT value */
+        CP_A053_PROXLATCHEDNOPILOT = 41,
+
+        /** CP_A055_CHARGESTOPPEDNOPILOT value */
+        CP_A055_CHARGESTOPPEDNOPILOT = 42,
+
+        /** CP_A058_ACCHARGINGBLOCKED value */
+        CP_A058_ACCHARGINGBLOCKED = 43,
+
+        /** CP_A062_SCOUTOFSERVICE value */
+        CP_A062_SCOUTOFSERVICE = 44,
+
+        /** CP_A063_SCUPDATEINPROGRESS value */
+        CP_A063_SCUPDATEINPROGRESS = 45,
+
+        /** CP_A064_SUPERCHARGINGBLOCKED value */
+        CP_A064_SUPERCHARGINGBLOCKED = 46,
+
+        /** CP_A066_PROXLATCHEDIDLEPILOT value */
+        CP_A066_PROXLATCHEDIDLEPILOT = 47,
+
+        /** CP_A067_GBDCCONNFAULT value */
+        CP_A067_GBDCCONNFAULT = 48,
+
+        /** CP_A074_FAILEDTOESTABLISHV2GCOMM value */
+        CP_A074_FAILEDTOESTABLISHV2GCOMM = 49,
+
+        /** CP_A091_WRONGSUPERCHARGERHANDLE value */
+        CP_A091_WRONGSUPERCHARGERHANDLE = 50,
+
+        /** CP_A101_WCFOLDBACKACTIVE value */
+        CP_A101_WCFOLDBACKACTIVE = 51,
+
+        /** CP_A102_WCOVERTEMPFAULT value */
+        CP_A102_WCOVERTEMPFAULT = 52,
+
+        /** CP_A108_CHADEMOOVERTEMPFAULT value */
+        CP_A108_CHADEMOOVERTEMPFAULT = 53,
+
+        /** CP_A110_THERMALVELOCITYHIGH value */
+        CP_A110_THERMALVELOCITYHIGH = 54,
+
+        /** CP_A120_COMBOADAPTERFOLDBACK value */
+        CP_A120_COMBOADAPTERFOLDBACK = 55,
+
+        /** CP_A131_EVSECOMMTIMEOUT value */
+        CP_A131_EVSECOMMTIMEOUT = 56,
+
+        /** CP_A132_CONTRACTAUTHTIMEOUT value */
+        CP_A132_CONTRACTAUTHTIMEOUT = 57,
+
+        /** CP_A133_PROXNEVERLATCHED value */
+        CP_A133_PROXNEVERLATCHED = 58,
+
+        /** CP_A135_SDPATTEMPTSFAILED value */
+        CP_A135_SDPATTEMPTSFAILED = 59,
+
+        /** CP_A139_PILOTFAULTED value */
+        CP_A139_PILOTFAULTED = 60,
+
+        /** CP_A140_SUPERCHARGERFAULTED value */
+        CP_A140_SUPERCHARGERFAULTED = 61,
+
+        /** CP_A141_CHADEMOADAPTERFAULT value */
+        CP_A141_CHADEMOADAPTERFAULT = 62,
+
+        /** CP_A142_GBDCSCCONNFAULT value */
+        CP_A142_GBDCSCCONNFAULT = 63,
+
+        /** CP_A143_UNSUPPORTEDCHARGEADAPTER value */
+        CP_A143_UNSUPPORTEDCHARGEADAPTER = 64,
+
+        /** CP_A146_CCSEVSEMALFUNCTION value */
+        CP_A146_CCSEVSEMALFUNCTION = 65,
+
+        /** CP_A151_BADPILOTDIODEDETECTED value */
+        CP_A151_BADPILOTDIODEDETECTED = 66,
+
+        /** CP_A152_PILOTEDGEDETECTIONFAILED value */
+        CP_A152_PILOTEDGEDETECTIONFAILED = 67,
+
+        /** FC_A141_CA_VEHCONN_OT value */
+        FC_A141_CA_VEHCONN_OT = 68,
+
+        /** FC_A142_CA_EVSECONN_OT value */
+        FC_A142_CA_EVSECONN_OT = 69,
+
+        /** FC_A143_CA_PCB_OT value */
+        FC_A143_CA_PCB_OT = 70,
+
+        /** FC_A151_CA_VEHTOEVSEDELTALO value */
+        FC_A151_CA_VEHTOEVSEDELTALO = 71,
+
+        /** FC_A154_CA_VEHTOPCBDELTALO value */
+        FC_A154_CA_VEHTOPCBDELTALO = 72,
+
+        /** FC_A161_CA_VEHTEMPHIFOLDBK value */
+        FC_A161_CA_VEHTEMPHIFOLDBK = 73,
+
+        /** FC_A162_CA_EVSETEMPHIFOLDBK value */
+        FC_A162_CA_EVSETEMPHIFOLDBK = 74,
+
+        /** FC_A163_CA_PCBTEMPHIFOLDBK value */
+        FC_A163_CA_PCBTEMPHIFOLDBK = 75,
+
+        /** FC_A266_GB_NEGPIN_OT value */
+        FC_A266_GB_NEGPIN_OT = 76,
+
+        /** FC_A267_GB_POSPIN_OT value */
+        FC_A267_GB_POSPIN_OT = 77,
+
+        /** FC_A268_GB_PCB_OT value */
+        FC_A268_GB_PCB_OT = 78,
+
+        /** FC_A272_GB_NEGTOPOSDELTAHI value */
+        FC_A272_GB_NEGTOPOSDELTAHI = 79,
+
+        /** FC_A273_GB_NEGTOPOSDELTALO value */
+        FC_A273_GB_NEGTOPOSDELTALO = 80,
+
+        /** FC_A274_GB_NEGTOPCBDELTAHI value */
+        FC_A274_GB_NEGTOPCBDELTAHI = 81,
+
+        /** FC_A282_GB_NEGTEMPHIFOLDBK value */
+        FC_A282_GB_NEGTEMPHIFOLDBK = 82,
+
+        /** FC_A283_GB_POSTEMPHIFOLDBK value */
+        FC_A283_GB_POSTEMPHIFOLDBK = 83,
+
+        /** FC_A284_GB_PCBTEMPHIFOLDBK value */
+        FC_A284_GB_PCBTEMPHIFOLDBK = 84,
+
+        /** FC_A286_GB_EVSECONNUNLOCKED value */
+        FC_A286_GB_EVSECONNUNLOCKED = 85,
+
+        /** PCS_A007_CHGPHASETEMPHOT value */
+        PCS_A007_CHGPHASETEMPHOT = 86,
+
+        /** PCS_A016_CHGALLPHASESFAULTED value */
+        PCS_A016_CHGALLPHASESFAULTED = 87,
+
+        /** PCS_A017_CHGWALLPOWERREMOVAL value */
+        PCS_A017_CHGWALLPOWERREMOVAL = 88,
+
+        /** PCS_A019_ACCHARGEPOWERLIMITED value */
+        PCS_A019_ACCHARGEPOWERLIMITED = 89,
+
+        /** PCS_A032_EXCESSIVEGRIDTRANSIENTSDETECTED value */
+        PCS_A032_EXCESSIVEGRIDTRANSIENTSDETECTED = 90,
+
+        /** PCS_A052_ACVOLTAGENOTPRESENT value */
+        PCS_A052_ACVOLTAGENOTPRESENT = 91,
+
+        /** PCS_A053_CHGINPUTVDROPHIGH value */
+        PCS_A053_CHGINPUTVDROPHIGH = 92,
+
+        /** PCS_A054_CHGINPUTVDROPTOOHIGH value */
+        PCS_A054_CHGINPUTVDROPTOOHIGH = 93,
+
+        /** PCS_A055_CHGLINEIMPEDANCEHIGH value */
+        PCS_A055_CHGLINEIMPEDANCEHIGH = 94,
+
+        /** PCS_A056_CHGLINEIMPEDANCETOOHIGH value */
+        PCS_A056_CHGLINEIMPEDANCETOOHIGH = 95,
+
+        /** PCS_A059_CHGINPUTOVRMS value */
+        PCS_A059_CHGINPUTOVRMS = 96,
+
+        /** PCS_A073_UNEXPECTEDACINPUTVOLTAGE value */
+        PCS_A073_UNEXPECTEDACINPUTVOLTAGE = 97,
+
+        /** PCS_A078_CHGSTOPDCDCTOOHOT value */
+        PCS_A078_CHGSTOPDCDCTOOHOT = 98,
+
+        /** PCS_A088_GRIDFREQDROOPDETECTED value */
+        PCS_A088_GRIDFREQDROOPDETECTED = 99,
+
+        /** PCS_A090_EXPECTEDACVOLTAGESOURCEMISSING value */
+        PCS_A090_EXPECTEDACVOLTAGESOURCEMISSING = 100,
+
+        /** PCS_A096_MICROGRIDOVERLOADED value */
+        PCS_A096_MICROGRIDOVERLOADED = 101,
+
+        /** PCS2_A019_DCACADCTEMPTOOHIGH value */
+        PCS2_A019_DCACADCTEMPTOOHIGH = 102,
+
+        /** PCS2_A020_DCACBDCTEMPTOOHIGH value */
+        PCS2_A020_DCACBDCTEMPTOOHIGH = 103,
+
+        /** PCS2_A024_DCACATXTEMPTOOHIGH value */
+        PCS2_A024_DCACATXTEMPTOOHIGH = 104,
+
+        /** PCS2_A025_DCACBTXTEMPTOOHIGH value */
+        PCS2_A025_DCACBTXTEMPTOOHIGH = 105,
+
+        /** PCS2_A062_ACVOLTAGENOTPRESENT value */
+        PCS2_A062_ACVOLTAGENOTPRESENT = 106,
+
+        /** PCS2_A063_CHGUNKNOWNGRIDCONFIG value */
+        PCS2_A063_CHGUNKNOWNGRIDCONFIG = 107,
+
+        /** PCS2_A112_CHGINPUTVDROPTOOHIGH value */
+        PCS2_A112_CHGINPUTVDROPTOOHIGH = 108,
+
+        /** PCS2_A115_CHGWALLPOWERREMOVAL value */
+        PCS2_A115_CHGWALLPOWERREMOVAL = 109,
+
+        /** PCS2_A116_CHGPERSISTENTFAULT value */
+        PCS2_A116_CHGPERSISTENTFAULT = 110,
+
+        /** UMC_A001_GNDMONINTRPTLINESIDE value */
+        UMC_A001_GNDMONINTRPTLINESIDE = 111,
+
+        /** UMC_A002_GFCITRIPPED value */
+        UMC_A002_GFCITRIPPED = 112,
+
+        /** UMC_A003_GFCISELFTESTFAULT value */
+        UMC_A003_GFCISELFTESTFAULT = 113,
+
+        /** UMC_A004_INPUTOVERVOLTAGE value */
+        UMC_A004_INPUTOVERVOLTAGE = 114,
+
+        /** UMC_A005_INPUTUNDERVOLTAGE value */
+        UMC_A005_INPUTUNDERVOLTAGE = 115,
+
+        /** UMC_A006_CONTACTORWELDED value */
+        UMC_A006_CONTACTORWELDED = 116,
+
+        /** UMC_A007_PCBAOT value */
+        UMC_A007_PCBAOT = 117,
+
+        /** UMC_A008_WALLPLUGOT value */
+        UMC_A008_WALLPLUGOT = 118,
+
+        /** UMC_A009_VEHCONNOT value */
+        UMC_A009_VEHCONNOT = 119,
+
+        /** UMC_A010_INPUTOT value */
+        UMC_A010_INPUTOT = 120,
+
+        /** UMC_A011_PROXDISCONNECTED value */
+        UMC_A011_PROXDISCONNECTED = 121,
+
+        /** UMC_A012_PILOTFAULT value */
+        UMC_A012_PILOTFAULT = 122,
+
+        /** UMC_A013_SA_TEMPERATURE value */
+        UMC_A013_SA_TEMPERATURE = 123,
+
+        /** UMC_A014_SA_GENEALOGY value */
+        UMC_A014_SA_GENEALOGY = 124,
+
+        /** UMC_A015_SA_CONNECTION value */
+        UMC_A015_SA_CONNECTION = 125,
+
+        /** UMC_A016_PCBAOTFOLDBACK value */
+        UMC_A016_PCBAOTFOLDBACK = 126,
+
+        /** UMC_A017_WALLPLUGOTFOLDBACK value */
+        UMC_A017_WALLPLUGOTFOLDBACK = 127,
+
+        /** UMC_A018_VEHCONNOTFOLDBACK value */
+        UMC_A018_VEHCONNOTFOLDBACK = 128,
+
+        /** UMC_A019_INPUTOTFOLDBACK value */
+        UMC_A019_INPUTOTFOLDBACK = 129
+    }
+
+    /** ChargingAlertType enum. */
+    enum ChargingAlertType {
+
+        /** INVALID_ALERT_TYPE value */
+        INVALID_ALERT_TYPE = 0,
+
+        /** WARNING value */
+        WARNING = 1,
+
+        /** NOTIFICATION value */
+        NOTIFICATION = 2
+    }
+
+    /**
+     * Properties of a ChargingAlert.
+     * @deprecated Use CarServer.ChargingAlert.$Properties instead.
+     */
+    interface IChargingAlert extends CarServer.ChargingAlert.$Properties {
+    }
+
+    /** Represents a ChargingAlert. */
+    class ChargingAlert {
+
+        /**
+         * Constructs a new ChargingAlert.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: CarServer.ChargingAlert.$Properties);
+
+        /** Unknown fields preserved while decoding when enabled */
+        $unknowns?: Uint8Array[];
+
+        /** ChargingAlert alertName. */
+        alertName: CarServer.ChargingAlertName;
+
+        /** ChargingAlert alertType. */
+        alertType: CarServer.ChargingAlertType;
+
+        /**
+         * Creates a new ChargingAlert instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns ChargingAlert instance
+         */
+        static create(properties: CarServer.ChargingAlert.$Shape): CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape;
+        static create(properties?: CarServer.ChargingAlert.$Properties): CarServer.ChargingAlert;
+
+        /**
+         * Encodes the specified ChargingAlert message. Does not implicitly {@link CarServer.ChargingAlert.verify|verify} messages.
+         * @param message ChargingAlert message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encode(message: CarServer.ChargingAlert.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified ChargingAlert message, length delimited. Does not implicitly {@link CarServer.ChargingAlert.verify|verify} messages.
+         * @param message ChargingAlert message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encodeDelimited(message: CarServer.ChargingAlert.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a ChargingAlert message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns {CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape} ChargingAlert
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape;
+
+        /**
+         * Decodes a ChargingAlert message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns {CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape} ChargingAlert
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): CarServer.ChargingAlert & CarServer.ChargingAlert.$Shape;
+
+        /**
+         * Verifies a ChargingAlert message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a ChargingAlert message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns ChargingAlert
+         */
+        static fromObject(object: { [k: string]: any }): CarServer.ChargingAlert;
+
+        /**
+         * Creates a plain object from a ChargingAlert message. Also converts values to other types if specified.
+         * @param message ChargingAlert
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        static toObject(message: CarServer.ChargingAlert, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this ChargingAlert to JSON.
+         * @returns JSON object
+         */
+        toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the type url for ChargingAlert
+         * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns The type url
+         */
+        static getTypeUrl(prefix?: string): string;
+    }
+
+    namespace ChargingAlert {
+
+        /** Properties of a ChargingAlert. */
+        interface $Properties {
+
+            /** ChargingAlert alertName */
+            alertName?: (CarServer.ChargingAlertName|null);
+
+            /** ChargingAlert alertType */
+            alertType?: (CarServer.ChargingAlertType|null);
+
+            /** Unknown fields preserved while decoding when enabled */
+            $unknowns?: Uint8Array[];
+        }
+
+        /** Shape of a ChargingAlert. */
+        type $Shape = CarServer.ChargingAlert.$Properties;
+    }
+
+    /**
+     * Properties of an AlertState.
+     * @deprecated Use CarServer.AlertState.$Properties instead.
+     */
+    interface IAlertState extends CarServer.AlertState.$Properties {
+    }
+
+    /** Represents an AlertState. */
+    class AlertState {
+
+        /**
+         * Constructs a new AlertState.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: CarServer.AlertState.$Properties);
+
+        /** Unknown fields preserved while decoding when enabled */
+        $unknowns?: Uint8Array[];
+
+        /** AlertState chargingAlerts. */
+        chargingAlerts: CarServer.ChargingAlert.$Properties[];
+
+        /** AlertState timestamp. */
+        timestamp?: (google.protobuf.Timestamp.$Properties|null);
+
+        /**
+         * Creates a new AlertState instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns AlertState instance
+         */
+        static create(properties: CarServer.AlertState.$Shape): CarServer.AlertState & CarServer.AlertState.$Shape;
+        static create(properties?: CarServer.AlertState.$Properties): CarServer.AlertState;
+
+        /**
+         * Encodes the specified AlertState message. Does not implicitly {@link CarServer.AlertState.verify|verify} messages.
+         * @param message AlertState message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encode(message: CarServer.AlertState.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified AlertState message, length delimited. Does not implicitly {@link CarServer.AlertState.verify|verify} messages.
+         * @param message AlertState message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        static encodeDelimited(message: CarServer.AlertState.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes an AlertState message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns {CarServer.AlertState & CarServer.AlertState.$Shape} AlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): CarServer.AlertState & CarServer.AlertState.$Shape;
+
+        /**
+         * Decodes an AlertState message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns {CarServer.AlertState & CarServer.AlertState.$Shape} AlertState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): CarServer.AlertState & CarServer.AlertState.$Shape;
+
+        /**
+         * Verifies an AlertState message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates an AlertState message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns AlertState
+         */
+        static fromObject(object: { [k: string]: any }): CarServer.AlertState;
+
+        /**
+         * Creates a plain object from an AlertState message. Also converts values to other types if specified.
+         * @param message AlertState
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        static toObject(message: CarServer.AlertState, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this AlertState to JSON.
+         * @returns JSON object
+         */
+        toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the type url for AlertState
+         * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+         * @returns The type url
+         */
+        static getTypeUrl(prefix?: string): string;
+    }
+
+    namespace AlertState {
+
+        /** Properties of an AlertState. */
+        interface $Properties {
+
+            /** AlertState chargingAlerts */
+            chargingAlerts?: (CarServer.ChargingAlert.$Properties[]|null);
+
+            /** AlertState timestamp */
+            timestamp?: (google.protobuf.Timestamp.$Properties|null);
+
+            /** Unknown fields preserved while decoding when enabled */
+            $unknowns?: Uint8Array[];
+        }
+
+        /** Shape of an AlertState. */
+        type $Shape = CarServer.AlertState.$Properties;
     }
 
     /** Invalid enum. */

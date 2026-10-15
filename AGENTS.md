@@ -50,7 +50,13 @@ node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('
 ```
 
 (`order by t`, not rowid/seq — the JS seq counter restarts per boot and a new boot's rows replace the
-oldest ones.) Native BLE and Godot logs **do** go to logcat: `adb logcat -s PassiveEntry:* GodotHost:* godot:*`.
+oldest ones.)
+
+**Absent `poll` / `read` rows are NOT proof the poll didn't run.** Those categories are "noisy" and
+trimmed relative to the table-wide `MAX(seq)`; until 2026-09-06 the stored seq restarted at 0 per
+boot while a July capture had pinned `MAX(seq)` at ~37k, so every new boot's poll/read rows were
+deleted at the next flush (812 gaps in one boot). Fixed by continuing the stored seq from
+`MAX(seq)` (`src/services/logSeq.ts`); DBs written before that fix still carry the holes. Native BLE and Godot logs **do** go to logcat: `adb logcat -s PassiveEntry:* GodotHost:* godot:*`.
 
 The passive-entry service also writes its own `files/airgapp-native.log` (survives process death and
 reboot — the only record of a boot/background wake). `bash scripts/android/pull-logs.sh` pulls both.

@@ -71,6 +71,14 @@ const NOT_CACHED: Record<string, string> = {
   userPresent: 'VOLATILE: whether someone is in the car right now.',
   centerDisplay: 'VOLATILE: screen on/off state of the car this second.',
   activeRoute: 'VOLATILE: a finished route rendered as active would misroute the user.',
+  chargePortLatch:
+    'VOLATILE: the latch position right now — the restart macro gates on a FRESH read; a stale one would mislead it.',
+  chargeCableUnlatched: 'VOLATILE: same as chargePortLatch; the "latch not engaged" tip must come from a live read.',
+  chargeEnableRequest: "VOLATILE: the car's current charge request; meaningless once the app is closed.",
+  userChargeEnableRequest: 'VOLATILE: same as chargeEnableRequest.',
+  // ── GAP ───────────────────────────────────────────────────────────────────
+  chargerPhases: 'GAP: steady per charger, but only rendered while charging, which is live data anyway.',
+  chargePortColdWeatherMode: 'GAP: only picks the wording of the latch tip, which itself needs a live read.',
 
 };
 

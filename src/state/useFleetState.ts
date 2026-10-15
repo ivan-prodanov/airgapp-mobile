@@ -491,6 +491,9 @@ export function useFleetState(): {
       sendWithOutcome: carLink.sendWithOutcome,
       readSchedules: carLink.readSchedules,
       readSecurity: carLink.readSecurity,
+      chargeRestart: carLink.chargeRestart,
+      restartCharging: carLink.restartCharging,
+      cancelChargeRestart: carLink.cancelChargeRestart,
       pending: carLink.pending,
       pendingCommands: carLink.pendingCommands,
       // NOT narrowed by activeIsLive: a bond wedge is a property of the PHONE,
@@ -515,6 +518,9 @@ export function useFleetState(): {
       carLink.recoveryRemedy,
       carLink.piConfigured,
       carLink.vehicleBleName,
+      carLink.chargeRestart,
+      carLink.restartCharging,
+      carLink.cancelChargeRestart,
     ],
   );
 

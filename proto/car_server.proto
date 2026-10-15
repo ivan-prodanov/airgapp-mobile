@@ -249,6 +249,12 @@ message GetVehicleData {
     GetMediaDetailState getMediaDetailState = 16;
     GetSoftwareUpdateState getSoftwareUpdateState = 17;
     GetParentalControlsState getParentalControlsState = 19;
+    // Charging faults by name — VehicleData.alert_state (25). Served locally by the car
+    // (QtCarServer alert_state handler); the official app never asks for it over BLE.
+    GetAlertState getAlertState = 20;
+}
+
+message GetAlertState {
 }
 
 message GetTirePressureState {

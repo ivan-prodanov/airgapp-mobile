@@ -8,16 +8,15 @@
 //
 // Zero React/Expo/network imports, no hardware — pure TS.
 
-import type {
-  ClimateKeeperMode,
+import type { ChargePortLatch, ChargingAlertInfo, ClimateKeeperMode,
   CabinOverheatMode,
   CabinOverheatTemp,
   SeatClimateMode,
   SeatPosition,
   SteeringWheelClimateModeName,
-  VehicleViewState,
-} from '../types/vehicleTypes';
+  VehicleViewState } from '../types/vehicleTypes';
 import { initialVehicleState } from '../types/vehicleTypes';
+import { parseChargingAlerts } from './chargingAlerts';
 import { copMode, copTemp, keeperMode, resolveSeat, resolveSteeringWheel } from './climateStateMap';
 
 // ── Normalized types (Part 4 shape) ────────────────────────────────────────
@@ -72,6 +71,18 @@ export interface InfotainmentSnapshot {
     rangeMiles: number | null;
     chargingState: string | undefined;
     chargeLimitSoc: number | undefined;
+    // ChargeState 35 / 159 / 133 / 132 / 134 / 136 — the latch and request fields the car
+    // always sent and telemetry never read (2026-09-05). `undefined` = absent on this read.
+    chargePortLatch?: ChargePortLatch;
+    chargeCableUnlatched?: boolean;
+    chargeEnableRequest?: boolean;
+    userChargeEnableRequest?: boolean;
+    chargerPhases?: number;
+    chargePortColdWeatherMode?: boolean;
+    // ChargeState.charge_current_request (137): the amps SETTING the car holds — what the
+    // stepper should show and the restart's step-down should start from. Never read before
+    // 2026-09-06; the stepper sat on the 16 A default while the car held 13.
+    chargingAmps?: number;
     // Saved Home/Work locations (ChargeState.home_location/work_location). Present
     // only when the car reports them; used to name the Set Schedules dropdown.
     homeCoord?: { lat: number; lon: number } | null;
@@ -204,6 +215,9 @@ export interface InfotainmentSnapshot {
   // check. Kept verbatim (daysOfWeek is the car's own bitmask; start/end are
   // minutes) rather than mapped, so the diagnostic shows exactly what is stored.
   chargeSchedules?: RawSchedule[];
+  // VehicleData.alert_state (25) — present only when requested (getAlertState). An empty
+  // list means the car reports no charging alert.
+  alerts?: { chargingAlerts: ChargingAlertInfo[] };
   preconditionSchedules?: RawSchedule[];
 }
 
@@ -323,6 +337,13 @@ function oneofName(val: unknown): string | undefined {
 // pick reads a sub-message off either `vehicleData.<key>` (a full GetVehicleData response) or the
 // top-level `<key>` (a single-field read's Response) — mirrors the reference's
 // `carResp.vehicleData?.chargeState || carResp.chargeState` tolerance.
+const LATCH_NAMES: readonly ChargePortLatch[] = ['sna', 'disengaged', 'engaged', 'blocking'];
+function latchName(v: string | undefined): ChargePortLatch | undefined {
+  const lower = v?.toLowerCase();
+  return LATCH_NAMES.find((n) => n === lower);
+}
+const flag = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+
 function pick(
   vehicleData: Record<string, unknown> | undefined,
   root: Record<string, unknown>,
@@ -407,6 +428,13 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
       chargerVoltageV: num(cs.chargerVoltage) ?? null,
       chargerPilotCurrentA: num(cs.chargerPilotCurrent) ?? null,
       chargeLimitSoc: num(cs.chargeLimitSoc),
+      chargePortLatch: latchName(oneofName(cs.chargePortLatch)),
+      chargeCableUnlatched: flag(cs.chargeCableUnlatched),
+      chargeEnableRequest: flag(cs.chargeEnableRequest),
+      userChargeEnableRequest: flag(cs.userChargeEnableRequest),
+      chargerPhases: num(cs.chargerPhases),
+      chargePortColdWeatherMode: flag(cs.chargePortColdWeatherMode),
+      chargingAmps: num(cs.chargeCurrentRequest),
       homeCoord: latLong(cs.homeLocation),
       workCoord: latLong(cs.workLocation),
       // Optional bools: protobufjs leaves the oneof member `null` when absent, so
@@ -658,6 +686,11 @@ export function parseCarServerResponse(carResp: unknown): InfotainmentSnapshot {
     }
     return undefined;
   };
+  // alert_state (25) — present only when requested (getAlertState). An empty message
+  // means "no alerts": the list is emitted empty so a cleared fault clears the card.
+  const alertState = pick(vehicleData, root, 'alertState');
+  if (alertState) snap.alerts = { chargingAlerts: parseChargingAlerts(alertState) };
+
   const css = pick(vehicleData, root, 'chargeScheduleState');
   if (css && Array.isArray(css.chargeSchedules)) {
     snap.chargeSchedules = (css.chargeSchedules as Record<string, unknown>[]).map((r) => ({
@@ -833,6 +866,17 @@ export function infotainmentToPatch(
     // it (undefined) must not clear a Home/Work we already have.
     if (snap.charge.homeCoord !== undefined) patch.homeCoord = snap.charge.homeCoord;
     if (snap.charge.workCoord !== undefined) patch.workCoord = snap.charge.workCoord;
+    // Latch + request fields: emitted only when the read carried them (undefined-preserving).
+    if (snap.charge.chargePortLatch !== undefined) patch.chargePortLatch = snap.charge.chargePortLatch;
+    if (snap.charge.chargeCableUnlatched !== undefined) patch.chargeCableUnlatched = snap.charge.chargeCableUnlatched;
+    if (snap.charge.chargeEnableRequest !== undefined) patch.chargeEnableRequest = snap.charge.chargeEnableRequest;
+    if (snap.charge.userChargeEnableRequest !== undefined)
+      patch.userChargeEnableRequest = snap.charge.userChargeEnableRequest;
+    if (snap.charge.chargerPhases !== undefined) patch.chargerPhases = snap.charge.chargerPhases;
+    if (snap.charge.chargePortColdWeatherMode !== undefined)
+      patch.chargePortColdWeatherMode = snap.charge.chargePortColdWeatherMode;
+    // A command key: the user's own edit is protected by the intent grace like every other.
+    if (snap.charge.chargingAmps !== undefined) patch.chargingAmps = snap.charge.chargingAmps;
   }
 
   // Gated on the MediaState half, not on either half. That read carries the
@@ -858,6 +902,9 @@ export function infotainmentToPatch(
     // render a wheel against the wrong recommendation.
     patch.tirePressures = snap.tires;
   }
+
+  // The car's named charging faults — an explicit [] clears the card.
+  if (snap.alerts) patch.chargingAlerts = snap.alerts.chargingAlerts;
 
   if (snap.climate) {
     const c = snap.climate;

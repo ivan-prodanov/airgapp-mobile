@@ -197,3 +197,37 @@ test('commandActionLabel maps known commands and title-cases the rest', () => {
   // Unknown/unmapped command type falls back to a title-cased type.
   assert.equal(commandActionLabel('boombox'), 'Boombox');
 });
+
+// ── chargeRestartToast ──────────────────────────────────────────────────────
+import { chargeRestartToast } from './commandMessages.ts';
+import { chargingAlertInfo } from './chargingAlerts.ts';
+import type { ChargeRestartResult } from './chargeRestart.ts';
+
+const restartResult = (over: Partial<ChargeRestartResult>): ChargeRestartResult => ({
+  ok: false,
+  reason: 'stopped-again',
+  attempts: 1,
+  alertsBefore: [],
+  alertsAfter: [],
+  ampsChangedTo: null,
+  finalState: null,
+  trace: [],
+  ...over,
+});
+
+test('chargeRestartToast: success names the amps when they were lowered and the attempts when >1', () => {
+  assert.deepEqual(chargeRestartToast(restartResult({ ok: true, reason: 'charging', attempts: 2, ampsChangedTo: 11 })), {
+    title: 'Charging · 11 A',
+    body: 'Took 2 attempts',
+  });
+  assert.deepEqual(chargeRestartToast(restartResult({ ok: true, reason: 'charging' })), { title: 'Charging', body: undefined });
+  assert.equal(chargeRestartToast(restartResult({ ok: true, reason: 'complete' })).title, 'Charging complete');
+});
+
+test("chargeRestartToast: failure carries the car's own alert text as the body", () => {
+  const t = chargeRestartToast(restartResult({ reason: 'needs-charger', alertsAfter: [chargingAlertInfo(3, 'warning')!] }));
+  assert.equal(t.title, 'This fault needs the charger, not the car');
+  assert.equal(t.body, 'Unable to charge - Insufficient grounding. Proper wiring or outlet grounding must be verified');
+  assert.equal(chargeRestartToast(restartResult({ reason: 'aborted' })).title, 'Restart cancelled');
+  assert.equal(chargeRestartToast(restartResult({ reason: 'no-cable' })).body, undefined);
+});

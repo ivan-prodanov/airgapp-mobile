@@ -909,3 +909,63 @@ test('a zero or absurd gps_as_of is ignored, not trusted into 1970', () => {
   const patch = infotainmentToPatch(snap, 1_800_000_000_000);
   assert.equal(patch.carLocationAt, 1_800_000_000_000);
 });
+
+test('charge: latch, cable-unlatched, enable requests, phases, cold-weather are parsed and patched', () => {
+  const snap = parseCarServerResponse({
+    vehicleData: {
+      chargeState: {
+        chargePortLatch: { Disengaged: {} },
+        chargeCableUnlatched: true,
+        chargeEnableRequest: false,
+        userChargeEnableRequest: true,
+        chargerPhases: 3,
+        chargePortColdWeatherMode: false,
+      },
+    },
+  });
+  assert.equal(snap.charge?.chargePortLatch, 'disengaged');
+  assert.equal(snap.charge?.chargeCableUnlatched, true);
+  assert.equal(snap.charge?.chargeEnableRequest, false);
+  assert.equal(snap.charge?.userChargeEnableRequest, true);
+  assert.equal(snap.charge?.chargerPhases, 3);
+  assert.equal(snap.charge?.chargePortColdWeatherMode, false);
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.chargePortLatch, 'disengaged');
+  assert.equal(patch.chargeCableUnlatched, true);
+  assert.equal(patch.chargeEnableRequest, false);
+  assert.equal(patch.userChargeEnableRequest, true);
+  assert.equal(patch.chargerPhases, 3);
+  assert.equal(patch.chargePortColdWeatherMode, false);
+});
+
+test('charge: absent latch fields are OMITTED from the patch, never defaulted', () => {
+  const patch = infotainmentToPatch(parseCarServerResponse({ vehicleData: { chargeState: { batteryLevel: 40 } } }));
+  for (const k of [
+    'chargePortLatch',
+    'chargeCableUnlatched',
+    'chargeEnableRequest',
+    'userChargeEnableRequest',
+    'chargerPhases',
+    'chargePortColdWeatherMode',
+  ] as const) {
+    assert.equal(k in patch, false, k);
+  }
+});
+
+test('alerts: alertState → chargingAlerts with Tesla text; empty alertState → []; no alertState → no key', () => {
+  const snap = parseCarServerResponse({ vehicleData: { alertState: { chargingAlerts: [{ alertName: 93, alertType: 1 }] } } });
+  assert.equal(snap.alerts?.chargingAlerts[0]?.title, 'Charging stopped due to large voltage drop');
+  const patch = infotainmentToPatch(snap);
+  assert.equal(patch.chargingAlerts?.[0]?.name, 'PCS_A054_CHGINPUTVDROPTOOHIGH');
+  const empty = parseCarServerResponse({ vehicleData: { alertState: {} } });
+  assert.deepEqual(infotainmentToPatch(empty).chargingAlerts, []);
+  assert.equal('chargingAlerts' in infotainmentToPatch(parseCarServerResponse({ vehicleData: {} })), false);
+});
+
+test('charge: charge_current_request (137) is the amps SETTING the car holds → chargingAmps; absent → omitted', () => {
+  const snap = parseCarServerResponse({ vehicleData: { chargeState: { chargeCurrentRequest: 13 } } });
+  assert.equal(snap.charge?.chargingAmps, 13);
+  assert.equal(infotainmentToPatch(snap).chargingAmps, 13);
+  const none = infotainmentToPatch(parseCarServerResponse({ vehicleData: { chargeState: { batteryLevel: 40 } } }));
+  assert.equal('chargingAmps' in none, false);
+});

@@ -11,7 +11,7 @@
 // are pure stateless mappers with no session/crypto/retry involvement, so
 // exposing them doesn't bypass any policy.
 
-export { createCarGateway } from './gateway';
+export { createCarGateway, DEFAULT_SYNC_STATES } from './gateway';
 export type { CarGateway, CommandOutcome, CreateCarGatewayArgs, InfotainmentStateKey } from './gateway';
 export type { CarActionStatus } from './carActionStatus';
 // Session lifecycle — callers must free the Pi's single BLE session on

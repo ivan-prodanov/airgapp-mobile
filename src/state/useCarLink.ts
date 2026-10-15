@@ -42,6 +42,7 @@ import {
   type CarCommand,
   type InfotainmentStateKey,
   type CarGateway,
+  DEFAULT_SYNC_STATES,
   type CarTransport,
   type CommandOutcome,
   type PiConfig,
@@ -60,6 +61,13 @@ import { peekLiveSession } from '@/ble/session';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
 import { infotainmentToPatch, vcsecStatusToPatch, type RawSchedule } from '@/ble/telemetry';
 import { ensureAwake } from '@/ble/wakeGate';
+import {
+  IDLE_CHARGE_RESTART,
+  restartCharging as runChargeRestart,
+  type ChargeRead,
+  type ChargeRestartResult,
+  type ChargeRestartStatus,
+} from '@/ble/chargeRestart';
 import { decodeUnsolicitedVcsecStatus, decodeCpdWarning } from '@/ble/vcsecPush';
 import { filterPatchUnderIntent, releaseIntent, GRACE_MS, SETTLE_GRACE_MS } from '@/ble/intentGrace';
 import { createCoalescer, type Coalescer } from '@/ble/coalesce';
@@ -78,7 +86,7 @@ import {
 import { remedyFor, type RecoveryRemedy } from '@/ble/bondWedge';
 import { appendDiagnostic } from '@/services/diagnosticFile';
 import { startLogFileSink } from '@/services/logFileSink';
-import { commandActionLabel, commandFailureText } from '@/ble/commandMessages';
+import { commandActionLabel, commandFailureText, chargeRestartToast } from '@/ble/commandMessages';
 import { notifyCommandFailure } from '@/services/commandNotification';
 import { useToast } from '@/components/ToastHost';
 import { beginBackgroundTask, endBackgroundTask } from '../../modules/expo-bg-task';
@@ -268,6 +276,13 @@ export interface CarLinkStatus {
   // (sentry/valet/speed-limit/parental) instead of local optimistic state.
   // Resolves true if the read landed, false on a demo/unlinked/sleeping car.
   readSecurity: () => Promise<boolean>;
+
+  // Restart Charging — the alert-driven software re-plug (ble/chargeRestart.ts). `chargeRestart`
+  // is the live progress both screens render; its `result` is the last run's verdict. Runs in
+  // the foreground only (iOS suspends JS otherwise) and one at a time.
+  chargeRestart: ChargeRestartStatus;
+  restartCharging: () => void;
+  cancelChargeRestart: () => void;
 
   // VehicleStateKeys with a real command in flight (dispatched, not yet
   // confirmed/failed) AND not past the OPTIMISTIC_TIMEOUT_MS wall-clock cap.
@@ -1529,6 +1544,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       chargerActualCurrentA: patch.chargerActualCurrentA ?? base.chargerActualCurrentA,
       chargerVoltageV: patch.chargerVoltageV ?? base.chargerVoltageV,
       chargerPilotCurrentA: patch.chargerPilotCurrentA ?? base.chargerPilotCurrentA,
+      chargingAlerts: patch.chargingAlerts ?? base.chargingAlerts,
     };
     cacheRef.current = next;
     saveCacheRef.current?.(next);
@@ -1589,6 +1605,154 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     }
   }, [getGateway, cacheInfotainment]);
 
+  // ── Restart Charging ────────────────────────────────────────────────────────
+  // The alert-driven software re-plug. The state machine is pure (ble/chargeRestart.ts);
+  // this binds it to the gateway: commands, two scoped reads applied to the vehicle like
+  // every other read, the wake gate, and the log ring — every step lands in `charge`, so
+  // the first real fault leaves a complete trace whether or not the restart works.
+  const [chargeRestart, setChargeRestart] = useState<ChargeRestartStatus>(IDLE_CHARGE_RESTART);
+  const chargeRestartAbortRef = useRef<AbortController | null>(null);
+
+  const applyReadPatch = useCallback(
+    (patch: Partial<VehicleViewState>) => {
+      const kept = filterPatchUnderIntent(patch, intentRef.current, Date.now(), getActiveStateRef.current());
+      if (Object.keys(kept).length) {
+        applyTelemetryRef.current(kept);
+        cacheInfotainment(kept);
+      }
+    },
+    [cacheInfotainment],
+  );
+
+  const readChargeForRestart = useCallback(
+    async (gw: CarGateway): Promise<ChargeRead> => {
+      const snap = await gw.awakeSync({ states: ['charge'], priority: 'user' });
+      applyReadPatch(infotainmentToPatch(snap));
+      const c = snap.charge;
+      if (!c) throw new Error('charge slice absent');
+      return {
+        chargingState: (c.chargingState ?? '').toLowerCase() || null,
+        chargePortLatch: c.chargePortLatch ?? null,
+        chargeCableUnlatched: c.chargeCableUnlatched ?? null,
+        chargerActualCurrentA: c.chargerActualCurrentA ?? null,
+        // The car's own setting (charge_current_request) when the read carried it, else the
+        // vehicle state (the user's value, or the macro's own step-down applied in runCommand).
+        chargingAmps: c.chargingAmps ?? getActiveStateRef.current()?.chargingAmps ?? null,
+      };
+    },
+    [applyReadPatch],
+  );
+
+  const readAlertsForRestart = useCallback(
+    async (gw: CarGateway) => {
+      const snap = await gw.awakeSync({ states: ['alerts'], priority: 'user' });
+      const alerts = snap.alerts?.chargingAlerts ?? [];
+      // `present` tells "the car served an empty alert_state" from "the car omitted it" —
+      // the one distinction the first real fault needs on record.
+      logi('charge', 'restart: alerts read', { present: !!snap.alerts, n: alerts.length, names: alerts.map((a) => a.name).join(',') || '-' });
+      applyReadPatch({ chargingAlerts: alerts });
+      return alerts;
+    },
+    [applyReadPatch],
+  );
+
+  const restartCharging = useCallback(() => {
+    const gw = getGateway();
+    if (!gw) {
+      logi('charge', 'restart skipped', { reason: 'no gateway (demo/unlinked)' });
+      return;
+    }
+    if (chargeRestartAbortRef.current) return; // one at a time
+    const ac = new AbortController();
+    chargeRestartAbortRef.current = ac;
+    const startedAt = Date.now();
+    setChargeRestart({ ...IDLE_CHARGE_RESTART, running: true, maxAttempts: 3, phase: 'reading', startedAt });
+    const sleep = (ms: number, signal?: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(t);
+          signal?.removeEventListener('abort', finish);
+          resolve();
+        };
+        const t = setTimeout(finish, ms);
+        signal?.addEventListener('abort', finish, { once: true });
+      });
+    const failed = (reason: ChargeRestartResult['reason'], note: string): ChargeRestartResult => ({
+      ok: false,
+      reason,
+      attempts: 0,
+      alertsBefore: [],
+      alertsAfter: [],
+      ampsChangedTo: null,
+      finalState: null,
+      trace: [note],
+    });
+    void (async () => {
+      let result: ChargeRestartResult;
+      try {
+        // The reads and the start need the main computer up; the unlatch alone does not.
+        const woke = await ensureAwake({
+          probeAwake: async () => {
+            try {
+              const st = await gw.readVcsecStatus();
+              return vcsecStatusToPatch(st, {}, Date.now()).patch.awake === true;
+            } catch {
+              return false;
+            }
+          },
+          wake: async () => {
+            await gw.wake().catch(() => {});
+          },
+          sleep,
+          now: Date.now,
+          signal: ac.signal,
+        });
+        if (woke !== 'awake') {
+          logw('charge', 'restart: car did not wake', { woke });
+          result = failed(woke === 'aborted' ? 'aborted' : 'read-failed', `wake ${woke}`);
+        } else {
+          result = await runChargeRestart(
+            {
+              runCommand: async (cmd) => {
+                const out = await gw.runCommand(cmd);
+                if (out.ok && cmd.type === 'setChargingAmps') {
+                  // Reflect the step-down in the stepper without re-firing the command.
+                  applyTelemetryRef.current({ chargingAmps: cmd.amps });
+                  cacheInfotainment({ chargingAmps: cmd.amps });
+                }
+                return { ok: out.ok, message: out.ok ? undefined : out.message };
+              },
+              readCharge: () => readChargeForRestart(gw),
+              readAlerts: () => readAlertsForRestart(gw),
+              sleep,
+              now: Date.now,
+              log: (step, data) => logi('charge', `restart: ${step}`, data ?? {}),
+              onProgress: (p) =>
+                setChargeRestart((prev) => ({
+                  ...prev,
+                  attempt: p.attempt,
+                  maxAttempts: p.maxAttempts,
+                  phase: p.phase,
+                  untilMs: p.untilMs,
+                })),
+            },
+            { signal: ac.signal },
+          );
+        }
+      } catch (e) {
+        loge('charge', 'restart threw', { error: e instanceof Error ? e.message : String(e) });
+        result = failed('read-failed', 'threw');
+      }
+      chargeRestartAbortRef.current = null;
+      setChargeRestart({ running: false, attempt: result.attempts, maxAttempts: 3, phase: 'done', untilMs: null, startedAt, result });
+      toastRef.current.show(chargeRestartToast(result));
+    })();
+  }, [getGateway, readChargeForRestart, readAlertsForRestart, cacheInfotainment]);
+
+  const cancelChargeRestart = useCallback(() => {
+    chargeRestartAbortRef.current?.abort();
+  }, []);
+
   // stampRead records a successful contact with the car.
   //
   // lastVehicleDataAt is our analogue of their vehicle_data timestamp, and it
@@ -1630,6 +1794,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         chargerActualCurrentA: null,
         chargerVoltageV: null,
         chargerPilotCurrentA: null,
+        chargingAlerts: null,
         interiorTempC: null,
         exteriorTempC: null,
         targetTempC: null,
@@ -1915,10 +2080,23 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // The automatic poll yields; a user-forced refresh does not. That
             // distinction is the whole point of the priority — pull-to-refresh
             // is something the user is waiting on.
+            // A seated cable adds alert_state to the read set: one more round trip on the
+            // 60s tick, and the ONLY way a fault that happened while nobody was looking
+            // reaches the card. An `alerts` read that comes back without the message means
+            // no alerts — the car omits an empty one — so clear the list explicitly.
+            const plugged = getActiveStateRef.current()?.cableAttached === true;
             const snap = await gw.awakeSync({
+              states: plugged ? [...DEFAULT_SYNC_STATES, 'alerts'] : undefined,
               priority: opts?.forceInfotainment === true ? 'user' : 'background',
             });
-            logi('poll', 'infotainment', { ms: Date.now() - it0 });
+            // Note the presence BEFORE the fill: "the car served an empty alert_state" and
+            // "the car omitted it" are different facts, and only the log can tell them apart.
+            const alertsServed = !!snap.alerts;
+            if (plugged && !snap.alerts) snap.alerts = { chargingAlerts: [] };
+            logi('poll', 'infotainment', {
+              ms: Date.now() - it0,
+              alerts: plugged ? (alertsServed ? snap.alerts!.chargingAlerts.length : 'absent') : 'not-requested',
+            });
             // Media is new and has no UI yet, so without this line a sync that
             // read it and a sync that didn't are indistinguishable in the log —
             // the exact "probe that cannot show it did the thing" failure this
@@ -2192,7 +2370,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       wake,
       readSchedules,
       readSecurity,
+      chargeRestart,
+      restartCharging,
+      cancelChargeRestart,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, persistSecurity, sendWithOutcome, refresh, wake, readSchedules, readSecurity],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, persistSecurity, sendWithOutcome, refresh, wake, readSchedules, readSecurity, chargeRestart, restartCharging, cancelChargeRestart],
   );
 }

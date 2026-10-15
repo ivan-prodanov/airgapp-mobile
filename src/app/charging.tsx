@@ -14,6 +14,8 @@ import { AMP_MAX, AMP_MIN } from '@/state/fleet';
 import { controlHaptic } from '@/state/controlHaptic';
 import { useCarLinkStatus, useVehicle } from '@/state/VehicleProvider';
 import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
+import { ChargingAlertCard } from '@/components/ChargingAlertCard';
+import { shouldShowChargingAlertCard } from '@/components/chargingAlertCardText';
 import { TeslaFonts } from '@/constants/fonts';
 import type { VehicleStateKey } from '@/types/vehicleTypes';
 
@@ -103,6 +105,17 @@ export default function ChargingScreen() {
         >
           {/* The SAME panel as Home. Not styled here: the card brings its own
               recovered geometry, and this screen only positions it. */}
+          {shouldShowChargingAlertCard(state.cableAttached, state.chargingState, state.chargingAlerts) ? (
+            <View style={styles.chargeCardWrap}>
+              <ChargingAlertCard
+                alerts={state.chargingAlerts}
+                chargingState={state.chargingState}
+                restart={carLink.chargeRestart}
+                onRestart={carLink.restartCharging}
+                onCancel={carLink.cancelChargeRestart}
+              />
+            </View>
+          ) : null}
           <View style={styles.chargeCardWrap}>
             <ChargeCard
               batteryLevel={state.batteryLevel}
@@ -121,6 +134,8 @@ export default function ChargingScreen() {
               chargerVoltageV={state.chargerVoltageV}
               chargerPilotCurrentA={state.chargerPilotCurrentA}
               chargingAmps={state.chargingAmps}
+              chargeCableUnlatched={state.chargeCableUnlatched}
+              chargePortColdWeatherMode={state.chargePortColdWeatherMode}
               ampMin={AMP_MIN}
               ampMax={AMP_MAX}
               useMiles={false}

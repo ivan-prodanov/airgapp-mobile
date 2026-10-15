@@ -10,6 +10,7 @@
 // entry for a nicer verb; anything unmapped falls back to a title-cased type.
 
 import type { CarCommand } from './commands';
+import type { ChargeRestartResult } from './chargeRestart';
 import type { CommandOutcome } from './gateway';
 
 // Every failure kind that is SHOWN to the user. `cancelled` (C3) is excluded on
@@ -136,4 +137,38 @@ function failureBody(outcome: FailureOutcome, type?: CarCommand['type']): string
       if (outcome.reason) return VCSEC_ERROR_BODY[outcome.reason] ?? outcome.reason;
       return 'Command failed'; // command_error_GENERIC_
   }
+}
+
+// chargeRestartToast — the one-line verdict of a Restart Charging run (ble/chargeRestart.ts):
+// what happened, and — on a failure — the car's own alert title + remedy as the body, the
+// same words Tesla's ChargingAlerts row would show.
+const RESTART_REASON_TEXT: Record<ChargeRestartResult['reason'], string> = {
+  charging: 'Charging',
+  complete: 'Charging complete',
+  aborted: 'Restart cancelled',
+  'start-rejected': 'The car refused to start charging',
+  'stopped-again': 'Charging stopped again',
+  'never-started': 'Charging never started',
+  'needs-charger': 'This fault needs the charger, not the car',
+  'no-cable': 'No cable in the charge port',
+  'read-failed': 'Could not reach the car',
+};
+
+// The toast card's shape (ToastHost's ToastText): a title and an OPTIONAL body — a success
+// with nothing to add is a one-liner.
+export interface ChargeRestartToastText {
+  title: string;
+  body?: string;
+}
+
+export function chargeRestartToast(r: ChargeRestartResult): ChargeRestartToastText {
+  if (r.ok) {
+    const amps = r.ampsChangedTo !== null ? ` · ${r.ampsChangedTo} A` : '';
+    return {
+      title: r.reason === 'complete' ? 'Charging complete' : `Charging${amps}`,
+      body: r.attempts > 1 ? `Took ${r.attempts} attempts` : undefined,
+    };
+  }
+  const alert = r.alertsAfter[0] ?? r.alertsBefore[0];
+  return { title: RESTART_REASON_TEXT[r.reason], body: alert ? `${alert.title}. ${alert.subtitle}` : undefined };
 }

@@ -28,6 +28,8 @@ import { CarsSheet } from '@/components/CarsSheet';
 import { confirmRemoveVehicle } from '@/components/confirmRemoveVehicle';
 import { MediaCard } from '@/components/MediaCard';
 import { ChargeCard, CHARGE_CARD_SCREEN_INSET } from '@/components/ChargeCard';
+import { ChargingAlertCard } from '@/components/ChargingAlertCard';
+import { shouldShowChargingAlertCard } from '@/components/chargingAlertCardText';
 import { isChargePanelVisible, shouldClearShowCharge } from '@/state/chargePanel';
 import { SpinningSymbol } from '@/components/SpinningSymbol';
 import { VehicleStatusText } from '@/components/VehicleStatusText';
@@ -464,6 +466,19 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
               not render the panel; I read that as a preset bug at the time and
               papered over it with an extra `|| fakeCharge` term instead of
               questioning the gate. The presets are gone now, the gate is not. */}
+          {/* Their ChargingAlerts row sits ABOVE the Charging row: the car's named fault
+              (VehicleData.alert_state) with Tesla's remedy line, and our Restart Charging. */}
+          {shouldShowChargingAlertCard(state.cableAttached, state.chargingState, state.chargingAlerts) ? (
+            <View style={styles.chargeCardWrap}>
+              <ChargingAlertCard
+                alerts={state.chargingAlerts}
+                chargingState={state.chargingState}
+                restart={carLink.chargeRestart}
+                onRestart={carLink.restartCharging}
+                onCancel={carLink.cancelChargeRestart}
+              />
+            </View>
+          ) : null}
           {chargePanelVisible ? (
             <View style={styles.chargeCardWrap}>
               <ChargeCard
@@ -483,6 +498,8 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
                 chargerVoltageV={state.chargerVoltageV}
                 chargerPilotCurrentA={state.chargerPilotCurrentA}
                 chargingAmps={state.chargingAmps}
+                chargeCableUnlatched={state.chargeCableUnlatched}
+                chargePortColdWeatherMode={state.chargePortColdWeatherMode}
                 ampMin={AMP_MIN}
                 ampMax={AMP_MAX}
                 onSetAmps={(a) => actions.patch({ chargingAmps: a })}

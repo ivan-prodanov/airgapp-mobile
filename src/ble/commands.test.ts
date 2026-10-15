@@ -66,6 +66,7 @@ import {
   navigateWaypointsAction,
   boomboxAction,
   getChargeStateAction,
+  getAlertStateAction,
   getClimateStateAction,
   getDriveStateAction,
   getLocationStateAction,
@@ -296,6 +297,10 @@ test('state-read builders set FLAG_ENCRYPT_RESPONSE_BIT and the right GetVehicle
     decodeAction(parental.bytes).vehicleAction?.getVehicleData?.getParentalControlsState,
     undefined,
   );
+
+  const alerts = getAlertStateAction();
+  assert.equal(alerts.flags, FLAG_ENCRYPT_RESPONSE_BIT);
+  assert.notEqual(decodeAction(alerts.bytes).vehicleAction?.getVehicleData?.getAlertState, undefined);
 
   const full = getFullVehicleDataAction();
   assert.equal(full.flags, FLAG_ENCRYPT_RESPONSE_BIT);

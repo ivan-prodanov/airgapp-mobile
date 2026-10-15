@@ -7,8 +7,7 @@ import type {
   SeatClimateModes,
   SteeringWheelClimate,
   TirePressures,
-  VehicleViewState,
-} from '@/types/vehicleTypes';
+  VehicleViewState, ChargingAlertInfo } from '@/types/vehicleTypes';
 import { load, makeSaver, type AppStorage } from './persistence';
 
 // The linked car's last-known telemetry, cached across app launches.
@@ -142,6 +141,9 @@ export interface CarLinkCache {
   chargerActualCurrentA: number | null;
   chargerVoltageV: number | null;
   chargerPilotCurrentA: number | null;
+  // The car's named charging faults (VehicleData.alert_state) — cached so a relaunch shows
+  // the last fault with its remedy line rather than a bare "Charging Stopped".
+  chargingAlerts: ChargingAlertInfo[] | null;
 }
 
 // Keyed by VIN: re-linking a different car must not inherit the old car's
@@ -186,6 +188,7 @@ export function cacheToStatePatch(c: CarLinkCache): Partial<VehicleViewState> {
   set('chargerActualCurrentA');
   set('chargerVoltageV');
   set('chargerPilotCurrentA');
+  set('chargingAlerts');
   set('cableAttached');
   set('odometerMiles');
   set('tirePressures');
@@ -379,6 +382,19 @@ export async function loadCarLinkCache(storage: AppStorage, vin: string): Promis
     chargerActualCurrentA: num(cached?.chargerActualCurrentA),
     chargerVoltageV: num(cached?.chargerVoltageV),
     chargerPilotCurrentA: num(cached?.chargerPilotCurrentA),
+    chargingAlerts: Array.isArray(cached?.chargingAlerts)
+      ? (cached.chargingAlerts as unknown[]).filter(
+          (a): a is ChargingAlertInfo =>
+            !!a &&
+            typeof a === 'object' &&
+            typeof (a as ChargingAlertInfo).n === 'number' &&
+            typeof (a as ChargingAlertInfo).name === 'string' &&
+            typeof (a as ChargingAlertInfo).title === 'string' &&
+            typeof (a as ChargingAlertInfo).subtitle === 'string' &&
+            typeof (a as ChargingAlertInfo).family === 'string' &&
+            typeof (a as ChargingAlertInfo).kind === 'string',
+        )
+      : null,
     media:
       cached?.media && typeof cached.media === 'object'
         ? {
