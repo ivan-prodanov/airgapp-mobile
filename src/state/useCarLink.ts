@@ -277,6 +277,10 @@ export interface CarLinkStatus {
   // Resolves true if the read landed, false on a demo/unlinked/sleeping car.
   readSecurity: () => Promise<boolean>;
 
+  // Re-reads the car config + device keys and rebuilds the gateway for the (possibly new) VIN. Onboarding
+  // calls this right after pairing so a car enrolled while the app is running goes live without a restart.
+  reload: () => void;
+
   // Restart Charging — the alert-driven software re-plug (ble/chargeRestart.ts). `chargeRestart`
   // is the live progress both screens render; its `result` is the last run's verdict. Runs in
   // the foreground only (iOS suspends JS otherwise) and one at a time.
@@ -608,7 +612,23 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
-  // Load config + device keys once on mount (only when the feature is on).
+  // Bumped by reload() to re-run the load effect below. Onboarding pairs a car
+  // WHILE the app is running; without a re-read the freshly enrolled VIN would
+  // only go live after a restart.
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  // Pick up a car enrolled after launch. Drops the cached gateway + selector so
+  // the next getGateway() rebuilds for the NEW vin (the old gateway is bound to
+  // the VIN it was built with), then re-runs the load effect, which refreshes
+  // cfgRef/carCfgRef/keysRef, linked/vin and the cached-telemetry rehydrate.
+  const reload = useCallback(() => {
+    gatewayRef.current = null; // force a rebuild for the new VIN
+    selectorRef.current?.closeSession('').catch(() => {});
+    selectorRef.current = null;
+    setReloadNonce((n) => n + 1);
+  }, []);
+
+  // Load config + device keys on mount and on every reload() (only when the feature is on).
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -677,7 +697,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, reloadNonce]);
 
   // getGateway builds (once) and returns the single cached gateway, or null if
   // not linked / not yet loaded. The selector is a stable instance so a
@@ -2370,10 +2390,11 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       wake,
       readSchedules,
       readSecurity,
+      reload,
       chargeRestart,
       restartCharging,
       cancelChargeRestart,
     }),
-    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, persistSecurity, sendWithOutcome, refresh, wake, readSchedules, readSecurity, chargeRestart, restartCharging, cancelChargeRestart],
+    [linked, vin, connection, transport, streaming, lastUpdatedAt, lastVehicleDataAt, wakeInFlight, pending, pendingCommands, recoveryRemedy, piConfigured, bondWedge.bleName, dispatch, persistSecurity, sendWithOutcome, refresh, wake, readSchedules, readSecurity, reload, chargeRestart, restartCharging, cancelChargeRestart],
   );
 }
