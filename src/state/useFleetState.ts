@@ -114,12 +114,23 @@ export function useFleetState(): {
     };
   }, []);
 
-  // Persist the presentation after hydration, on every fleet change. GATED on
-  // `hydrated` so the empty first-paint seed can never overwrite the stored
-  // fleet before the reconcile above has replaced it.
+  // Persist the presentation after hydration, whenever it actually changes.
+  // GATED on `hydrated` so the empty first-paint seed can never overwrite the
+  // stored fleet before the reconcile above has replaced it.
+  //
+  // `fleet` gets a NEW reference on every telemetry tick (battery/climate/…),
+  // but toPersisted only captures appearance/order/active — so the payload is
+  // almost always byte-identical. Remember the last serialized payload and skip
+  // the AsyncStorage write when it hasn't changed (add/remove/rename/reorder/
+  // select/appearance still change it, so those still write).
+  const lastPersistedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!hydrated) return;
-    void savePersistedFleet(appStorage, toPersisted(fleet));
+    const p = toPersisted(fleet);
+    const serialized = JSON.stringify(p);
+    if (serialized === lastPersistedRef.current) return; // nothing presentation-relevant changed
+    lastPersistedRef.current = serialized;
+    void savePersistedFleet(appStorage, p);
   }, [hydrated, fleet]);
 
   // The plain apply for the OPTIMISTIC state commit + telemetry path. USER

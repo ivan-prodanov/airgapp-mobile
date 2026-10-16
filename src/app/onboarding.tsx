@@ -15,9 +15,10 @@
 // Pi forwarder / remote access is out of scope here — this only pairs the phone's
 // device key over DIRECT BLE and persists the car locally.
 
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -149,14 +150,32 @@ export default function Onboarding() {
   //                a no-op unless the VIN is already enrolled — hence addCar first)
   //   reload  → carLink re-reads config so the car goes live without a restart
   //   replace → leave onboarding
+  //
+  // Re-entry guard: this is async and the Finish button isn't disabled, so a
+  // fast double-tap would otherwise run it twice (a stray extra fleet vehicle —
+  // the 2nd addRealCar moves the VIN off the 1st). On SUCCESS router.replace
+  // unmounts the screen so the guard is never reset; on FAILURE it is reset so
+  // the user can retry (addCar/selectCar are idempotent for the same VIN).
+  // The failure is surfaced with an Alert: the reducer's connectFailed is a
+  // no-op outside the `connecting` step, so it can't route a `paired`-step
+  // failure to the error screen — and staying on the appearance screen keeps the
+  // user's configurator choices for the retry.
+  const submittingRef = useRef(false);
   const finishPairing = async (model: CarModel, opts: CarConfiguratorOptions) => {
+    if (submittingRef.current) return; // ignore a double-tap within the async window
+    submittingRef.current = true;
     const vin = pair.vin;
     Haptics.selectionAsync();
-    await addCar(store, { vin });
-    await selectCar(store, vin);
-    fleet.addRealCar(vin, model, toFleetOpts(opts));
-    carLink.reload();
-    router.replace('/');
+    try {
+      await addCar(store, { vin });
+      await selectCar(store, vin);
+      fleet.addRealCar(vin, model, toFleetOpts(opts));
+      carLink.reload();
+      router.replace('/');
+    } catch {
+      submittingRef.current = false; // allow retry
+      Alert.alert('Could not save the car', 'Please try again.');
+    }
   };
 
   // ── Welcome ───────────────────────────────────────────────────────────────
