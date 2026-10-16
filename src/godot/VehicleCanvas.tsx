@@ -201,6 +201,12 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const booted = useRef(false);
   const layout = useRef<{ width: number; height: number } | null>(null);
   const lastVehicleId = useRef<string | null>(null);
+  // Empty fleet → the provider's active id is '' and the "active car" is only a
+  // placeholder. NEVER drive the renderer for it (boot / SHOW_PRODUCT / switch /
+  // update / resync): the placeholder has no real model to load, and pushing it at
+  // the engine is what could crash the brief frame before Home redirects to
+  // onboarding. Every bridge call below is gated on this.
+  const hasVehicle = vehicleId !== '';
 
   // RN swap: web subscribed to the renderer iframe via attachFrame(); here we subscribe to the
   // native module's onGodotMessage stream.
@@ -244,6 +250,9 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     layout.current = { width, height };
+    // Remember the size, but don't touch the renderer with no car to show — the
+    // boot effect below picks the stored layout up when a vehicle appears.
+    if (!hasVehicle) return;
     const frame = buildFrame(width, height, state.cameraMode, false, statusBarHeight, screenHeight);
 
     if (!booted.current) {
@@ -258,7 +267,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   // Re-send the frame when the view changes so the per-view framing follows it, animating in step
   // with the camera move.
   useEffect(() => {
-    if (booted.current && layout.current) {
+    if (hasVehicle && booted.current && layout.current) {
       bridge.updateFrame(
         buildFrame(layout.current.width, layout.current.height, state.cameraMode, true, statusBarHeight, screenHeight),
       );
@@ -266,7 +275,7 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
   }, [bridge, state.cameraMode]);
 
   useEffect(() => {
-    if (!booted.current) {
+    if (!booted.current || !hasVehicle) {
       return;
     }
     if (lastVehicleId.current !== vehicleId) {
@@ -275,7 +284,24 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
     } else {
       bridge.updateState(state);
     }
-  }, [bridge, state, vehicleId]);
+  }, [bridge, state, vehicleId, hasVehicle]);
+
+  // Deferred boot: if the surface was laid out while the fleet was still empty,
+  // onLayout skipped the boot (see above) and won't fire again, so boot here the
+  // moment a real vehicle arrives. Declared AFTER the state effect on purpose: in
+  // the commit where a car first appears, that effect sees `booted` false and
+  // no-ops, then this boots with the same state — no redundant update right after.
+  useEffect(() => {
+    if (!hasVehicle || booted.current || !layout.current) {
+      return;
+    }
+    bridge.boot(
+      state,
+      buildFrame(layout.current.width, layout.current.height, state.cameraMode, false, statusBarHeight, screenHeight),
+    );
+    lastVehicleId.current = vehicleId;
+    booted.current = true;
+  }, [bridge, hasVehicle]);
 
   // GPU-resource recovery. iOS can reclaim the Godot scene's textures/lighting
   // while the app is BACKGROUNDED — the EAGL context survives, so the engine never
@@ -293,11 +319,12 @@ export function VehicleCanvas({ state, vehicleId, carTranslateX, children }: Veh
         wasBackgrounded.current = true;
       } else if (next === 'active' && wasBackgrounded.current) {
         wasBackgrounded.current = false;
-        if (booted.current) bridge.resync('foreground');
+        if (booted.current && hasVehicle) bridge.resync('foreground');
       }
     });
     return () => sub.remove();
-  }, [bridge]);
+    // `wasBackgrounded` is a ref, so re-subscribing when `hasVehicle` flips loses nothing.
+  }, [bridge, hasVehicle]);
 
   return (
     <BridgeContext.Provider value={bridge}>

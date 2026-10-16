@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { Redirect } from 'expo-router';
 
 import { recommendedColdPressure } from '@/ble/tirePressureText';
 import { TeslaFonts } from '@/constants/fonts';
@@ -168,6 +169,18 @@ export default function Index() {
       if (finished && !pushed) setRenderedPush(null);
     });
   }, [pushed, cardProgress]);
+
+  // ── Onboarding gate ──────────────────────────────────────────────────────
+  // ⚠️ Placed AFTER every hook above on purpose (rules of hooks): an early return
+  // before any of them would skip hooks on some renders and throw "rendered fewer
+  // hooks than expected". Keep new hooks ABOVE this block, never below it.
+  //
+  // Not hydrated yet → render nothing. The fleet is the empty first-paint seed
+  // until the boot reconcile lands, so redirecting here would flash onboarding
+  // for every returning user; AnimatedSplashOverlay (_layout) covers the frame.
+  if (!fleet.hydrated) return null;
+  // Hydrated AND empty → a fresh install (or the last car was removed): pair one.
+  if (fleet.vehicles.length === 0) return <Redirect href="/onboarding" />;
 
   return (
     <View style={styles.root}>
