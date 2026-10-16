@@ -49,6 +49,12 @@ const MODEL_BASE_NAME: Record<CarModel, string> = {
   modelX7Seat: 'Model X (7-seat)',
 };
 
+// Runtime guard for a CarModel read from untrusted storage (version skew can leave a
+// model string this build no longer knows). Object.hasOwn, not `in` or a bare index:
+// `'constructor' in MODEL_BASE_NAME` is true via the prototype and would slip through.
+export const isCarModel = (x: unknown): x is CarModel =>
+  typeof x === 'string' && Object.hasOwn(MODEL_BASE_NAME, x);
+
 // The persisted appearance of one car — the fields the user picks in onboarding
 // (model line is VIN-derivable; everything else is a build option, stored). Used
 // to materialize a Vehicle from config on launch.

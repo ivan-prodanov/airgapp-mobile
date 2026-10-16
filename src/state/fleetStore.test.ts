@@ -40,6 +40,23 @@ test('a structurally-malformed payload loads as null, never throws', async () =>
   assert.equal(await loadPersistedFleet(s), null);
 });
 
+test('an unknown or prototype carModel loads as null', async () => {
+  const s = createMemoryBackend();
+  await s.setItem('fleet.v1', JSON.stringify({ version: 1, order: [{ id: 'v', name: 'n', config: { carModel: 'bogus' } }], activeId: null }));
+  assert.equal(await loadPersistedFleet(s), null);
+  await s.setItem('fleet.v1', JSON.stringify({ version: 1, order: [{ id: 'v', name: 'n', config: { carModel: 'constructor' } }], activeId: null }));
+  assert.equal(await loadPersistedFleet(s), null);
+});
+
+test('a real car with a vin round-trips through load', async () => {
+  const s = createMemoryBackend();
+  const p = toPersisted({ vehicles: [vehicleFromConfig('veh_1', 'Mine', { carModel: 'modelX', exteriorColor: 'DeepBlue', wheelType: 'Turbine', interiorTrim: 'White', performance: true }, '5YJXCBE22HF000000')], activeId: 'veh_1' });
+  await savePersistedFleet(s, p);
+  const loaded = await loadPersistedFleet(s);
+  assert.equal(loaded?.order[0].vin, '5YJXCBE22HF000000');
+  assert.equal(loaded?.order[0].config.carModel, 'modelX');
+});
+
 test('a non-string activeId coerces to null (well-formed order preserved)', async () => {
   const s = createMemoryBackend();
   const ok = toPersisted({ vehicles: [vehicleFromConfig('veh_1', 'A', { carModel: 'modelY', exteriorColor: null, wheelType: null, interiorTrim: null, performance: null })], activeId: 'veh_1' });

@@ -1,5 +1,5 @@
 import type { AppStorage } from './persistence';
-import type { FleetState, VehicleConfig } from './fleet';
+import { isCarModel, type FleetState, type VehicleConfig } from './fleet';
 
 export const FLEET_STORAGE_KEY = 'fleet.v1';
 
@@ -47,7 +47,7 @@ export async function loadPersistedFleet(storage: AppStorage): Promise<Persisted
         typeof (v as PersistedVehicle).name === 'string' &&
         ((v as PersistedVehicle).vin === undefined || typeof (v as PersistedVehicle).vin === 'string') &&
         !!(v as PersistedVehicle).config && typeof (v as PersistedVehicle).config === 'object' &&
-        typeof (v as PersistedVehicle).config.carModel === 'string',
+        isCarModel((v as PersistedVehicle).config.carModel),
     );
     if (!entriesOk) return null;
     const activeId = typeof parsed.activeId === 'string' ? parsed.activeId : null;
