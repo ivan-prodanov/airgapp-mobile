@@ -12,14 +12,18 @@ export function reconcileFleet(persisted: PersistedFleet | null, enrolled: Enrol
   for (const row of listed) {
     if (row.vin) {
       if (!enrolledByVin.has(row.vin)) continue; // car forgotten since last launch — drop it
+      if (seenVins.has(row.vin)) continue;        // duplicate VIN row (corrupt data) — keep only the first
       seenVins.add(row.vin);
     }
     vehicles.push(vehicleFromConfig(row.id, row.name, row.config, row.vin));
   }
 
   // Append any enrolled car the persisted list did not carry (paired out-of-band, or first boot
-  // after upgrade where fleet.v1 does not exist yet).
-  let n = vehicles.reduce((max, v) => Math.max(max, Number(v.id.replace(/^veh_/, '')) || 0), 0);
+  // after upgrade where fleet.v1 does not exist yet). The id counter is seeded from EVERY persisted
+  // id, including dropped rows, so an appended car never reuses a forgotten car's id (which would
+  // let a stale activeId land on the new car instead of falling back).
+  let n = (persisted?.order ?? []).reduce(
+    (max, r) => Math.max(max, Number(r.id.replace(/^veh_/, '')) || 0), 0);
   for (const cfg of enrolled.cars) {
     if (seenVins.has(cfg.vin)) continue;
     vehicles.push(vehicleFromCarConfig(`veh_${++n}`, cfg));

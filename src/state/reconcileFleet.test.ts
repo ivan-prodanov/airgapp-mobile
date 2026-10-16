@@ -43,3 +43,20 @@ test('a listed real car is bound by VIN and kept in place', () => {
   assert.deepEqual(f.vehicles.map((v) => v.id), ['veh_1', 'veh_2']);
   assert.equal(f.vehicles[1].vin, '5YJYGDEE9PF000000');
 });
+
+test('duplicate-VIN rows: only the first survives', () => {
+  const f = reconcileFleet(
+    { version: 1, order: [real('veh_1', 'A', '5YJYGDEE9PF000000'), real('veh_2', 'B', '5YJYGDEE9PF000000')], activeId: 'veh_1' },
+    { cars: [{ vin: '5YJYGDEE9PF000000' }], selectedVin: '5YJYGDEE9PF000000' });
+  assert.equal(f.vehicles.length, 1);
+  assert.equal(f.vehicles[0].id, 'veh_1');
+});
+
+test('an appended enrolled car does not reuse a dropped row id; stale active falls back', () => {
+  const f = reconcileFleet(
+    { version: 1, order: [demo('veh_1', 'Demo'), real('veh_2', 'Gone', '5YJ3E1EA7LF000000')], activeId: 'veh_2' },
+    { cars: [{ vin: '5YJYGDEE9PF000000' }], selectedVin: '5YJYGDEE9PF000000' }); // VIN_X dropped, VIN_Y enrolled
+  assert.deepEqual(f.vehicles.map((v) => v.id), ['veh_1', 'veh_3']); // appended is veh_3, NOT the dropped veh_2
+  assert.equal(f.vehicles[1].vin, '5YJYGDEE9PF000000');
+  assert.equal(f.activeId, 'veh_1'); // active fell back to the first surviving vehicle
+});
