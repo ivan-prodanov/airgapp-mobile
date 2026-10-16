@@ -40,7 +40,18 @@ export async function loadPersistedFleet(storage: AppStorage): Promise<Persisted
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PersistedFleet>;
     if (parsed.version !== 1 || !Array.isArray(parsed.order)) return null;
-    return { version: 1, order: parsed.order, activeId: parsed.activeId ?? null };
+    const entriesOk = parsed.order.every(
+      (v): v is PersistedVehicle =>
+        !!v && typeof v === 'object' &&
+        typeof (v as PersistedVehicle).id === 'string' &&
+        typeof (v as PersistedVehicle).name === 'string' &&
+        ((v as PersistedVehicle).vin === undefined || typeof (v as PersistedVehicle).vin === 'string') &&
+        !!(v as PersistedVehicle).config && typeof (v as PersistedVehicle).config === 'object' &&
+        typeof (v as PersistedVehicle).config.carModel === 'string',
+    );
+    if (!entriesOk) return null;
+    const activeId = typeof parsed.activeId === 'string' ? parsed.activeId : null;
+    return { version: 1, order: parsed.order as PersistedVehicle[], activeId };
   } catch {
     return null; // corrupt payload — treat as no persisted fleet
   }
