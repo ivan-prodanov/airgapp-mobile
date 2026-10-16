@@ -4,11 +4,11 @@ import type { CarCommand } from '../ble/commands';
 import type { CarModel, VehicleStateKey, VehicleViewState } from '../types/vehicleTypes';
 import { initialVehicleState } from '../types/vehicleTypes';
 import {
-  bindVehicleVin,
   activeIndex,
-  activeVehicle,
   addVehicle,
+  addVehicleWithVin,
   createInitialFleet,
+  currentOrEmpty,
   nextVehicleId,
   prevVehicleId,
   removeVehicle,
@@ -20,6 +20,11 @@ import {
   actuateFrunkState,
   frunkActuateClaimedKeys,
 } from './fleet';
+import { reconcileFleet } from './reconcileFleet';
+import { loadPersistedFleet, savePersistedFleet, toPersisted } from './fleetStore';
+import { loadEnrolledCars, removeCar, selectCar } from '../ble/config';
+import { secureStoreSecretStore as store } from '../ble/secureStoreSecretStore';
+import { appStorage } from './appStorage';
 import { buildVehicleActions, type VehicleActions } from './useVehicleState';
 import { useCarLink, type CarLinkStatus } from './useCarLink';
 import { diffToCommands, revertFields } from '../ble/reconcile';
@@ -32,6 +37,10 @@ import {
 } from './schedules';
 
 export interface Fleet {
+  // False until the boot reconcile (persisted presentation + enrolled cars) has
+  // landed. The onboarding gate reads this so it does not flash the "no car"
+  // screen during the first paint before hydration.
+  hydrated: boolean;
   vehicles: Vehicle[];
   activeId: string;
   activeIndex: number;
@@ -46,6 +55,10 @@ export interface Fleet {
       performance?: boolean;
     },
   ) => void;
+  // The enrollment path for a REAL, paired car: binds the VIN and makes it the
+  // Keychain-selected (live) car. opts are the same per-car appearance overrides
+  // addVehicle takes.
+  addRealCar: (vin: string, model: CarModel, opts?: Parameters<Fleet['addVehicle']>[1]) => void;
   removeVehicle: (id: string) => void;
   setActiveVehicle: (id: string) => void;
   nextVehicle: () => void;
@@ -79,7 +92,35 @@ export function useFleetState(): {
   fleet: Fleet;
   carLinkStatus: CarLinkStatus;
 } {
-  const [fleet, setFleet] = useState<FleetState>(createInitialFleet);
+  const [fleet, setFleet] = useState<FleetState>(createInitialFleet); // empty until hydrated
+  const [hydrated, setHydrated] = useState(false);
+
+  // Boot reconcile: persisted presentation (AsyncStorage) + enrolled cars
+  // (Keychain) → FleetState. Runs ONCE. `cancelled` guards a StrictMode
+  // double-mount, and the empty seed stays on screen until the reconcile lands.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [persisted, enrolled] = await Promise.all([
+        loadPersistedFleet(appStorage),
+        loadEnrolledCars(store),
+      ]);
+      if (cancelled) return;
+      setFleet(reconcileFleet(persisted, enrolled));
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist the presentation after hydration, on every fleet change. GATED on
+  // `hydrated` so the empty first-paint seed can never overwrite the stored
+  // fleet before the reconcile above has replaced it.
+  useEffect(() => {
+    if (!hydrated) return;
+    void savePersistedFleet(appStorage, toPersisted(fleet));
+  }, [hydrated, fleet]);
 
   // The plain apply for the OPTIMISTIC state commit + telemetry path. USER
   // actions go through applyActiveUser (below), which additionally reconciles
@@ -156,11 +197,11 @@ export function useFleetState(): {
   // hydrateTelemetry is the LAUNCH-TIME rehydrate path (distinct from the live
   // applyTelemetry above). It seeds the ENROLLED car with its own persisted
   // last-known telemetry, UNGATED: at cold start the live gate is still false
-  // (linked/vin haven't propagated, the VIN isn't bound to veh_1 yet), so
-  // routing the cached patch through applyTelemetry silently dropped it — the
-  // "cache doesn't work, battery stays empty until the car connects" bug. This
-  // targets vehicles[0] (the real car) directly, so the value paints instantly
-  // and dimmed; the first live tick then overwrites it with fresh data.
+  // (linked/vin haven't propagated yet), so routing the cached patch through
+  // applyTelemetry silently dropped it — the "cache doesn't work, battery stays
+  // empty until the car connects" bug. This targets the vin-bound car directly
+  // (updateEnrolledVehicleState), so the value paints instantly and dimmed; the
+  // first live tick then overwrites it with fresh data.
   const hydrateTelemetry = useCallback((patch: Partial<VehicleViewState>) => {
     // Cold-start cached telemetry is confirmed truth too — seed the baseline so a
     // command that fails before the first live poll still rolls back to the car's
@@ -178,20 +219,8 @@ export function useFleetState(): {
     getActiveState: () => activeStateRef.current,
   });
 
-  const current = activeVehicle(fleet) ?? { id: '', name: '', state: initialVehicleState };
+  const current = currentOrEmpty(fleet);
   activeStateRef.current = current.state;
-
-  // ── P3.T1: which vehicle IS the enrolled car? ────────────────────────────
-  // Bind the enrolled VIN to the fleet's FIRST vehicle. That is the app's
-  // existing assumption made explicit (the original 'veh_1' is the real car;
-  // everything from addVehicle is a demo), and it's the seam the real
-  // enrollment flow replaces once the user picks their car after Pi setup.
-  useEffect(() => {
-    const vin = carLink.vin;
-    const first = fleet.vehicles[0];
-    if (!vin || !first || first.vin === vin) return;
-    setFleet((f) => (f.vehicles[0] ? bindVehicleVin(f, f.vehicles[0].id, vin) : f));
-  }, [carLink.vin, fleet.vehicles]);
 
   // THE narrowing. `carLink.linked` only means "a car is enrolled"; a command is
   // only ever legitimate when the car ON SCREEN is that car. Without this,
@@ -441,6 +470,7 @@ export function useFleetState(): {
 
   const fleetApi = useMemo<Fleet>(
     () => ({
+      hydrated,
       sendNavigation,
       sendMedia,
       sendSchedule,
@@ -452,12 +482,34 @@ export function useFleetState(): {
       activeIndex: activeIndex(fleet),
       activeName: current.name,
       addVehicle: (model, opts) => setFleet((f) => addVehicle(f, model, opts)),
-      removeVehicle: (id) => setFleet((f) => removeVehicle(f, id)),
-      setActiveVehicle: (id) => setFleet((f) => setActiveVehicle(f, id)),
+      // Enrollment: a real, paired car. selectCar makes it the Keychain-selected
+      // (live) car; addVehicleWithVin binds its VIN and clears any prior car's,
+      // so exactly one vehicle is ever live.
+      addRealCar: (vin, model, opts) => {
+        void selectCar(store, vin);
+        setFleet((f) => addVehicleWithVin(f, vin, model, opts));
+      },
+      // A real car (one carrying a vin) is also forgotten in the Keychain, so it
+      // can no longer be reached over BLE and won't reappear on the next reconcile.
+      removeVehicle: (id) =>
+        setFleet((f) => {
+          const v = f.vehicles.find((x) => x.id === id);
+          if (v?.vin) void removeCar(store, v.vin);
+          return removeVehicle(f, id);
+        }),
+      // Keep the Keychain's selectedVin on the active real car so a relaunch
+      // reconciles to the same live car the user last had on screen.
+      setActiveVehicle: (id) =>
+        setFleet((f) => {
+          const v = f.vehicles.find((x) => x.id === id);
+          if (v?.vin) void selectCar(store, v.vin);
+          return setActiveVehicle(f, id);
+        }),
       nextVehicle: () => setFleet((f) => setActiveVehicle(f, nextVehicleId(f))),
       prevVehicle: () => setFleet((f) => setActiveVehicle(f, prevVehicleId(f))),
     }),
     [
+      hydrated,
       fleet,
       current,
       sendNavigation,

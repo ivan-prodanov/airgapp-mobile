@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   bindVehicleVin,
+  currentOrEmpty,
+  EMPTY_VEHICLE,
   setClimateKeeperState,
   setClimateOnState,
   activeVehicle,
@@ -581,4 +583,15 @@ test('addVehicleWithVin clears any prior car vin (single-vin invariant)', () => 
   f = addVehicleWithVin(f, '5YJYGDEE9PF000000', 'modelY', {});                         // veh_2 real
   assert.equal(f.vehicles[0].vin, undefined);
   assert.equal(f.vehicles[1].vin, '5YJYGDEE9PF000000');
+});
+
+// The empty-fleet guard useFleetState renders with, pulled out as a pure helper so
+// it is testable without rendering (useFleetState transitively imports react-native
+// and cannot load under node). EMPTY_VEHICLE is the safe placeholder an empty fleet
+// paints — the onboarding signal — so every screen keeps a valid VehicleViewState.
+test('currentOrEmpty returns the active vehicle, or EMPTY_VEHICLE when the fleet is empty', () => {
+  assert.equal(currentOrEmpty(createInitialFleet()), EMPTY_VEHICLE);
+  assert.equal(EMPTY_VEHICLE.state.carModel, 'modelY'); // initialVehicleState default
+  const f = oneCar(); // helper already in this file → veh_1
+  assert.equal(currentOrEmpty(f), activeVehicle(f));
 });

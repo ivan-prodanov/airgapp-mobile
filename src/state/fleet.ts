@@ -95,6 +95,18 @@ export function activeVehicle(fleet: FleetState): Vehicle | undefined {
   return fleet.vehicles[activeIndex(fleet)];
 }
 
+// The safe placeholder an EMPTY fleet paints — the onboarding signal. An empty
+// fleet has no active vehicle, but the screens still need a valid VehicleViewState
+// to render against, so currentOrEmpty hands them this instead of undefined. Its
+// blank id means nothing is live (no vin, activeIsLive can never match it), so no
+// command and no telemetry can ever touch it. Lives here (not in useFleetState) so
+// it is node-testable — useFleetState transitively imports react-native.
+export const EMPTY_VEHICLE: Vehicle = { id: '', name: '', state: initialVehicleState };
+
+export function currentOrEmpty(fleet: FleetState): Vehicle {
+  return activeVehicle(fleet) ?? EMPTY_VEHICLE;
+}
+
 // Build a Vehicle straight from a stored appearance config (the onboarding /
 // persistence path). vin is set only for the real, enrolled car.
 export function vehicleFromConfig(id: string, name: string, config: VehicleConfig, vin?: string): Vehicle {
