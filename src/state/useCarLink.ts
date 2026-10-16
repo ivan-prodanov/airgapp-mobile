@@ -646,6 +646,15 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         cfgRef.current = cfg;
         carCfgRef.current = carCfg;
         keysRef.current = keys;
+        // A poll tick firing between reload() and here could rebuild a gateway from the
+        // PREVIOUS carCfgRef (old vin). Discard it now that carCfgRef holds the freshly
+        // loaded car, so the next getGateway() rebuilds for the correct vin. activeIsLive
+        // only checks vin equality, not which gateway was built, so it cannot catch this.
+        // Synchronous with the ref swap on purpose (no await in between): anything built
+        // after this point already used the NEW refs and must not be thrown away.
+        gatewayRef.current = null;
+        selectorRef.current?.closeSession('').catch(() => {});
+        selectorRef.current = null;
         setPiConfigured(!!cfg?.baseUrl);
         // Restore a wedge proven in an earlier launch. Without this the app
         // opens looking healthy while the OS bond — which outlives our process
