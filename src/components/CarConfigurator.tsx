@@ -43,6 +43,7 @@ export function CarConfigurator({
   lockedBase,
   initialBase,
   submitLabel,
+  title = 'Add Car',
   onBack,
   onSubmit,
 }: {
@@ -50,6 +51,7 @@ export function CarConfigurator({
   lockedBase?: BaseModel;
   initialBase?: BaseModel;
   submitLabel?: string;
+  title?: string;
   onBack: () => void;
   onSubmit: (model: CarModel, opts: CarConfiguratorOptions) => void;
 }) {
@@ -106,7 +108,7 @@ export function CarConfigurator({
         <Pressable onPress={onBack} hitSlop={10} style={styles.backBtn}>
           <AppIcon icon="chevron-270" color="rgba(255,255,255,0.7)" size={20} />
         </Pressable>
-        <Text style={styles.title}>Add Car</Text>
+        <Text style={styles.title}>{title}</Text>
       </View>
 
       <ScrollView

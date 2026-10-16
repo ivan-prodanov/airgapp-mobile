@@ -103,6 +103,9 @@ export default function RootLayout() {
               however long the incoming screen takes to mount. */}
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#161618' } }}>
             <Stack.Screen name="index" />
+            {/* First-run onboarding is the root when the fleet is empty (Task 11 gates to it),
+                so the native swipe-back is disabled — there is nothing behind it to return to. */}
+            <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
             <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
             {/* gestureEnabled:false disables the iOS-26 native full-screen swipe-back (it responds to the whole
                 screen, colliding with the Charging slider); each screen renders an EdgeSwipeBack strip for the
