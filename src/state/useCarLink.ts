@@ -661,6 +661,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // — is still broken, and the card only returns once a fresh BLE attempt
         // happens to fail again.
         bondWedgeStore.hydrate(parsePersistedWedge(await appStorage.getItem(BOND_WEDGE_STORAGE_KEY)));
+        // A superseded run (reload() fired again, or unmount) must not write stale linked/vin.
+        if (cancelled) return;
         setLinked(!!carCfg?.vin);
         setVin(carCfg?.vin ?? null);
         // Rehydrate the cached telemetry BEFORE the first poll lands, so the
@@ -675,10 +677,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             loadSecurity(store, carCfg.vin),
           ]);
           if (cancelled) return;
-          if (cached) {
-            cacheRef.current = cached;
-            setLastVehicleDataAt(cached.lastVehicleDataAt);
-          }
+          // Set UNCONDITIONALLY from the loaded record. On a reload to a freshly paired VIN there is no
+          // cache yet; gating on `if (cached)` left the PREVIOUS car's record in cacheRef, and the next
+          // cacheInfotainment/awake stamp would then persist the old car's homeCoord/workCoord/
+          // lastVehicleDataAt under carlink.cache.<newVin>.
+          cacheRef.current = cached ?? null;
+          setLastVehicleDataAt(cached?.lastVehicleDataAt ?? null);
           {
             // Restore EVERY cached telemetry field (data-driven — see cacheToStatePatch) AND the persisted PINs,
             // so the last-known settings/toggles paint dimmed instead of snapping back to initialVehicleState
@@ -693,6 +697,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // battery/temps would stay blank until the car connects.
             if (Object.keys(patch).length) hydrateTelemetryRef.current(patch);
           }
+        } else {
+          // Unlinked (e.g. the last car was removed): don't let a prior car's cache linger.
+          cacheRef.current = null;
+          setLastVehicleDataAt(null);
         }
         // Free any session a prior force-kill orphaned before the first command.
         if (cfg?.baseUrl && cfg?.token) {
