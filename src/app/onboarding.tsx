@@ -27,7 +27,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { CarConfigurator, type CarConfiguratorOptions } from '@/components/CarConfigurator';
@@ -54,7 +53,6 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 type Screen = 'welcome' | 'demo' | 'pair';
 
 export default function Onboarding() {
-  const router = useRouter();
   const fleet = useFleet();
   const carLink = useCarLinkStatus();
   const insets = useSafeAreaInsets();
@@ -139,8 +137,10 @@ export default function Onboarding() {
   // Demo car: no VIN, nothing locked, straight to Home.
   const addDemoCar = (model: CarModel, opts: CarConfiguratorOptions) => {
     Haptics.selectionAsync();
+    // Adding the car flips the fleet non-empty, so index swaps THIS inline overlay for Home — no
+    // navigation. router.replace('/') here would remount index and tear down + rebuild the Godot
+    // surface (= crash), because onboarding is now an overlay, not a route.
     fleet.addVehicle(model, toFleetOpts(opts));
-    router.replace('/');
   };
 
   // Finish a real pairing. ORDER IS LOad-BEARING (controller ruling):
@@ -149,13 +149,15 @@ export default function Onboarding() {
   //   addRealCar → binds the VIN in the in-memory fleet (its internal selectCar is
   //                a no-op unless the VIN is already enrolled — hence addCar first)
   //   reload  → carLink re-reads config so the car goes live without a restart
-  //   replace → leave onboarding
+  //   (no navigation: addRealCar flips the fleet non-empty, so index swaps this
+  //    inline overlay for Home with VehicleCanvas kept mounted. router.replace('/')
+  //    would remount index → Godot surface teardown = crash.)
   //
   // Re-entry guard: this is async and the Finish button isn't disabled, so a
   // fast double-tap would otherwise run it twice (a stray extra fleet vehicle —
-  // the 2nd addRealCar moves the VIN off the 1st). On SUCCESS router.replace
-  // unmounts the screen so the guard is never reset; on FAILURE it is reset so
-  // the user can retry (addCar/selectCar are idempotent for the same VIN).
+  // the 2nd addRealCar moves the VIN off the 1st). On SUCCESS the fleet goes
+  // non-empty and this overlay unmounts, so the guard is never reset; on FAILURE
+  // it is reset so the user can retry (addCar/selectCar are idempotent per VIN).
   // The failure is surfaced with an Alert: the reducer's connectFailed is a
   // no-op outside the `connecting` step, so it can't route a `paired`-step
   // failure to the error screen — and staying on the appearance screen keeps the
@@ -171,7 +173,8 @@ export default function Onboarding() {
       await selectCar(store, vin);
       fleet.addRealCar(vin, model, toFleetOpts(opts));
       carLink.reload();
-      router.replace('/');
+      // No router.replace — the fleet is now non-empty, so index swaps this overlay for Home with
+      // VehicleCanvas kept mounted. Navigating would remount index → Godot teardown.
     } catch {
       submittingRef.current = false; // allow retry
       Alert.alert('Could not save the car', 'Please try again.');
