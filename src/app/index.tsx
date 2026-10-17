@@ -15,7 +15,7 @@ import { ClimateScreen } from '@/screens/ClimateScreen';
 import { ControlsScreen } from '@/screens/ControlsScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { useAndroidBack } from '@/hooks/useAndroidBack';
-import { useActiveVehicleId, useFleet, useVehicle } from '@/state/VehicleProvider';
+import { useActiveVehicleId, useCarLinkStatus, useFleet, useVehicle } from '@/state/VehicleProvider';
 import { AppIcon } from '../icons/AppIcon';
 
 // Tesla home + sub-screens (climate / controls) over the embedded Godot car. Each view swaps the
@@ -24,9 +24,13 @@ export default function Index() {
   const [state, actions] = useVehicle();
   const vehicleId = useActiveVehicleId();
   const fleet = useFleet();
+  const carLink = useCarLinkStatus();
   const { width } = useWindowDimensions();
   const carTranslateX = useRef(new Animated.Value(0)).current;
   const animating = useRef(false);
+  // Tracks the current touch for TAP detection in the car-switch PanResponder: a touch that ends
+  // with ~no movement is a tap on the car → refresh (same Medium haptic as the "last seen" tap).
+  const tapTrack = useRef({ t: 0, moved: false });
 
   // Commit a switch: slide the live car fully off-screen in `direction` (-1 left / +1 right), swap
   // the active vehicle WHILE off-screen (the engine re-renders the incoming car in its real state),
@@ -64,11 +68,15 @@ export default function Index() {
   // drag switches cars; a vertical drag returns false from onMoveShouldSet so the menu ScrollView
   // scrolls. The long-lived responder reads fleet/width from a ref refreshed every render (no stale
   // closures).
-  const swipeLogic = useRef({ fleet, width });
-  swipeLogic.current = { fleet, width };
+  const swipeLogic = useRef({ fleet, width, refresh: carLink.refresh });
+  swipeLogic.current = { fleet, width, refresh: carLink.refresh };
   const swipe = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
+      // Claim on touch-down so a TAP (touch that ends without moving) is detectable on release and
+      // refreshes the car — the regression-free way to add tap-to-refresh (a wrapping Pressable steals
+      // the responder and kills this swipe). We still scroll and swipe: a vertical gesture is yielded
+      // to the menu ScrollView via onPanResponderTerminationRequest; a horizontal one is kept here.
+      onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_e, g) => {
         const { fleet: f } = swipeLogic.current;
         return (
@@ -78,18 +86,42 @@ export default function Index() {
           Math.abs(g.dx) > Math.abs(g.dy) * 1.4
         );
       },
-      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        tapTrack.current = { t: Date.now(), moved: false };
+      },
+      // Yield to the ScrollView for a vertical (scroll) gesture; keep a horizontal (swipe) one. This
+      // is why claiming on start doesn't break vertical scrolling of the menu.
+      onPanResponderTerminationRequest: (_e, g) => Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_e, g) => {
+        if (Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6) {
+          tapTrack.current.moved = true;
+        }
         if (animating.current) {
           return;
         }
         const { fleet: f } = swipeLogic.current;
+        // Only drag the car for a horizontal gesture on a ≥2-car fleet; a vertical gesture is a scroll
+        // (and is being handed to the ScrollView), so don't jitter the car sideways.
+        if (f.vehicles.length < 2 || Math.abs(g.dx) <= Math.abs(g.dy)) {
+          return;
+        }
         const atStart = f.activeIndex === 0;
         const atEnd = f.activeIndex === f.vehicles.length - 1;
         const damped = (g.dx > 0 && atStart) || (g.dx < 0 && atEnd);
         carTranslateX.setValue(damped ? g.dx * 0.25 : g.dx);
       },
       onPanResponderRelease: (_e, g) => {
+        // TAP on the car → refresh (Medium haptic), matching the "last seen X" status tap.
+        if (
+          !tapTrack.current.moved &&
+          Math.abs(g.dx) < 8 &&
+          Math.abs(g.dy) < 8 &&
+          Date.now() - tapTrack.current.t < 300
+        ) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          swipeLogic.current.refresh?.();
+          return;
+        }
         const { fleet: f, width: w } = swipeLogic.current;
         if (animating.current) {
           return;
