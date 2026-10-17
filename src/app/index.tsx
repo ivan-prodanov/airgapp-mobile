@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, PanResponder, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Redirect } from 'expo-router';
+import OnboardingScreen from './onboarding';
 
 import { recommendedColdPressure } from '@/ble/tirePressureText';
 import { TeslaFonts } from '@/constants/fonts';
@@ -179,8 +179,12 @@ export default function Index() {
   // until the boot reconcile lands, so redirecting here would flash onboarding
   // for every returning user; AnimatedSplashOverlay (_layout) covers the frame.
   if (!fleet.hydrated) return null;
-  // Hydrated AND empty → a fresh install (or the last car was removed): pair one.
-  if (fleet.vehicles.length === 0) return <Redirect href="/onboarding" />;
+  // Hydrated AND empty → a fresh install, or the last car was just removed. Render onboarding as an
+  // OVERLAY (below) while keeping VehicleCanvas mounted. We must NOT Redirect to a separate route here:
+  // that unmounts VehicleCanvas and tears down the Godot GL surface, which crashes / kills the engine
+  // (see memory: godot EGL/surface teardown = permanent engine death). Kept mounted but unbooted (the
+  // hasVehicle guards skip boot on an empty fleet), so adding/pairing a car just re-boots the surface.
+  const isEmpty = fleet.vehicles.length === 0;
 
   return (
     <View style={styles.root}>
@@ -188,6 +192,11 @@ export default function Index() {
         {/* Drives per-car snapshot rendering into vehicleSnapshotStore (needs the
             Godot bridge, so it lives inside VehicleCanvas). Renders nothing. */}
         <SnapshotDriver />
+        {/* Home + the pushed cards render only when a car exists. When the fleet is empty the
+            onboarding overlay (below) covers everything AND VehicleCanvas stays mounted, so the Godot
+            GL surface is never torn down. */}
+        {!isEmpty ? (
+          <>
         {/* Root card: always mounted, never fades (its CONTENT does — HomeScreen
             owns that clock). Untouchable while a card covers it. */}
         <View style={StyleSheet.absoluteFill} pointerEvents={pushed ? 'none' : 'box-none'}>
@@ -301,10 +310,20 @@ export default function Index() {
             </SafeAreaView>
           </Animated.View>
         ) : null}
+          </>
+        ) : null}
       </VehicleCanvas>
 
-      {mode !== 'home' ? (
+      {!isEmpty && mode !== 'home' ? (
         <View style={styles.edgeBack} {...edgeBack.panHandlers} />
+      ) : null}
+
+      {/* Onboarding overlay — opaque, covers the (unbooted) canvas. Rendered inline (not a route)
+          so the Godot surface beneath survives the empty-fleet transition. */}
+      {isEmpty ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#161618' }]}>
+          <OnboardingScreen />
+        </View>
       ) : null}
 
     </View>
