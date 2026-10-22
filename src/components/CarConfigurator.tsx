@@ -114,6 +114,11 @@ export function CarConfigurator({
       <ScrollView
         style={{ maxHeight: contentMaxHeight }}
         keyboardShouldPersistTaps="handled"
+        // The Name field is the last item; without this the keyboard covers it (fixed maxHeight, no
+        // keyboard avoidance). automaticallyAdjustKeyboardInsets insets for the keyboard and scrolls
+        // the focused input above it; on-drag lets a downward swipe dismiss the keyboard.
+        automaticallyAdjustKeyboardInsets
+        keyboardDismissMode="on-drag"
         alwaysBounceVertical
         showsVerticalScrollIndicator={false}>
         <Text style={styles.fieldLabel}>Model</Text>
