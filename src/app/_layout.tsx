@@ -44,11 +44,14 @@ import { TESLA_FONT_MAP } from '@/constants/fonts';
 import { useSharedLocationIntake } from '@/hooks/useSharedLocationIntake';
 import { useCarPresencePublish } from '@/hooks/useCarPresencePublish';
 import { useShareTraceMirror } from '@/hooks/useShareTraceMirror';
+import { useEnrolIntake } from '@/hooks/useEnrolIntake';
 
 // Renders nothing; exists only so these hooks run inside <VehicleProvider>.
 function ShareSupport(): null {
   useCarPresencePublish();
   useShareTraceMirror();
+  // Provisions the Pi forwarder from a scanned/tapped airgapp://enrol QR.
+  useEnrolIntake();
   return null;
 }
 import { VehicleProvider } from '@/state/VehicleProvider';

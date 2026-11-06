@@ -558,7 +558,7 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
           <NavRow symbol="steering-wheel" title="Summon" disabled />
           <NavRow symbol="charging-bolt" title="Charging" onPress={() => nav.push('/charging')} />
           <NavRow symbol="schedule-filled" title="Set Schedules" onPress={() => nav.push('/schedules')} />
-          <NavRow symbol="security-filled" title="Security & Drivers" subtitle="Ivan P" onPress={() => nav.push('/security')} />
+          <NavRow symbol="security-filled" title="Security & Drivers" onPress={() => nav.push('/security')} />
           <NavRow symbol="service-filled" title="Service" disabled />
           <NavRow symbol="dashcam-filled" title="Dashcam Viewer" disabled />
           <NavRow symbol="photo-filled" title="Photobooth" disabled />
@@ -606,10 +606,14 @@ export function HomeScreen({ state, actions, swipeHandlers, covered = false }: S
             />
           </View>
           <View style={styles.headerIcons}>
-            <Pressable hitSlop={10} onPress={() => nav.push('/explore')}>
-              <AppIcon icon="message" color="white" size={22} />
-            </Pressable>
-            <AppIcon icon="menu" color="white" size={24} />
+            {/* Developer diagnostics entry — DEV builds only. Hidden in release
+                (App Store / AltStore / Play) so users never land in the raw
+                bring-up harness (explore -> carlink). */}
+            {__DEV__ ? (
+              <Pressable hitSlop={10} onPress={() => nav.push('/explore')}>
+                <AppIcon icon="message" color="white" size={22} />
+              </Pressable>
+            ) : null}
           </View>
         </View>
         {/* findings §C1: the whole status row is a TouchableOpacity ->

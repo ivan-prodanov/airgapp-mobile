@@ -145,9 +145,14 @@ export async function clearPiConfig(store: SecretStore): Promise<void> {
   await store.removeItem(PI_CONFIG_STORAGE_KEY);
 }
 
-const ENROL_PREFIX = 'airgap://enrol?';
+// The canonical scheme matches the app's own registered URL scheme (airgapp://;
+// see ios/airgapp/Info.plist CFBundleURLSchemes), so a QR of this deep link,
+// scanned by the phone's camera, opens the app and provisions the forwarder.
+// The legacy single-'p' `airgap://` form is still accepted so any already-issued
+// links (and older Pi dashboards) keep parsing.
+const ENROL_PREFIXES = ['airgapp://enrol?', 'airgap://enrol?'] as const;
 
-// parseEnrolUrl parses `airgap://enrol?api=<url>&token=<tok>&nickname=<name>`
+// parseEnrolUrl parses `airgapp://enrol?api=<url>&token=<tok>&nickname=<name>`
 // deep links produced by the Pi's QR/share-sheet enrolment flow. `api` is a
 // full https:// URL, itself percent-encoded inside the deep link's query
 // string.
@@ -160,8 +165,9 @@ const ENROL_PREFIX = 'airgap://enrol?';
 // `http://airgap-internal/` rewrite trick the browser code used to satisfy
 // WebCrypto's `URL` constructor.
 export function parseEnrolUrl(url: string): { baseUrl: string; token: string; nickname?: string } | null {
-  if (!url.startsWith(ENROL_PREFIX)) return null;
-  const query = url.slice(ENROL_PREFIX.length);
+  const prefix = ENROL_PREFIXES.find((p) => url.startsWith(p));
+  if (prefix === undefined) return null;
+  const query = url.slice(prefix.length);
   if (!query) return null;
 
   const params = new Map<string, string>();

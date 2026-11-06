@@ -67,6 +67,19 @@ test('parseEnrolUrl parses a real enrolment deep link', () => {
   });
 });
 
+test('parseEnrolUrl parses the canonical airgapp:// deep link (matches the app URL scheme)', () => {
+  const url = 'airgapp://enrol?api=https%3A%2F%2Fhost.ts.net%2Fapi%2Fble&token=abc&nickname=Phone';
+  assert.deepEqual(parseEnrolUrl(url), {
+    baseUrl: 'https://host.ts.net/api/ble',
+    token: 'abc',
+    nickname: 'Phone',
+  });
+});
+
+test('parseEnrolUrl rejects an airgapp:// link that is not an enrol link', () => {
+  assert.equal(parseEnrolUrl('airgapp://settings?api=x&token=y'), null);
+});
+
 test('parseEnrolUrl works without the optional nickname', () => {
   const url = 'airgap://enrol?api=https%3A%2F%2Fhost.ts.net%2Fapi%2Fble&token=abc';
   const result = parseEnrolUrl(url);
