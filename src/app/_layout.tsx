@@ -61,6 +61,16 @@ import { Platform } from 'react-native';
 // own back button). The native tab bar was removed — see the messages-icon → Explore wiring in
 // HomeScreen and the back button in explore.tsx. All panels (Home swipe, Climate & Location sheets) use
 // the core PanResponder system, so no GestureHandlerRootView is needed.
+// Anchor index as the persistent base of the stack. Without this, an incoming
+// deep link REPLACES the whole navigation stack with the linked route, which
+// unmounts index — and index hosts VehicleCanvas, whose Godot GL surface dies
+// permanently when torn down (see index.tsx + memory: godot EGL/surface
+// teardown = engine death). With index anchored, a deep link resolves to
+// [index, …], so index/VehicleCanvas stays mounted. This is the crash the enrol
+// QR hit: airgapp://enrol replaced the stack → index unmounted → Godot GLView's
+// CADisplayLink fired drawView on a freed delegate → SIGSEGV.
+export const unstable_settings = { initialRouteName: 'index' };
+
 export default function RootLayout() {
   // Tesla's real typeface (see constants/fonts.ts).
   //
