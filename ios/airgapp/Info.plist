@@ -33,7 +33,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSMinimumSystemVersion</key>
@@ -57,6 +57,8 @@
 	<string>Air Gapp uses your location in the background to notice when you arrive at your car, so Phone Key can unlock it on walk-up even after your phone restarts.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Air Gapp uses your location to show where your car is parked relative to you.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Air Gapp uses motion data to improve the accuracy of your location when showing where your car is parked relative to you.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
