@@ -1,6 +1,6 @@
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
-  unrs-resolver: set this to true or false
+  unrs-resolver: true
 patchedDependencies:
   react-native-maps@1.27.2: patches/react-native-maps@1.27.2.patch
