@@ -222,7 +222,20 @@ n = 30 per arm. The car load itself (`FIRST_PRODUCT_LOADED` at 394–398) and `G
 
 **Render check:** the same build read the GL frame back at three points: after the car frame, 3 s after engine start, and 1.5 s after each activation. All 90 launches gave byte-identical frames at each point, across all three arms. At 3 s that frame is the fully lit car. In 8 of 8 background-to-foreground cycles on the fix build, the foreground resync ran, and the frame afterwards was byte-identical to the cold-launch frame. iOS reclaiming GPU resources after a long background was not reproduced at the desk. Android was not run.
 
-**Still in the car frame:** a second `GET_VEHICLE_MARKERS`, about 20 ms. The trace shows it right after a second `UPDATE_MAIN_VIEW_FRAME`, which is the pair `updateFrame` sends. Whether `onLayout` or the camera-mode effect calls it was not traced. Also, the readback taken right after the car frame shows the car upside down on black, identically in every arm. This may be the cold-boot blip noted under Bug 2, or it may be the readback picking up Godot's viewport buffer after the frunk-colour sample. That was not investigated.
+**A second marker request from `updateFrame`:** that left two `GET_VEHICLE_MARKERS` in the car frame. In 29 of 30 launches, a second `UPDATE_MAIN_VIEW_FRAME` and its marker request (the pair `updateFrame` sends) were queued right after the boot batch. Boot's own timer request landed directly behind them, so two identical requests sat back to back. Whether `onLayout` or the camera-mode effect calls `updateFrame` was not traced. `requestMarkers()` now coalesces a request when the last message queued was the same request and it has not been answered yet. Once Godot answers, or once any other message is queued, the next request goes out. This also collapses the three requests the Controls overlays send when they mount.
+
+| ms after JS `app boot`, median, n = 30 each | Fix above | + coalesced marker requests |
+|---|---|---|
+| Car frame ends | 468 (p10 452, p90 494) | **451** (444, 473) |
+| Change in median, 95% bootstrap CI | | **−18 (−23 to −9)** |
+| Marker requests in the frame | 2 | 1 |
+| Next frame ends | 477 | 455 |
+
+The frames read back were byte-identical to the earlier runs in all 60 launches. In 4 of 4 resume cycles, the frame matched the cold-launch frame.
+
+Taken together, the car frame now ends at about 451 ms instead of 534, about 83 ms sooner.
+
+**Not investigated:** the readback taken right after the car frame shows the car upside down on black, identically in every arm. This may be the cold-boot blip noted under Bug 2, or it may be the readback picking up Godot's viewport buffer after the frunk-colour sample.
 
 ---
 

@@ -118,6 +118,46 @@ test('a foreground resync re-applies the scene and asks for markers once', async
   assert.equal(resent.filter((t) => t === 'GET_VEHICLE_MARKERS').length, 1);
 });
 
+test('a frame update right behind boot() leaves one marker request, after the new frame', async () => {
+  const bridge = new GodotRendererBridge();
+  bridge.attach();
+  bridge.boot(initialVehicleState, frame);
+  bridge.updateFrame({ width: 400, height: 790 } as unknown as FrameData); // onLayout firing again
+  await settle();
+  assert.equal(count('GET_VEHICLE_MARKERS'), 1);
+  const t = types();
+  assert.ok(t.lastIndexOf('UPDATE_MAIN_VIEW_FRAME') < t.indexOf('GET_VEHICLE_MARKERS'));
+});
+
+test('back-to-back marker requests are sent once', async () => {
+  const bridge = new GodotRendererBridge();
+  bridge.attach();
+  bridge.requestMarkers(); // e.g. MarkerOverlay, and the two useContentFade hooks, mounting together
+  bridge.requestMarkers();
+  bridge.requestMarkers();
+  assert.equal(count('GET_VEHICLE_MARKERS'), 1);
+});
+
+test('a marker request is sent again once the engine has answered', async () => {
+  const bridge = new GodotRendererBridge();
+  bridge.attach();
+  bridge.requestMarkers();
+  fromGodot('VEHICLE_MARKERS_RESPONSE');
+  bridge.requestMarkers();
+  assert.equal(count('GET_VEHICLE_MARKERS'), 2);
+});
+
+test('a marker request is sent again after any other message', async () => {
+  const bridge = new GodotRendererBridge();
+  bridge.attach();
+  bridge.boot(initialVehicleState, frame);
+  await settle();
+  bridge.updateState({ ...initialVehicleState, frunkOpen: !initialVehicleState.frunkOpen }); // UPDATE_PRODUCT
+  bridge.requestMarkers();
+  assert.equal(count('GET_VEHICLE_MARKERS'), 2);
+  assert.deepEqual(types().slice(-2), ['UPDATE_PRODUCT', 'GET_VEHICLE_MARKERS']);
+});
+
 test('switching to a different model asks for markers once', async () => {
   const bridge = new GodotRendererBridge();
   bridge.attach();

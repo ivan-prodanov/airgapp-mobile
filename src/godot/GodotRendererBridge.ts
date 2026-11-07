@@ -47,6 +47,10 @@ export class GodotRendererBridge {
   // boot() ran before GODOT_READY, so its batch is still waiting in the native queue for the engine
   // to drain. Cleared by that GODOT_READY.
   private bootQueuedBeforeReady = false;
+  // The last message queued for the engine, and whether a marker request is still unanswered
+  // (see requestMarkers).
+  private lastSent: string | null = null;
+  private markersAwaited = false;
 
   // RN swap: the web bridge installed a `window.godot_comm` shim into the renderer <iframe> so
   // Godot could pull outbound messages and push inbound ones. Natively, ExpoGodotViewModule owns
@@ -201,8 +205,18 @@ export class GodotRendererBridge {
     }
   }
 
+  // Coalesces a request queued right behind an identical one that has not been answered yet, with
+  // nothing else sent in between. The engine works out marker positions when it handles the request,
+  // so the second would see the same scene, and every listener already gets the one response. It
+  // would still cost the engine another full viewport readback. At launch, the frame update sent
+  // right after boot() otherwise doubled the request in the car frame (~20 ms of main thread).
   requestMarkers(): void {
-    this.send(createGetMarkersMessage(this.currentVehicleId()));
+    const json = JSON.stringify(createGetMarkersMessage(this.currentVehicleId()));
+    if (this.markersAwaited && this.lastSent === json) {
+      return;
+    }
+    this.sendJson(json);
+    this.markersAwaited = true;
   }
 
   private scheduleMarkerRefresh(delayMs = 0): void {
@@ -259,7 +273,12 @@ export class GodotRendererBridge {
   // RN swap: web pushed onto an in-JS `this.queue` that Godot drained via the iframe shim.
   // Natively we hand the message straight to the module, which enqueues it for the engine.
   private send(message: GodotMessage): void {
-    ExpoGodotViewModule.sendMessageToGodot(JSON.stringify(message));
+    this.sendJson(JSON.stringify(message));
+  }
+
+  private sendJson(json: string): void {
+    this.lastSent = json;
+    ExpoGodotViewModule.sendMessageToGodot(json);
   }
 
   private handleRendererMessage(raw: string): void {
@@ -302,6 +321,7 @@ export class GodotRendererBridge {
     }
 
     if (parsed.type === 'VEHICLE_MARKERS_RESPONSE') {
+      this.markersAwaited = false;
       if (!this.pendingCameraAnimationId) {
         const markers = (parsed as VehicleMarkersMessage).data;
         for (const listener of this.markerListeners) {
