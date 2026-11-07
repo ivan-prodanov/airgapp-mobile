@@ -96,6 +96,12 @@ class PassiveEntryModule : Module() {
 
     Function("setDeviceKey") { privHex: String -> KeystoreKey.setKeyHex(runtime().app, privHex) }
 
+    // The 65-byte SEC1 public key for a private scalar, as hex. JS calls this on every launch
+    // because deriving it in Hermes stalls the JS thread for ~450ms. Null for an invalid scalar.
+    Function("devicePublicKey") { privHex: String ->
+      VcsecSigner.devicePublicKey(privHex)?.let { VcsecSigner.hex(it) }
+    }
+
     Function("deviceFingerprint") {
       val hex = KeystoreKey.getKeyHex(runtime().app) ?: return@Function "no key"
       val pub = VcsecSigner.devicePublicKey(hex) ?: return@Function "no key"

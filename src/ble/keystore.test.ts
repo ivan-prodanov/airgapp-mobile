@@ -126,7 +126,7 @@ test('loadOrCreateDeviceKeys passes the native deriver through for an existing k
   assert.equal(keys.publicKeyRaw[1], 0xab);
 });
 
-test('a native deriver with no answer (absent module, Android) falls back to noble', async () => {
+test('a native deriver with no answer (absent module, older binary) falls back to noble', async () => {
   const store = createMemorySecretStore();
   const created = await loadOrCreateDeviceKeys(store);
   const keys = await loadDeviceKeys(store, () => null);

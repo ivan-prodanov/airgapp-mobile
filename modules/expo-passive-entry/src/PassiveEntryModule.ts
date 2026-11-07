@@ -35,7 +35,7 @@ declare class PassiveEntryModule {
   handshakeGolden(): string;
   setDeviceKey(privHex: string): boolean;
   deviceFingerprint(): string;
-  // iOS only so far; absent on Android and on binaries older than this method.
+  // Absent on binaries older than this method; callers fall back to JS.
   devicePublicKey?(privHex: string): string | null;
   // model (b) byte-pipe: write an already-framed message to 0212 (raw).
   writeFrame(frameB64: string): boolean;

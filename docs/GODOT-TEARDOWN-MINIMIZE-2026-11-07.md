@@ -101,7 +101,7 @@ Timings from a recorder build (which adds some overhead), in ms since exec, on o
 
 Godot's own boot is cheap and was not the main cost. The largest JS-thread stall we found was `p256.getPublicKey` in `loadDeviceKeys`, which took **449 ms on every launch**. noble builds a precompute table on first use, and under Hermes each `%` is a heap allocation plus a bit-at-a-time long division. In runs where it got in first, JS could not tell Godot which car to show until it finished.
 
-**The fix:** `loadOrCreateDeviceKeys` now takes an optional native deriver, wired to the existing `VcsecSigner.devicePublicKey` in CryptoKit. The key is still re-derived rather than cached, which keeps the existing rule in `keystore.ts`. On the real key, the native result matched noble byte for byte, and key loading took 5 ms. iOS only for now; Android falls back to noble.
+**The fix:** `loadOrCreateDeviceKeys` now takes an optional native deriver, wired to the existing `VcsecSigner.devicePublicKey` in CryptoKit. The key is still re-derived rather than cached, which keeps the existing rule in `keystore.ts`. On the real key, the native result matched noble byte for byte, and key loading took 5 ms. Android uses its existing Kotlin `VcsecSigner.devicePublicKey`, the same derivation its passive-entry responder already uses (see below).
 
 **What that gained, from the ring log (ms after JS boot, 200 launches before, 120 after):**
 
@@ -111,6 +111,16 @@ Godot's own boot is cheap and was not the main cost. The largest JS-thread stall
 | `FIRST_PRODUCT_LOADED` | 512 | 397 | 521 | 502 |
 
 Expect a modest visible change, not a transformed launch. The JS thread is free about 300 ms sooner, but the car only arrives about 115 ms sooner at the median, and possibly less on screen. These timestamps record when JS received each message, and JS was stalled until about 510 ms, so the engine may have finished loading the car before the "before" figure. Launches where the stall delayed `godot boot` benefit most.
+
+**Android, Galaxy S22 (ms after JS boot, 20 cold launches each via `am start -W`, same tree with and without the Kotlin function):**
+
+| Event | Before, median | After, median | Before, p90 | After, p90 |
+|---|---|---|---|---|
+| `godot boot` (JS tells Godot) | 228 | 224 | 254 | 295 |
+| `GODOT_READY` | 1,366 | 957 | 1,474 | 1,011 |
+| `FIRST_PRODUCT_LOADED` | 1,565 | 1,457 | 1,675 | 1,506 |
+
+The same shape as iOS: JS hears `GODOT_READY` about 410 ms sooner, but the car arrives only about 110 ms sooner at the median (170 ms at p90), and the slowest launch went from 1,965 to 1,511 ms. Android's engine is much slower to get ready than iOS's either way (about 0.95 s against 0.2 s).
 
 We have not measured Tesla's app or on-screen time, so this compares our own before and after, not the two apps.
 
@@ -148,7 +158,7 @@ At a true 5% crash rate, 200 clean launches would have odds of about 1 in 28,000
 
 Bug 2 was tested with a temporary forced unmount, a remount 4 s later, and an instant key swap. The app survived all of it. Frames sampled after recovery were byte-identical to frames from before the unmount. A 30 ms black or flipped blip appears when JS re-sends the scene state, and the same blip occurs on a normal cold boot behind the splash.
 
-Not tested: the orbit drag fix (the sizes are confirmed by the guards), and Android (unchanged).
+Not tested: the orbit drag fix (the sizes are confirmed by the guards). Android only received the native public key. The three fixes are all in iOS-only code, and Android was not checked for equivalent bugs.
 
 These numbers only count process deaths after `devicectl` launches. All 444 launches in those runs became active, so they say nothing about Bug 3.
 
