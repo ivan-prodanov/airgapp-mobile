@@ -19,7 +19,7 @@ function hostOf(baseUrl: string): string {
 // foreground `url` event. Non-enrol links (shared locations, etc.) fall through
 // untouched — parseEnrolUrl returns null for anything that isn't ours.
 export function useEnrolIntake(): void {
-  const { reload } = useCarLinkStatus();
+  const { reload, refresh } = useCarLinkStatus();
   const inFlight = useRef(false);
   const lastUrl = useRef<string | null>(null);
 
@@ -47,7 +47,17 @@ export function useEnrolIntake(): void {
             style: 'default',
             onPress: () => {
               savePiConfig(store, { baseUrl: parsed.baseUrl, token: parsed.token })
-                .then(() => reload())
+                .then(() => {
+                  // Re-read the new relay config + rebuild the gateway…
+                  reload();
+                  // …then actively go live. Without this the car sits idle until
+                  // the next poll (or forever, if the poll loop had given up after
+                  // the pre-enrol all-transports-failed). reload() loads the config
+                  // asynchronously, so kick refresh() once the gateway's had time
+                  // to rebuild, with a second attempt as a safety net for that race.
+                  setTimeout(() => refresh(), 700);
+                  setTimeout(() => refresh(), 2000);
+                })
                 .catch(() => {})
                 .finally(() => void (inFlight.current = false));
             },
