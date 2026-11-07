@@ -106,6 +106,12 @@ public class PassiveEntryModule: Module {
       KeychainKey.setKeyHex(privHex)
     }
 
+    // The 65-byte SEC1 public key for a private scalar, as hex. JS calls this on every launch
+    // because deriving it in Hermes stalls the JS thread for ~450ms. Null for an invalid scalar.
+    Function("devicePublicKey") { (privHex: String) -> String? in
+      VcsecSigner.devicePublicKey(privHex: privHex).map(VcsecSigner.hex)
+    }
+
     // Read the stored key back, derive its public key, and return the fingerprint
     // (SHA256(pub)[:8] colon-hex) — must equal JS deviceKeyFingerprint to prove
     // native holds the same key. Returns "no key" when none is stored.

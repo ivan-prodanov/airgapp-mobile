@@ -43,6 +43,14 @@ import type { DeviceKeys, SecretStore } from './types';
 // silently misreading old data.
 const DEVICE_KEY_STORAGE_KEY = 'ble.deviceKey.v1';
 
+// Derives the SEC1 uncompressed public key (hex) in native code, or returns null
+// when it can't. The first noble base-point multiply builds a precompute table,
+// which takes ~450ms of BigInt work on the JS thread under Hermes. Loading keys
+// happens on every launch, and that stall delays telling Godot which car to show.
+// The key is still re-derived rather than cached, so it can't disagree with the
+// scalar.
+export type NativePublicKeyDeriver = (privHex: string) => string | null;
+
 // generateDeviceKeys creates a fresh P-256 keypair. privateScalar is the
 // 32-byte big-endian scalar; publicKeyRaw is the 65-byte SEC1 uncompressed
 // point (0x04 || X || Y) — pass isCompressed=false, matching the shape the
@@ -69,8 +77,11 @@ function generateDeviceKeys(): DeviceKeys {
 // scalar, so it is RE-DERIVED on every load rather than cached, the same
 // pattern the browser reference's session-metadata rehydration used for
 // derived material.
-export async function loadOrCreateDeviceKeys(store: SecretStore): Promise<DeviceKeys> {
-  const existing = await loadDeviceKeys(store);
+export async function loadOrCreateDeviceKeys(
+  store: SecretStore,
+  deriveNative?: NativePublicKeyDeriver,
+): Promise<DeviceKeys> {
+  const existing = await loadDeviceKeys(store, deriveNative);
   if (existing) return existing;
   const keys = generateDeviceKeys();
   await store.setItem(DEVICE_KEY_STORAGE_KEY, bytesToHex(keys.privateScalar));
@@ -85,11 +96,19 @@ export async function loadOrCreateDeviceKeys(store: SecretStore): Promise<Device
 // calling it to inspect state changes the state: a read-only diagnostic built on
 // it reported a key immediately after a full wipe — because it had just made one
 // (2026-07-27).
-export async function loadDeviceKeys(store: SecretStore): Promise<DeviceKeys | null> {
+export async function loadDeviceKeys(
+  store: SecretStore,
+  deriveNative?: NativePublicKeyDeriver,
+): Promise<DeviceKeys | null> {
   const existingHex = await store.getItem(DEVICE_KEY_STORAGE_KEY);
   if (!existingHex) return null;
   const privateScalar = hexToBytes(existingHex);
-  const publicKeyRaw = p256.getPublicKey(privateScalar, false);
+  const nativeHex = deriveNative?.(existingHex);
+  const nativeKey = nativeHex ? hexToBytes(nativeHex) : null;
+  const publicKeyRaw =
+    nativeKey?.length === 65 && nativeKey[0] === 0x04
+      ? nativeKey
+      : p256.getPublicKey(privateScalar, false);
   return { privateScalar, publicKeyRaw };
 }
 

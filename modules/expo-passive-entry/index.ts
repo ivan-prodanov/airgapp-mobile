@@ -46,6 +46,12 @@ export function passiveEntryDeviceFingerprint(): string {
   return PassiveEntryModule?.deviceFingerprint() ?? 'native module absent';
 }
 
+// Derive a private scalar's SEC1 uncompressed public key (hex) in native code.
+// Null when native can't, so the caller falls back to JS.
+export function passiveEntryDevicePublicKey(privHex: string): string | null {
+  return PassiveEntryModule?.devicePublicKey?.(privHex) ?? null;
+}
+
 // Subscribe to the native diagnostics stream. Returns an unsubscribe fn (no-op
 // when the native module is absent).
 export function onPassiveEntryLog(listener: (line: string) => void): () => void {

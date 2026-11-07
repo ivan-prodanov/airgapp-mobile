@@ -97,6 +97,7 @@ import { bytesToHex } from '@/ble/bytes';
 import {
   startPassiveEntry,
   stopPassiveEntry,
+  passiveEntryDevicePublicKey,
   setPassiveEntryDeviceKey,
   setPassiveEntryForegroundActive,
   onPassiveEntryConnectionState,
@@ -636,7 +637,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       try {
         const cfg = await loadPiConfig(store);
         const carCfg = await loadCarConfig(store);
-        const keys = await loadOrCreateDeviceKeys(store);
+        const keys = await loadOrCreateDeviceKeys(store, passiveEntryDevicePublicKey);
         // Seed the transport preference from last session BEFORE cfgRef/keysRef
         // are set — those are what let getGateway build the selector, so the seed
         // must be in place first or the first cold open re-pays the BLE timeout.

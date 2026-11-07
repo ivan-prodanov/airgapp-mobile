@@ -100,3 +100,44 @@ test('loadDeviceKeys returns the SAME key loadOrCreateDeviceKeys persisted', asy
   assert.deepEqual(read?.privateScalar, created.privateScalar);
   assert.deepEqual(read?.publicKeyRaw, created.publicKeyRaw);
 });
+
+// A native deriver lets boot skip noble's first-use precompute (~450ms of BigInt work on Hermes, on
+// the JS thread, on every launch). Distinct from the real key so these prove which path produced it.
+const NATIVE_PUB_HEX = `04${'ab'.repeat(64)}`;
+
+test('loadDeviceKeys uses the native deriver and passes it the stored scalar', async () => {
+  const store = createMemorySecretStore();
+  const created = await loadOrCreateDeviceKeys(store);
+  const seen: string[] = [];
+  const keys = await loadDeviceKeys(store, (privHex) => {
+    seen.push(privHex);
+    return NATIVE_PUB_HEX;
+  });
+  assert.deepEqual(seen, [await store.getItem('ble.deviceKey.v1')]);
+  assert.deepEqual(keys!.privateScalar, created.privateScalar);
+  assert.equal(keys!.publicKeyRaw.length, 65);
+  assert.equal(keys!.publicKeyRaw[1], 0xab, 'public key should come from the native deriver');
+});
+
+test('loadOrCreateDeviceKeys passes the native deriver through for an existing key', async () => {
+  const store = createMemorySecretStore();
+  await loadOrCreateDeviceKeys(store);
+  const keys = await loadOrCreateDeviceKeys(store, () => NATIVE_PUB_HEX);
+  assert.equal(keys.publicKeyRaw[1], 0xab);
+});
+
+test('a native deriver with no answer (absent module, Android) falls back to noble', async () => {
+  const store = createMemorySecretStore();
+  const created = await loadOrCreateDeviceKeys(store);
+  const keys = await loadDeviceKeys(store, () => null);
+  assert.deepEqual(keys!.publicKeyRaw, created.publicKeyRaw);
+});
+
+test('a malformed native public key is rejected in favour of noble', async () => {
+  const store = createMemorySecretStore();
+  const created = await loadOrCreateDeviceKeys(store);
+  for (const bad of ['', 'abcd', `05${'ab'.repeat(64)}`, `04${'ab'.repeat(63)}`]) {
+    const keys = await loadDeviceKeys(store, () => bad);
+    assert.deepEqual(keys!.publicKeyRaw, created.publicKeyRaw, `accepted malformed key "${bad}"`);
+  }
+});
