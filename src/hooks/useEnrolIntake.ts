@@ -34,14 +34,16 @@ export function useEnrolIntake(): void {
       lastUrl.current = incoming;
       inFlight.current = true;
 
-      const name = parsed.nickname?.trim();
-      const label = name ? `"${name}" (${hostOf(parsed.baseUrl)})` : hostOf(parsed.baseUrl);
+      // Show the relay host, not the QR's nickname: the host is the thing the
+      // user can recognise as their own Pi (the anti-phishing check), whereas
+      // the nickname is just the token's label and reads as nonsense here.
+      const host = hostOf(parsed.baseUrl);
       Alert.alert(
-        'Connect your car relay?',
-        `This lets airgapp reach your car through ${label} when you're away from it. ` +
-          'Only continue if you set up this relay yourself.',
+        'Add this car relay?',
+        `airgapp will reach your car through ${host} when you're out of Bluetooth range.\n\n` +
+          'Only add it if this relay is yours.',
         [
-          { text: 'Not now', style: 'cancel', onPress: () => void (inFlight.current = false) },
+          { text: 'Cancel', style: 'cancel', onPress: () => void (inFlight.current = false) },
           {
             text: 'Connect',
             style: 'default',
