@@ -203,7 +203,7 @@ The reminder is posted while the process is still alive, so SpringBoard opens th
 
 **Why the harness missed it:** remote kills produced no relaunch within 14 s, and its launches never followed a swipe-kill. Process liveness also can't detect this, because the app stays alive in the background. Treat a launch as healthy only if it logs `foregroundResponderActive=true`.
 
-**Also seen, not addressed:** background launches still boot Godot, which then fails with `Insufficient Permission (to submit GPU work from background)`. It wasn't the cause here, but genuine background wakes will still do this wasted work.
+**Also seen:** background launches booted Godot, which then failed with `Insufficient Permission (to submit GPU work from background)`. It wasn't the cause here. Genuine wakes (Bluetooth restoration, car beacon) happen about twice a day, and in the ring log 59 of 76 of them reached `GODOT_READY` in the background. `ExpoGodotView` now waits for `willEnterForeground` before attaching the engine when the app is in the background. Foreground launches are unchanged (20 launches each: `FIRST_PRODUCT_LOADED` median 397 ms before, 398 ms after). Not yet checked on a genuine wake: that needs the car.
 
 ## Reproducing
 
