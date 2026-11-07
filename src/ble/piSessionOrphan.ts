@@ -23,8 +23,9 @@ export const LAST_SESSION_KEY = 'ble.lastSessionId';
 export function wrapPiClient(
   cfg: { baseUrl: string; token: string },
   store: SecretStore,
+  lifetime?: AbortSignal,
 ): CarTransport {
-  const pi = new PiClient(cfg);
+  const pi = new PiClient(cfg, undefined, lifetime);
   return {
     openSession: async (vin: string) => {
       const id = await pi.openSession(vin);

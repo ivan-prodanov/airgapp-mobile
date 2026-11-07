@@ -38,7 +38,9 @@ export type { PiConfig } from './types';
 //   network       — fetch itself rejected for a non-abort reason (DNS,
 //     TLS/cert, connection refused — Pi unreachable or URL misconfigured).
 //   http         — any other non-2xx status.
-export type TransportErrorKind = 'session-gone' | 'timeout' | 'ble' | 'auth' | 'http' | 'network';
+//   cancelled    — the generation that made this request was retired, so the
+//     answer no longer matters. Not a failure of the Pi or the car.
+export type TransportErrorKind = 'session-gone' | 'timeout' | 'ble' | 'auth' | 'http' | 'network' | 'cancelled';
 
 export class TransportError extends Error {
   readonly kind: TransportErrorKind;
@@ -140,8 +142,13 @@ export class PiClient implements PiTransport {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly fetchImpl: PiFetch;
+  private readonly lifetime?: AbortSignal;
 
-  constructor(cfg: { baseUrl: string; token: string }, fetchImpl?: PiFetch) {
+  // `lifetime` is the transport generation this client belongs to. Retiring it
+  // cancels this client's open and exchange requests at once. closeSession is
+  // deliberately exempt: it frees the Pi's single radio, and retiring is exactly
+  // when that has to go out.
+  constructor(cfg: { baseUrl: string; token: string }, fetchImpl?: PiFetch, lifetime?: AbortSignal) {
     assertPiBaseUrl(cfg.baseUrl);
     this.baseUrl = cfg.baseUrl.endsWith('/') ? cfg.baseUrl.slice(0, -1) : cfg.baseUrl;
     this.token = cfg.token;
@@ -151,6 +158,7 @@ export class PiClient implements PiTransport {
     // class actually calls through — the real fetch satisfies PiFetch at
     // runtime, TS just can't see that without help.
     this.fetchImpl = fetchImpl ?? ((globalThis.fetch as unknown) as PiFetch);
+    this.lifetime = lifetime;
   }
 
   // request is the single call site all nine endpoints funnel through: it
@@ -167,7 +175,16 @@ export class PiClient implements PiTransport {
   // which patch the global setTimeout/clearTimeout this method calls. Future
   // transport-adjacent tasks needing a deterministic timeout should reuse that
   // pattern rather than inventing a configurable-timeout constructor knob.
-  private async request<T>(method: string, path: string, body: unknown, timeoutMs: number): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body: unknown,
+    timeoutMs: number,
+    lifetime?: AbortSignal,
+  ): Promise<T> {
+    const cancelled = () => new TransportError('cancelled', `request cancelled — ${method} ${path}`);
+    if (lifetime?.aborted) throw cancelled();
+
     const url = joinUrl(this.baseUrl, path);
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
@@ -177,18 +194,22 @@ export class PiClient implements PiTransport {
 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const onRetire = () => ctrl.abort();
+    lifetime?.addEventListener('abort', onRetire);
 
     let res: PiResponseLike;
     try {
       res = await this.fetchImpl(url, { method, headers, body: jsonBody, signal: ctrl.signal });
     } catch (e) {
-      clearTimeout(timer);
+      if (lifetime?.aborted) throw cancelled();
       if (isAbortError(e)) {
         throw new TransportError('timeout', `Pi did not respond within ${timeoutMs}ms — ${method} ${path}`);
       }
       throw new TransportError('network', `network error reaching the Pi — ${errMsg(e)}`);
+    } finally {
+      clearTimeout(timer);
+      lifetime?.removeEventListener('abort', onRetire);
     }
-    clearTimeout(timer);
 
     if (res.status === 204) return null as T;
 
@@ -233,6 +254,7 @@ export class PiClient implements PiTransport {
       `${API_PREFIX}/sessions`,
       { vin },
       OPEN_SESSION_TIMEOUT_MS,
+      this.lifetime,
     );
     return json.session_id;
   }
@@ -246,6 +268,7 @@ export class PiClient implements PiTransport {
       `${API_PREFIX}/sessions/${sessionId}/exchange`,
       { payload_b64: payloadB64, timeout_ms: timeoutMs },
       timeoutMs + EXCHANGE_TIMEOUT_BUFFER_MS,
+      this.lifetime,
     );
     return json.response_b64;
   }

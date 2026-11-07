@@ -128,4 +128,7 @@ export interface SessionParams {
   // Needed when a caller wants its OWN link (the hedge probe's second central),
   // not to be handed another transport's cached session for the same VIN.
   dedicated?: boolean;
+  // The transport generation asking. A retired one leaves no session behind and
+  // evicts nothing: see withCachedSession.
+  lifetime?: AbortSignal;
 }

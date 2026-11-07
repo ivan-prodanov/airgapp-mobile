@@ -309,3 +309,53 @@ test('exchange timeout budget is timeoutMs + 5s, not the flat 45s openSession bu
   t.mock.timers.tick(5000); // now at 7000ms total, past the 2000+5000 budget
   await assert.rejects(pending, (e: unknown) => e instanceof TransportError && e.kind === 'timeout');
 });
+
+// --- generation lifetime -----------------------------------------------------
+
+test('lifetime: retiring cancels an in-flight open as kind=cancelled, not a timeout', async () => {
+  const lifetime = new AbortController();
+  const client = new PiClient(OK_BASE, abortAwareFetch([]), lifetime.signal);
+
+  const pending = client.openSession('5YJ3XYZ');
+  lifetime.abort();
+
+  await assert.rejects(pending, (e: unknown) => e instanceof TransportError && e.kind === 'cancelled');
+});
+
+test('lifetime: retiring cancels an in-flight exchange too', async () => {
+  const lifetime = new AbortController();
+  const client = new PiClient(OK_BASE, abortAwareFetch([]), lifetime.signal);
+
+  const pending = client.exchange('sess-1', 'AAAA', 2000);
+  lifetime.abort();
+
+  await assert.rejects(pending, (e: unknown) => e instanceof TransportError && e.kind === 'cancelled');
+});
+
+test('lifetime: an already-retired client does not hit the network', async () => {
+  const calls: CapturedCall[] = [];
+  const client = new PiClient(OK_BASE, respondingFetch(calls, 200, { session_id: 's', vin: 'v' }), AbortSignal.abort());
+
+  await assert.rejects(client.openSession('5YJ3XYZ'), (e: unknown) => e instanceof TransportError && e.kind === 'cancelled');
+  assert.equal(calls.length, 0);
+});
+
+test('lifetime: closeSession still goes out, since it is what frees the single radio', async () => {
+  const calls: CapturedCall[] = [];
+  const client = new PiClient(OK_BASE, respondingFetch(calls, 204), AbortSignal.abort());
+
+  await client.closeSession('sess-1');
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.method, 'DELETE');
+});
+
+test('lifetime: a normal timeout is still reported as a timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const client = new PiClient(OK_BASE, abortAwareFetch([]), new AbortController().signal);
+
+  const pending = client.openSession('5YJ3XYZ');
+  t.mock.timers.tick(45_000);
+
+  await assert.rejects(pending, (e: unknown) => e instanceof TransportError && e.kind === 'timeout');
+});

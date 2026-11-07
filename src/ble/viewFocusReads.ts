@@ -220,3 +220,16 @@ export function planForCameraMode(
   }
   return readPlanFor(focus);
 }
+
+// focusedReadAllowed — whether the focused-read loop may run a read right now.
+//
+// It needs the car awake (domain-3 reads fault on a sleeping car) AND the main
+// VCSEC poll currently succeeding. `awake` alone is not enough: it is the LAST
+// good reading, so it stays true after the relay starts refusing us. With a removed
+// token that meant a rejected open every ~1.9s for as long as the app stayed open
+// (measured 2026-11-07), and with the relay unreachable each attempt takes up the
+// command queue. The poll is the loop that finds out when contact is back, every
+// 20s or sooner on a link-up or pull-to-refresh, so this resumes on its next success.
+export function focusedReadAllowed({ awake, pollOk }: { awake: boolean | undefined; pollOk: boolean }): boolean {
+  return awake === true && pollOk;
+}

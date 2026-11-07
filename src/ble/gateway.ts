@@ -18,6 +18,7 @@
 // plug into. Timers are injectable (the `sleep` arg) so tests never wait on a
 // real clock.
 
+import { GenerationCancelledError } from "./cancelled";
 import { buildCommand, type CarCommand } from "./commands";
 import { SessionQueue, sharedSessionQueue, type JobPriority } from "./queue";
 import {
@@ -71,7 +72,7 @@ import {
   type VcsecStatus,
   type InfotainmentSnapshot,
 } from "./telemetry";
-import type { Domain, DeviceKeys, PiTransport } from "./types";
+import type { Domain, DeviceKeys, PiTransport, Session } from "./types";
 import { logi, logw } from "../services/logbus";
 
 // Re-export the attempt cap under this module's name (it lives with the other
@@ -237,6 +238,17 @@ export interface CreateCarGatewayArgs {
   // Overall wall-clock budget for ONE command, across every attempt/evict/
   // delay. See DEFAULT_COMMAND_DEADLINE_MS.
   commandDeadlineMs?: number;
+  // When this gateway's transport generation ends. Retiring it stops everything
+  // the gateway has running or queued, which then settles as `cancelled`.
+  //
+  // A gateway has to be stopped, not just dropped, because what it shares outlives
+  // it: the session cache and the queue are per-process, and a loop keeps retrying
+  // after the last reference to its gateway is gone. Measured 2026-11-07 across
+  // three re-enrols: the old loop held the queue ~12s, then re-entered, found the
+  // NEW generation's cached session, called its own dead selector, and evicted the
+  // session that was working. That is the difference between a C3 `signal` and
+  // this: `signal` stops one command, and the rest of the gateway is still valid.
+  lifetime?: AbortSignal;
 }
 
 // The official app surfaces a failed command at exactly 25s; match it. This is
@@ -347,7 +359,19 @@ export function createCarGateway({
   sleep = realSleep,
   now = Date.now,
   commandDeadlineMs = DEFAULT_COMMAND_DEADLINE_MS,
+  lifetime,
 }: CreateCarGatewayArgs): CarGateway {
+  // withLiveSession is what runs inside a queue slot. A job that was queued before
+  // this generation retired must not start: it has no business touching the car,
+  // and the slot belongs to the generation after it.
+  function withLiveSession<T>(
+    domain: Domain,
+    body: (session: Session) => Promise<T>,
+  ): Promise<T> {
+    if (lifetime?.aborted) return Promise.reject(new GenerationCancelledError());
+    return withCachedSession({ transport, vin, deviceKeys, domain, lifetime }, body);
+  }
+
   // runAction is the shared heart of the gateway: the ported _directDo retry
   // loop. It drives ONE built action through the queue + cached session with
   // the full fault-recovery policy and returns both the structured outcome and
@@ -414,13 +438,13 @@ export function createCarGateway({
       const MAX_UNREACHABLE_EVICTS = 2;
 
       for (let attempt = 1; attempt <= MAX_BLE_ATTEMPTS; attempt++) {
-        if (signal?.aborted) return cancelled();
+        if (signal?.aborted || lifetime?.aborted) return cancelled();
         if (deadlineExceeded()) return timedOut();
         let result: CommandResult;
         try {
           result = await queue.enqueue(vin, () =>
-            withCachedSession(
-              { transport, vin, deviceKeys, domain: action.domain },
+            withLiveSession(
+              action.domain,
               async (session) => {
                 // Domain lockstep guard (carry-forward): the cached session MUST
                 // target the same domain the command was built for. A mismatch is
@@ -441,6 +465,9 @@ export function createCarGateway({
             ),
           );
         } catch (e) {
+          // Retired: stop here, BEFORE any of the evictions below. Those act on
+          // the shared cache, which by now may hold the next generation's session.
+          if (lifetime?.aborted) return cancelled();
           // Transport-dead: the cached BLE link is gone. A SessionInfoRequest on
           // the same dead link would just re-fail, so evict (full teardown) and
           // let the next attempt cold-handshake a fresh Pi session.
@@ -615,6 +642,7 @@ export function createCarGateway({
           };
         }
 
+        if (lifetime?.aborted) return cancelled();
         if (policy.category === "session-stale") {
           // Refresh the session key in place on the same BLE link (no teardown),
           // then retry. Fall back to a full evict on failure (inside
@@ -660,12 +688,18 @@ export function createCarGateway({
     // awaits (connect/discover/MTU) so the orphan dies on its own; the
     // user-visible guarantee here is only that the COMMAND always terminates
     // at the deadline.
+    //
+    // Retiring settles it the same way: the loop stops at its next check, but
+    // the caller should not have to wait for that.
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let onRetire: (() => void) | undefined;
     const deadlineTimer = new Promise<{
       outcome: CommandOutcome;
       result: CommandResult | null;
     }>((resolve) => {
       timer = setTimeout(() => resolve(timedOut()), commandDeadlineMs);
+      onRetire = () => resolve(cancelled());
+      lifetime?.addEventListener("abort", onRetire);
     });
     try {
       return await Promise.race([runAttempts(), deadlineTimer]);
@@ -673,6 +707,7 @@ export function createCarGateway({
       // Clear it when the loop wins, so a pending 25s timer never keeps the
       // process/handle alive after the command is done.
       if (timer !== undefined) clearTimeout(timer);
+      if (onRetire) lifetime?.removeEventListener("abort", onRetire);
     }
   }
 
@@ -693,6 +728,7 @@ export function createCarGateway({
     const action = vcsecGetStatusAction();
     const { outcome, result } = await runAction(action, "vcsecGetStatus");
     if (!outcome.ok) {
+      if (outcome.kind === "cancelled") throw new GenerationCancelledError(outcome.message);
       throw new Error(`readVcsecStatus failed: ${outcome.message}`);
     }
     if (!result?.decryptedPayload) {
@@ -936,8 +972,8 @@ export function createCarGateway({
     const { out: slices, sawFault: anyFault } = await queue.enqueue(
       vin,
       () =>
-        withCachedSession(
-          { transport, vin, deviceKeys, domain },
+        withLiveSession(
+          domain,
           async (session) => {
             const out: InfotainmentSnapshot[] = [];
             let sawFault = false;

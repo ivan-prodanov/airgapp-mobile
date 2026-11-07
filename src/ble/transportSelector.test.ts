@@ -6,7 +6,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSelectingTransport, type TransportCandidate } from './transportSelector';
+import { isCancelledError } from './cancelled';
+import { isTransportDeadError } from './session';
+import {
+  AllTransportsFailedError,
+  bleWaitBudgetMs,
+  createSelectingTransport,
+  type TransportCandidate,
+} from './transportSelector';
 import type { CarTransport } from './types';
 
 // --- fake CarTransport ------------------------------------------------------
@@ -269,4 +276,143 @@ test('closeSession clears the active transport even when the delegate rejects, s
   const id = await t.openSession('5YJ3XYZ');
   assert.equal(id, 'ble-sess-1');
   assert.equal(ble.instances.length, 2, 'second openSession must construct a fresh instance, proving re-selection happened');
+});
+
+// --- Typed failures --------------------------------------------------------
+
+const authError = () => Object.assign(new Error('unauthorized'), { kind: 'auth' });
+const networkError = () => Object.assign(new Error('network error reaching the Pi'), { kind: 'network' });
+
+test('all failed: a revoked token anywhere makes the whole failure kind=auth', async () => {
+  const ble = makeCandidate('ble', fails('BLE connection closed — did not connect'));
+  const pi = makeCandidate('pi', async () => {
+    throw authError();
+  });
+  const selector = createSelectingTransport([ble.candidate, pi.candidate]);
+
+  await assert.rejects(selector.openSession('VIN'), (e: unknown) => {
+    assert.ok(e instanceof AllTransportsFailedError);
+    assert.equal(e.kind, 'auth');
+    return true;
+  });
+});
+
+test('all failed: with no auth failure it is kind=unreachable, not a dead link', async () => {
+  const ble = makeCandidate('ble', fails('BLE connection closed — did not connect'));
+  const pi = makeCandidate('pi', async () => {
+    throw networkError();
+  });
+  const selector = createSelectingTransport([ble.candidate, pi.candidate]);
+
+  await assert.rejects(selector.openSession('VIN'), (e: unknown) => {
+    assert.ok(e instanceof AllTransportsFailedError);
+    assert.equal(e.kind, 'unreachable');
+    assert.match(e.message, /all transports failed — ble: BLE connection closed.*; pi: network error/);
+    // The message contains "BLE connection closed", which is exactly what used
+    // to make this read as a dead session and retry up to the deadline.
+    assert.equal(isTransportDeadError(e), false);
+    return true;
+  });
+});
+
+test('exchange with no active transport is a session miss, so the caller re-opens', async () => {
+  const selector = createSelectingTransport([makeCandidate('pi', succeeds('s1')).candidate]);
+
+  await assert.rejects(selector.exchange('s1', 'AAAA', 1000), (e: unknown) => {
+    assert.equal((e as { kind?: unknown }).kind, 'session-gone');
+    assert.equal(isTransportDeadError(e), true);
+    return true;
+  });
+});
+
+// --- Generation lifetime ---------------------------------------------------
+
+test('lifetime: a retired selector opens nothing', async () => {
+  const pi = makeCandidate('pi', succeeds('s1'));
+  const selector = createSelectingTransport([pi.candidate], undefined, { lifetime: AbortSignal.abort() });
+
+  await assert.rejects(selector.openSession('VIN'), isCancelledError);
+  assert.equal(pi.instances.length, 0);
+});
+
+test('lifetime: retiring during an open does not fall through to the next candidate', async () => {
+  const ctrl = new AbortController();
+  const first = makeCandidate('pi', async () => {
+    ctrl.abort();
+    throw new Error('aborted');
+  });
+  const second = makeCandidate('ble', succeeds('s2'));
+  const selector = createSelectingTransport([first.candidate, second.candidate], undefined, {
+    lifetime: ctrl.signal,
+  });
+
+  await assert.rejects(selector.openSession('VIN'), isCancelledError);
+  assert.equal(second.instances.length, 0, 'a retired generation must not start a second open');
+});
+
+test('lifetime: an open that lands just after retiring is closed, not left holding the radio', async () => {
+  const ctrl = new AbortController();
+  const pi = makeCandidate('pi', async () => {
+    ctrl.abort();
+    return 's1';
+  });
+  const selector = createSelectingTransport([pi.candidate], undefined, { lifetime: ctrl.signal });
+
+  await assert.rejects(selector.openSession('VIN'), isCancelledError);
+  assert.deepEqual(pi.instances[0].closeSessionCalls, ['s1']);
+});
+
+test('lifetime: a retired selector refuses exchange but can still close', async () => {
+  const ctrl = new AbortController();
+  const pi = makeCandidate('pi', succeeds('s1'));
+  const selector = createSelectingTransport([pi.candidate], undefined, { lifetime: ctrl.signal });
+  await selector.openSession('VIN');
+
+  ctrl.abort();
+
+  await assert.rejects(selector.exchange('s1', 'AAAA', 1000), isCancelledError);
+  await selector.closeSession('s1');
+  assert.deepEqual(pi.instances[0].closeSessionCalls, ['s1']);
+});
+
+// --- What a later candidate knows ------------------------------------------
+
+test('make() is told how the earlier candidates failed', async () => {
+  const seen: unknown[] = [];
+  const selector = createSelectingTransport([
+    {
+      name: 'pi',
+      make: () =>
+        new FakeTransport(async () => {
+          throw networkError();
+        }),
+    },
+    {
+      name: 'ble',
+      make: (prior) => {
+        seen.push(prior);
+        return new FakeTransport(async () => 's1');
+      },
+    },
+  ]);
+
+  await selector.openSession('VIN');
+
+  assert.deepEqual(seen, [[{ name: 'pi', kind: 'network', message: 'network error reaching the Pi' }]]);
+});
+
+test('bleWaitBudgetMs: BLE alone keeps its budget', () => {
+  assert.equal(bleWaitBudgetMs([], { hasPi: false, budgetMs: 6000 }), 6000);
+});
+
+test('bleWaitBudgetMs: no wait when the relay answered, since it is the queue-blocking case', () => {
+  const answered = [{ name: 'pi', kind: 'auth', message: 'unauthorized' }];
+  assert.equal(bleWaitBudgetMs(answered, { hasPi: true, budgetMs: 6000 }), 0);
+  assert.equal(bleWaitBudgetMs([], { hasPi: true, budgetMs: 6000 }), 0);
+});
+
+test('bleWaitBudgetMs: keeps the wait when the phone cannot reach the relay at all', () => {
+  // No signal in a garage: BLE coming up is the only way to the car.
+  const offline = [{ name: 'pi', kind: 'network', message: 'network error' }];
+  assert.equal(bleWaitBudgetMs(offline, { hasPi: true, budgetMs: 6000 }), 6000);
 });

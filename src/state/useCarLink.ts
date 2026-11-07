@@ -58,7 +58,9 @@ import { secureStoreSecretStore as store } from '@/ble/secureStoreSecretStore';
 import { BridgedBleTransport } from '@/ble/bridgedBleTransport';
 import { foregroundBleLink } from '@/ble/foregroundBleLink';
 import { peekLiveSession } from '@/ble/session';
+import { isCancelledError } from '@/ble/cancelled';
 import { wrapPiClient, recoverOrphanedSession } from '@/ble/piSessionOrphan';
+import { bleWaitBudgetMs } from '@/ble/transportSelector';
 import { infotainmentToPatch, vcsecStatusToPatch, type RawSchedule } from '@/ble/telemetry';
 import { ensureAwake } from '@/ble/wakeGate';
 import {
@@ -75,7 +77,7 @@ import { withTransportLogging } from '@/ble/loggingTransport';
 import { logd, logi, logw, loge } from '@/services/logbus';
 import { startPiEventStream } from './piEventStream';
 import { formatUnsolicitedFrame, describeCommandStatus, commandStatusAccepted, describeRoutableVerdict, routableVerdictAccepted } from '@/ble/passiveEntryCapture';
-import { nextRotatedState, planForCameraMode } from '@/ble/viewFocusReads';
+import { nextRotatedState, planForCameraMode, focusedReadAllowed } from '@/ble/viewFocusReads';
 import { backgroundReadsSuspended } from '@/ble/backgroundReads';
 import { makeAuthResponder } from '@/ble/passiveEntryResponder';
 import {
@@ -618,20 +620,51 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   // only go live after a restart.
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  // Pick up a car enrolled after launch. Drops the cached gateway + selector so
-  // the next getGateway() rebuilds for the NEW vin (the old gateway is bound to
-  // the VIN it was built with), then re-runs the load effect, which refreshes
-  // cfgRef/carCfgRef/keysRef, linked/vin and the cached-telemetry rehydrate.
-  const reload = useCallback(() => {
-    gatewayRef.current = null; // force a rebuild for the new VIN
-    selectorRef.current?.closeSession('').catch(() => {});
+  // The current transport generation: this gateway + selector and everything they
+  // minted, all built from one relay config. retireGeneration ends it.
+  const generationRef = useRef<AbortController | null>(null);
+  // True from reload() until the load effect has the new config in the refs, so
+  // nothing can build a gateway from the config being replaced in that gap.
+  const configLoadingRef = useRef(false);
+
+  // retireGeneration ends the current generation, including whatever it still has
+  // running. Dropping the refs alone does not stop that: the session cache and the
+  // queue are per-process, so the old retry loop would keep holding the queue and
+  // come back to evict the next generation's session (measured 2026-11-07, ~45s to
+  // reconnect after a token change, see gateway.ts's `lifetime`).
+  //
+  // Closes BEFORE aborting so the DELETE that frees the Pi's radio is on its way
+  // first. closeSession is exempt from the abort, so the order is only tidiness.
+  const retireGeneration = useCallback(() => {
+    closeAllCachedSessions();
+    generationRef.current?.abort();
+    generationRef.current = null;
+    const sel = selectorRef.current;
     selectorRef.current = null;
-    setReloadNonce((n) => n + 1);
+    gatewayRef.current = null;
+    if (sel) sel.closeSession('').catch(() => {});
   }, []);
+
+  // Pick up a car enrolled, or a relay token replaced, after launch. Retires the
+  // current generation so the next getGateway() builds for the NEW config, then
+  // re-runs the load effect, which refreshes cfgRef/carCfgRef/keysRef, linked/vin
+  // and the cached-telemetry rehydrate.
+  const reload = useCallback(() => {
+    // The zero point for "how long did going live take": without it, the log can
+    // only infer when the config changed.
+    logi('lifecycle', 'reload: new config, retiring the current generation');
+    configLoadingRef.current = true;
+    stopStreamRef.current?.(); // authenticated with the token being replaced
+    retireGeneration();
+    setReloadNonce((n) => n + 1);
+  }, [retireGeneration]);
 
   // Load config + device keys on mount and on every reload() (only when the feature is on).
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      configLoadingRef.current = false;
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -647,15 +680,12 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         cfgRef.current = cfg;
         carCfgRef.current = carCfg;
         keysRef.current = keys;
-        // A poll tick firing between reload() and here could rebuild a gateway from the
-        // PREVIOUS carCfgRef (old vin). Discard it now that carCfgRef holds the freshly
-        // loaded car, so the next getGateway() rebuilds for the correct vin. activeIsLive
-        // only checks vin equality, not which gateway was built, so it cannot catch this.
-        // Synchronous with the ref swap on purpose (no await in between): anything built
-        // after this point already used the NEW refs and must not be thrown away.
-        gatewayRef.current = null;
-        selectorRef.current?.closeSession('').catch(() => {});
-        selectorRef.current = null;
+        // Anything built before this point used the PREVIOUS refs, so it goes now that
+        // they hold the freshly loaded config. Synchronous with the ref swap on purpose
+        // (no await in between): anything built after this point already used the NEW
+        // refs and must not be thrown away.
+        retireGeneration();
+        configLoadingRef.current = false;
         setPiConfigured(!!cfg?.baseUrl);
         // Restore a wedge proven in an earlier launch. Without this the app
         // opens looking healthy while the OS bond — which outlives our process
@@ -710,12 +740,13 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       } catch (err) {
         // Leave unlinked — a missing/unreadable config just means no live car.
         console.warn('[useCarLink] load failed', err);
+        if (!cancelled) configLoadingRef.current = false;
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [enabled, reloadNonce]);
+  }, [enabled, reloadNonce, retireGeneration]);
 
   // getGateway builds (once) and returns the single cached gateway, or null if
   // not linked / not yet loaded. The selector is a stable instance so a
@@ -725,11 +756,16 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     const carCfg = carCfgRef.current;
     const keys = keysRef.current;
     if (!carCfg?.vin || !keys) return null;
+    if (configLoadingRef.current) return null; // these refs are about to be replaced
     // Capture the narrowed VIN: the closures below (make(), authResponder) lose
     // cfg's narrowing, and `carCfg.vin!` would hide a real nullability question.
     const vin = carCfg.vin;
     if (!gatewayRef.current) {
       if (!selectorRef.current) {
+        const generation = new AbortController();
+        generationRef.current = generation;
+        const lifetime = generation.signal;
+        const hasPi = !!(cfg?.baseUrl && cfg?.token);
         const candidates: TransportCandidate[] = [];
         // BLE first (matches the official app's BLE-primary behavior), Pi
         // fallback when a base URL + token are configured.
@@ -738,8 +774,14 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
           // A thin command transport over the ONE persistent foregroundBleLink,
           // which owns the always-on passive responder + VCSEC-push routing (set
           // in the foreground lifecycle effect below), not per-transport.
-          make: () =>
-            withTransportLogging('ble', new BridgedBleTransport({ scanTimeoutMs: AUTO_BLE_SCAN_TIMEOUT_MS })),
+          make: (prior) =>
+            withTransportLogging(
+              'ble',
+              new BridgedBleTransport({
+                scanTimeoutMs: bleWaitBudgetMs(prior, { hasPi, budgetMs: AUTO_BLE_SCAN_TIMEOUT_MS }),
+                lifetime,
+              }),
+            ),
         });
         // The Pi arm is optional now: no credentials simply means no Pi
         // candidate, and direct BLE carries on. `cfg` is no longer narrowed by
@@ -748,7 +790,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         if (piCfg?.baseUrl && piCfg?.token) {
           candidates.push({
             name: 'pi',
-            make: () => withTransportLogging('pi', wrapPiClient({ baseUrl: piCfg.baseUrl, token: piCfg.token }, store)),
+            make: () =>
+              withTransportLogging('pi', wrapPiClient({ baseUrl: piCfg.baseUrl, token: piCfg.token }, store, lifetime)),
           });
         }
         // onSelect records which transport connected so a successful poll tick
@@ -792,6 +835,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
             // 'pi' so we don't pay a doomed BLE probe. Keeps the chosen transport
             // honest to the real link (and the blue/amber dot with it).
             preferred: () => (nativeLinkUpRef.current ? 'ble' : 'pi'),
+            lifetime,
           },
         );
       }
@@ -799,6 +843,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         transport: selectorRef.current,
         vin: carCfg.vin,
         deviceKeys: keys,
+        lifetime: generationRef.current?.signal,
       });
     }
     return gatewayRef.current;
@@ -848,7 +893,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       if (selectedTransportRef.current !== 'pi') return; // BLE took over
       if (AppState.currentState !== 'active') return; // backgrounded
       const liveId = peekPiSessionId(carCfg.vin);
-      if (!liveId) return; // no Pi session open right now; the next poll tick restarts it
+      // No Pi session open right now, which includes after a 401 (see
+      // withCachedSession), so a removed token stops retrying here. The next poll
+      // tick that succeeds restarts the stream, through syncStream.
+      if (!liveId) return;
       startStreamRef.current(liveId);
     }, STREAM_RECONNECT_MS);
   }, []);
@@ -939,12 +987,8 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
   const teardown = useCallback(() => {
     deferredTeardownRef.current = false;
     stopStream();
-    closeAllCachedSessions();
-    const sel = selectorRef.current;
-    selectorRef.current = null;
-    gatewayRef.current = null;
-    if (sel) sel.closeSession('').catch(() => {});
-  }, [stopStream]);
+    retireGeneration();
+  }, [stopStream, retireGeneration]);
 
   // teardownWhenIdle is the background path: tearing the transport down under
   // an in-flight command is exactly what killed it (and left the control
@@ -1429,6 +1473,10 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       nativeLinkUpRef.current = up;
       clearStable();
       if (!up) return;
+      // Read now rather than at the next poll: with a relay configured, a poll that
+      // failed while the link was down does not wait around for it to come up (see
+      // bleWaitBudgetMs), and this is the moment the car became reachable.
+      void tickRef.current?.();
       // The link came up. If it HOLDS for NATIVE_LINK_STABLE_MS and commands are
       // still pinned to a cached Pi session, force a clean re-selection: rebuild
       // the gateway so the next poll opens a fresh session and preferred() picks
@@ -2021,6 +2069,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
     let stopped = false; // effect torn down (unlink/unmount)
     let paused = false; // app not foregrounded
     let inFlight = false; // a tick is awaiting the car
+    // Whether the last VCSEC read succeeded. The focused reads wait for it: see
+    // focusedReadAllowed.
+    let pollOk = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async (opts?: { forceInfotainment?: boolean }) => {
@@ -2081,6 +2132,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         if (Object.keys(filtered).length) applyTelemetryRef.current(filtered);
         stampRead(patch, Date.now());
         setConnection('online');
+        pollOk = true;
 
         // ── INFOTAINMENT read (charge / climate / drive / location) ─────────
         // VCSEC gives us lock/awake/closures and nothing else — no state of
@@ -2175,6 +2227,9 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
               cacheInfotainment(infoPatch);
             }
           } catch (e) {
+            // Retired mid-read says nothing about the car, and the next generation
+            // should not inherit a throttle for it.
+            if (isCancelledError(e)) return;
             // Asleep mid-read, or the infotainment session faulted. The VCSEC
             // half stands; retry after the throttle window (don't hammer a cold
             // domain-3 open every tick — that WAS the bug).
@@ -2188,9 +2243,16 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
         // (direct BLE delivers unsolicited pushes itself; see the header).
         syncStream();
       } catch (e) {
+        // This read's generation was retired. That is not a failed contact, and the
+        // next generation is about to report the real state.
+        if (isCancelledError(e)) {
+          logi('poll', 'vcsec cancelled: generation retired');
+          return;
+        }
         // A failed read means no clean contact this tick — drop to offline
         // (do NOT keep a stale 'online'). The loop keeps retrying every POLL_MS.
         logw('poll', 'vcsec failed → offline', { err: String(e) });
+        pollOk = false;
         if (!stopped && !paused) setConnection('offline');
       } finally {
         inFlight = false;
@@ -2226,7 +2288,7 @@ export function useCarLink({ applyTelemetry, hydrateTelemetry, getActiveState }:
       if (inFlightRef.current !== 0) return; // a user command owns the link
 
       const active = getActiveStateRef.current();
-      if (!active?.awake) return; // domain-3 reads fault on a sleeping car
+      if (!focusedReadAllowed({ awake: active?.awake, pollOk })) return;
       focusInFlight = true;
       try {
         const gw = getGateway();

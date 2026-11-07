@@ -377,3 +377,189 @@ test('a car reporting KEY_NOT_ON_WHITELIST throws a typed, non-retryable error',
   assert.equal(isTransportDeadError(err), false, 'not a transport fault — retrying cannot fix it');
   assert.equal(isStaleFrameError(err), false);
 });
+
+// ── Typed errors win over message text ──────────────────────────────────────
+
+test('isTransportDeadError: a typed kind decides, whatever the message says', () => {
+  const typed = (kind: string, message: string) => Object.assign(new Error(message), { kind });
+
+  assert.equal(isTransportDeadError(typed('session-gone', 'whatever')), true);
+  assert.equal(isTransportDeadError(typed('ble', 'whatever')), true);
+  // These all contain "BLE connection closed" or "not connected". A substring
+  // match used to turn each one into a dead link, and so a retry.
+  assert.equal(isTransportDeadError(typed('auth', 'BLE connection closed')), false);
+  assert.equal(isTransportDeadError(typed('unreachable', 'all transports failed — BLE connection closed')), false);
+  assert.equal(isTransportDeadError(typed('cancelled', 'not connected')), false);
+  // Untyped errors keep the substring fallback.
+  assert.equal(isTransportDeadError(new Error('BLE connection closed')), true);
+});
+
+// ── A retired generation leaves nothing behind ──────────────────────────────
+
+test('withCachedSession: a session opened by a retired generation is closed, never cached', async () => {
+  __resetSessionCaches();
+  const lifetime = new AbortController();
+  const car = new FakeCar();
+  const retireDuringHandshake = {
+    openSession: (vin: string) => car.openSession(vin),
+    closeSession: (id: string) => car.closeSession(id),
+    exchange: async (id: string, payload: string, timeoutMs: number) => {
+      const response = await car.exchange(id, payload, timeoutMs);
+      lifetime.abort();
+      return response;
+    },
+  };
+  const deviceKeys = makeDeviceKeys();
+  let bodyRan = false;
+
+  await assert.rejects(
+    withCachedSession(
+      {
+        transport: retireDuringHandshake,
+        vin: VIN,
+        deviceKeys,
+        domain: DOMAIN_VEHICLE_SECURITY,
+        lifetime: lifetime.signal,
+      },
+      async () => {
+        bodyRan = true;
+      },
+    ),
+    (e: unknown) => (e as { kind?: unknown }).kind === 'cancelled',
+  );
+
+  assert.equal(bodyRan, false);
+  assert.equal(car.closeCount, 1, 'the link it opened is released');
+  assert.equal(peekPiSessionId(VIN), null, 'and nothing is left in the cache for the next generation');
+});
+
+test('withCachedSession: a retired generation does not evict or re-open after a dead link', async () => {
+  __resetSessionCaches();
+  const lifetime = new AbortController();
+  const car = new FakeCar();
+  const deviceKeys = makeDeviceKeys();
+  const params = {
+    transport: car,
+    vin: VIN,
+    deviceKeys,
+    domain: DOMAIN_VEHICLE_SECURITY,
+    lifetime: lifetime.signal,
+  };
+  await withCachedSession(params, async () => {});
+  assert.equal(car.openCount, 1);
+
+  await assert.rejects(
+    withCachedSession(params, async () => {
+      lifetime.abort();
+      throw new Error('closed pipe');
+    }),
+    /closed pipe/,
+  );
+
+  assert.equal(car.openCount, 1, 'no fresh handshake on behalf of a retired generation');
+  assert.equal(peekPiSessionId(VIN) !== null, true, 'the cache is left for retireGeneration to clear');
+});
+
+// ── A revoked token ─────────────────────────────────────────────────────────
+//
+// A 401 means the bearer is dead, so every session cached through it is useless,
+// and the Pi has already closed them. Leaving one cached is not harmless: the app
+// treats a cached session as "the relay is up", so the event stream reconnected
+// every ~2.5s for as long as the app stayed open (seen on-device 2026-11-07).
+
+const unauthorized = () => Object.assign(new Error('unauthorized'), { kind: 'auth' });
+
+test('withCachedSession: a 401 drops the cached session and does not open another', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar();
+  const params = { transport: car, vin: VIN, deviceKeys: makeDeviceKeys(), domain: DOMAIN_VEHICLE_SECURITY };
+  await withCachedSession(params, async () => {});
+  assert.notEqual(peekPiSessionId(VIN), null);
+
+  await assert.rejects(
+    withCachedSession(params, async () => {
+      throw unauthorized();
+    }),
+    (e: unknown) => (e as { kind?: unknown }).kind === 'auth',
+  );
+
+  assert.equal(peekPiSessionId(VIN), null);
+  assert.equal(car.openCount, 1, 're-opening cannot fix a dead token');
+});
+
+test('withCachedSession: a 401 on one domain drops them all, since they share the bearer', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar();
+  const deviceKeys = makeDeviceKeys();
+  const common = { transport: car, vin: VIN, deviceKeys };
+  await withCachedSession({ ...common, domain: DOMAIN_VEHICLE_SECURITY }, async () => {});
+  await withCachedSession({ ...common, domain: DOMAIN_INFOTAINMENT }, async () => {});
+
+  await assert.rejects(
+    withCachedSession({ ...common, domain: DOMAIN_INFOTAINMENT }, async () => {
+      throw unauthorized();
+    }),
+  );
+
+  assert.equal(peekPiSessionId(VIN), null);
+});
+
+test('withCachedSession: a 401 during a second domain\'s handshake drops the first domain too', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar();
+  let revoked = false;
+  const transport = {
+    openSession: (vin: string) => car.openSession(vin),
+    closeSession: (id: string) => car.closeSession(id),
+    exchange: async (id: string, payload: string, timeoutMs: number) => {
+      if (revoked) throw unauthorized();
+      return car.exchange(id, payload, timeoutMs);
+    },
+  };
+  const deviceKeys = makeDeviceKeys();
+  const common = { transport, vin: VIN, deviceKeys };
+  await withCachedSession({ ...common, domain: DOMAIN_VEHICLE_SECURITY }, async () => {});
+
+  revoked = true;
+  await assert.rejects(withCachedSession({ ...common, domain: DOMAIN_INFOTAINMENT }, async () => {}));
+
+  assert.equal(peekPiSessionId(VIN), null);
+});
+
+test('withCachedSession: other failures keep the session, as they did before', async () => {
+  __resetSessionCaches();
+  const car = new FakeCar();
+  const params = { transport: car, vin: VIN, deviceKeys: makeDeviceKeys(), domain: DOMAIN_VEHICLE_SECURITY };
+  await withCachedSession(params, async () => {});
+
+  await assert.rejects(
+    withCachedSession(params, async () => {
+      throw Object.assign(new Error('Pi-side timeout'), { kind: 'timeout' });
+    }),
+  );
+
+  assert.notEqual(peekPiSessionId(VIN), null);
+});
+
+test('withCachedSession: a retired generation\'s 401 leaves the cache alone', async () => {
+  __resetSessionCaches();
+  const lifetime = new AbortController();
+  const car = new FakeCar();
+  const params = {
+    transport: car,
+    vin: VIN,
+    deviceKeys: makeDeviceKeys(),
+    domain: DOMAIN_VEHICLE_SECURITY,
+    lifetime: lifetime.signal,
+  };
+  await withCachedSession(params, async () => {});
+
+  await assert.rejects(
+    withCachedSession(params, async () => {
+      lifetime.abort();
+      throw unauthorized();
+    }),
+  );
+
+  assert.notEqual(peekPiSessionId(VIN), null, 'it may by now belong to the next generation');
+});

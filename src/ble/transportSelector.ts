@@ -7,22 +7,76 @@
 // otherwise — without either caller (session.ts/gateway.ts) knowing there
 // was ever a choice.
 //
-// PURE — imports ONLY ./types. No ble-plx, no fetch, so this file (and its
-// test) run under plain node, same isolation rule as session.ts/gateway.ts.
+// PURE — imports only ./types and ./cancelled. No ble-plx, no fetch, so this file
+// (and its test) run under plain node, same isolation rule as session.ts/gateway.ts.
 // The RN-specific bit — actually constructing a DirectBleTransport / wrapped
 // PiClient — is supplied by the caller via TransportCandidate.make(); see
 // src/app/carlink.tsx's makeGateway() for the harness wiring.
 
+import { GenerationCancelledError } from './cancelled';
 import type { CarTransport } from './types';
+
+// CandidateFailure is how one candidate failed during an openSession.
+export interface CandidateFailure {
+  name: string;
+  kind?: string; // TransportError kind, when the failure carried one
+  message: string;
+}
 
 // TransportCandidate is one entry in the preference-ordered candidate list.
 // `make()` constructs a FRESH transport instance for each openSession
 // attempt (never reused across attempts/sessions) — for DirectBleTransport
 // this means a clean scan+connect every time, with no state left over from
-// a previous failed/closed attempt.
+// a previous failed/closed attempt. It is told how the candidates tried before it
+// failed, so a fallback can decide how hard to try (see bleWaitBudgetMs).
 export interface TransportCandidate {
   name: string; // 'ble' | 'pi' — for logging/telemetry (onSelect, error text)
-  make: () => CarTransport;
+  make: (prior: readonly CandidateFailure[]) => CarTransport;
+}
+
+// AllTransportsFailedError is the selector's one failure, and it keeps its
+// meaning: a revoked token stays `auth` however the other candidates failed, so
+// the gateway stops rather than retrying something a retry cannot fix. It also
+// carries a kind so isTransportDeadError won't substring-match the candidates'
+// messages (a BLE failure reads "BLE connection closed") and call it a dead link.
+export class AllTransportsFailedError extends Error {
+  readonly kind: 'auth' | 'unreachable';
+  readonly failures: readonly CandidateFailure[];
+
+  constructor(failures: readonly CandidateFailure[]) {
+    super(`all transports failed — ${failures.map((f) => `${f.name}: ${f.message}`).join('; ')}`);
+    this.name = 'AllTransportsFailedError';
+    this.kind = failures.some((f) => f.kind === 'auth') ? 'auth' : 'unreachable';
+    this.failures = failures;
+  }
+}
+
+// NoActiveTransportError means "this selector has no open transport". It is a
+// cache miss, not a fault: the caller's cached session no longer has anything
+// under it, so it should re-open. session-gone is the kind that says exactly that.
+class NoActiveTransportError extends Error {
+  readonly kind = 'session-gone' as const;
+
+  constructor() {
+    super('no active transport (openSession first)');
+    this.name = 'NoActiveTransportError';
+  }
+}
+
+// bleWaitBudgetMs — how long the BLE candidate should wait for the native link.
+//
+// That wait runs inside the command queue, so while it runs nothing else can
+// reach the car. With a relay configured it is only worth paying when the phone
+// could not reach the relay at all, for instance no signal in a garage, where BLE
+// is the only way to the car. Otherwise the relay is the live route and the wait
+// mostly just blocks it: over the 30 days to 2026-11-07 it failed 501 times and
+// produced 1 late success. A link that comes up later triggers its own poll.
+export function bleWaitBudgetMs(
+  prior: readonly CandidateFailure[],
+  { hasPi, budgetMs }: { hasPi: boolean; budgetMs: number },
+): number {
+  if (!hasPi) return budgetMs;
+  return prior.some((f) => f.kind === 'network') ? budgetMs : 0;
 }
 
 export interface SelectingTransportOptions {
@@ -44,10 +98,19 @@ export interface SelectingTransportOptions {
   // (and any UI derived from it) honest to what's actually reachable, without
   // waiting for the periodic re-probe. Returning null falls back to last-good.
   preferred?: () => string | null;
+  // The transport generation this selector belongs to. Once retired it opens
+  // nothing and exchanges nothing, so whatever was running stops instead of
+  // falling through to the next candidate. closeSession still works.
+  lifetime?: AbortSignal;
 }
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+function errKind(e: unknown): string | undefined {
+  const kind = (e as { kind?: unknown } | null)?.kind;
+  return typeof kind === 'string' ? kind : undefined;
 }
 
 // createSelectingTransport returns a CarTransport that, on openSession, tries
@@ -72,6 +135,7 @@ export function createSelectingTransport(
   // Consecutive opens served WITHOUT a full-order re-probe. Hitting reprobeEvery
   // forces the next open back to the declared order.
   let opensSinceReprobe = 0;
+  const lifetime = opts?.lifetime;
 
   // The candidate order for THIS open: a live `preferred()` wins outright (tried
   // first, no re-probe accounting); else last-good first (if remembered and not
@@ -102,27 +166,36 @@ export function createSelectingTransport(
       }
 
       const { ordered, reprobing } = orderFor();
-      const failures: string[] = [];
+      const failures: CandidateFailure[] = [];
       for (const candidate of ordered) {
-        const transport = candidate.make();
+        if (lifetime?.aborted) throw new GenerationCancelledError();
+        const transport = candidate.make(failures);
         try {
           const sessionId = await transport.openSession(vin);
+          if (lifetime?.aborted) {
+            // It landed after we were retired. Nobody will ever close this one
+            // otherwise, and on the Pi it would be holding the only radio.
+            transport.closeSession(sessionId).catch(() => {});
+            throw new GenerationCancelledError();
+          }
           active = transport;
           lastGood = candidate.name;
           opensSinceReprobe = reprobing ? 0 : opensSinceReprobe + 1;
           onSelect?.(candidate.name);
           return sessionId;
         } catch (e) {
-          failures.push(`${candidate.name}: ${errMsg(e)}`);
+          if (lifetime?.aborted) throw new GenerationCancelledError();
+          failures.push({ name: candidate.name, kind: errKind(e), message: errMsg(e) });
         }
       }
 
-      throw new Error(`all transports failed — ${failures.join('; ')}`);
+      throw new AllTransportsFailedError(failures);
     },
 
     async exchange(sessionId: string, payloadB64: string, timeoutMs: number): Promise<string> {
+      if (lifetime?.aborted) throw new GenerationCancelledError();
       if (!active) {
-        throw new Error('no active transport (openSession first)');
+        throw new NoActiveTransportError();
       }
       // Errors here are NOT caught — only openSession failures trigger
       // fallback; a mid-session exchange failure on the chosen transport

@@ -26,6 +26,7 @@
 import { logi } from '../services/logbus';
 import { parseAuthenticationRequest } from './passiveEntryAuth';
 import { noteChallengeArrived, noteAnswerWritten, noteChallengeDropped } from './passiveEntryLatency';
+import { ConnectWaiters } from './connectWaiters';
 import { BleReassembler, frameMessage, MAX_BLE_MESSAGE_SIZE } from './bleFraming';
 import { outgoingCorrelators, frameAnswersRequest, type Correlators } from './bleCorrelation';
 import { bytesToBase64, base64ToBytes } from './bytes';
@@ -52,7 +53,7 @@ class ForegroundBleLink {
   private readonly reassembler = new BleReassembler();
   private inbox: Uint8Array[] = [];
   private waiters: Array<() => void> = [];
-  private connectedWaiters: Array<{ resolve: () => void; timer: ReturnType<typeof setTimeout> }> = [];
+  private readonly connectedWaiters = new ConnectWaiters();
   private blockLength = FALLBACK_MTU - 3;
   private started = false;
   private vin: string | null = null;
@@ -122,19 +123,11 @@ class ForegroundBleLink {
 
   // awaitConnected — resolve once the native link reports connected (or reject on
   // timeout so the selector can fall through to Pi).
-  awaitConnected(timeoutMs: number): Promise<void> {
+  // `lifetime` ends the wait early when the generation that asked is retired: it
+  // runs inside the command queue, so it must not outlive the work it was for.
+  awaitConnected(timeoutMs: number, lifetime?: AbortSignal): Promise<void> {
     if (this.isConnected()) return Promise.resolve();
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.connectedWaiters = this.connectedWaiters.filter((w) => w.timer !== timer);
-        reject(
-          new Error(
-            `BLE connection closed — native central did not connect within ${timeoutMs}ms (car asleep/out of range?)`,
-          ),
-        );
-      }, timeoutMs);
-      this.connectedWaiters.push({ resolve, timer });
-    });
+    return this.connectedWaiters.wait(timeoutMs, lifetime);
   }
 
   // exchange — write the framed request and await the first inbox frame whose
@@ -285,12 +278,7 @@ class ForegroundBleLink {
   }
 
   private resolveConnected(): void {
-    const pending = this.connectedWaiters;
-    this.connectedWaiters = [];
-    for (const w of pending) {
-      clearTimeout(w.timer);
-      w.resolve();
-    }
+    this.connectedWaiters.resolveAll();
   }
 
   private wake(): void {

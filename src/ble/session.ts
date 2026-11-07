@@ -29,6 +29,7 @@
 //     and safe (deferred as P5.T1). _persistSessionMetadata is a no-op.
 
 import { randomBytes } from '@noble/hashes/utils';
+import { GenerationCancelledError } from './cancelled';
 import { __resetSharedSessionQueue } from './queue';
 import { sha1 } from '@noble/hashes/sha1';
 
@@ -434,11 +435,14 @@ export async function openDirectSession({
 //
 // Fallback: message substring matches for reference-style/engine errors
 // (FakeCar 'throw' programs in tests, and any transport that isn't
-// PiClient) that don't carry a `kind`.
+// PiClient) that don't carry a `kind`. An error WITH a kind has already said what
+// it is, so its message is not consulted: the selector's all-failed error quotes
+// each candidate's text, and a 401 there used to read as a dead link because the
+// BLE candidate's half said "BLE connection closed".
 export function isTransportDeadError(e: unknown): boolean {
   if (e && typeof e === 'object') {
     const kind = (e as { kind?: unknown }).kind;
-    if (typeof kind === 'string' && (kind === 'session-gone' || kind === 'ble')) return true;
+    if (typeof kind === 'string') return kind === 'session-gone' || kind === 'ble';
   }
   const msg = errMsg(e).toLowerCase();
   return (
@@ -852,7 +856,31 @@ interface CacheEntry {
 const _domainCache = new Map<number, CacheEntry>();
 
 export async function withCachedSession<T>(
-  { transport, vin, deviceKeys, domain }: SessionParams,
+  params: SessionParams,
+  body: (session: Session, cached: boolean) => Promise<T> | T,
+): Promise<T> {
+  try {
+    return await _withCachedSession(params, body);
+  } catch (e) {
+    // A 401 means the bearer is dead, so every session cached through it is
+    // useless: both domains share it, and the Pi closes them when the token is
+    // removed. Dropping them matters because the app reads "a session is cached" as
+    // "the relay is up". Left in place, the event stream reconnected every ~2.5s for
+    // as long as the app stayed open. Never re-opens (no fresh handshake can fix a
+    // dead token), and a successful read later brings the session and stream back.
+    if (_isAuthError(e) && !params.lifetime?.aborted && peekPiSessionId(params.vin)) {
+      await evictSession(params.vin, params.domain, { reason: 'auth' });
+    }
+    throw e;
+  }
+}
+
+function _isAuthError(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as { kind?: unknown }).kind === 'auth';
+}
+
+async function _withCachedSession<T>(
+  { transport, vin, deviceKeys, domain, lifetime }: SessionParams,
   body: (session: Session, cached: boolean) => Promise<T> | T,
 ): Promise<T> {
   // 1. In-memory cache — instant reuse.
@@ -862,8 +890,9 @@ export async function withCachedSession<T>(
       return await body(entry.session, true);
     } catch (e) {
       // Transport-dead (Pi-side BLE link gone) → drop the bad session and
-      // fall through to a fresh handshake. Any OTHER error bubbles up.
-      if (isTransportDeadError(e)) {
+      // fall through to a fresh handshake. Any OTHER error bubbles up, as does
+      // everything from a retired generation: the cache is no longer its to touch.
+      if (isTransportDeadError(e) && !lifetime?.aborted) {
         console.warn('[ble] cached session transport dead — evicting + opening fresh:', errMsg(e));
         await evictSession(vin, domain, { reason: 'cached-session-transport-dead' });
       } else {
@@ -879,10 +908,17 @@ export async function withCachedSession<T>(
   try {
     session = await openDirectSession({ transport, vin, deviceKeys, domain });
   } catch (e) {
-    if (!isTransportDeadError(e)) throw e;
+    if (!isTransportDeadError(e) || lifetime?.aborted) throw e;
     console.warn('[ble] cold-start hit stale Pi sessionId — evict + retry:', errMsg(e));
     await evictSession(vin, domain, { reason: 'cold-start-stale-session' });
     session = await openDirectSession({ transport, vin, deviceKeys, domain });
+  }
+  // Retired during the handshake: whoever retired us has already cleared the
+  // cache, so caching this now would leave a dead generation's session for the
+  // next one to trip over.
+  if (lifetime?.aborted) {
+    await session.close().catch(() => {});
+    throw new GenerationCancelledError();
   }
   _domainCache.set(domain, { session });
   try {

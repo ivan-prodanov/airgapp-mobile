@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { focusFromCameraMode, readPlanFor, planForCameraMode, CADENCE_MS , nextRotatedState} from './viewFocusReads';
+import {
+  focusFromCameraMode,
+  focusedReadAllowed,
+  readPlanFor,
+  planForCameraMode,
+  CADENCE_MS,
+  nextRotatedState,
+} from './viewFocusReads';
 
 test('focusFromCameraMode mirrors app/index.tsx exactly', () => {
   // index.tsx: cameraMode === 'CLIMATE' ? 'climate' : 'TOP_DOWN' ? 'controls' : 'home'
@@ -242,4 +249,20 @@ test('the rotation actually alternates, so neither state starves', () => {
   const plan = readPlanFor('controls');
   const seen = [0, 1, 2, 3].map((tick) => nextRotatedState(plan.states, tick)[0]);
   assert.deepEqual(seen, ['drive', 'closures', 'drive', 'closures']);
+});
+
+// ── When a focused read may run ─────────────────────────────────────────────
+
+test('focusedReadAllowed: runs only while the car is awake and the main poll is succeeding', () => {
+  assert.equal(focusedReadAllowed({ awake: true, pollOk: true }), true);
+  // Asleep: domain-3 reads fault on a sleeping car.
+  assert.equal(focusedReadAllowed({ awake: false, pollOk: true }), false);
+  assert.equal(focusedReadAllowed({ awake: undefined, pollOk: true }), false);
+});
+
+test('focusedReadAllowed: pauses while the main poll is failing, even if the car last read awake', () => {
+  // `awake` is the LAST good reading, so it stays true after the relay starts
+  // refusing us. Measured 2026-11-07 09:01 with a removed token: a rejected open
+  // every ~1.9s, for as long as the app stayed in the foreground.
+  assert.equal(focusedReadAllowed({ awake: true, pollOk: false }), false);
 });

@@ -30,14 +30,18 @@ export class BridgedBleTransport implements CarTransport {
   // How long openSession waits for a connected native link before failing to the
   // Pi fallback (the selector passes its short AUTO budget).
   private readonly connectBudgetMs: number;
+  private readonly lifetime?: AbortSignal;
 
   constructor(opts?: {
     // Accepted for drop-in compatibility with the selector's make(); the connect
     // budget for openSession. onUnsolicited/authResponder are now owned by
     // foregroundBleLink (set by useCarLink), not per-transport.
     scanTimeoutMs?: number;
+    // The transport generation this belongs to: retiring it ends the wait.
+    lifetime?: AbortSignal;
   }) {
     this.connectBudgetMs = opts?.scanTimeoutMs ?? CONNECT_TIMEOUT_MS;
+    this.lifetime = opts?.lifetime;
   }
 
   // openSession ensures the persistent link is armed for `vin` and waits for the
@@ -45,7 +49,7 @@ export class BridgedBleTransport implements CarTransport {
   // arms it for always-on passive; start() is idempotent.)
   async openSession(vin: string): Promise<string> {
     foregroundBleLink.start(vin);
-    await foregroundBleLink.awaitConnected(this.connectBudgetMs);
+    await foregroundBleLink.awaitConnected(this.connectBudgetMs, this.lifetime);
     this.sessionId = vin;
     return vin;
   }
