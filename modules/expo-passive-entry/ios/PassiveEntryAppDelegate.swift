@@ -25,6 +25,9 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
     // anything to restore post-enrollment anyway. isArmed() reads persistence
     // without instantiating anything.
     guard PassiveEntryCentral.isArmed() else { return true }
+    // We're running again, so a "keep the app running" reminder still waiting to fire
+    // from the last termination no longer applies.
+    Notifier.cancelPending(id: PassiveEntryCentral.appClosedNotifId)
     // Make sure notification permission is in hand well before a terminate/BT-off
     // reminder needs it (idempotent — iOS prompts only once).
     Notifier.requestAuthIfNeeded()
@@ -44,13 +47,13 @@ public class PassiveEntryAppDelegate: ExpoAppDelegateSubscriber {
   // OS limitation no app can beat. Only nag if passive entry was armed.
   public func applicationWillTerminate(_ application: UIApplication) {
     guard PassiveEntryCentral.isArmed() else { return }
-    // postAndWait — block until the daemon accepts it, or the app dies first and
-    // the notification is lost (the this-morning symptom).
+    // postAfterExit — briefly wait for the hand-off, or the app can die first and the
+    // notification is lost. It fires after we exit: see Notifier for why not immediately.
     // Body mirrors Tesla's phone-key-only variant (phone_key_notification_user_kill_body,
     // RESPONSE-13) with our name — the "…Phone Key and Live Activity experience"
     // wording is Tesla's LIVE-ACTIVITY variant, and we ship no Live Activity.
-    Notifier.postAndWait(id: PassiveEntryCentral.appClosedNotifId,
-                         title: "", // empty → iOS shows the app name as the header
-                         body: "Keep the Airgapp app running for the best phone key experience")
+    Notifier.postAfterExit(id: PassiveEntryCentral.appClosedNotifId,
+                           title: "", // empty → iOS shows the app name as the header
+                           body: "Keep the Airgapp app running for the best phone key experience")
   }
 }

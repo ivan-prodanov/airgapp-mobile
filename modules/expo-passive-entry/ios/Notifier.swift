@@ -30,22 +30,35 @@ enum Notifier {
     UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
   }
 
-  // Post and BLOCK until the notification daemon has accepted the request (or a
-  // short timeout). add(...) is asynchronous, so during applicationWillTerminate
-  // the app can die before the request reaches usernotificationsd — losing the
-  // notification. Waiting on the completion handler guarantees the hand-off
-  // completes while we still have the ~5s termination window. Safe to block the
-  // main thread here: the completion fires on a background queue, so no deadlock.
-  static func postAndWait(id: String, title: String, body: String, timeout: TimeInterval = 3.0) {
-    NotifDelegate.shared.install()
+  // Hand a notification to the daemon from applicationWillTerminate, to fire after
+  // this process has gone.
+  //
+  // It must not fire immediately. While this process is alive SpringBoard still treats
+  // the app as foreground, so it opens the app to deliver willPresent
+  // (UIWillPresentNotificationAction). That open waits for this process to exit, then
+  // relaunches the app in the background. If the user tapped the icon meanwhile, the two
+  // collide: the tap's scene update fails and the app falls back to the Home Screen
+  // ("opens then minimizes"). Trace: docs/GODOT-TEARDOWN-MINIMIZE-2026-11-07.md
+  //
+  // Keep the wait short: a tap on the icon cannot start a new process until this one
+  // exits. The daemon gets the request about a millisecond after add(...), so the wait
+  // only has to outlast that hand-off, not necessarily the completion handler.
+  static func postAfterExit(id: String, title: String, body: String,
+                            delay: TimeInterval = 2.0, handOffTimeout: TimeInterval = 0.5) {
     let content = UNMutableNotificationContent()
     if !title.isEmpty { content.title = title }
     content.body = body
     content.sound = nil
-    let req = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
+    let req = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
     let sem = DispatchSemaphore(value: 0)
     UNUserNotificationCenter.current().add(req) { _ in sem.signal() }
-    _ = sem.wait(timeout: .now() + timeout)
+    _ = sem.wait(timeout: .now() + handOffTimeout)
+  }
+
+  // Withdraw a notification that has not fired yet. One already showing stays.
+  static func cancelPending(id: String) {
+    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
   }
 
   // Schedule a REPEATING local notification (iOS delivers it every `intervalSec`
