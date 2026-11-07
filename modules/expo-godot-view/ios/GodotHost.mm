@@ -4,12 +4,11 @@
 
 // ───────────────────────── Simulator: no engine (no arm64-sim slice) ─────────────────────────
 @implementation GodotHost
-- (instancetype)initWithParentView:(UIView *)parentView pckPath:(NSString *)pckPath {
-  if ((self = [super init])) {
-    NSLog(@"[GodotHost|sim] no-op (engine is device-only)");
-  }
-  return self;
++ (GodotHost *)attachToParentView:(UIView *)parentView pckPath:(NSString *)pckPath {
+  NSLog(@"[GodotHost|sim] no-op (engine is device-only)");
+  return [[GodotHost alloc] init];
 }
+- (void)detachFromParentView:(UIView *)parentView {}
 - (void)pause {}
 - (void)resume {}
 - (void)setOrbitEnabled:(BOOL)enabled {}
@@ -29,6 +28,12 @@
 
 #include <string.h>
 
+// Ref::instance() memnews these here, sized from our headers, but their constructors live in the
+// prebuilt libgodot. If the sizes disagree, every orbit-drag event overflows the heap. See the ABI guard
+// in IOSGodotInterface.mm.
+static_assert(sizeof(InputEventScreenTouch) == 368, "Layout differs from the prebuilt libgodot.");
+static_assert(sizeof(InputEventScreenDrag) == 384, "Layout differs from the prebuilt libgodot.");
+
 // Defined in the prebuilt libgodot (platform/iphone/godot_iphone.cpp): creates OSIPhone + Main::setup.
 int iphone_main(int width, int height, int argc, char **argv, String data_dir);
 void iphone_finish();
@@ -41,6 +46,9 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
 @interface GodotHost () <GLViewDelegate, UIGestureRecognizerDelegate> {
   GLView *_glView;
   __weak UIView *_parentView;        // weak — RN owns the lifetime of ExpoGodotView
+  // Same view as _parentView, for identity checks only. Weak references read nil once the view starts
+  // deallocating, which is exactly when detachFromParentView: needs to recognise it.
+  __unsafe_unretained UIView *_attachedView;
   UIPanGestureRecognizer *_orbitPan; // dynamic: created when orbit is enabled, removed when disabled
   int _frameCount;
   bool _started;
@@ -60,6 +68,44 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
 
 @implementation GodotHost
 
++ (GodotHost *)attachToParentView:(UIView *)parentView pckPath:(NSString *)pckPath {
+  static GodotHost *sharedHost = nil; // never released: see the header
+  if (sharedHost == nil) {
+    sharedHost = [[GodotHost alloc] initWithParentView:parentView pckPath:pckPath];
+  } else {
+    [sharedHost moveToParentView:parentView];
+  }
+  return sharedHost;
+}
+
+- (void)moveToParentView:(UIView *)parentView {
+  _parentView = parentView;
+  _attachedView = parentView;
+  if (_glView == nil) {
+    return; // iphone_main failed; there is no engine to show
+  }
+  NSLog(@"[GodotHost] engine moved to a new view");
+  _glView.frame = parentView.bounds;
+  [parentView addSubview:_glView];
+  if (_snapshotView != nil) {
+    _snapshotView.frame = parentView.bounds;
+    [parentView addSubview:_snapshotView];
+  }
+  [_glView startAnimation]; // no-op if still running
+}
+
+- (void)detachFromParentView:(UIView *)parentView {
+  if (_attachedView != parentView) {
+    return; // a newer view already owns the engine
+  }
+  NSLog(@"[GodotHost] view gone, engine parked");
+  _attachedView = nil;
+  [self setOrbitEnabled:NO];
+  [_glView stopAnimation];
+  [_glView removeFromSuperview];
+  [_snapshotView removeFromSuperview];
+}
+
 - (instancetype)initWithParentView:(UIView *)parentView pckPath:(NSString *)pckPath {
   if (!(self = [super init])) {
     return nil;
@@ -67,6 +113,7 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
   _frameCount = 0;
   _started = false;
   _parentView = parentView;
+  _attachedView = parentView;
   _orbitPan = nil;
 
   CGFloat scale = parentView.window ? parentView.window.screen.scale : UIScreen.mainScreen.scale;
@@ -297,7 +344,7 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
 // Resign-active fires BEFORE iOS takes the app-switcher snapshot, and while GL is still safe to touch.
 // Force one synchronous frame so drawView: captures the current scene into the overlay.
 - (void)appWillResignActive {
-  if (!_started || _glView == nil) {
+  if (!_started || _glView == nil || _attachedView == nil) {
     return;
   }
   _captureRequested = YES;
@@ -322,7 +369,7 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
 
 // Resume rendering behind the overlay so a fresh frame is ready before we uncover the GL surface.
 - (void)appWillEnterForeground {
-  if (_started && _glView != nil) {
+  if (_started && _glView != nil && _attachedView != nil) {
     [_glView startAnimation];
   }
 }
@@ -338,7 +385,7 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
 }
 
 - (void)resume {
-  if (_started) {
+  if (_started && _attachedView != nil) {
     [_glView startAnimation];
   }
 }
@@ -359,10 +406,6 @@ static void GodotHostReleasePixelData(void *info, const void *data, size_t size)
     _orbitPan = nil;
     NSLog(@"[GodotHost] orbit recognizer removed");
   }
-}
-
-- (void)dealloc {
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 @end

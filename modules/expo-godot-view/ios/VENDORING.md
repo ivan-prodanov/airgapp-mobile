@@ -11,7 +11,7 @@ of git history (see `.gitignore`). Restore them on a fresh checkout with the com
 
 | File (in this `ios/` dir) | Size | Source | Provenance |
 |---|---|---|---|
-| `engine/libgodot.iphone.debug.fat.a` | 135 MB | `~/Library/Application Support/Godot/templates/3.2.2.stable/iphone.zip` | Godot 3.2.2.stable iOS export template. Slices: `x86_64 arm64`. The podspec links the **debug** lib (needs `DEBUG_METHODS_ENABLED=1`). |
+| `engine/libgodot.iphone.debug.fat.a` | 135 MB | `~/Library/Application Support/Godot/templates/3.2.2.stable/iphone.zip` | Godot 3.2.2.stable iOS export template. Slices: `x86_64 arm64`. The podspec links the **debug** lib, and our code must compile with `DEBUG_ENABLED=1 PTRCALL_ENABLED=1` to match its C++ ABI. |
 | `engine/libgodot.iphone.release.fat.a` | 116 MB | same `iphone.zip` | Slices: `x86_64 arm64`. |
 | `airgapp.pck` | 320 MB | exported from `/Users/ivan/Work/airgapp/godot` by `deploy-ios.sh` | Packed `mobile`-feature scene (real official textures; iOS preset). Regenerate any time via the deploy script. |
 

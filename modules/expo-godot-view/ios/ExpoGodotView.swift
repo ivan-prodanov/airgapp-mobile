@@ -85,10 +85,14 @@ final class ExpoGodotView: ExpoView {
       NSLog("[ExpoGodotView] airgapp.pck not found in app bundle")
       return
     }
-    godotHost = GodotHost(parentView: self, pckPath: pck)
+    godotHost = GodotHost.attach(toParentView: self, pckPath: pck)
     // Apply the current orbit state — covers the case where RN set `orbitEnabled` before this
     // view had a non-zero size and GodotHost existed.
     godotHost?.setOrbitEnabled(orbitEnabled)
+  }
+
+  deinit {
+    godotHost?.detach(fromParentView: self)
   }
 
   private func didSetSceneName() {

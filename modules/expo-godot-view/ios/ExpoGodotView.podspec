@@ -34,10 +34,16 @@ Pod::Spec.new do |s|
     # Compile GodotHost.mm/IOSGodotInterface.mm against the Godot 3.2 source headers (matches the
     # prebuilt .a). platform/iphone is needed for platform_config.h / os_iphone.h / gl_view.h.
     'HEADER_SEARCH_PATHS' => "\"#{godot_src}\" \"#{godot_src}/platform/iphone\" \"$(PODS_TARGET_SRCROOT)/godot_gen\"",
-    # DEBUG_METHODS_ENABLED MUST match the prebuilt debug template: it selects the bind_methodfi
-    # overload (MethodDefinition vs const char*) that ClassDB::bind_method generates. Without it the
-    # app link fails with an undefined bind_methodfi(const char*).
-    'GCC_PREPROCESSOR_DEFINITIONS' => 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 DEBUG_METHODS_ENABLED=1 $(inherited)',
+    # These MUST match how the prebuilt libgodot.iphone.debug.fat.a was compiled, because they change
+    # the C++ ABI of the engine headers we compile against:
+    #  - DEBUG_ENABLED (scons target=release_debug) adds members to Object: sizeof(Object) is 216, not
+    #    200. Without it our memnew() under-allocates every Object subclass and the engine's
+    #    constructors write past the end of the block, which corrupted the heap about 1 launch in 20.
+    #    It also defines DEBUG_METHODS_ENABLED (core/method_bind.h), selecting the bind_methodfi overload.
+    #  - PTRCALL_ENABLED (modules/gdnative sets use_ptrcall) adds a MethodBind virtual, shifting the
+    #    vtable slots of every method we bind.
+    # GodotHost.mm and IOSGodotInterface.mm static_assert the resulting sizes.
+    'GCC_PREPROCESSOR_DEFINITIONS' => 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 DEBUG_ENABLED=1 PTRCALL_ENABLED=1 $(inherited)',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'gnu++14',
     'CLANG_WARN_DOCUMENTATION_COMMENTS' => 'NO',
   }
