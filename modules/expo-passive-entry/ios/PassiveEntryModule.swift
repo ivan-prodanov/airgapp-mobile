@@ -54,9 +54,21 @@ public class PassiveEntryModule: Module {
 
     // The single-writer gate: true = foreground (TS signs via the pipe),
     // false = background (native self-signs). Driven by whoMaySign/AppState.
-    Function("setForegroundResponderActive") { (active: Bool) in
+    //
+    // Runs on the main queue, so the JS thread never waits for it. Every `true`
+    // call checks UIApplication.applicationState, which is main-thread only. As a
+    // synchronous Function this ran on the JS thread and reached main through
+    // DispatchQueue.main.sync, so JS waited for whatever main was doing. At launch
+    // that is Godot's first car frame (253-351 ms), which starts a few ms after
+    // GODOT_READY, the moment useCarLink arms passive entry. Measured 2026-11-07:
+    // JS stalled 242-317 ms on 7-17% of launches and heard FIRST_PRODUCT_LOADED up
+    // to 129 ms late. Same binary, interleaved: sync 4 of 45 launches slow, this 0
+    // of 90. Running on main also keeps foregroundActive on the queue the
+    // CoreBluetooth callbacks that read it use (the central has queue: nil).
+    // See docs/GODOT-TEARDOWN-MINIMIZE-2026-11-07.md.
+    AsyncFunction("setForegroundResponderActive") { (active: Bool) in
       PassiveEntryCentral.shared.setForegroundResponderActive(active)
-    }
+    }.runOnQueue(.main)
 
     // Post the CPD "Child detected in car" alert. Called by JS when it decodes a
     // CPDMessage on the FOREGROUND pipe (native self-handles it in background).

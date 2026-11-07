@@ -42,7 +42,8 @@ declare class PassiveEntryModule {
   // Current link state + negotiated MTU.
   connectionState(): PassiveEntryConnectionEvent;
   // Single-writer gate: true = foreground (TS signs), false = background (native).
-  setForegroundResponderActive(active: boolean): void;
+  // iOS runs it on the main queue and returns a promise; Android is synchronous.
+  setForegroundResponderActive(active: boolean): void | Promise<void>;
   // Post the CPD "Child detected in car" alert (foreground path; native
   // self-posts in background).
   postCpdWarning(): void;

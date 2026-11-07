@@ -74,8 +74,10 @@ export function passiveEntryConnectionState(): PassiveEntryConnectionEvent {
 
 // The single-writer gate: true = foreground (TS signs via the pipe),
 // false = background (native self-signs).
+// Fire and forget: on iOS it runs on the main queue so the JS thread never waits
+// for it (see PassiveEntryModule.swift), and nothing here needs it to have landed.
 export function setPassiveEntryForegroundActive(active: boolean): void {
-  PassiveEntryModule?.setForegroundResponderActive(active);
+  void PassiveEntryModule?.setForegroundResponderActive(active);
 }
 
 // Post the CPD "Child detected in car" alert — called by the JS foreground path

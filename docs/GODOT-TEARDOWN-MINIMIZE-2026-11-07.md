@@ -124,6 +124,49 @@ The same shape as iOS: JS hears `GODOT_READY` about 410 ms sooner, but the car a
 
 We have not measured Tesla's app or on-screen time, so this compares our own before and after, not the two apps.
 
+### Why `FIRST_PRODUCT_LOADED` was still bimodal: JS waited on Godot's first car frame
+
+After the key fix, some launches still logged `FIRST_PRODUCT_LOADED` (FPL) at about 510 ms instead of about 395 ms. The JS thread was waiting on the main thread. The car itself was not slower.
+
+**Godot's main-thread timeline** (native trace of every engine frame, 135 launches):
+
+| Frame | Time after JS boot | What it does |
+|---|---|---|
+| 2 | 99 to 206 ms (medians) | `Main::start`. Sends `GODOT_READY` at the end. |
+| 3 | 206 to 527 ms (medians); 253 to 351 ms long | Drains the message queue, loads the car (`SHOW_PRODUCT`, 175 to 200 ms), sends FPL from inside that handler (median 394 ms), then handles the rest of the queue and draws. |
+
+**The wait:** a few ms after `GODOT_READY`, `useCarLink` arms passive entry and calls `setForegroundResponderActive(true)`. It was a synchronous Expo `Function`, so it ran on the JS thread. Its refusal check reads `applicationState` through `DispatchQueue.main.sync`, and it does that on every `true` call, before the already-set early return.
+
+- If the call reached main before frame 3 began, it took under 5 ms.
+- If frame 3 had just begun, JS waited for the whole frame, 242 to 317 ms. Every native-to-JS event, FPL included, was handled only afterwards.
+- `foregroundBleLink.start` makes the same call first thing. A command `openSession` that fell back to BLE during frame 3 waited the same way.
+
+In the ring log for 2026-11-07, 265 launches had a normal `GODOT_READY`. 44 of them were slow, and every one shows this: in 20 the `foregroundResponderActive=true` row, and in 24 a BLE `openSession` result, lands within 2 ms of FPL.
+
+**Fix:** `setForegroundResponderActive` is now an `AsyncFunction` on the main queue. The check still runs on main against the real state, at the same point in the main queue where the `main.sync` block ran, but JS returns at once. The flag also now changes on the queue its CoreBluetooth readers use. The central has `queue: nil`, so the old JS-thread write raced them.
+
+**Measured** on one instrumented binary (a native frame trace, plus timing of every synchronous JS-to-native call), with the variants in interleaved blocks of 15 launches:
+
+| | Synchronous (before) | Main-queue AsyncFunction |
+|---|---|---|
+| Launches | 45 | 90 |
+| FPL over 450 ms | 4 | 0 |
+| FPL p90 / max | 432 / 514 | 406 / 415 |
+| Most JS heard FPL after Godot sent it | 129 ms | 0 ms |
+| Native FPL / end of frame 3, medians | 395 / 525 | 394 / 528 |
+
+One-sided Fisher p is about 0.011 for 4/45 against 0/90.
+
+To force the race, a test bundle made the same call from the FPL handler, which always runs during frame 3. The synchronous call blocked for 113 to 136 ms in 9 of 10 launches and returned in the same millisecond frame 3 ended. The async call returned in 0 to 1 ms in 10 of 10.
+
+On the shipping build (540f4f1) with only the JS timing added, 5 of 70 launches were slow. Each was this call, blocked for 242 to 317 ms.
+
+The committed fix, built clean, ran 30 launches: 0 were slow, with FPL median 399 ms and p90 412 ms. The native flag switched on in all 30, with no refusals. When the app was sent to the background, the flag switched off within the 1-second resolution of `airgapp-native.log`, and back on when it returned. Not yet tried at the car.
+
+**What this does not change: when the car is on screen.** The FPL row is when JS heard about it. Godot sends FPL in the middle of frame 3, and the frame that draws the car ends at about 525 ms in every launch, before and after this fix. A "fast" launch's 395 ms FPL is about 130 ms before the car can be on screen. To time launch-to-car, use the end of that frame, not the FPL row. The fix gives the JS thread back up to about 300 ms during launch. It does not make the car appear sooner.
+
+**Not addressed:** frame 3 itself holds the main thread, and therefore all UIKit and React Native UI, for about 300 ms. About 110 ms of it, after the car load, is the queue being drained twice. `boot()` queues the scene messages before `GODOT_READY`, and none are dropped. Then `resync('godot-ready')` queues them all again, including a second `SHOW_PRODUCT` and two more `GET_VEHICLE_MARKERS`. Each marker response costs about 19 ms.
+
 **Other costs not addressed:**
 - Live car data takes about 3 s over the Pi relay, mostly `openSession` at 2 to 2.5 s. This may be a large part of how slow launch feels, and `docs/RECONNECT-LATENCY-FLAP-2026-11-07.md` covers related relay latency.
 - We link Godot's debug template, which calls `glGetError` and `NSLog`s `DrawView: 500` every frame. Moving to the release template needs `IOSGodotInterface` rebinding without `DEBUG_METHODS_ENABLED`, and new `static_assert` values.
@@ -139,9 +182,10 @@ Keeping these for next time:
 - **`MallocProbGuard` needs small limits.** Setting `MallocProbGuardSlots=80000` made every launch die in `pgm_create_zone`, which looks like a 100% repro of the bug but is not.
 - **Relaunch harness:** launch with `devicectl device process launch --terminate-existing`, wait, then check that the pid is still alive. A release build takes about 40 s.
 - **Never time launches with `idevicesyslog` attached.** A live syslog relay slows the launch itself. On the pristine Xcode build, interleaved blocks with and without it measured `GODOT_READY` 278 vs 206 ms median (+72 ms, 95% CI 63 to 82). Every attached launch fell into the slow `FIRST_PRODUCT_LOADED` mode, about 500 ms against about 400. The device streams about 10,000 log lines a second while it is attached. On 2026-11-07 this was first read as Xcode's bundle being 115 ms slower than `deploy-js.sh`'s. It isn't. The Xcode block was the only one recorded with a capture running, and the 08:17–08:54 UTC slow runs sat inside another session's capture (298/543 ms inside, 217/423 outside). With no capture, the pristine Xcode app, a deploy-js swap of it, and a re-sign alone all measured within noise (`FIRST_PRODUCT_LOADED` 403, 396 and 389 ms, 20 launches each). So were seven bundle variants covering entry file, minify, the `ShareSheet` import and polyfill order. Capture logs in a separate run from the one you time.
-- **`FIRST_PRODUCT_LOADED` is bimodal even with no capture:** about 395 ms or about 510 ms, with roughly a quarter of launches in the slow mode across every variant. In slow launches, JS receives nothing from about 200 ms (`resync`) until the product loads, not even the native `foregroundResponderActive=true` event that normally arrives at about 212 ms. Compare medians, not single launches, and expect a p90 near 510.
+- **`FIRST_PRODUCT_LOADED` was bimodal even with no capture:** about 395 ms or about 510 ms. In slow launches, JS received nothing from about 200 ms (`resync`) until the product loaded, not even the native `foregroundResponderActive=true` event that normally arrives at about 212 ms. That was the JS thread waiting on Godot's first car frame, and it is fixed. See "Why `FIRST_PRODUCT_LOADED` was still bimodal" above. Builds from before that fix still show it, so compare their medians, not single launches. On any build, time launch-to-car by the end of that frame, not the FPL row.
 - **iOS drops crash reports under load.** Count deaths by process liveness, not `.ips` files.
 - **Screen capture:** `idevicescreenshot` does not work on this iOS version. `glReadPixels` from inside the delegate can read frames instead.
+- **Ring-log times are when JS handled a row, not when it happened.** Several rows in the same millisecond after a gap mean JS was blocked. To find where, wrap the native module objects in a `Proxy` that times every synchronous call and logs the slow ones. Then record epoch-ms marks in `GodotHost drawView:` and `IOSGodotInterface` `sendMessage`/`getMessage` into a static array, dumped to `Documents/` a few seconds later. Epoch ms lines up with the ring log's `t`. Both instruments are kept as a patch in the side-session notes for the FPL investigation.
 
 ## Verification
 
