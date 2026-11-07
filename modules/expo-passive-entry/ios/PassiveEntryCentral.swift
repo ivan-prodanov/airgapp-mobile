@@ -88,14 +88,6 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   // Debounce: native keeps retrying, so peerRemoved recurs; report it once until
   // a successful connect clears it.
   private var bondRemovedReported = false
-  // Pacing after the car refuses our LE keys. Re-arming instantly got the car put on
-  // iOS's connection deny list for up to 30 min (2026-11-07) — see PeerRemovedBackoff.
-  // While `rearmNotBefore` is in the future, reestablish() leaves the re-arm to the
-  // scheduled work item, so start()/beacon/region calls can't bypass the pacing.
-  private var peerRemovedBackoff = PeerRemovedBackoff()
-  private var rearmNotBefore: Date?
-  private var rearmWork: DispatchWorkItem?
-  private var rearmBgTask: UIBackgroundTaskIdentifier = .invalid
   // Single-writer gate (RESPONSE-12 bridge surface). true = FOREGROUND: native
   // is a dumb byte-pipe, TS signs. false = BACKGROUND: native self-signs the
   // AuthenticationResponse (Hermes is suspended). Default false so a background
@@ -212,8 +204,6 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
     // Disarm: clear the persisted VIN so a later relaunch stays idle.
     UserDefaults.standard.removeObject(forKey: PassiveEntryCentral.vinKey)
     central?.stopScan()
-    cancelPacedRearm()
-    peerRemovedBackoff.reset()
     if let p = peripheral { central?.cancelPeripheralConnection(p) }
     peripheral = nil
     log("stop")
@@ -320,9 +310,6 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   private func reestablish() {
     guard wantScan else { return }
     if let p = peripheral, p.state == .connected || p.state == .connecting { return }
-    // The car just refused our keys and a paced re-arm is scheduled: it re-arms
-    // when due. Connecting now would feed iOS's deny-list counter.
-    if let notBefore = rearmNotBefore, notBefore > Date() { return }
     if let idStr = UserDefaults.standard.string(forKey: PassiveEntryCentral.peripheralIdKey),
        let uuid = UUID(uuidString: idStr),
        let known = central?.retrievePeripherals(withIdentifiers: [uuid]).first {
@@ -401,11 +388,6 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {
     log("CONNECTED \(p.name ?? "?") — discovering GATT")
     bondRemovedReported = false // a real connect means the bond is back
-    if peerRemovedBackoff.streak > 0 {
-      log("car accepted our keys again after \(peerRemovedBackoff.streak) refusal(s)")
-    }
-    peerRemovedBackoff.reset()
-    cancelPacedRearm()
     c.stopScan() // we're in; a lingering scan only burns background radio time
     // Remember the peripheral so every future re-establish is a STANDING PENDING
     // CONNECT (not a throttled background scan) — see reestablish().
@@ -794,80 +776,34 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   }
 
   func centralManager(_ c: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
-    if isPeerRemoved(error) {
-      handleBondRemoved()
-      rearmAfterRefusal("connect FAILED: \(error?.localizedDescription ?? "?")")
-      return
-    }
     log("connect FAILED: \(error?.localizedDescription ?? "?") → re-arming pending connect")
+    if isPeerRemoved(error) { handleBondRemoved() }
     reestablish()
   }
 
   func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
+    log("disconnected: \(error?.localizedDescription ?? "clean") → re-arming pending connect")
     txChar = nil; rxChar = nil; rxBuffer = []; rxExpected = -1; sessionKey = nil
     onConnectionState?("disconnected", blockLength + 3)
-    if isPeerRemoved(error) {
-      handleBondRemoved()
-      rearmAfterRefusal("disconnected: \(error?.localizedDescription ?? "?")")
-      return
-    }
-    log("disconnected: \(error?.localizedDescription ?? "clean") → re-arming pending connect")
+    if isPeerRemoved(error) { handleBondRemoved() }
     if wantScan { reestablish() }
   }
 
-  // The car refused our LE keys. Re-arm on PeerRemovedBackoff's schedule instead of
-  // instantly: ten quick refusals and iOS blocks the car for up to 30 min.
-  private func rearmAfterRefusal(_ what: String) {
-    let delay = peerRemovedBackoff.noteRefused(at: Date())
-    log("\(what) → car refused our LE keys (refusal #\(peerRemovedBackoff.streak)); re-arming in \(Int(delay))s")
-    cancelPacedRearm()
-    rearmNotBefore = Date().addingTimeInterval(delay)
-    // In the background the timer only fires while we hold execution time, and a
-    // suspended app with NO pending connect can't be woken by the car. Hold a
-    // background task across the wait; if it runs out first, arm early.
-    if rearmBgTask == .invalid {
-      rearmBgTask = UIApplication.shared.beginBackgroundTask(withName: "airgapp.passiveentry.rearm") { [weak self] in
-        guard let self = self else { return }
-        // Both paths end the task, which iOS requires before it expires.
-        if self.rearmWork != nil {
-          self.log("background time ending before the paced re-arm — arming now")
-          self.firePacedRearm()
-        } else {
-          self.cancelPacedRearm()
-        }
-      }
-    }
-    if rearmBgTask == .invalid, currentAppState() == .background {
-      log("no background time for a paced re-arm — arming now")
-      firePacedRearm()
-      return
-    }
-    let work = DispatchWorkItem { [weak self] in self?.firePacedRearm() }
-    rearmWork = work
-    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-  }
-
-  private func firePacedRearm() {
-    cancelPacedRearm()
-    reestablish()
-  }
-
-  private func cancelPacedRearm() {
-    rearmWork?.cancel()
-    rearmWork = nil
-    rearmNotBefore = nil
-    if rearmBgTask != .invalid {
-      UIApplication.shared.endBackgroundTask(rearmBgTask)
-      rearmBgTask = .invalid
-    }
-  }
-
   // CBError.peerRemovedPairingInformation (code 14) — the CAR answered our link
-  // encryption with HCI "PIN or Key Missing": iOS still holds the bond (bluetoothd
-  // keeps `lePaired 1`), the car doesn't accept the key. Forgetting the device in
-  // iOS Settings can't produce it, since iOS then has no key to offer. Measured
-  // 2026-11-07 and in every earlier episode, the car accepted the same bond again
-  // later with no user action. The enrolled VCSEC key is unaffected either way.
+  // encryption with HCI "PIN or Key Missing" (bluetoothd: STATUS 706, "peer removed
+  // keys"). The car has dropped its half of the LE bond; iOS still holds its own
+  // (`lePaired 1`), so it keeps offering a key the car no longer has. Forgetting the
+  // device in iOS Settings can't produce this error: iOS then has no key to offer.
+  //
+  // It does NOT clear by itself. On 2026-11-07 the car refused the same bond for 2 h
+  // (11:00, 11:54 and 12:54-12:58Z) and took a link 9 s after the user forgot the
+  // car in Settings > Bluetooth, which makes iOS pair afresh. That is the only
+  // recovery: an app can't remove an iOS bond. The enrolled VCSEC key is unaffected.
+  //
+  // Side effect of re-arming at once: ~10 refusals, each within 10 s, put the car on
+  // iOS's LE connection deny list for 30 min (pending connects silently ignored).
+  // Forgetting the car lifts that too: the 12:58:22Z link came 9 s after a burst
+  // of 11 refusals.
   private func isPeerRemoved(_ error: Error?) -> Bool {
     guard let e = error as NSError? else { return false }
     return e.domain == CBErrorDomain && e.code == CBError.Code.peerRemovedPairingInformation.rawValue
@@ -876,7 +812,7 @@ final class PassiveEntryCentral: NSObject, CBCentralManagerDelegate, CBPeriphera
   private func handleBondRemoved() {
     guard !bondRemovedReported else { return } // debounce — retries recur
     bondRemovedReported = true
-    log("BOND REMOVED (peerRemovedPairingInformation) — the car refused our LE keys")
+    log("BOND REMOVED (peerRemovedPairingInformation) — the car dropped our LE bond; forget it in Settings > Bluetooth")
     onBondRemoved?() // JS flips to the Set-Up state
     Notifier.post(id: PassiveEntryCentral.bondRemovedNotifId,
                   title: "Phone Key",
