@@ -21,10 +21,16 @@
 // layout than the engine's. A mismatch links and runs, then corrupts the heap: Object::Object() writes
 // its last member at offset 208, which is one byte past a 208-byte allocation. See
 // docs/GODOT-TEARDOWN-MINIMIZE-2026-11-07.md and the defines in ExpoGodotView.podspec.
-#if !defined(DEBUG_ENABLED) || !defined(PTRCALL_ENABLED)
+// The sizes below were read from each prebuilt .a (the immediate passed to the allocator in
+// ClassDB::creator<T>), so they check our headers against the library actually linked.
+#if !defined(PTRCALL_ENABLED)
 #error "Compile the Godot headers with the prebuilt engine's defines (see ExpoGodotView.podspec)."
 #endif
-static_assert(sizeof(Object) == 216, "Object layout differs from the prebuilt libgodot (engine: 216).");
+#if defined(DEBUG_ENABLED) // libgodot.iphone.debug.fat.a (scons target=release_debug)
+static_assert(sizeof(Object) == 216, "Object layout differs from the prebuilt libgodot (debug engine: 216).");
+#else                      // libgodot.iphone.release.fat.a (scons target=release)
+static_assert(sizeof(Object) == 200, "Object layout differs from the prebuilt libgodot (release engine: 200).");
+#endif
 
 // Godot engine singleton that MobileComm.gd binds to on iOS. It is a thin forwarder onto the Swift
 // GodotBridge (the single host-side queue + RN event emitter). Contract (from MobileComm /

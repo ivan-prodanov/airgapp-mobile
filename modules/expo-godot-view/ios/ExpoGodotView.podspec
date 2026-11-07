@@ -3,6 +3,14 @@ require 'json'
 godot_src = '/Users/ivan/Work/airgapp/godot-src'
 engine_dir = '/Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/ios/engine'
 
+# Which prebuilt engine to link: 'debug' (scons target=release_debug: -O2 but DEBUG_ENABLED) or
+# 'release' (target=release). The library and DEBUG_ENABLED must change together, because DEBUG_ENABLED
+# changes the C++ layout of the engine headers we compile against; the static_asserts in GodotHost.mm
+# and IOSGodotInterface.mm check the result against sizes read from each .a.
+godot_engine = 'debug'
+godot_defines = 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 PTRCALL_ENABLED=1'
+godot_defines += ' DEBUG_ENABLED=1' if godot_engine == 'debug'
+
 Pod::Spec.new do |s|
   s.name           = 'ExpoGodotView'
   s.version        = '1.0.0'
@@ -43,7 +51,7 @@ Pod::Spec.new do |s|
     #  - PTRCALL_ENABLED (modules/gdnative sets use_ptrcall) adds a MethodBind virtual, shifting the
     #    vtable slots of every method we bind.
     # GodotHost.mm and IOSGodotInterface.mm static_assert the resulting sizes.
-    'GCC_PREPROCESSOR_DEFINITIONS' => 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 DEBUG_ENABLED=1 PTRCALL_ENABLED=1 $(inherited)',
+    'GCC_PREPROCESSOR_DEFINITIONS' => "#{godot_defines} $(inherited)",
     'CLANG_CXX_LANGUAGE_STANDARD' => 'gnu++14',
     'CLANG_WARN_DOCUMENTATION_COMMENTS' => 'NO',
   }
@@ -59,7 +67,7 @@ Pod::Spec.new do |s|
   # $(inherited) is REQUIRED: an [sdk=...] conditional does not inherit the base OTHER_LDFLAGS,
   # so without it we'd clobber Expo/React's -force_load flags for device builds.
   s.user_target_xcconfig = {
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => "$(inherited) \"#{engine_dir}/libgodot.iphone.debug.fat.a\"",
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => "$(inherited) \"#{engine_dir}/libgodot.iphone.#{godot_engine}.fat.a\"",
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"

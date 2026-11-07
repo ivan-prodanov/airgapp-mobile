@@ -31,8 +31,13 @@
 // Ref::instance() memnews these here, sized from our headers, but their constructors live in the
 // prebuilt libgodot. If the sizes disagree, every orbit-drag event overflows the heap. See the ABI guard
 // in IOSGodotInterface.mm.
+#if defined(DEBUG_ENABLED) // debug engine (target=release_debug)
 static_assert(sizeof(InputEventScreenTouch) == 368, "Layout differs from the prebuilt libgodot.");
 static_assert(sizeof(InputEventScreenDrag) == 384, "Layout differs from the prebuilt libgodot.");
+#else                      // release engine (target=release)
+static_assert(sizeof(InputEventScreenTouch) == 352, "Layout differs from the prebuilt libgodot.");
+static_assert(sizeof(InputEventScreenDrag) == 368, "Layout differs from the prebuilt libgodot.");
+#endif
 
 // Defined in the prebuilt libgodot (platform/iphone/godot_iphone.cpp): creates OSIPhone + Main::setup.
 int iphone_main(int width, int height, int argc, char **argv, String data_dir);
