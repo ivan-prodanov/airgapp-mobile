@@ -1,7 +1,7 @@
 # Reconnect latency / relay "flap" — UNSOLVED handoff
 
 **Date:** 2026-11-07
-**Status:** Fixed and verified on the car 2026-11-07: 3.4s and 3.6s from Connect to the first result across two real token replacements, with no evictions (was 43-51s). Several earlier attempts were made and **reverted** (see "Attempts that were reverted"). The rest of this doc is the original handoff and is wrong in the places listed here, so read this first.
+**Status:** Fixed and verified on the car 2026-11-07: 2.8-4.3s from Connect to the first result across five real reloads, with no evictions of a working session (was 43-51s). The token-removal follow-ups were verified on the device at 10:04. Several earlier attempts were made and **reverted** (see "Attempts that were reverted"). The rest of this doc is the original handoff and is wrong in the places listed here, so read this first.
 **Repos:** `mobile` (Expo/RN, branch `feat/ble-carlink`) + `rpi` (`netfilterd`, branch `feat/containment-sni-mac`).
 
 ## Correction: what was actually wrong
@@ -38,9 +38,19 @@ Follow-up, deployed 2026-11-07 08:55 UTC: after a token is removed, the event st
 
 Third re-enrol, after that fix (token 38 removed 09:01:37, Connect 09:01:52.852): first result in 3.1s, one Pi open, no stream retries after the removal, stream back at 09:02:04.015. The one eviction was `reason=cold-start-stale-session`, because a read was in flight when the session closed. That means this run never reached the new 401 eviction (`reason=auth` count 0), so that path is covered by tests but not yet seen on the device.
 
+Follow-up, deployed 09:27 UTC: with a token removed, the focused-read loop kept sending a rejected open about every 1.9s (09:01:43-09:01:49) for as long as the app stayed in the foreground. `focusTick` only checked the cached `awake` flag, which a failed poll does not clear. Focused reads now also wait for the main poll to be succeeding (`focusedReadAllowed`).
+
+Fourth test, with both follow-ups (token 39 removed 10:04:08, new token 10:04:20, QR scanned three times):
+
+- **The 401 path fired on the device.** The first 401 at 10:04:09.800 logged `reason=auth`. The stream closed once and never retried.
+- **Focused reads stopped.** There were none after the removal, with gaps of 5.1s and 3.3s in which the phone sent nothing. Every one of the 19 rejected opens was a user command (11), a gesture-triggered `refresh()`, the regular 20s poll (10:04:22.301, 20s after 10:04:02.249), or the app returning to the foreground.
+- **The three reloads** gave first results at 2.8s (10:04:25.704 → 10:04:28.468), 4.3s (Pi open took 3.26s, right after the previous session closed) and 3.3s (10:05:15.915 → wake answered 10:05:19.176).
+- **Newest-wins on both sides.** The third reload cancelled the old generation's in-flight open, and the Pi logged `open superseded after acquiring the adapter` instead of registering it.
+- **After that:** a single session for 4 minutes, a poll every 20s with no failures, focused reads running every ~2s, and 1 eviction since 09:27 (the `auth` one).
+
 Still open:
 
-- Fixed and deployed 09:27 UTC, not yet seen on the device: with a token removed, the focused-read loop kept sending a rejected open about every 1.9s (09:01:43-09:01:49) for as long as the app stayed in the foreground. `focusTick` only checked the cached `awake` flag, which a failed poll does not clear. Focused reads now also wait for the main poll to be succeeding (`focusedReadAllowed`).
+- `retireGeneration` still calls `closeSession('')` on the selector, which sends `DELETE /api/ble/sessions/` with an empty id when nothing was cached (404 at 10:04:45). Harmless, carried over from the old `reload()`.
 - `syncStream` runs at the end of `tick`, after the infotainment read, so the stream opened 4s after the first poll succeeded in that run.
 - One open at 08:35:20 ran for 5.3s without finishing before a newer open replaced it. Cause unknown; it blocked nothing.
 
