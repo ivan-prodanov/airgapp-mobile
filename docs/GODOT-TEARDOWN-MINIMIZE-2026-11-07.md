@@ -169,8 +169,29 @@ The committed fix, built clean, ran 30 launches: 0 were slow, with FPL median 39
 
 **Other costs not addressed:**
 - Live car data takes about 3 s over the Pi relay, mostly `openSession` at 2 to 2.5 s. This may be a large part of how slow launch feels, and `docs/RECONNECT-LATENCY-FLAP-2026-11-07.md` covers related relay latency.
-- We link Godot's debug template, which calls `glGetError` and `NSLog`s `DrawView: 500` every frame. Moving to the release template needs `IOSGodotInterface` rebinding without `DEBUG_METHODS_ENABLED`, and new `static_assert` values.
+- We link Godot's debug template, which calls `glGetError` and `NSLog`s `DrawView: 500` every frame. The release template was measured and does not launch faster (next subsection). Switching is one line, `godot_engine` in `ExpoGodotView.podspec`, and needs no rebinding: `D_METHOD` compiles either way.
 - The engine's `OSIPhone::initialize` starts Game Center login on launch, and links StoreKit and iCloud support. A custom engine build could drop them, but stock `iphone.zip` cannot.
+
+### Process start to car, and the release engine (not faster)
+
+Interleaved A/B on the iPhone, 12 blocks of 10 cold launches (60 per engine), first launch after each install not counted. Both apps were built from the same tree with the same JS bundle and `.pck`; only `godot_engine` differed. A temporary native trace added the process start (`sysctl` `p_starttime`) and our static initialisers to the frame trace above. Every launch was traced with the expected engine label, became active, and switched `foregroundResponderActive=true`. Medians in ms:
+
+| Phase | Debug engine | Release engine | Release − debug [95% CI] |
+|---|---|---|---|
+| Process start → our static initialisers (pre-`main`) | 24 | 24 | 0 [0, 1] |
+| Static initialisers → JS `app boot` | 131 | 131 | 0 [−1, 1] |
+| JS `app boot` → `iphone_main` | 40 | 40 | 0 [−1, 1] |
+| `iphone_main` (`Main::setup`) | 12 | 11 | −1 |
+| Frame 1 | 25 | 18 | −7 [−8, −7] |
+| Frame 2 (`Main::start`) | 104 | 106 | +2 [−2, 7] |
+| Car load (`SHOW_PRODUCT` → FPL sent) | 180 | 189 | +9 [5, 13] |
+| Frame 3 | 315 | 331 | +16 [10, 22] |
+| `GODOT_READY` sent, from process start | 359 | 354 | −5 [−9, 0] |
+| **Car on screen** (end of frame 3), from process start | **680** | **688** | **+8 [0, 16]** |
+
+The release engine reaches `GODOT_READY` slightly sooner but loads the car slightly slower, so the car is no sooner. We stay on the debug engine. The ABI `static_assert`s now hold the values for both engines, read from each `.a` (the size passed to the allocator in `ClassDB::creator<T>`): `Object` 216/200, `InputEventScreenTouch` 368/352, `InputEventScreenDrag` 384/368.
+
+Where the ~680 ms goes: about 155 ms before JS boots (React Native and the bundle), 40 ms until React lays out the Godot view, and then about 485 ms of Godot on the main thread (`iphone_main` to the end of frame 3), of which the car load is ~180 ms and the duplicate queue drain ~110 ms. Godot cannot start until React mounts its view at about 195 ms after process start; starting the engine natively at launch could overlap part of frames 1 and 2 with JS startup, at the cost of main-thread contention with React Native's own mount. Not tried.
 
 ---
 

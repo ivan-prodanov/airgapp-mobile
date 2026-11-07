@@ -7,6 +7,8 @@ engine_dir = '/Users/ivan/Work/airgapp/mobile/modules/expo-godot-view/ios/engine
 # 'release' (target=release). The library and DEBUG_ENABLED must change together, because DEBUG_ENABLED
 # changes the C++ layout of the engine headers we compile against; the static_asserts in GodotHost.mm
 # and IOSGodotInterface.mm check the result against sizes read from each .a.
+# Measured 2026-11-07 (120 interleaved cold launches): 'release' does not put the car on screen sooner
+# (+8 ms, 95% CI 0 to 16), so we stay on 'debug'. See docs/GODOT-TEARDOWN-MINIMIZE-2026-11-07.md.
 godot_engine = 'debug'
 godot_defines = 'IPHONE_ENABLED=1 UNIX_ENABLED=1 GLES2_ENABLED=1 PTRCALL_ENABLED=1'
 godot_defines += ' DEBUG_ENABLED=1' if godot_engine == 'debug'
@@ -42,8 +44,8 @@ Pod::Spec.new do |s|
     # Compile GodotHost.mm/IOSGodotInterface.mm against the Godot 3.2 source headers (matches the
     # prebuilt .a). platform/iphone is needed for platform_config.h / os_iphone.h / gl_view.h.
     'HEADER_SEARCH_PATHS' => "\"#{godot_src}\" \"#{godot_src}/platform/iphone\" \"$(PODS_TARGET_SRCROOT)/godot_gen\"",
-    # These MUST match how the prebuilt libgodot.iphone.debug.fat.a was compiled, because they change
-    # the C++ ABI of the engine headers we compile against:
+    # These MUST match how the linked prebuilt libgodot was compiled (godot_engine above), because they
+    # change the C++ ABI of the engine headers we compile against:
     #  - DEBUG_ENABLED (scons target=release_debug) adds members to Object: sizeof(Object) is 216, not
     #    200. Without it our memnew() under-allocates every Object subclass and the engine's
     #    constructors write past the end of the block, which corrupted the heap about 1 launch in 20.
