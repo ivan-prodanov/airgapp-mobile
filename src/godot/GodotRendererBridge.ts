@@ -44,6 +44,9 @@ export class GodotRendererBridge {
   private lastFrame: FrameData | null = null;
   private pendingCameraAnimationId: string | null = null;
   private markerRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  // boot() ran before GODOT_READY, so its batch is still waiting in the native queue for the engine
+  // to drain. Cleared by that GODOT_READY.
+  private bootQueuedBeforeReady = false;
 
   // RN swap: the web bridge installed a `window.godot_comm` shim into the renderer <iframe> so
   // Godot could pull outbound messages and push inbound ones. Natively, ExpoGodotViewModule owns
@@ -67,13 +70,12 @@ export class GodotRendererBridge {
     this.send(createThemeMessage(state.theme));
     this.send(createFrameMessage(frame));
     this.send(createShowProductMessage(state));
-    this.moveCamera(state.cameraMode, false);
-    this.requestMarkers();
+    this.moveCamera(state.cameraMode, false); // also asks for markers
     this.send(createVehicleLightsMessage(state, this.currentVehicleId()));
-    // If the engine already signalled ready BEFORE this boot ran (RN onLayout can
-    // lag engine init), the sends above are safe. If it signals ready AFTER, we
-    // re-apply on GODOT_READY (see handleRendererMessage) so nothing dropped during
-    // the cold-boot race leaves the car a black silhouette.
+    // Sent before the engine is ready, this batch is not lost: the native queue keeps it and the
+    // engine drains it in order on its first frame. GODOT_READY must not re-send it (see
+    // handleRendererMessage).
+    this.bootQueuedBeforeReady = !this.diagnostics.ready;
   }
 
   // Re-apply the current scene's visual content — the product, its lighting/env
@@ -86,8 +88,7 @@ export class GodotRendererBridge {
     if (!state) return;
     logi('godot', 'resync', { reason, model: state.carModel });
     this.send(createShowProductMessage(state));
-    this.moveCamera(state.cameraMode, false);
-    this.requestMarkers();
+    this.moveCamera(state.cameraMode, false); // also asks for markers
     this.send(createVehicleLightsMessage(state, this.currentVehicleId()));
   }
 
@@ -117,8 +118,7 @@ export class GodotRendererBridge {
     // re-apply the lights (the freshly-instanced vehicle defaults them off).
     if (previous.carModel !== next.carModel) {
       this.send(createShowProductMessage(next));
-      this.moveCamera(next.cameraMode, false);
-      this.requestMarkers();
+      this.moveCamera(next.cameraMode, false); // also asks for markers
       this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
       return;
     }
@@ -156,8 +156,7 @@ export class GodotRendererBridge {
     if (previous && previous.carModel === next.carModel) {
       this.send(createUpdateProductMessage(next));
     }
-    this.moveCamera(next.cameraMode, false);
-    this.requestMarkers();
+    this.moveCamera(next.cameraMode, false); // also asks for markers
     this.send(createVehicleLightsMessage(next, this.currentVehicleId()));
   }
 
@@ -193,6 +192,10 @@ export class GodotRendererBridge {
       this.send(createFadeRoofMessage(true, animated, this.currentVehicleId()));
     }
 
+    // A non-animated move takes effect as soon as the engine handles it, so ask for markers now (from
+    // a 0 ms timer, which coalesces requests made in the same tick). An animated move asks when Godot
+    // reports MOVE_CAMERA_RESPONSE. Callers must not add their own request on top: with the frunk
+    // marker on screen, each request makes the engine read the whole viewport back after the next draw.
     if (!animated) {
       this.scheduleMarkerRefresh();
     }
@@ -284,10 +287,18 @@ export class GodotRendererBridge {
         haveState: this.lastState != null,
       });
     }
-    // Re-apply on ready: guarantees the scene content lands even if boot() fired it
-    // before the engine was draining its queue (the cold-boot race → black car).
+    // A boot() batch sent before GODOT_READY is still in the native queue (GodotBridge on iOS and
+    // Android drops nothing), and MobileComm drains it in order on the engine's first _process, after
+    // every listener registered in _ready. Re-sending it here only made the engine apply the scene
+    // twice in its first car frame, which holds the main thread. Any other GODOT_READY (no boot
+    // queued ahead of it) still re-applies the scene.
     if (parsed.type === 'GODOT_READY') {
-      this.resync('godot-ready');
+      if (this.bootQueuedBeforeReady) {
+        this.bootQueuedBeforeReady = false;
+        logi('godot', 'resync skipped', { reason: 'godot-ready', why: 'boot batch still queued' });
+      } else {
+        this.resync('godot-ready');
+      }
     }
 
     if (parsed.type === 'VEHICLE_MARKERS_RESPONSE') {

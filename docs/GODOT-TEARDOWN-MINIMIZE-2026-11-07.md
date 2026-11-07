@@ -165,7 +165,7 @@ The committed fix, built clean, ran 30 launches: 0 were slow, with FPL median 39
 
 **What this does not change: when the car is on screen.** The FPL row is when JS heard about it. Godot sends FPL in the middle of frame 3, and the frame that draws the car ends at about 525 ms in every launch, before and after this fix. A "fast" launch's 395 ms FPL is about 130 ms before the car can be on screen. To time launch-to-car, use the end of that frame, not the FPL row. The fix gives the JS thread back up to about 300 ms during launch. It does not make the car appear sooner.
 
-**Not addressed:** frame 3 itself holds the main thread, and therefore all UIKit and React Native UI, for about 300 ms. About 110 ms of it, after the car load, is the queue being drained twice. `boot()` queues the scene messages before `GODOT_READY`, and none are dropped. Then `resync('godot-ready')` queues them all again, including a second `SHOW_PRODUCT` and two more `GET_VEHICLE_MARKERS`. Each marker response costs about 19 ms.
+**Addressed later (see "The first car frame applied the scene twice" below):** frame 3 itself holds the main thread, and therefore all UIKit and React Native UI, for about 300 ms. About 110 ms of it, after the car load, is the queue being drained twice. `boot()` queues the scene messages before `GODOT_READY`, and none are dropped. Then `resync('godot-ready')` queues them all again, including a second `SHOW_PRODUCT` and two more `GET_VEHICLE_MARKERS`. Each marker response costs about 19 ms.
 
 **Other costs not addressed:**
 - Live car data takes about 3 s over the Pi relay, mostly `openSession` at 2 to 2.5 s. This may be a large part of how slow launch feels, and `docs/RECONNECT-LATENCY-FLAP-2026-11-07.md` covers related relay latency.
@@ -191,7 +191,38 @@ Interleaved A/B on the iPhone, 12 blocks of 10 cold launches (60 per engine), fi
 
 The release engine reaches `GODOT_READY` slightly sooner but loads the car slightly slower, so the car is no sooner. We stay on the debug engine. The ABI `static_assert`s now hold the values for both engines, read from each `.a` (the size passed to the allocator in `ClassDB::creator<T>`): `Object` 216/200, `InputEventScreenTouch` 368/352, `InputEventScreenDrag` 384/368.
 
-Where the ~680 ms goes: about 155 ms before JS boots (React Native and the bundle), 40 ms until React lays out the Godot view, and then about 485 ms of Godot on the main thread (`iphone_main` to the end of frame 3), of which the car load is ~180 ms and the duplicate queue drain ~110 ms. Godot cannot start until React mounts its view at about 195 ms after process start; starting the engine natively at launch could overlap part of frames 1 and 2 with JS startup, at the cost of main-thread contention with React Native's own mount. Not tried.
+Where the ~680 ms goes: about 155 ms before JS boots (React Native and the bundle), 40 ms until React lays out the Godot view, and then about 485 ms of Godot on the main thread (`iphone_main` to the end of frame 3), of which the car load is ~180 ms and the duplicate queue drain ~110 ms (since cut by about 83 ms, next subsection). Godot cannot start until React mounts its view at about 195 ms after process start; starting the engine natively at launch could overlap part of frames 1 and 2 with JS startup, at the cost of main-thread contention with React Native's own mount. Not tried.
+
+### The first car frame applied the scene twice
+
+The car arrives at the end of Godot's first car frame: the frame after `GODOT_READY`, which holds the main thread for about 300 ms. That frame drains the whole host-to-Godot queue. `GodotRendererBridge.boot()` had queued the scene before `GODOT_READY`, and the bridge queued it again on `GODOT_READY` (`resync('godot-ready')`), so the engine handled two batches in that one frame.
+
+Applying the second batch took about 0.3 ms, because the second `SHOW_PRODUCT` returns at once for an already-loaded car. The cost was the marker requests. There were 4 to 5 `GET_VEHICLE_MARKERS` in the frame: each batch asked twice, once directly and once from the 0 ms timer that a non-animated `moveCamera` already sets, and `updateFrame` usually asked once more. `VehicleManager.on_get_vehicle_markers` waits for `frame_post_draw` and then reads the whole viewport back to sample the frunk colour. Every response after the first adds about 20 ms to the frame.
+
+**The resync on `GODOT_READY` was redundant.** It was added in `e76de2c` for an intermittent black car on cold boot, and no cause was captured at the time. A batch sent before `GODOT_READY` cannot be lost:
+- `GodotBridge` (iOS, and Android's `GodotBridge.kt`) only appends to the queue. Android clears it only in the module's `OnDestroy`.
+- `MobileComm` drains the queue in `_process`, so it starts on the engine's first frame after `Main::start`.
+- Every message listener registers on the first line of `_ready` in a node of `mobile.tscn`. `SceneManager` sends `GODOT_READY` from the root's `_ready`, which runs after all of its children's.
+- The engine lives for the whole process (the Bug 2 fix), so `GODOT_READY` arrives once per process.
+
+**Fix:** `boot()` records whether it ran before `GODOT_READY`. If it did, that `GODOT_READY` skips the resync and logs `godot resync skipped` to the ring. A `GODOT_READY` with no boot queued ahead of it still resyncs, and the foreground resync is unchanged. Callers no longer add their own marker request after a non-animated `moveCamera`.
+
+**Measured** on one instrumented binary with the JS swapped in, in interleaved blocks of 10 launches, iPhone Air, no syslog attached. Times are ms after JS `app boot` (medians unless stated):
+
+| | Before | Skip the resync only | Fix (skip + one marker request per batch) |
+|---|---|---|---|
+| Car frame ends | 534 (p10 501, p90 555) | 494 (461, 511) | **470** (455, 487) |
+| Change in median, 95% bootstrap CI | | −41 (−51 to −32) | **−64 (−71 to −55)** |
+| Car frame length | 320 | 278 | 259 |
+| From `FIRST_PRODUCT_LOADED` to frame end | 138 | 95 | 75 |
+| Marker requests in the frame | 5 (4–5) | 3 (2–3) | 2 |
+| Next frame ends | 539 | 500 | 476 |
+
+n = 30 per arm. The car load itself (`FIRST_PRODUCT_LOADED` at 394–398) and `GODOT_READY` (205–206) did not move.
+
+**Render check:** the same build read the GL frame back at three points: after the car frame, 3 s after engine start, and 1.5 s after each activation. All 90 launches gave byte-identical frames at each point, across all three arms. At 3 s that frame is the fully lit car. In 8 of 8 background-to-foreground cycles on the fix build, the foreground resync ran, and the frame afterwards was byte-identical to the cold-launch frame. iOS reclaiming GPU resources after a long background was not reproduced at the desk. Android was not run.
+
+**Still in the car frame:** a second `GET_VEHICLE_MARKERS`, about 20 ms. The trace shows it right after a second `UPDATE_MAIN_VIEW_FRAME`, which is the pair `updateFrame` sends. Whether `onLayout` or the camera-mode effect calls it was not traced. Also, the readback taken right after the car frame shows the car upside down on black, identically in every arm. This may be the cold-boot blip noted under Bug 2, or it may be the readback picking up Godot's viewport buffer after the frunk-colour sample. That was not investigated.
 
 ---
 
