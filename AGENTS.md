@@ -81,6 +81,14 @@ Deploy paths (fastest first):
 - **Godot scene / `.tscn` / `.glb` / `.pck` change** → `bash scripts/godot-ios/deploy-ios.sh` (re-exports the `.pck`, swaps it in, re-signs; ~2 min). NOT a 25-min rebuild.
 - **Native `.mm`/`.swift` change** → full `xcodebuild` Release build.
 
+`deploy-js.sh` bundles with the same entry (`index.js`) and flags as Xcode's bundle phase, so the JS it
+installs is byte-for-byte what a TestFlight build ships.
+
+**Timing launches:** never run `idevicesyslog` (or any device log stream) during the launches you
+time. An attached capture adds ~70 ms to `GODOT_READY` and ~100 ms to `FIRST_PRODUCT_LOADED`, and on
+2026-11-07 it was mistaken for "Xcode builds launch 115 ms slower". See
+`docs/GODOT-TEARDOWN-MINIMIZE-2026-11-07.md` → How this was debugged.
+
 ## Provisioning profile expires WEEKLY — renew it yourself, never make the user do it
 
 The dev profile is a **free 7-day** profile, so installs break about once a week. When `devicectl install` fails with `This provisioning profile has expired` (`0xe8008011` / `MIInstallerErrorDomain error 13`), it is NOT a code problem and NOT a locked phone — just renew the profile and continue:

@@ -33,11 +33,21 @@ HERMESC="$(find "$APP_REPO/node_modules" -name hermesc -path '*osx-bin*' 2>/dev/
 TMP="$(mktemp -d -t airgapp-js-XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "→ [1/4] bundling JS (expo export:embed)"
+# Bundle exactly what Xcode's "Bundle React Native code and images" phase ships: the same entry
+# (resolved the same way — index.js, with its polyfills and the shareSheet registration) and
+# --minify false, which react-native-xcode.sh passes for Hermes. This used to enter through
+# node_modules/expo-router/entry.js with minify on, so deploy-js ran different JS from TestFlight.
+# Measured 2026-11-07, the two bundles launch at the same speed (GODOT_READY 207 vs 207 ms); the
+# point is that a deploy-js measurement now tests the JS that actually ships.
+ENTRY="$(cd "$APP_REPO" && node -e "require('expo/scripts/resolveAppEntry')" "$APP_REPO" ios absolute | tail -n 1)"
+[ -f "$ENTRY" ] || { echo "ERROR: could not resolve the app entry (got '$ENTRY')" >&2; exit 1; }
+
+echo "→ [1/4] bundling JS (expo export:embed, entry $(basename "$ENTRY"))"
 ( cd "$APP_REPO" && npx expo export:embed \
     --platform ios \
     --dev false \
-    --entry-file node_modules/expo-router/entry.js \
+    --minify false \
+    --entry-file "$ENTRY" \
     --bundle-output "$TMP/main.plain.js" \
     --assets-dest "$TMP/assets" ) > "$TMP/bundle.log" 2>&1
 [ -s "$TMP/main.plain.js" ] || { echo "ERROR: bundle failed — last lines:" >&2; tail -25 "$TMP/bundle.log" >&2; exit 1; }
