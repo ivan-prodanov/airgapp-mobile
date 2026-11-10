@@ -100,3 +100,4 @@ modules/shared-intake/ios/AirgappEngine.js
 
 # Local preview dev-server config (Claude Code browser preview)
 .claude/launch.json
+android/keystore.properties
