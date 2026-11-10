@@ -1,8 +1,10 @@
 package local.airgapp.mobile
 import expo.modules.splashscreen.SplashScreenManager
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -10,9 +12,35 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 import expo.modules.ReactActivityDelegateWrapper
+import expo.modules.godotview.GodotHost
 
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    // RECENTS-SWIPE RECOVERY — relaunch into a fresh process when we inherit a dead Godot engine.
+    //
+    // Closing the app from the app switcher destroys this Activity and its window surface, but the
+    // passive-entry foreground service keeps the PROCESS alive. Godot 3.2 cannot rebuild its GL
+    // context in-process (see invokeDefaultOnBackPressed below — a lost context ends the main loop
+    // and restart() is a no-op here), so the process-wide engine singleton is already dead (step =
+    // -1) and renders NOTHING the moment a reopened Activity re-adopts it. That is the "car gone
+    // after I closed-and-reopened from the switcher" report. A fresh process is the only clean fix.
+    //
+    // GodotHost.isStarted is true at onCreate ONLY when an earlier Activity in this SURVIVING
+    // process already booted the engine — precisely this teardown-then-reopen path. It never
+    // false-fires: the manifest's configChanges means rotation/theme/size don't recreate this
+    // Activity, it is portrait-locked, and a genuine process death cold-starts with isStarted=false.
+    if (GodotHost.isStarted) {
+      Log.i(TAG, "inherited a dead Godot engine after an Activity teardown — relaunching fresh")
+      packageManager.getLaunchIntentForPackage(packageName)?.let {
+        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(it)
+      }
+      // Hard-exit so the relaunch above starts in a brand-new process with a clean engine. The
+      // foreground service restarts itself; it was already disrupted by the task teardown.
+      Runtime.getRuntime().exit(0)
+      return
+    }
+
     // Set the theme to AppTheme BEFORE onCreate to support
     // coloring the background, status bar, and navigation bar.
     // This is required for expo-splash-screen.
@@ -21,6 +49,10 @@ class MainActivity : ReactActivity() {
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
     super.onCreate(null)
+  }
+
+  private companion object {
+    const val TAG = "MainActivity"
   }
 
   /**
