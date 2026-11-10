@@ -1,6 +1,10 @@
 package expo.modules.godotview
 
 import android.app.Activity
+import android.content.Context
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.fragment.app.FragmentActivity
 import android.view.ViewGroup
@@ -36,8 +40,11 @@ import org.godotengine.godot.Godot
 object GodotHost {
   private const val TAG = "GodotHost"
 
-  /** The pack, pushed next to the app's other data. Mirrors the iOS bundle path role. */
+  /** The pack, next to the app's other data. Mirrors the iOS bundle path role. */
   const val PCK_NAME = "airgapp.pck"
+
+  /** Marker file recording the app versionCode the bundled pack was last extracted for. */
+  private const val PCK_VERSION_MARKER = "airgapp.pck.ver"
 
   /** Matches the tag the official Tesla app uses for the same fragment. */
   private const val FRAGMENT_TAG = "godot_fragment"
@@ -45,10 +52,100 @@ object GodotHost {
   private var godot: Godot? = null
   private var started = false
 
+  @Volatile private var extractionInProgress = false
+  private var onPackReady: (() -> Unit)? = null
+
   val isStarted: Boolean get() = started
 
-  /** Absolute path the deploy script pushes the pack to. */
+  /** True while the bundled pack is being copied out of the APK on first launch. */
+  val isExtracting: Boolean get() = extractionInProgress
+
+  /** Absolute path the engine reads the pack from (also where deploy-godot.sh pushes it for dev). */
   fun pckPath(activity: Activity): String = File(activity.filesDir, PCK_NAME).absolutePath
+
+  /**
+   * Make sure the scene pack is present at [pckPath] before the engine boots, then run [onReady] on
+   * the main thread. Three cases:
+   *
+   *  - **Already present and current** → [onReady] runs immediately (synchronously).
+   *  - **Bundled in the APK** (a `-Pairgapp.distribution` build) but missing or stale → copy it out
+   *    of `assets/` on a background thread (~320 MB, a few seconds), then [onReady] on the main
+   *    thread. [isExtracting] is true meanwhile so the view can show a "preparing" placeholder.
+   *  - **Not bundled and not present** (a dev build before scripts/android/deploy-godot.sh) →
+   *    [onReady] runs immediately; start() then returns null and the placeholder says so.
+   *
+   * Safe to call on every remount: the copy runs at most once, and the most recent caller's
+   * [onReady] is the one invoked when it finishes (a view that remounted during extraction wins).
+   */
+  @Synchronized
+  fun ensurePack(activity: Activity, onReady: () -> Unit) {
+    val dest = File(activity.filesDir, PCK_NAME)
+    if (dest.exists() && isPackCurrent(activity)) { onReady(); return }
+    if (!isPackBundled(activity)) { onReady(); return }
+
+    onPackReady = onReady
+    if (extractionInProgress) return
+    extractionInProgress = true
+
+    val appContext = activity.applicationContext
+    val handler = Handler(Looper.getMainLooper())
+    Thread({
+      val ok = try {
+        extractBundledPack(appContext, dest)
+      } catch (e: Throwable) {
+        Log.e(TAG, "pack extraction failed", e)
+        false
+      }
+      handler.post {
+        extractionInProgress = false
+        val cb = onPackReady
+        onPackReady = null
+        if (!ok) Log.e(TAG, "pack not extracted — engine will show the placeholder")
+        cb?.invoke()
+      }
+    }, "godot-pack-extract").start()
+  }
+
+  /** Is airgapp.pck bundled in the APK's assets (true only for a distribution build)? */
+  private fun isPackBundled(context: Context): Boolean =
+    try { context.assets.list("")?.contains(PCK_NAME) == true } catch (e: Exception) { false }
+
+  /** Does the extracted pack match the currently-installed app version (vs a stale older one)? */
+  private fun isPackCurrent(context: Context): Boolean {
+    val marker = File(context.filesDir, PCK_VERSION_MARKER)
+    if (!marker.exists()) return false
+    return try { marker.readText().trim() == currentVersionCode(context) } catch (e: Exception) { false }
+  }
+
+  private fun currentVersionCode(context: Context): String = try {
+    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+    @Suppress("DEPRECATION")
+    val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+    code.toString()
+  } catch (e: Exception) { "?" }
+
+  /**
+   * Copy the APK-bundled pack to [dest] atomically (temp file + rename), then write the version
+   * marker. Runs on a background thread. Returns true when a non-empty pack is in place.
+   */
+  private fun extractBundledPack(context: Context, dest: File): Boolean {
+    val tmp = File(context.filesDir, "$PCK_NAME.tmp")
+    Log.i(TAG, "extracting bundled $PCK_NAME → ${dest.absolutePath}")
+    val startMs = System.currentTimeMillis()
+    tmp.delete()
+    context.assets.open(PCK_NAME).use { input ->
+      tmp.outputStream().use { output -> input.copyTo(output, 1 shl 20) }
+    }
+    if (dest.exists()) dest.delete()
+    if (!tmp.renameTo(dest)) {
+      tmp.copyTo(dest, overwrite = true)
+      tmp.delete()
+    }
+    File(context.filesDir, PCK_VERSION_MARKER).writeText(currentVersionCode(context))
+    val ok = dest.exists() && dest.length() > 0
+    Log.i(TAG, "extracted $PCK_NAME: ${dest.length()} bytes in ${System.currentTimeMillis() - startMs} ms (ok=$ok)")
+    return ok
+  }
 
   /**
    * Boot the engine if it is not already up, and return its view tree.

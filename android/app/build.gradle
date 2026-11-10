@@ -98,6 +98,20 @@ if (hasReleaseKeystore) {
 // release-key-signed. A plain release build stays debuggable for `adb run-as` at the car.
 def isDistribution = (findProperty('airgapp.distribution') ?: 'false').toBoolean()
 
+// GODOT SCENE PACK. iOS bundles airgapp.pck into the .app (ExpoGodotView.podspec s.resources). On
+// Android the pack has historically been USB-pushed to filesDir by scripts/android/deploy-godot.sh,
+// which is right for the ~40s dev loop but leaves a SIDELOADED APK with no 3D content ("no
+// airgapp.pck" placeholder). So a DISTRIBUTION build bundles the single canonical pack into the
+// APK's assets; GodotHost.ensurePack() copies it out to filesDir on first launch. A dev build omits
+// it (keeps the APK small; the pack is still USB-pushed). The pack is ~320 MB and gitignored.
+def godotPackSource = file("$projectRoot/modules/expo-godot-view/ios/airgapp.pck")
+def godotPackStageDir = layout.buildDirectory.dir("godot-pack-assets").get().asFile
+if (isDistribution && !godotPackSource.exists()) {
+    throw new GradleException("Distribution build (-Pairgapp.distribution=true) needs the Godot pack at " +
+        "${godotPackSource}, but it is missing. Restore it per modules/expo-godot-view/ios/VENDORING.md " +
+        "(gitignored, ~320 MB), then rebuild.")
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -159,6 +173,36 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+        // airgapp.pck is already-compressed texture data — storing it uncompressed keeps the build
+        // fast and lets first-launch extraction be a straight copy out of the APK.
+        noCompress += 'pck'
+    }
+
+    sourceSets {
+        main {
+            // Only a distribution build carries the pack (see godotPackSource above). stageGodotPack
+            // populates this dir before the asset-merge step; a dev build never adds it.
+            if (isDistribution) {
+                assets.srcDirs += godotPackStageDir
+            }
+        }
+    }
+}
+
+// Copy the single canonical pack into a clean assets staging dir before assets are merged. Wired
+// only for distribution builds, so a dev APK never includes it. Gradle makes this incremental —
+// unchanged pack ⇒ the copy is skipped on the next distribution build.
+tasks.register('stageGodotPack', Copy) {
+    from godotPackSource
+    into godotPackStageDir
+    rename { 'airgapp.pck' }
+}
+if (isDistribution) {
+    // Stage the pack before anything in the variant graph runs. Hanging it off preBuild (an
+    // ancestor of every merge/lint/package task) gives all of them a declared ordering to the
+    // staged assets dir, which Gradle's strict task-dependency validation requires.
+    tasks.matching { it.name == 'preBuild' }.configureEach {
+        dependsOn 'stageGodotPack'
     }
 }
 

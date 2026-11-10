@@ -79,13 +79,31 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
     if (activity == null) { d("attachEngine SKIP: no activity"); return }
     d("attachEngine RUN ${width}x$height")
 
+    // The pack must exist before the engine can boot. On a distribution build it ships inside the
+    // APK and is copied out to filesDir on first launch (~320 MB, off the UI thread) — bootEngine
+    // runs when that finishes, and we show a "preparing" placeholder until then. On a dev build the
+    // pack is already USB-pushed, so ensurePack invokes bootEngine synchronously right here.
+    GodotHost.ensurePack(activity) { bootEngine() }
+    refreshPlaceholder()
+  }
+
+  private fun bootEngine() {
+    // Runs on the main thread once the pack is ready. Re-check preconditions: a first-launch
+    // extraction can take seconds, during which the view may have been detached, resized, or the
+    // process-wide engine may already have been adopted by another ExpoGodotView instance.
+    if (attachedEngineView) { d("bootEngine SKIP: already attached"); return }
+    if (width <= 0 || height <= 0) { d("bootEngine SKIP: size ${width}x$height"); return }
+    val activity = appContext.currentActivity
+    if (activity == null) { d("bootEngine SKIP: no activity"); return }
+    d("bootEngine RUN ${width}x$height")
+
     // Detach first: the singleton engine view may still be parented to a previous instance of
     // this view (a remount). Adding a view that already has a parent throws.
     GodotHost.detachFromParent()
 
     val engineView = GodotHost.start(activity, width, height)
-    if (engineView == null) { d("attachEngine: start() returned null"); refreshPlaceholder(); return }
-    d("attachEngine: got engine view, parent=${engineView.parent}")
+    if (engineView == null) { d("bootEngine: start() returned null"); refreshPlaceholder(); return }
+    d("bootEngine: got engine view, parent=${engineView.parent}")
     removeView(placeholder)
     addView(engineView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
@@ -121,7 +139,7 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
     // this view's layout and ignores it.
     activity.window?.decorView?.requestLayout()
 
-    d("attachEngine DONE children=$childCount")
+    d("bootEngine DONE children=$childCount")
     // Re-assert the size once the engine has had a moment to finish Main::setup(); see
     // GodotHost.resize for why the surface-time resize alone is not enough.
     postDelayed({ GodotHost.resize(width, height) }, 1_500)
@@ -180,10 +198,11 @@ class ExpoGodotView(context: Context, appContext: AppContext) : ExpoView(context
   }
 
   private fun refreshPlaceholder() {
-    placeholder.text = if (GodotHost.isStarted) {
-      ""
-    } else {
-      "Godot engine not started\nscene: ${sceneName ?: "—"}\n(no ${GodotHost.PCK_NAME} pushed)"
+    placeholder.text = when {
+      GodotHost.isStarted -> ""
+      // First launch of a distribution build: the bundled pack is being copied out of the APK.
+      GodotHost.isExtracting -> "Preparing 3D view…\nfirst launch may take a moment"
+      else -> "Godot engine not started\nscene: ${sceneName ?: "—"}\n(no ${GodotHost.PCK_NAME})"
     }
   }
 }
